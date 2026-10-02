@@ -1,0 +1,11 @@
+google-api-python-client>=2.100
+python-dotenv>=1.0
+pydantic>=2.5
+
+# web dashboard
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# dev
+pytest>=8.0
+httpx>=0.27

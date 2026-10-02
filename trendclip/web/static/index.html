@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>TrendClipper — YouTube Trend Radar</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"><span></span></div>
+      <div>
+        <h1>TrendClipper</h1>
+        <p>YouTube trend radar</p>
+      </div>
+    </div>
+    <div class="status" id="status" aria-live="polite"></div>
+  </header>
+
+  <main class="container">
+    <section class="card controls" aria-label="Filters">
+      <label class="field">
+        <span>Region</span>
+        <select id="region"></select>
+      </label>
+      <label class="field field-wide">
+        <span>Category</span>
+        <select id="category">
+          <option value="all">All categories</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Videos</span>
+        <select id="maxResults">
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+        </select>
+      </label>
+      <label class="field">
+        <span>Topics</span>
+        <select id="top">
+          <option value="5">5</option>
+          <option value="10">10</option>
+          <option value="20">20</option>
+          <option value="30">30</option>
+        </select>
+      </label>
+      <button id="refresh" class="btn-primary" type="button">
+        <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+        Refresh
+      </button>
+    </section>
+
+    <div id="error" class="banner banner-error" hidden></div>
+    <div id="warnings" class="banner banner-warn" hidden></div>
+
+    <section class="stats" id="stats" aria-label="Summary">
+      <div class="stat"><span class="stat-label">Videos analyzed</span><span class="stat-value" id="statVideos">–</span></div>
+      <div class="stat"><span class="stat-label">Outlier videos</span><span class="stat-value accent" id="statOutliers">–</span></div>
+      <div class="stat"><span class="stat-label">Topics</span><span class="stat-value" id="statTopics">–</span></div>
+      <div class="stat"><span class="stat-label">Fastest video</span><span class="stat-value" id="statFastest">–</span><span class="stat-sub">views / hour</span></div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <div class="card-head">
+          <h2>Trending topics</h2>
+          <span class="hint">Click a topic to see its videos</span>
+        </div>
+        <ol id="topics" class="topics"></ol>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Outlier videos</h2>
+          <span class="hint">Outperforming channel size or fastest 10%</span>
+        </div>
+        <div id="outliers" class="outliers"></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <h2>All trending videos</h2>
+        <input id="search" class="search" type="search" placeholder="Filter by title or channel…" />
+      </div>
+      <div class="table-wrap">
+        <table class="videos">
+          <thead>
+            <tr>
+              <th>Video</th>
+              <th class="num sortable" data-sort="velocity_score">Velocity</th>
+              <th class="num sortable" data-sort="views_per_hour">Views/h</th>
+              <th class="num sortable" data-sort="views">Views</th>
+              <th class="num sortable" data-sort="outlier_ratio">vs subs</th>
+              <th class="num sortable" data-sort="engagement_rate">Engagement</th>
+              <th class="num sortable" data-sort="age_hours">Age</th>
+            </tr>
+          </thead>
+          <tbody id="videoRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="loading" class="loading" hidden><div class="spinner"></div><span>Fetching trends from YouTube…</span></div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
