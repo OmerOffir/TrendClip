@@ -15,6 +15,7 @@ Examples:
 from __future__ import annotations
 
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -49,12 +50,30 @@ def _pop_option(args: list[str], name: str, default: str) -> str:
     return default
 
 
+def _port_free(host: str, port: int) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        try:
+            sock.bind((host, port))
+        except OSError:
+            return False
+    return True
+
+
 def _run_web(args: list[str]) -> int:
     import uvicorn
 
     host = _pop_option(args, "--host", "127.0.0.1")
     port = int(_pop_option(args, "--port", "8000"))
     reload = _pop_flag(args, "--reload")
+    if not _port_free(host, port):
+        print(
+            f"Port {port} is already in use (is the dashboard already running?).\n"
+            f"  Open it:      http://{host}:{port}\n"
+            f"  Stop it:      lsof -ti tcp:{port} -sTCP:LISTEN | xargs kill\n"
+            f"  Or use another port: ./run.sh web --port {port + 1}",
+            file=sys.stderr,
+        )
+        return 1
     print(f"TrendClipper dashboard: http://{host}:{port}", flush=True)
     uvicorn.run("trendclip.web.app:app", host=host, port=port, reload=reload, app_dir=str(ROOT))
     return 0

@@ -13,7 +13,18 @@ cp .env.example .env   # add YOUTUBE_API_KEY
 
 ## Run
 
-`run.py` is the main runner; it uses `.venv` automatically (no activation needed):
+Quickest: `./run.sh` creates `.venv`, installs dependencies (again only when `requirements.txt`
+changes), creates `.env` if missing, and starts the dashboard:
+
+```bash
+./run.sh                    # web dashboard at http://127.0.0.1:8000
+./run.sh web --port 8080
+./run.sh cli --category 28  # one terminal run
+./run.sh test
+./run.sh setup              # environment only
+```
+
+`run.py` is the underlying runner; it uses `.venv` automatically (no activation needed):
 
 ```bash
 python3 run.py --web                   # web dashboard at http://127.0.0.1:8000
