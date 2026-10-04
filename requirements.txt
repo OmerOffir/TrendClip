@@ -10,6 +10,7 @@ imageio-ffmpeg>=0.5  # bundled ffmpeg fallback when ffmpeg isn't installed
 # create tab: script writing + voiceover
 google-genai>=2.0
 edge-tts>=7.0
+pillow>=10.0  # pop-up stickers
 
 # web dashboard
 fastapi>=0.110

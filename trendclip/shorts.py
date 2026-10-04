@@ -15,9 +15,10 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import script_writer, video_assembler, voiceover
+from . import music, popups, script_writer, video_assembler, voiceover
 from .config import Settings
 from .models import utcnow
+from .popups import Popup
 from .video_downloader import LATEST_FILENAME, BackgroundClip
 
 logger = logging.getLogger(__name__)
@@ -38,6 +39,10 @@ class ShortVideo(BaseModel):
     background: str
     background_title: str = ""
     credit: str = ""
+    music_title: str = ""
+    music_url: str = ""
+    title_card: str = ""
+    popups: list[str] = Field(default_factory=list)  # words that got a pop-up image
     created_at: datetime = Field(default_factory=utcnow)
 
 
@@ -53,6 +58,12 @@ class RenderRequest(BaseModel):
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
     max_words: int = Field(3, ge=1, le=6)
+    # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
+    music_source: str = Field("none", max_length=40)
+    music_track: str | None = Field(None, pattern=r"^[\w-]{11}$")
+    music_volume: float | None = Field(None, ge=0, le=1)
+    title_card: str = Field("", max_length=60)
+    popups: list[Popup] = Field(default_factory=list, max_length=10)
 
 
 def _slug(text: str) -> str:
@@ -84,13 +95,42 @@ def credit_line(meta: BackgroundClip | None) -> str:
 
 
 def write_script(settings: Settings, clip: str, game: str, trend_titles: list[str], notes: str,
-                 target_seconds: int, watch_clip: bool, progress: ProgressFn) -> dict[str, Any]:
+                 target_seconds: int, watch_clip: bool, progress: ProgressFn,
+                 mode: script_writer.ScriptMode = "clip") -> dict[str, Any]:
     path = clip_path(settings, clip)
     result = script_writer.write_script(
         settings, game, path, trend_titles=trend_titles, notes=notes,
-        target_seconds=target_seconds, watch_clip=watch_clip, progress=progress,
+        target_seconds=target_seconds, watch_clip=watch_clip, mode=mode, progress=progress,
     )
     return result.model_dump()
+
+
+def resolve_music(settings: Settings, req: RenderRequest, progress: ProgressFn) -> music.DownloadedTrack | None:
+    if req.music_source in ("", "none"):
+        return None
+    if req.music_track and (track := music.downloaded(settings, req.music_track)):
+        return track
+    progress(None, "Picking background music")
+    return music.pick_track(settings, req.music_source)
+
+
+def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, progress: ProgressFn):
+    """(overlays, assets, words shown): pop-ups timed to their spoken word, images fetched (cached).
+    A pop-up without a usable image is skipped rather than failing the render."""
+    timed = popups.schedule(wanted, words)
+    if timed:
+        progress(None, f"Fetching {len(timed)} pop-up images")
+    overlays, assets, shown = [], [], []
+    for t in timed:
+        asset = popups.fetch_asset(settings, t.popup)
+        if not asset:
+            continue
+        x, tilt = video_assembler.popup_layout(len(overlays))
+        overlays.append(video_assembler.Overlay(settings.assets_dir / "popups" / asset.filename,
+                                                t.start, t.end, x, tilt))
+        assets.append(asset)
+        shown.append(t.popup.word)
+    return overlays, assets, shown
 
 
 def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -> ShortVideo:
@@ -101,16 +141,27 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
     base = out_dir / f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}"
     voice = req.voice or settings.tts_voice
 
+    track = resolve_music(settings, req, progress)
+
     progress(None, f"Recording the voiceover ({voice})")
     words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, req.rate or settings.tts_rate)
+
+    overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(
         background, base.with_suffix(".mp3"), words, base.with_suffix(".mp4"),
         fit=req.fit, highlight=req.highlight, max_words=req.max_words, progress=progress,
+        music=settings.music_dir / track.filename if track else None,
+        music_volume=settings.music_volume if req.music_volume is None else req.music_volume,
+        overlays=overlays, title_card=req.title_card.strip(),
     )
 
     credit = credit_line(meta)
+    if track:
+        credit = f"{credit}\n{track.credit}".strip()
+    if assets:
+        credit = f"{credit}\n{popups.credits(assets)}".strip()
     description = req.description.strip()
     if credit and credit not in description:
         description = f"{description}\n\n{credit}".strip()
@@ -119,6 +170,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
         description=description, hashtags=req.hashtags, script=req.script, voice=voice,
         duration_seconds=round(video_assembler.media_duration(output), 2),
         background=req.clip, background_title=meta.title if meta else "", credit=credit,
+        music_title=track.title if track else "", music_url=track.url if track else "",
+        title_card=req.title_card.strip(), popups=shown,
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     shutil.copyfile(output, settings.output_dir / FINAL_SHORT)
@@ -201,10 +254,11 @@ class CreateManager:
             self._update(job_id, status="error", message="Failed", error=str(err))
 
     def submit_script(self, settings: Settings, clip: str, game: str, trend_titles: list[str],
-                      notes: str, target_seconds: int, watch_clip: bool) -> CreateJob:
+                      notes: str, target_seconds: int, watch_clip: bool,
+                      mode: script_writer.ScriptMode = "clip") -> CreateJob:
         job = self._add("script", game)
         self._scripts.submit(self._run, job.id, lambda p: write_script(
-            settings, clip, game, trend_titles, notes, target_seconds, watch_clip, p))
+            settings, clip, game, trend_titles, notes, target_seconds, watch_clip, p, mode))
         return job
 
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:

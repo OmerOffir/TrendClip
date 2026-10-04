@@ -33,7 +33,13 @@ _ENV_MAP: dict[str, str] = {
     "tts_voice": "TTS_VOICE",
     "tts_rate": "TTS_RATE",
     "short_target_seconds": "SHORT_TARGET_SECONDS",
+    "music_channels": "MUSIC_CHANNELS",
+    "music_volume": "MUSIC_VOLUME",
 }
+
+# UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
+# small look-alike that reuploads commercial songs.
+DEFAULT_MUSIC_CHANNELS = ["@NoCopyrightSounds", "UCht8qITGkBvXKsR1Byln-wA", "@ChillhopMusic"]
 
 DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
 DEFAULT_TTS_VOICE = "en-US-AndrewMultilingualNeural"
@@ -78,8 +84,11 @@ class Settings(BaseModel):
     tts_voice: str = DEFAULT_TTS_VOICE
     tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
     short_target_seconds: int = Field(30, ge=10, le=90)
+    # Background music channels (handles / UC ids) and the music level under the voice (0-1).
+    music_channels: list[str] = Field(default_factory=lambda: list(DEFAULT_MUSIC_CHANNELS))
+    music_volume: float = Field(0.14, ge=0, le=1)  # 12-15% (about -17 dB) sits well under speech
 
-    @field_validator("ncg_channels", "background_sources", mode="before")
+    @field_validator("ncg_channels", "background_sources", "music_channels", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
@@ -102,6 +111,10 @@ class Settings(BaseModel):
     @property
     def shorts_dir(self) -> Path:
         return self.output_dir / "shorts"
+
+    @property
+    def music_dir(self) -> Path:
+        return self.assets_dir / "music"
 
     @field_validator("yt_regions", mode="before")
     @classmethod

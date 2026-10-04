@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__, script_writer, shorts, video_downloader, voiceover
+from .. import __version__, music, script_writer, shorts, video_downloader, voiceover
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -251,6 +251,12 @@ class ScriptRequest(BaseModel):
     notes: str = Field("", max_length=1000)
     target_seconds: int = Field(30, ge=10, le=90)
     watch_clip: bool = True
+    mode: Literal["clip", "story"] = "clip"
+
+
+class MusicPickRequest(BaseModel):
+    source: str = Field("random", max_length=40)
+    exclude: list[str] = Field(default_factory=list, max_length=50)
 
 
 def _clip_or_http(settings: Settings, filename: str) -> None:
@@ -290,8 +296,34 @@ def create_script(req: ScriptRequest) -> dict[str, Any]:
     if script_writer.gemini_api_key(settings) is None:
         raise HTTPException(status_code=400, detail="Add GEMINI_API_KEY to .env (https://aistudio.google.com/apikey)")
     job = _create.submit_script(settings, req.clip, req.game, req.trend_titles, req.notes,
-                                req.target_seconds, req.watch_clip)
+                                req.target_seconds, req.watch_clip, req.mode)
     return job.model_dump(mode="json")
+
+
+@app.get("/api/create/music")
+def create_music() -> dict[str, Any]:
+    """Music channels with their track counts (upload lists cached on disk for a day)."""
+    settings = _base_settings()
+    try:
+        sources = music.get_library(settings).sources()
+    except YouTubeAPIError as err:
+        raise _youtube_http_error(err) from err
+    except music.MusicError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return {"sources": sources, "volume": settings.music_volume}
+
+
+@app.post("/api/create/music/pick")
+def pick_music(req: MusicPickRequest) -> dict[str, Any]:
+    """Download a random track (a few seconds) so it can be previewed before rendering."""
+    settings = _base_settings()
+    try:
+        track = music.pick_track(settings, req.source, exclude=set(req.exclude))
+    except YouTubeAPIError as err:
+        raise _youtube_http_error(err) from err
+    except music.MusicError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    return track.model_dump(mode="json")
 
 
 @app.post("/api/create/render", status_code=202)
@@ -342,7 +374,8 @@ async def _no_stale_assets(request, call_next):
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 if _settings_ok():
-    for _route, _dir in (("backgrounds", get_settings().backgrounds_dir), ("shorts", get_settings().shorts_dir)):
+    _s = get_settings()
+    for _route, _dir in (("backgrounds", _s.backgrounds_dir), ("shorts", _s.shorts_dir), ("music", _s.music_dir)):
         _dir.mkdir(parents=True, exist_ok=True)
         app.mount(f"/media/{_route}", StaticFiles(directory=_dir), name=_route)
 

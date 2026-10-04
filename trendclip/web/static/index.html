@@ -45,6 +45,15 @@
           </div>
         </div>
         <div class="form-row">
+          <label class="field field-grow">
+            <span>Script type</span>
+            <select id="cMode">
+              <option value="clip">About the clip (Gemini narrates the gameplay)</option>
+              <option value="story">Random story (not about the clip, gameplay is just background)</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
           <label class="field field-grow"><span>Game</span><input id="cGame" type="text" maxlength="80" placeholder="e.g. Minecraft" /></label>
           <label class="field">
             <span>Length</span>
@@ -73,6 +82,18 @@
         <label class="field"><span>Title</span><input id="cTitle" type="text" maxlength="150" /></label>
         <label class="field"><span>Description</span><textarea id="cDesc" rows="3" maxlength="4000"></textarea></label>
         <label class="field"><span>Hashtags</span><input id="cTags" type="text" placeholder="#minecraft #gaming #shorts" /></label>
+        <label class="field"><span>Title card <em>(top banner for the first 3 seconds, empty = none)</em></span>
+          <input id="cTitleCard" type="text" maxlength="40" placeholder="e.g. CAT LOGIC 101" />
+        </label>
+        <div class="field">
+          <span>Pop-up images <em>(pop up when the word is spoken; free emoji / Wikimedia images)</em></span>
+          <div class="chips" id="cPopups"></div>
+          <div class="form-row popup-add">
+            <input id="cPopWord" type="text" maxlength="40" placeholder="word from the script" />
+            <input id="cPopEmoji" type="text" maxlength="8" placeholder="emoji" class="emoji-input" />
+            <button type="button" class="dl-copy" id="cPopAdd">Add</button>
+          </div>
+        </div>
       </section>
 
       <section class="card form">
@@ -115,6 +136,33 @@
               <option value="blur">Whole frame + blur</option>
             </select>
           </label>
+        </div>
+        <div class="music-box">
+          <div class="form-row">
+            <label class="field field-grow">
+              <span>Background music</span>
+              <select id="cMusic">
+                <option value="none">No music</option>
+                <option value="random">Random (any channel)</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Music volume</span>
+              <select id="cMusicVol">
+                <option value="0.09">Quiet</option>
+                <option value="0.14" selected>Normal</option>
+                <option value="0.22">Loud</option>
+              </select>
+            </label>
+          </div>
+          <div class="music-track" id="cTrack" hidden>
+            <div class="music-row">
+              <div class="music-title" id="cTrackTitle"></div>
+              <button type="button" class="dl-copy" id="cShuffle" title="Pick another random track">Shuffle</button>
+            </div>
+            <audio id="cTrackAudio" controls preload="none"></audio>
+            <div class="dl-meta" id="cTrackMeta"></div>
+          </div>
         </div>
         <div class="phone" id="cPhone">
           <video id="cPreview" muted loop playsinline></video>

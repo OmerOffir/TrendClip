@@ -98,6 +98,35 @@ def test_write_script_watches_clip_and_cleans_output(tmp_path, monkeypatch):
     assert result.hashtags == ["#minecraft", "#parkour", "#shorts"]
 
 
+def test_overloaded_model_retries_then_falls_back(monkeypatch):
+    class Busy(Exception):
+        def __init__(self, code):
+            self.code = code
+
+    calls = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            calls.append(model)
+            if model == "main":
+                raise Busy(503)
+            return "ok"
+
+    monkeypatch.setattr(script_writer.time, "sleep", lambda s: None)
+    monkeypatch.setattr(script_writer, "FALLBACK_MODELS", ["backup"])
+    client = SimpleNamespace(models=Models())
+    resp, used = script_writer._generate_with_fallback(client, "main", [], None, lambda f, m: None, Busy)
+    assert (resp, used) == ("ok", "backup")
+    assert calls == ["main", "main", "main", "backup"]
+
+    class Bad(Models):
+        def generate_content(self, model, contents, config):
+            raise Busy(400)
+
+    with pytest.raises(Busy):
+        script_writer._generate_with_fallback(SimpleNamespace(models=Bad()), "main", [], None, lambda f, m: None, Busy)
+
+
 def test_write_script_needs_a_key(tmp_path, monkeypatch):
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s=None: None)
     with pytest.raises(script_writer.ScriptError, match="GEMINI_API_KEY"):

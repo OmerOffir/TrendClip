@@ -132,12 +132,33 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    copy is uploaded and deleted afterwards), reads the game's current trending video titles, and
    returns a hook + voiceover sized to the chosen length, a title, a description and hashtags. Every
    field stays editable, and you can also type a script without Gemini.
+   **Script type → Random story** makes Gemini write a self-contained first-person storytime that is
+   *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
 3. **Voice & style:** a free edge-tts voice (47 English voices) with exact word timings, speed,
    highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
+4. **Background music (optional):** a random track from NoCopyrightSounds (EDM), the Audio Library
+   (mixed genres) or Chillhop (lo-fi). Preview it, press **Shuffle** for another one, pick
+   Quiet/Normal/Loud (Normal = 14%, about -17 dB). The music loops if it is short, fades in/out and
+   ducks under the voice.
+5. **Title card and pop-ups:** Gemini also suggests a 2-5 word ALL-CAPS title card (shown at the top
+   for the first 3 seconds) and 3-6 pop-up images for things the script mentions. Each pop-up appears
+   for 1.5-2.5 s exactly when its word is spoken (edge-tts word timings), between the title area and
+   the subtitles. Edit the title, remove pop-ups (×) or add your own word + emoji.
+
+Pop-up images are free and need no key: the matching emoji from Microsoft's Fluent Emoji set (MIT)
+on Wikimedia Commons, else Noto Emoji / Twemoji, else a Commons search that keeps only files with a
+real transparent background. Each becomes a sticker (white outline, soft shadow) cached in
+`assets/popups/`; credits are added to the description. A pop-up with no usable image is skipped.
 
 Shorts are saved in `output/shorts/` (MP4 + voiceover MP3 + subtitles + JSON with title,
 description and hashtags); the newest is also copied to `output/final_short.mp4`. The description
-gets a credit line for the gameplay channel automatically.
+gets credit lines for the gameplay channel and the music track automatically.
+
+Music: only single songs are used (mixes, streams and compilations are filtered out); the upload
+lists are cached for a day in `assets/cache/music_library.json` and tracks are downloaded once to
+`assets/music/`. These channels allow use with credit, but YouTube can still show a Content ID
+notice for some tracks; it is usually released after disputing with the credit link. Change the
+channels with `MUSIC_CHANNELS`.
 
 Setup: create a key at [Google AI Studio](https://aistudio.google.com/apikey) and add
 `GEMINI_API_KEY=...` to `.env` (no restart needed). Optional: `GEMINI_MODEL` (default
@@ -163,7 +184,11 @@ Arial Black), white with a black outline, and the word being spoken turns yellow
 - The background loops if it is shorter than the voiceover; the video always ends with the voice.
 - Timestamps: a plain `[{"word","start","end"}]` list, Whisper `segments[].words`, edge-tts
   `offset`/`duration`, or ElevenLabs character `alignment`.
-- Python: `create_karaoke_ass_file(timestamps, "subs.ass")`, `assemble_video(bg, voice, timestamps)`.
+- `--music song.mp3` (default `assets/music/background.mp3` if present, `--no-music` to skip),
+  `--music-volume 0.14`, `--title-card "CAT LOGIC 101"`, `--popups popups.json`
+  (`[{"word": "cat", "emoji": "🐈", "query": "cat"}]`).
+- Python: `create_karaoke_ass_file(timestamps, "subs.ass", title_card=...)`,
+  `assemble_video(bg, voice, timestamps, music=..., overlays=[Overlay(png, start, end)], title_card=...)`.
 - Needs an ffmpeg with libass. Homebrew's default `ffmpeg` has none; the bundled `imageio-ffmpeg` has
   it and is picked automatically (or set `FFMPEG_BINARY`). Put extra fonts in `assets/fonts/`.
 

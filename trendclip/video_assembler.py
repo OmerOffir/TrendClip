@@ -5,7 +5,9 @@
     word timings   ─┘                                             → output/final_short.mp4
 
 Subtitles show 2-4 words at a time (uppercase, white, heavy black outline); the word being spoken
-turns yellow (or cyan) for exactly its duration.
+turns yellow (or cyan) for exactly its duration. Optional extras: a title card at the top for the
+first 3 seconds, transparent pop-up images (`overlays`, timed to spoken words) between the title and
+the subtitles, and background music ducked under the voice.
 
 Accepted timestamp JSON shapes (see `load_word_timings`):
     [{"word": "hello", "start": 0.12, "end": 0.48}, ...]          plain list (also text/start_time/end_time)
@@ -41,6 +43,7 @@ logger = logging.getLogger(__name__)
 WIDTH, HEIGHT = 1080, 1920
 DEFAULT_BACKGROUND = PROJECT_ROOT / "assets" / "backgrounds" / "latest_gameplay.mp4"
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "final_short.mp4"
+DEFAULT_MUSIC = PROJECT_ROOT / "assets" / "music" / "background.mp3"
 
 # ASS colours are &HAABBGGRR (alpha 00 = opaque).
 HIGHLIGHT_COLORS = {
@@ -254,6 +257,23 @@ def _resolve_color(color: str) -> str:
     raise AssemblyError(f"Unknown colour '{color}' (use yellow/cyan/green/orange, #RRGGBB or &HAABBGGRR)")
 
 
+def wrap_title(text: str, max_chars: int = 14, max_lines: int = 3) -> list[str]:
+    lines: list[str] = []
+    for word in text.split():
+        if lines and len(lines[-1]) + 1 + len(word) <= max_chars:
+            lines[-1] += " " + word
+        else:
+            lines.append(word)
+    return lines[:max_lines]
+
+
+def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True) -> str:
+    """Top banner for the first seconds: pops in, fades out."""
+    lines = [_ass_text(line, uppercase) for line in wrap_title(text)]
+    anim = r"{\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)}"
+    return f"Dialogue: 1,{_ass_time(0)},{_ass_time(seconds)},Title,,0,0,0,,{anim}" + r"\N".join(lines)
+
+
 def create_karaoke_ass_file(
     timestamps_data: Any,
     output_ass_path: str | Path,
@@ -269,11 +289,15 @@ def create_karaoke_ass_file(
     uppercase: bool = True,
     active_scale: int = 112,
     hold_seconds: float = 0.25,
+    title_card: str = "",
+    title_seconds: float = 3.0,
+    title_size: int = 132,
 ) -> Path:
     """Write a 1080x1920 .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
     Each word gets its own Dialogue event showing the whole line with that word highlighted, from the
-    word's start until the next word starts, so the colour moves exactly with the voice.
+    word's start until the next word starts, so the colour moves exactly with the voice. An optional
+    title card (black text on a white box, top centre) shows for the first `title_seconds`.
     """
     words = load_word_timings(timestamps_data)
     chunks = chunk_words(words, min_words=min_words, max_words=max_words)
@@ -290,11 +314,12 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,2,0,1,{outline},{shadow},2,70,70,{margin_v},1
+Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,200,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = []
+    events = [title_card_event(title_card, title_seconds, uppercase)] if title_card.strip() else []
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds
@@ -393,6 +418,75 @@ def video_filter(fit: Literal["crop", "blur"], fps: int) -> str:
     )
 
 
+def music_filter(duration: float, volume: float) -> str:
+    """Input 2 (music) under input 1 (voice): fade in/out, duck while the voice speaks → [aout]."""
+    fade_out = max(duration - 1.5, 0)
+    return (
+        # Mono voice copied to both channels at full level (a plain stereo upmix costs ~3 dB).
+        "[1:a]aformat=sample_rates=48000:channel_layouts=mono,pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
+        f"[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={volume:.3f},"
+        f"afade=t=in:d=0.8,afade=t=out:st={fade_out:.2f}:d=1.5[bed];"
+        # Gentle ducking: the music dips ~3-4 dB under speech and swells back in the pauses.
+        "[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=400[ducked];"
+        "[voice][ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]"
+    )
+
+
+@dataclass
+class Overlay:
+    """A pop-up image (transparent PNG) shown from `start` to `end` seconds."""
+
+    image: Path
+    start: float
+    end: float
+    x_offset: int = 0
+    tilt: float = 0.0
+
+
+POPUP_CENTER_Y = 800  # between the title card (top) and the subtitles (lower middle)
+POPUP_BOX = 460
+POP_SCALES = (0.3, 0.62, 0.92, 1.1, 1.13, 1.07, 1.0)  # pop-in, one frame each
+
+
+def popup_layout(index: int) -> tuple[int, float]:
+    """Alternate pop-ups slightly left/right with a small tilt so they feel hand placed."""
+    return [(-70, -7.0), (70, 6.0), (0, -3.0), (60, -5.0), (-60, 5.0)][index % 5]
+
+
+def render_pop_frames(image: Path, out_dir: Path, name: str, box: int = POPUP_BOX, tilt: float = 0.0) -> str:
+    """Pre-render the pop-in animation as PNG frames on a fixed canvas (ffmpeg holds the last one).
+    Returns the frame pattern relative to out_dir."""
+    from PIL import Image
+
+    img = Image.open(image).convert("RGBA")
+    scale = box / max(img.size)
+    img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+    if tilt:
+        img = img.rotate(tilt, resample=Image.BICUBIC, expand=True)
+    side = int(max(img.size) * max(POP_SCALES)) + 4
+    side += side % 2
+    for i, s in enumerate(POP_SCALES):
+        frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        w, h = max(1, round(img.width * s)), max(1, round(img.height * s))
+        sprite = img.resize((w, h), Image.BILINEAR)
+        frame.alpha_composite(sprite, ((side - w) // 2, (side - h) // 2))
+        frame.save(out_dir / f"{name}_{i:02d}.png")
+    return f"{name}_%02d.png"
+
+
+def overlay_filter(index: int, input_index: int, overlay: Overlay, fps: int, src: str, dst: str) -> str:
+    """Chain one pop-up (input `input_index`, PNG frames) onto video `src` → `dst`."""
+    duration = max(overlay.end - overlay.start, 0.3)
+    hold = max(duration - len(POP_SCALES) / fps, 0.05)
+    fade = min(0.2, duration / 4)
+    return (
+        f"[{input_index}:v]format=rgba,tpad=stop_mode=clone:stop_duration={hold:.3f},"
+        f"fade=t=out:st={duration - fade:.3f}:d={fade:.3f}:alpha=1,"
+        f"setpts=PTS-STARTPTS+{overlay.start:.3f}/TB[pop{index}];"
+        f"[{src}][pop{index}]overlay=x=(W-w)/2+{overlay.x_offset}:y={POPUP_CENTER_Y}-h/2:eof_action=pass[{dst}]"
+    )
+
+
 def assemble_video(
     background: str | Path,
     voiceover: str | Path,
@@ -406,11 +500,21 @@ def assemble_video(
     preset: str = "medium",
     keep_ass: bool = True,
     progress: Callable[[float | None, str], None] | None = None,
+    music: str | Path | None = None,
+    music_volume: float = 0.14,
+    music_start: float = 0.0,
+    overlays: list[Overlay] | None = None,
     **subtitle_style: Any,
 ) -> Path:
-    """Render the final Short: 9:16 background + voiceover + burned-in karaoke subtitles."""
+    """Render the final Short: 9:16 background + pop-up images + karaoke subtitles (+ title card via
+    `title_card=`) + voiceover (+ ducked music)."""
     background, voiceover, output = Path(background), Path(voiceover), Path(output)
-    for path, label in ((background, "Background video"), (voiceover, "Voiceover")):
+    overlays = [o for o in overlays or [] if o.end > o.start]
+    checks = [(background, "Background video"), (voiceover, "Voiceover")]
+    if music is not None:
+        checks.append((Path(music), "Music track"))
+    checks += [(Path(o.image), "Pop-up image") for o in overlays]
+    for path, label in checks:
         if not path.is_file():
             raise AssemblyError(f"{label} not found: {path}")
 
@@ -435,12 +539,25 @@ def assemble_video(
             cmd += ["-stream_loop", "-1"]
         if background_start:
             cmd += ["-ss", f"{background_start:.2f}"]
+        cmd += ["-i", str(background.resolve()), "-i", str(voiceover.resolve())]
+        graph = video_filter(fit, fps)
+        audio_out = "1:a:0"
+        if music is not None:
+            cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]
+            graph += ";" + music_filter(voice_len, music_volume)
+            audio_out = "[aout]"
+        current = "base"
+        first_input = 3 if music is not None else 2
+        for i, ov in enumerate(overlays):
+            pattern = render_pop_frames(Path(ov.image), work_dir, f"pop{i}", tilt=ov.tilt)
+            cmd += ["-framerate", str(fps), "-i", pattern]
+            graph += ";" + overlay_filter(i, first_input + i, ov, fps, current, f"ov{i}")
+            current = f"ov{i}"
+        # Relative names: the subtitles filter's own escaping breaks on ':' and quotes in paths.
+        graph += f";[{current}]subtitles=subs.ass:fontsdir=fonts[v]"
         cmd += [
-            "-i", str(background.resolve()),
-            "-i", str(voiceover.resolve()),
-            # Relative names: the subtitles filter's own escaping breaks on ':' and quotes in paths.
-            "-filter_complex", f"{video_filter(fit, fps)};[base]subtitles=subs.ass:fontsdir=fonts[v]",
-            "-map", "[v]", "-map", "1:a:0",
+            "-filter_complex", graph,
+            "-map", "[v]", "-map", audio_out,
             "-c:v", "libx264", "-preset", preset, "-crf", str(crf), "-pix_fmt", "yuv420p", "-profile:v", "high",
             "-c:a", "aac", "-b:a", "192k", "-ar", "48000",
             "-t", f"{voice_len:.3f}",
@@ -493,6 +610,21 @@ DEMO_TEXT = (
 )
 
 
+def _cli_overlays(popups_json: str, words: list[Word]) -> list[Overlay]:
+    from . import popups
+    from .config import get_settings
+
+    settings = get_settings()
+    wanted = [popups.Popup(**p) for p in json.loads(Path(popups_json).read_text(encoding="utf-8"))]
+    overlays = []
+    for timed in popups.schedule(wanted, words):
+        if asset := popups.fetch_asset(settings, timed.popup):
+            x, tilt = popup_layout(len(overlays))
+            overlays.append(Overlay(settings.assets_dir / "popups" / asset.filename, timed.start, timed.end, x, tilt))
+            print(f"pop-up {timed.popup.word!r} {timed.start:.2f}-{timed.end:.2f}s: {asset.title}")
+    return overlays
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Assemble a 9:16 Short with karaoke subtitles.")
     parser.add_argument("--background", default=str(DEFAULT_BACKGROUND), help="Background MP4 (default: latest_gameplay.mp4)")
@@ -511,6 +643,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--highlight", default="yellow", help="yellow | cyan | green | orange | #RRGGBB")
     parser.add_argument("--max-words", type=int, default=4, choices=range(1, 7))
     parser.add_argument("--position", type=int, default=620, help="Subtitle distance from the bottom (px of 1920)")
+    parser.add_argument("--music", default=str(DEFAULT_MUSIC) if DEFAULT_MUSIC.is_file() else None,
+                        help="Background music (default: assets/music/background.mp3 if it exists)")
+    parser.add_argument("--no-music", action="store_true")
+    parser.add_argument("--music-volume", type=float, default=0.14, help="Music level under the voice (0.12-0.15 ≈ -18..-16 dB)")
+    parser.add_argument("--title-card", default="", help="Top banner for the first 3 seconds, e.g. 'CAT LOGIC 101'")
+    parser.add_argument("--popups", help='JSON file: [{"word": "cat", "emoji": "🐈", "query": "cat"}, ...]')
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING, format="%(levelname)s %(message)s")
@@ -528,10 +666,13 @@ def main(argv: list[str] | None = None) -> int:
             voice = Path(args.voice)
             timings = args.timestamps or estimate_word_timings(args.text, media_duration(voice))
 
+        overlays = _cli_overlays(args.popups, load_word_timings(timings)) if args.popups else []
         result = assemble_video(
             args.background, voice, timings, output,
             fit=args.fit, background_start=args.start, font=args.font, font_size=args.font_size,
             highlight=args.highlight, max_words=args.max_words, margin_v=args.position,
+            music=None if args.no_music else args.music, music_volume=args.music_volume,
+            title_card=args.title_card, overlays=overlays,
         )
     except (AssemblyError, OSError, subprocess.CalledProcessError) as err:
         print(f"Error: {err}", file=sys.stderr)

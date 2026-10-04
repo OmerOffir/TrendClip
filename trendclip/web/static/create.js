@@ -33,10 +33,25 @@
     render: $("cRender"),
     renderJob: $("cRenderJob"),
     shorts: $("shortsList"),
+    mode: $("cMode"),
+    music: $("cMusic"),
+    musicVol: $("cMusicVol"),
+    track: $("cTrack"),
+    trackTitle: $("cTrackTitle"),
+    trackAudio: $("cTrackAudio"),
+    trackMeta: $("cTrackMeta"),
+    shuffle: $("cShuffle"),
+    titleCard: $("cTitleCard"),
+    popups: $("cPopups"),
+    popWord: $("cPopWord"),
+    popEmoji: $("cPopEmoji"),
+    popAdd: $("cPopAdd"),
   };
 
   const DRAFT_KEY = "trendclip.createDraft";
-  const DRAFT_FIELDS = ["game", "length", "notes", "script", "title", "desc", "tags", "voice", "rate", "highlight", "words", "fit"];
+  const DRAFT_FIELDS = ["mode", "game", "length", "notes", "script", "title", "desc", "tags", "titleCard", "voice", "rate",
+    "highlight", "words", "fit", "music", "musicVol"];
+  const ASYNC_FIELDS = ["voice", "music"]; // options arrive from the server; applied after loading
   const HIGHLIGHT_CSS = { yellow: "#ffff00", cyan: "#00ffff", green: "#00ff00", orange: "#ffa500" };
 
   const state = {
@@ -46,6 +61,10 @@
     scriptJob: null,
     renderJob: null,
     started: false,
+    track: null, // previewed music track (DownloadedTrack)
+    trackHistory: [],
+    picking: false,
+    popups: [], // [{word, emoji, query}]
   };
 
   const clips = () => T.getClips() || [];
@@ -63,14 +82,23 @@
     const draft = { clip: state.clip };
     for (const key of DRAFT_FIELDS) draft[key] = els[key].value;
     draft.watch = els.watch.checked;
+    draft.popups = state.popups;
     localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
   }
 
   function loadDraft() {
     try {
       const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}");
-      for (const key of DRAFT_FIELDS) if (draft[key] != null && key !== "voice") els[key].value = draft[key];
+      for (const key of DRAFT_FIELDS) {
+        if (draft[key] == null || ASYNC_FIELDS.includes(key)) continue;
+        const el = els[key];
+        el.value = draft[key];
+        if (el.tagName === "SELECT" && el.value === "") {
+          el.selectedIndex = Math.max(0, [...el.options].findIndex((o) => o.defaultSelected));
+        }
+      }
       if (draft.watch != null) els.watch.checked = draft.watch;
+      if (Array.isArray(draft.popups)) state.popups = draft.popups;
       state.clip = draft.clip || null;
       return draft;
     } catch (_) {
@@ -144,7 +172,7 @@
 
   function scriptStats() {
     const words = els.script.value.trim().split(/\s+/).filter(Boolean).length;
-    const wps = (state.status && state.status.words_per_second) || 3.6;
+    const wps = (state.status && state.status.words_per_second) || 3.3;
     const rate = 1 + parseInt(els.rate.value, 10) / 100 - 0.05;
     const secs = words / (wps * rate);
     const target = Number(els.length.value);
@@ -158,10 +186,113 @@
     const busyRender = state.renderJob != null;
     const hasClip = !!selectedClip();
     const gemini = state.status && state.status.gemini_enabled;
+    const story = els.mode.value === "story";
     els.write.disabled = busyScript || !hasClip || !els.game.value.trim() || !gemini;
     els.write.title = !gemini ? "Add GEMINI_API_KEY to .env first" : !hasClip ? "Pick a clip first" : "";
-    els.render.disabled = busyRender || !hasClip || els.script.value.trim().split(/\s+/).length < 3;
+    els.write.textContent = busyScript ? "Writing…" : story ? "Write a random story with Gemini" : "Write script with Gemini";
+    els.watch.disabled = story;
+    els.watch.closest(".check").classList.toggle("disabled", story);
+    els.watch.closest(".check").title = story ? "Not needed: the story is not about the clip" : "";
+    els.render.disabled = busyRender || state.picking || !hasClip || els.script.value.trim().split(/\s+/).length < 3;
     els.render.textContent = busyRender ? "Creating…" : "Create Short";
+  }
+
+  // ---- pop-up images -------------------------------------------------------------------
+
+  const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  function inScript(word) {
+    const first = norm(word.split(/\s+/)[0] || "");
+    if (!first) return false;
+    return els.script.value.split(/\s+/).some((t) => {
+      const n = norm(t);
+      const [a, b] = n.length > first.length ? [n, first] : [first, n];
+      return n === first || (b.length >= 3 && a.startsWith(b) && a.length - b.length <= 2);
+    });
+  }
+
+  function renderPopups() {
+    els.popups.innerHTML = state.popups.length
+      ? state.popups.map((p, i) => {
+          const ok = inScript(p.word);
+          return `<span class="chip${ok ? "" : " missing"}" title="${ok ? esc(p.query || p.word) : "This word is not in the script, so it will not pop up"}">
+            ${esc(p.emoji || "🖼️")} ${esc(p.word)}<button type="button" data-pop-remove="${i}" aria-label="Remove">×</button></span>`;
+        }).join("")
+      : `<span class="hint">None. Gemini suggests some with the script, or add your own.</span>`;
+  }
+
+  function addPopup() {
+    const word = els.popWord.value.trim();
+    if (!word) return;
+    state.popups.push({ word, emoji: els.popEmoji.value.trim(), query: word });
+    els.popWord.value = "";
+    els.popEmoji.value = "";
+    renderPopups();
+    saveDraft();
+  }
+
+  // ---- background music ----------------------------------------------------------------
+
+  async function loadMusic(preferred) {
+    try {
+      const { body } = await api("/api/create/music");
+      for (const s of body.sources) {
+        const label = `${s.title}${s.mood ? ` · ${s.mood}` : ""} (${s.tracks} tracks)`;
+        els.music.append(new Option(label, s.id));
+      }
+    } catch (err) {
+      els.music.append(new Option(`Music list unavailable (${err.message})`, "none"));
+    }
+    if (preferred && [...els.music.options].some((o) => o.value === preferred)) els.music.value = preferred;
+    if (els.music.value !== "none") pickTrack();
+  }
+
+  function renderTrack() {
+    const t = state.track;
+    els.track.hidden = els.music.value === "none" || (!t && !state.picking);
+    if (state.picking) {
+      els.trackTitle.textContent = "Picking a random track…";
+      els.trackMeta.textContent = "";
+      els.trackAudio.hidden = true;
+      return;
+    }
+    if (!t) return;
+    els.trackTitle.textContent = t.title;
+    els.trackTitle.title = t.title;
+    els.trackAudio.hidden = false;
+    const src = `/media/music/${encodeURIComponent(t.filename)}`;
+    if (els.trackAudio.getAttribute("src") !== src) els.trackAudio.src = src;
+    els.trackAudio.volume = 0.6;
+    const len = t.duration_seconds ? ` · ${T.fmtLength(t.duration_seconds)}` : "";
+    els.trackMeta.innerHTML = `${esc(t.channel_title)}${esc(len)} · <a href="${esc(t.url)}" target="_blank" rel="noopener">source</a> · credit is added to the description`;
+  }
+
+  async function pickTrack() {
+    if (els.music.value === "none") {
+      state.track = null;
+      els.trackAudio.pause();
+      renderTrack();
+      return;
+    }
+    state.picking = true;
+    renderTrack();
+    updateButtons();
+    try {
+      const { body } = await api("/api/create/music/pick", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source: els.music.value, exclude: state.trackHistory.slice(-30) }),
+      });
+      state.track = body;
+      state.trackHistory.push(body.video_id);
+    } catch (err) {
+      state.track = null;
+      showError(`Could not get music: ${err.message}`);
+    } finally {
+      state.picking = false;
+      renderTrack();
+      updateButtons();
+    }
   }
 
   // ---- jobs ------------------------------------------------------------------------------
@@ -217,6 +348,7 @@
           notes: els.notes.value,
           target_seconds: Number(els.length.value),
           watch_clip: els.watch.checked,
+          mode: els.mode.value,
         }),
       });
       state.scriptJob = body.id;
@@ -227,9 +359,13 @@
         els.title.value = r.title;
         els.desc.value = r.description;
         els.tags.value = r.hashtags.join(" ");
+        els.titleCard.value = r.title_card || "";
+        state.popups = r.popups || [];
+        renderPopups();
         els.onScreen.hidden = !r.on_screen;
-        els.onScreen.innerHTML = `<b>${r.watched_clip ? "Gemini saw" : "Gemini assumed"}:</b> ${esc(r.on_screen)}` +
-          (titles.length ? ` <span class="hint">· used ${titles.length} trending titles</span>` : "");
+        const label = r.mode === "story" ? "Story" : r.watched_clip ? "Gemini saw" : "Gemini assumed";
+        els.onScreen.innerHTML = `<b>${label}:</b> ${esc(r.on_screen)}` +
+          (titles.length && r.mode !== "story" ? ` <span class="hint">· used ${titles.length} trending titles</span>` : "");
         els.scriptJob.innerHTML = `<div class="dl-meta">Written by ${esc(r.model)} · ${r.word_count} words ≈ ${Math.round(r.estimated_seconds)}s · edit anything below</div>`;
         scriptStats();
         saveDraft();
@@ -256,11 +392,16 @@
           title: els.title.value,
           description: els.desc.value,
           hashtags: tags,
+          title_card: els.titleCard.value.trim(),
+          popups: state.popups.filter((p) => inScript(p.word)),
           voice: els.voice.value || null,
           rate: els.rate.value,
           highlight: els.highlight.value,
           fit: els.fit.value,
           max_words: Number(els.words.value),
+          music_source: els.music.value,
+          music_track: state.track ? state.track.video_id : null,
+          music_volume: Number(els.musicVol.value),
         }),
       });
       state.renderJob = body.id;
@@ -305,6 +446,8 @@
             <div class="dl-title">${esc(s.title)}</div>
             <div class="dl-meta">${esc(s.game)} · ${s.duration_seconds ? `${Math.round(s.duration_seconds)}s` : ""} · ${esc(when)}</div>
             <div class="dl-meta tags">${esc(s.hashtags.join(" "))}</div>
+            ${s.music_title ? `<div class="dl-meta">♪ <a href="${esc(s.music_url)}" target="_blank" rel="noopener">${esc(s.music_title)}</a></div>` : ""}
+            ${s.popups && s.popups.length ? `<div class="dl-meta">Pop-ups: ${esc(s.popups.join(", "))}</div>` : ""}
             <div class="dl-actions">
               <a href="${src}" download>Download</a>
               <button type="button" class="dl-copy" data-copy-title="${esc(s.filename)}">Copy title</button>
@@ -409,13 +552,31 @@
       els[key].addEventListener("input", () => {
         saveDraft();
         if (key === "script" || key === "length" || key === "rate") scriptStats();
+        if (key === "script") renderPopups();
         if (key === "game") updateButtons();
       });
       els[key].addEventListener("change", () => {
         saveDraft();
         if (["fit", "words", "highlight"].includes(key)) updatePreview();
+        if (key === "mode") updateButtons();
+        if (key === "music") pickTrack();
       });
     }
+    els.shuffle.addEventListener("click", pickTrack);
+    els.popAdd.addEventListener("click", addPopup);
+    for (const input of [els.popWord, els.popEmoji]) {
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") { e.preventDefault(); addPopup(); }
+      });
+    }
+    els.popups.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-pop-remove]");
+      if (!btn) return;
+      state.popups.splice(Number(btn.dataset.popRemove), 1);
+      renderPopups();
+      saveDraft();
+    });
+    renderPopups();
     els.watch.addEventListener("change", saveDraft);
 
     els.shorts.addEventListener("click", (e) => {
@@ -438,6 +599,7 @@
     document.addEventListener("trendclip:view", (e) => {
       if (e.detail.view !== "create") {
         els.preview.pause();
+        els.trackAudio.pause();
         return;
       }
       start();
@@ -451,10 +613,12 @@
     if (state.started) return;
     state.started = true;
     const draft = loadDraft();
+    renderPopups();
     renderPicker();
     scriptStats();
     await loadStatus();
     loadVoices(draft.voice);
+    loadMusic(draft.music);
     loadShorts();
     scriptStats();
   }
