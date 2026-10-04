@@ -22,6 +22,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 VENV_PYTHON = ROOT / ".venv" / "bin" / "python"
+DEFAULT_PORT = 8000
 
 
 def _ensure_venv() -> None:
@@ -63,17 +64,24 @@ def _run_web(args: list[str]) -> int:
     import uvicorn
 
     host = _pop_option(args, "--host", "127.0.0.1")
-    port = int(_pop_option(args, "--port", "8000"))
+    explicit_port = "--port" in args
+    port = int(_pop_option(args, "--port", str(DEFAULT_PORT)))
     reload = _pop_flag(args, "--reload")
+
     if not _port_free(host, port):
-        print(
-            f"Port {port} is already in use (is the dashboard already running?).\n"
-            f"  Open it:      http://{host}:{port}\n"
-            f"  Stop it:      lsof -ti tcp:{port} -sTCP:LISTEN | xargs kill\n"
-            f"  Or use another port: ./run.sh web --port {port + 1}",
-            file=sys.stderr,
-        )
-        return 1
+        fallback = None
+        if not explicit_port:
+            fallback = next((p for p in range(port + 1, port + 20) if _port_free(host, p)), None)
+        if fallback is None:
+            print(
+                f"Port {port} is already in use by another program.\n"
+                f"  See what it is: lsof -nP -iTCP:{port} -sTCP:LISTEN\n"
+                f"  Or use another port: ./run.sh web --port {port + 1}",
+                file=sys.stderr,
+            )
+            return 1
+        print(f"Port {port} is busy (another program is using it); using {fallback} instead.", flush=True)
+        port = fallback
     print(f"TrendClipper dashboard: http://{host}:{port}", flush=True)
     uvicorn.run("trendclip.web.app:app", host=host, port=port, reload=reload, app_dir=str(ROOT))
     return 0

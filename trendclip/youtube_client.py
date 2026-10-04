@@ -192,6 +192,67 @@ class YouTubeClient:
                 )
             return matching[:max_results]
 
+    def resolve_channel(self, ref: str) -> dict | None:
+        """Channel by id (UC...), handle (@name) or plain name -> {id, title, uploads, video_count}.
+
+        Plain names first try the matching handle (1 unit) before search.list (100 units).
+        """
+        ref = ref.strip()
+        explicit = ref.startswith("@") or (ref.startswith("UC") and len(ref) == 24)
+        if explicit:
+            params = {"forHandle": ref} if ref.startswith("@") else {"id": ref}
+        else:
+            # A guessed handle can belong to an unrelated empty channel, so require uploads.
+            params = {"forHandle": "@" + re.sub(r"\s+", "", ref)}
+
+        response = self._execute(
+            self._yt.channels().list(part="snippet,contentDetails,statistics", **params)
+        )
+        for item in response.get("items", []):
+            info = self._channel_info(item)
+            if explicit or info["video_count"] > 0:
+                return info
+        if explicit:
+            return None
+
+        response = self._execute(self._yt.search().list(part="snippet", q=ref, type="channel", maxResults=1))
+        items = response.get("items", [])
+        return self.resolve_channel(items[0]["snippet"]["channelId"]) if items else None
+
+    @staticmethod
+    def _channel_info(item: dict) -> dict:
+        return {
+            "id": item["id"],
+            "title": item["snippet"]["title"],
+            "uploads": item["contentDetails"]["relatedPlaylists"]["uploads"],
+            "video_count": int(item.get("statistics", {}).get("videoCount", 0)),
+        }
+
+    def list_uploads(self, playlist_id: str, max_items: int = 1000) -> list[dict]:
+        """Newest-first uploads of a playlist: [{video_id, title, published_at}] (1 unit / 50 items)."""
+        videos: list[dict] = []
+        page_token: str | None = None
+        while len(videos) < max_items:
+            params = {"part": "snippet", "playlistId": playlist_id, "maxResults": _PAGE_SIZE}
+            if page_token:
+                params["pageToken"] = page_token
+            response = self._execute(self._yt.playlistItems().list(**params))
+            for item in response.get("items", []):
+                snippet = item.get("snippet", {})
+                video_id = snippet.get("resourceId", {}).get("videoId")
+                if video_id and snippet.get("title") not in ("Private video", "Deleted video"):
+                    videos.append(
+                        {
+                            "video_id": video_id,
+                            "title": snippet.get("title", ""),
+                            "published_at": snippet.get("publishedAt"),
+                        }
+                    )
+            page_token = response.get("nextPageToken")
+            if not page_token:
+                break
+        return videos[:max_items]
+
     def get_categories(self, region: str) -> list[dict[str, str]]:
         """Assignable video categories for a region: [{"id": "20", "title": "Gaming"}, ...]."""
         response = self._execute(self._yt.videoCategories().list(part="snippet", regionCode=region))

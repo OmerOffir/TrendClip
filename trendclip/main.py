@@ -12,7 +12,7 @@ import logging
 import sys
 from pathlib import Path
 
-from . import aggregator
+from . import aggregator, games
 from .config import ConfigError, Settings, get_settings
 from .models import PipelineResult, RunStats
 from .youtube_client import YouTubeClient, YouTubeFatalError
@@ -41,14 +41,21 @@ def run_pipeline(settings: Settings, yt: YouTubeClient | None = None) -> Pipelin
     stats.outlier_videos = len(outliers)
     logger.info("YouTube: %d unique videos, %d outliers", len(videos), len(outliers))
 
+    game_trends = games.summarize_games(videos)
+    unmatched = [v for v in videos if v.game is None]
+    stats.games_detected = len(game_trends)
+    stats.videos_with_game = len(videos) - len(unmatched)
+    logger.info("Games: %d detected across %d videos", len(game_trends), stats.videos_with_game)
+
     candidates = aggregator.rank_candidates(
-        aggregator.build_topics(videos, max_topics=settings.top_topics * 2), settings.top_topics
+        aggregator.build_topics(unmatched, max_topics=settings.top_topics * 2), settings.top_topics
     )
 
     return PipelineResult(
         regions=settings.yt_regions,
         category_id=settings.yt_category_id,
         stats=stats,
+        games=game_trends,
         candidates=candidates,
         outlier_videos=outliers[:20],
         videos=videos,
@@ -66,20 +73,30 @@ def write_result(result: PipelineResult, output_dir: Path) -> Path:
     return path
 
 
-def format_summary(result: PipelineResult, max_outliers: int = 5) -> str:
+def format_summary(result: PipelineResult, max_games: int = 15, max_outliers: int = 5) -> str:
+    s = result.stats
     lines = [
-        f"\nRegions: {', '.join(result.regions)} | category: {result.category_id or 'all'} | videos: {result.stats.videos_fetched} "
-        f"| outliers: {result.stats.outlier_videos} | topics: {len(result.candidates)}",
+        f"\nRegions: {', '.join(result.regions)} | category: {result.category_id or 'all'} "
+        f"| videos: {s.videos_fetched} | outliers: {s.outlier_videos} "
+        f"| games: {s.games_detected} ({s.videos_with_game} videos matched)",
         "",
-        f"{'#':>2}  {'score':>6}  {'vids':>4}  {'max views/h':>11}  topic",
+        "Top trending games:",
+        f"{'#':>3}  {'score':>6}  {'vids':>4}  {'views/h':>9}  {'share':>6}  game",
     ]
-    for i, c in enumerate(result.candidates, 1):
-        lines.append(f"{i:>2}  {c.score:>6.1f}  {c.video_count:>4}  {c.max_views_per_hour:>11,.0f}  {c.topic}")
+    for i, g in enumerate(result.games[:max_games], 1):
+        lines.append(
+            f"{i:>3}  {g.score:>6.1f}  {g.video_count:>4}  {g.views_per_hour:>9,.0f}  {g.view_share:>6.1%}  {g.name}"
+        )
+    if result.candidates:
+        lines += ["", "Emerging topics (videos not matched to a known game):"]
+        for c in result.candidates:
+            lines.append(f"       {c.score:>6.1f}  {c.video_count:>4}  {c.topic}")
     if result.outlier_videos:
         lines += ["", "Top outlier videos:"]
         for v in result.outlier_videos[:max_outliers]:
             ratio = f"{v.outlier_ratio:.1f}x subs" if v.outlier_ratio is not None else "subs hidden"
-            lines.append(f"  {v.views_per_hour:>9,.0f} views/h  {ratio:>12}  {v.title[:60]}  {v.url}")
+            game = f"[{v.game}] " if v.game else ""
+            lines.append(f"  {v.views_per_hour:>9,.0f} views/h  {ratio:>12}  {game}{v.title[:60]}  {v.url}")
     return "\n".join(lines) + "\n"
 
 

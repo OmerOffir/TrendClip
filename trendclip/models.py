@@ -36,6 +36,8 @@ class YouTubeVideo(BaseModel):
     comments: int | None = None  # None when comments are disabled
     channel_subscribers: int | None = None  # None when the subscriber count is hidden
     is_outlier: bool = False
+    game: str | None = None  # primary detected game
+    games: list[str] = Field(default_factory=list)
 
     @computed_field
     @property
@@ -97,9 +99,25 @@ class TrendCandidate(BaseModel):
     videos: list[YouTubeVideo] = Field(default_factory=list)
 
 
+class GameTrend(BaseModel):
+    name: str
+    franchise: str | None = None
+    score: float  # sum of member videos' velocity scores
+    video_count: int
+    outlier_count: int
+    total_views: int
+    views_per_hour: float  # combined, across this game's trending videos
+    view_share: float  # share of all fetched videos' combined views/hour
+    regions: list[str] = Field(default_factory=list)
+    channels: list[str] = Field(default_factory=list)
+    videos: list[YouTubeVideo] = Field(default_factory=list)
+
+
 class RunStats(BaseModel):
     videos_fetched: int = 0
     outlier_videos: int = 0
+    games_detected: int = 0
+    videos_with_game: int = 0
 
 
 class PipelineResult(BaseModel):
@@ -108,6 +126,8 @@ class PipelineResult(BaseModel):
     regions: list[str]
     category_id: str | None  # None = all categories
     stats: RunStats
+    games: list[GameTrend] = Field(default_factory=list)
+    # Keyword topics from videos that matched no known game (new releases, events, memes).
     candidates: list[TrendCandidate]
     outlier_videos: list[YouTubeVideo]
     videos: list[YouTubeVideo] = Field(default_factory=list)  # every fetched video, by velocity

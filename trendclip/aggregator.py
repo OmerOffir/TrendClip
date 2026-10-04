@@ -19,6 +19,16 @@ STOPWORDS = frozenset(
     what when where which who why will with you your vs ft feat x i'm we're you're don't can't
     how all out new more most best ever first last one two get got got can now day days
     """.split()
+) | frozenset(
+    # Common German / Spanish / Portuguese / French words seen in multi-region charts.
+    """
+    der die das und ich du er sie es wir ihr ist nicht ein eine mit auf von zu im den dem des bei
+    aus wie was auch noch nur mal jetzt hier
+    de da do dos das em um uma com para por no na os as que se mais novo nova muito
+    el la los las en un una con es lo mi tu su del al como pero esta este
+    le les une des et du au aux pour avec sur dans est pas qui ce je il elle nous vous
+    www http https twitch discord tiktok instagram
+    """.split()
 )
 
 # Words that describe the format rather than the subject.
@@ -28,7 +38,7 @@ GENERIC_TERMS = frozenset(
     part episode ep full walkthrough playthrough guide tips tricks funny moments highlights shorts
     short clip clips reaction review reviews pc console ps4 ps5 xbox switch mobile android ios
     let's lets play playing played series season chapter edition hd 4k 60fps free tutorial
-    trailers teasers reels viral fyp trending
+    trailers teasers reels viral fyp trending shortsfeed shortvideo ytshorts foryou ovo
     """.split()
 )
 _TOKEN_RE = re.compile(r"[a-z0-9][a-z0-9'+]*")

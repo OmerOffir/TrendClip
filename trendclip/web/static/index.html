@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>TrendClipper — YouTube Trend Radar</title>
+  <title>TrendClipper — Trending Games on YouTube</title>
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
@@ -12,15 +12,134 @@
       <div class="brand-mark" aria-hidden="true"><span></span></div>
       <div>
         <h1>TrendClipper</h1>
-        <p>YouTube trend radar</p>
+        <p>Trending games on YouTube</p>
       </div>
     </div>
+    <nav class="nav" id="nav" role="tablist" aria-label="Sections">
+      <button type="button" role="tab" data-view="trends" class="active">Trends</button>
+      <button type="button" role="tab" data-view="create">Create</button>
+    </nav>
     <div class="status" id="status" aria-live="polite"></div>
   </header>
 
-  <main class="container">
+  <main class="container view" id="viewCreate" hidden>
+    <div id="createBanner" class="banner banner-warn" hidden></div>
+    <div id="createError" class="banner banner-error" hidden></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2><span class="step">1</span>Pick a background clip</h2>
+          <span class="hint">Your downloaded gameplay · get more with <b>Get gameplay</b> in the Trends tab (vertical clips look best)</span>
+        </div>
+      </div>
+      <div id="clipPicker" class="clip-picker"></div>
+    </section>
+
+    <div class="create-grid">
+      <section class="card form">
+        <div class="card-head">
+          <div>
+            <h2><span class="step">2</span>Script</h2>
+            <span class="hint" id="geminiInfo">Gemini watches the clip and writes the voiceover, title and hashtags</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <label class="field field-grow"><span>Game</span><input id="cGame" type="text" maxlength="80" placeholder="e.g. Minecraft" /></label>
+          <label class="field">
+            <span>Length</span>
+            <select id="cLength">
+              <option value="15">15 seconds</option>
+              <option value="20">20 seconds</option>
+              <option value="30" selected>30 seconds</option>
+              <option value="45">45 seconds</option>
+              <option value="60">60 seconds</option>
+            </select>
+          </label>
+        </div>
+        <label class="field"><span>Notes for Gemini (optional)</span>
+          <textarea id="cNotes" rows="2" maxlength="1000" placeholder="Angle or tone, e.g. 'speedrun tips for beginners', 'funny', 'mention the new update'"></textarea>
+        </label>
+        <div class="form-row form-actions">
+          <label class="check"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
+          <button id="cWrite" class="btn-primary" type="button">Write script with Gemini</button>
+        </div>
+        <div id="cScriptJob" class="job" hidden></div>
+        <div id="cOnScreen" class="seen" hidden></div>
+
+        <label class="field"><span>Voiceover script <em id="cScriptStats"></em></span>
+          <textarea id="cScript" rows="7" maxlength="3000" placeholder="Generate with Gemini, or type your own voiceover here."></textarea>
+        </label>
+        <label class="field"><span>Title</span><input id="cTitle" type="text" maxlength="150" /></label>
+        <label class="field"><span>Description</span><textarea id="cDesc" rows="3" maxlength="4000"></textarea></label>
+        <label class="field"><span>Hashtags</span><input id="cTags" type="text" placeholder="#minecraft #gaming #shorts" /></label>
+      </section>
+
+      <section class="card form">
+        <div class="card-head"><h2><span class="step">3</span>Voice &amp; style</h2></div>
+        <div class="form-row">
+          <label class="field field-grow"><span>Voice</span><select id="cVoice"><option value="">Loading voices…</option></select></label>
+          <label class="field">
+            <span>Speed</span>
+            <select id="cRate">
+              <option value="-10%">Slower</option>
+              <option value="+0%">Normal</option>
+              <option value="+5%" selected>Slightly fast</option>
+              <option value="+12%">Fast</option>
+              <option value="+20%">Very fast</option>
+            </select>
+          </label>
+        </div>
+        <div class="form-row">
+          <label class="field">
+            <span>Highlight</span>
+            <select id="cHighlight">
+              <option value="yellow">Yellow</option>
+              <option value="cyan">Cyan</option>
+              <option value="green">Green</option>
+              <option value="orange">Orange</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Words per line</span>
+            <select id="cWords">
+              <option value="2">2</option>
+              <option value="3" selected>3</option>
+              <option value="4">4</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>Layout</span>
+            <select id="cFit">
+              <option value="crop">Fill (crop sides)</option>
+              <option value="blur">Whole frame + blur</option>
+            </select>
+          </label>
+        </div>
+        <div class="phone" id="cPhone">
+          <video id="cPreview" muted loop playsinline></video>
+          <div class="phone-sub" id="cPhoneSub">YOUR <b>SUBTITLES</b> HERE</div>
+          <div class="phone-empty" id="cPhoneEmpty">Pick a clip</div>
+        </div>
+        <button id="cRender" class="btn-primary btn-block" type="button">Create Short</button>
+        <div id="cRenderJob" class="job" hidden></div>
+      </section>
+    </div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Your Shorts</h2>
+          <span class="hint">Saved in output/shorts · the newest is also output/final_short.mp4</span>
+        </div>
+      </div>
+      <div id="shortsList" class="shorts-list"></div>
+    </section>
+  </main>
+
+  <main class="container view" id="viewTrends">
     <section class="card controls" aria-label="Filters">
-      <label class="field">
+      <label class="field field-wide">
         <span>Region</span>
         <select id="region"></select>
       </label>
@@ -31,7 +150,7 @@
         </select>
       </label>
       <label class="field">
-        <span>Videos</span>
+        <span>Videos per region</span>
         <select id="maxResults">
           <option value="25">25</option>
           <option value="50">50</option>
@@ -40,12 +159,11 @@
         </select>
       </label>
       <label class="field">
-        <span>Topics</span>
+        <span>Emerging topics</span>
         <select id="top">
           <option value="5">5</option>
           <option value="10">10</option>
           <option value="20">20</option>
-          <option value="30">30</option>
         </select>
       </label>
       <button id="refresh" class="btn-primary" type="button">
@@ -57,22 +175,68 @@
     <div id="error" class="banner banner-error" hidden></div>
     <div id="warnings" class="banner banner-warn" hidden></div>
 
-    <section class="stats" id="stats" aria-label="Summary">
-      <div class="stat"><span class="stat-label">Videos analyzed</span><span class="stat-value" id="statVideos">–</span></div>
-      <div class="stat"><span class="stat-label">Outlier videos</span><span class="stat-value accent" id="statOutliers">–</span></div>
-      <div class="stat"><span class="stat-label">Topics</span><span class="stat-value" id="statTopics">–</span></div>
-      <div class="stat"><span class="stat-label">Fastest video</span><span class="stat-value" id="statFastest">–</span><span class="stat-sub">views / hour</span></div>
+    <section class="stats" aria-label="Summary">
+      <div class="stat"><span class="stat-label">#1 trending game</span><span class="stat-value accent" id="statTopGame">–</span><span class="stat-sub" id="statTopGameSub"></span></div>
+      <div class="stat"><span class="stat-label">Games detected</span><span class="stat-value" id="statGames">–</span><span class="stat-sub" id="statGamesSub"></span></div>
+      <div class="stat"><span class="stat-label">Videos analyzed</span><span class="stat-value" id="statVideos">–</span><span class="stat-sub" id="statVideosSub"></span></div>
+      <div class="stat"><span class="stat-label">Outlier videos</span><span class="stat-value" id="statOutliers">–</span><span class="stat-sub">beating their channel size</span></div>
+    </section>
+
+    <section class="card hero" aria-label="Top trending games">
+      <div class="card-head">
+        <div>
+          <h2>Top trending games</h2>
+          <span class="hint">Ranked from the YouTube trending chart · click a game for its videos and channels</span>
+        </div>
+        <div class="tabs" id="gameSort" role="tablist" aria-label="Rank games by">
+          <button type="button" role="tab" data-sort="score" class="active">Momentum</button>
+          <button type="button" role="tab" data-sort="views_per_hour">Views / hour</button>
+          <button type="button" role="tab" data-sort="video_count">Videos</button>
+          <button type="button" role="tab" data-sort="total_views">Total views</button>
+        </div>
+      </div>
+      <ol id="games" class="games"></ol>
+      <button id="gamesMore" class="btn-ghost" type="button" hidden></button>
+    </section>
+
+    <section class="card" id="downloadsCard" aria-label="Background gameplay downloads">
+      <div class="card-head">
+        <div>
+          <h2>Background gameplay</h2>
+          <span class="hint" id="libraryInfo">Random no-copyright footage for a game · use the download button on any game above</span>
+        </div>
+      </div>
+      <div class="controls dl-controls">
+        <label class="field field-wide">
+          <span>Source</span>
+          <select id="dlSource">
+            <option value="auto">Auto (Pexels, then No-Copyright YouTube)</option>
+            <option value="youtube">No-Copyright YouTube channels</option>
+            <option value="pexels">Pexels</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Clip length</span>
+          <select id="dlSeconds">
+            <option value="30">30 seconds</option>
+            <option value="60">60 seconds</option>
+            <option value="120">2 minutes</option>
+            <option value="300">5 minutes</option>
+            <option value="0">Full video</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Orientation</span>
+          <select id="dlOrientation">
+            <option value="landscape">Landscape 16:9</option>
+            <option value="portrait">Vertical 9:16</option>
+          </select>
+        </label>
+      </div>
+      <div id="downloads" class="downloads"></div>
     </section>
 
     <div class="grid">
-      <section class="card">
-        <div class="card-head">
-          <h2>Trending topics</h2>
-          <span class="hint">Click a topic to see its videos</span>
-        </div>
-        <ol id="topics" class="topics"></ol>
-      </section>
-
       <section class="card">
         <div class="card-head">
           <h2>Outlier videos</h2>
@@ -80,23 +244,34 @@
         </div>
         <div id="outliers" class="outliers"></div>
       </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>Emerging topics</h2>
+          <span class="hint">From videos not matched to a known game — new releases, events, memes</span>
+        </div>
+        <ol id="topics" class="topics"></ol>
+      </section>
     </div>
 
     <section class="card">
       <div class="card-head">
         <h2>All trending videos</h2>
-        <input id="search" class="search" type="search" placeholder="Filter by title or channel…" />
+        <div class="table-tools">
+          <select id="gameFilter" aria-label="Filter by game"><option value="">All games</option></select>
+          <input id="search" class="search" type="search" placeholder="Filter by title or channel…" />
+        </div>
       </div>
       <div class="table-wrap">
         <table class="videos">
           <thead>
             <tr>
               <th>Video</th>
+              <th>Game</th>
               <th class="num sortable" data-sort="velocity_score">Velocity</th>
               <th class="num sortable" data-sort="views_per_hour">Views/h</th>
               <th class="num sortable" data-sort="views">Views</th>
               <th class="num sortable" data-sort="outlier_ratio">vs subs</th>
-              <th class="num sortable" data-sort="engagement_rate">Engagement</th>
               <th class="num sortable" data-sort="age_hours">Age</th>
             </tr>
           </thead>
@@ -106,8 +281,9 @@
     </section>
   </main>
 
-  <div id="loading" class="loading" hidden><div class="spinner"></div><span>Fetching trends from YouTube…</span></div>
+  <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Fetching trends from YouTube…</span></div>
 
   <script src="/static/app.js"></script>
+  <script src="/static/create.js"></script>
 </body>
 </html>

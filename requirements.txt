@@ -2,6 +2,15 @@ google-api-python-client>=2.100
 python-dotenv>=1.0
 pydantic>=2.5
 
+# background gameplay downloads
+requests>=2.31
+yt-dlp>=2025.1.1
+imageio-ffmpeg>=0.5  # bundled ffmpeg fallback when ffmpeg isn't installed
+
+# create tab: script writing + voiceover
+google-genai>=2.0
+edge-tts>=7.0
+
 # web dashboard
 fastapi>=0.110
 uvicorn[standard]>=0.29

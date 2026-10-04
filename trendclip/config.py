@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
@@ -21,7 +22,23 @@ _ENV_MAP: dict[str, str] = {
     "top_topics": "TOP_TOPICS",
     "request_timeout": "REQUEST_TIMEOUT",
     "output_dir": "OUTPUT_DIR",
+    "pexels_api_key": "PEXELS_API_KEY",
+    "ncg_channels": "NCG_CHANNELS",
+    "background_clip_seconds": "BACKGROUND_CLIP_SECONDS",
+    "background_orientation": "BACKGROUND_ORIENTATION",
+    "background_sources": "BACKGROUND_SOURCES",
+    "assets_dir": "ASSETS_DIR",
+    "gemini_api_key": "GEMINI_API_KEY",
+    "gemini_model": "GEMINI_MODEL",
+    "tts_voice": "TTS_VOICE",
+    "tts_rate": "TTS_RATE",
+    "short_target_seconds": "SHORT_TARGET_SECONDS",
 }
+
+DEFAULT_GEMINI_MODEL = "gemini-3.8-flash"
+DEFAULT_TTS_VOICE = "en-US-AndrewMultilingualNeural"
+
+DEFAULT_NCG_CHANNELS = ["@NoCopyrightGameplays", "@OrbitalNCG", "No Copyright Gameplay"]
 
 
 class ConfigError(RuntimeError):
@@ -42,6 +59,49 @@ class Settings(BaseModel):
     top_topics: int = Field(10, ge=1, le=100)
     request_timeout: float = Field(15.0, gt=0)
     output_dir: Path = PROJECT_ROOT / "output"
+
+    # Background gameplay downloads (Phase 1.5 -> input for video synthesis).
+    pexels_api_key: SecretStr | None = None
+    # Handles (@name), channel ids (UC...) or plain channel names.
+    ncg_channels: list[str] = Field(default_factory=lambda: list(DEFAULT_NCG_CHANNELS))
+    background_clip_seconds: int = Field(60, ge=0, le=3600)  # 0 = whole video
+    background_orientation: Literal["landscape", "portrait"] = "landscape"
+    # Order tried by get_background_video(); sources without credentials are skipped.
+    background_sources: list[Literal["pexels", "youtube"]] = Field(
+        default_factory=lambda: ["pexels", "youtube"]
+    )
+    assets_dir: Path = PROJECT_ROOT / "assets"
+
+    # Create tab: Gemini writes the script, edge-tts speaks it.
+    gemini_api_key: SecretStr | None = None
+    gemini_model: str = DEFAULT_GEMINI_MODEL
+    tts_voice: str = DEFAULT_TTS_VOICE
+    tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
+    short_target_seconds: int = Field(30, ge=10, le=90)
+
+    @field_validator("ncg_channels", "background_sources", mode="before")
+    @classmethod
+    def _split_csv(cls, value: object) -> object:
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        return value
+
+    @field_validator("assets_dir", mode="after")
+    @classmethod
+    def _resolve_assets_dir(cls, value: Path) -> Path:
+        return value if value.is_absolute() else PROJECT_ROOT / value
+
+    @property
+    def pexels_enabled(self) -> bool:
+        return self.pexels_api_key is not None and bool(self.pexels_api_key.get_secret_value())
+
+    @property
+    def backgrounds_dir(self) -> Path:
+        return self.assets_dir / "backgrounds"
+
+    @property
+    def shorts_dir(self) -> Path:
+        return self.output_dir / "shorts"
 
     @field_validator("yt_regions", mode="before")
     @classmethod
