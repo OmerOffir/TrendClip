@@ -649,7 +649,7 @@
   }
 
   // Shared with create.js (Create tab).
-  const views = { trends: $("viewTrends"), create: $("viewCreate") };
+  const views = { trends: $("viewTrends"), create: $("viewCreate"), upload: $("viewUpload") };
   const nav = $("nav");
 
   function showView(name, clip) {
@@ -677,5 +677,6 @@
   };
 
   init();
-  if (location.hash === "#create") showView("create");
+  const startView = location.hash.slice(1);
+  if (startView !== "trends" && views[startView]) showView(startView);
 })();

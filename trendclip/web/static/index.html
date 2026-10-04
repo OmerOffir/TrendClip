@@ -18,6 +18,7 @@
     <nav class="nav" id="nav" role="tablist" aria-label="Sections">
       <button type="button" role="tab" data-view="trends" class="active">Trends</button>
       <button type="button" role="tab" data-view="create">Create</button>
+      <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
     </nav>
     <div class="status" id="status" aria-live="polite"></div>
   </header>
@@ -185,6 +186,121 @@
     </section>
   </main>
 
+  <main class="container view" id="viewUpload" hidden>
+    <div id="uploadError" class="banner banner-error" hidden></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Ready to upload</h2>
+          <span class="hint">Mark Shorts with <b>Ready to upload</b> in the Create tab; they show up here.</span>
+        </div>
+      </div>
+      <div class="ready-list" id="readyList"></div>
+    </section>
+
+    <div class="upload-grid" id="uploadPanel" hidden>
+      <section class="card upload-side">
+        <video id="uVideo" controls playsinline preload="metadata"></video>
+        <div class="dl-title" id="uTitle"></div>
+        <div class="dl-meta" id="uMeta"></div>
+        <div class="dl-actions">
+          <a id="uDownload" download>Download video</a>
+          <button type="button" class="dl-delete" id="uUnready">Remove from list</button>
+        </div>
+      </section>
+
+      <section class="card form upload-main">
+        <div class="subtabs" role="tablist" id="uTabs">
+          <button type="button" role="tab" data-platform="youtube" class="active">YouTube</button>
+          <button type="button" role="tab" data-platform="instagram">Instagram</button>
+          <button type="button" role="tab" data-platform="tiktok">TikTok</button>
+        </div>
+        <div class="texts-source">
+          <span class="hint" id="uSource"></span>
+          <span class="texts-actions">
+            <button type="button" class="dl-copy" id="uGemini">Improve texts with Gemini</button>
+            <button type="button" class="dl-copy" id="uTemplate">Reset to template</button>
+          </span>
+        </div>
+        <div id="uTextsJob" class="job" hidden></div>
+
+        <div class="platform" data-pane="youtube">
+          <div class="yt-account" id="ytAccount"></div>
+          <label class="field"><span>Title <em id="ytTitleCount"></em></span><input id="ytTitle" type="text" maxlength="100" /></label>
+          <label class="field"><span>Description</span><textarea id="ytDesc" rows="4" maxlength="4000"></textarea></label>
+          <label class="field"><span>Hashtags <em>(shown above the title; #shorts is kept)</em></span><input id="ytHashtags" type="text" /></label>
+          <label class="field"><span>Tags <em id="ytTagsCount"></em></span><input id="ytTags" type="text" placeholder="comma separated search keywords" /></label>
+          <div class="field"><span>Final description (what YouTube gets, credits included)</span><pre class="paste" id="ytFinal"></pre></div>
+          <div class="form-row">
+            <label class="field">
+              <span>Visibility</span>
+              <select id="ytPrivacy">
+                <option value="private">Private</option>
+                <option value="unlisted">Unlisted</option>
+                <option value="public">Public</option>
+                <option value="schedule">Schedule…</option>
+              </select>
+            </label>
+            <label class="field" id="ytWhenField" hidden>
+              <span>Publish on <em id="ytTz"></em></span>
+              <input id="ytWhen" type="datetime-local" step="300" />
+            </label>
+            <label class="check"><input type="checkbox" id="ytKids" /> Made for kids</label>
+            <label class="check" title="YouTube asks to disclose realistic altered or AI-generated content"><input type="checkbox" id="ytSynthetic" /> Altered / synthetic content</label>
+          </div>
+          <div class="hint">Vertical and under 3 minutes, so YouTube makes it a Short. A Google Cloud project that hasn't
+            passed YouTube's API audit can only upload as <b>Private</b>; switch it to Public in YouTube Studio.</div>
+          <div class="quick-times" id="ytQuick" hidden>
+            <span class="hint">Quick pick:</span>
+            <button type="button" class="dl-copy" data-quick="today-18">Today 18:00</button>
+            <button type="button" class="dl-copy" data-quick="tomorrow-12">Tomorrow 12:00</button>
+            <button type="button" class="dl-copy" data-quick="tomorrow-18">Tomorrow 18:00</button>
+            <button type="button" class="dl-copy" data-quick="weekend-11">Saturday 11:00</button>
+          </div>
+          <div class="hint" id="ytWhenHint" hidden></div>
+          <button id="ytUpload" class="btn-primary btn-block" type="button">Upload to YouTube as a Short</button>
+          <div id="ytJob" class="job" hidden></div>
+          <div id="ytDone" class="banner banner-ok" hidden></div>
+        </div>
+
+        <div class="platform" data-pane="instagram" hidden>
+          <label class="field"><span>Caption</span><textarea id="igCaption" rows="4" maxlength="2000"></textarea></label>
+          <label class="field"><span>Hashtags <em id="igTagCount"></em></span><input id="igHashtags" type="text" /></label>
+          <label class="field"><span>Mentions <em>(@accounts to tag)</em></span><input id="igMentions" type="text" placeholder="@account" /></label>
+          <div class="field"><span>Ready to paste <em id="igCount"></em></span><pre class="paste" id="igFinal"></pre></div>
+          <div class="dl-actions">
+            <button type="button" class="btn-primary" id="igCopy">Copy caption</button>
+            <a id="igDownload" download>Download video</a>
+            <a href="https://www.instagram.com/" target="_blank" rel="noopener">Open Instagram</a>
+            <label class="check"><input type="checkbox" id="igPosted" /> Posted</label>
+          </div>
+          <ul class="tips">
+            <li>Post as a <b>Reel</b> (9:16). Instagram allows at most 5 hashtags.</li>
+            <li>Choose a cover frame with the title card; add the music from the credits if Instagram asks.</li>
+          </ul>
+        </div>
+
+        <div class="platform" data-pane="tiktok" hidden>
+          <label class="field"><span>Caption</span><textarea id="ttCaption" rows="3" maxlength="2000"></textarea></label>
+          <label class="field"><span>Hashtags</span><input id="ttHashtags" type="text" /></label>
+          <label class="field"><span>Mentions <em>(@accounts to tag)</em></span><input id="ttMentions" type="text" placeholder="@account" /></label>
+          <div class="field"><span>Ready to paste <em id="ttCount"></em></span><pre class="paste" id="ttFinal"></pre></div>
+          <div class="dl-actions">
+            <button type="button" class="btn-primary" id="ttCopy">Copy caption</button>
+            <a id="ttDownload" download>Download video</a>
+            <a href="https://www.tiktok.com/tiktokstudio/upload" target="_blank" rel="noopener">Open TikTok upload</a>
+            <label class="check"><input type="checkbox" id="ttPosted" /> Posted</label>
+          </div>
+          <ul class="tips">
+            <li>Keep the caption short: the first line shows over the video.</li>
+            <li>The voice is AI generated: turn on <b>AI-generated content</b> in TikTok's post settings.</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+  </main>
+
   <main class="container view" id="viewTrends">
     <section class="card controls" aria-label="Filters">
       <label class="field field-wide">
@@ -333,5 +449,6 @@
 
   <script src="/static/app.js"></script>
   <script src="/static/create.js"></script>
+  <script src="/static/upload.js"></script>
 </body>
 </html>

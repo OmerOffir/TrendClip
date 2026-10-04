@@ -399,6 +399,60 @@ input[type="text"]:focus, textarea:focus { border-color: var(--accent); }
 .short-card { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); overflow: hidden; display: flex; flex-direction: column; }
 .short-card video { width: 100%; aspect-ratio: 9 / 16; background: #000; display: block; }
 .short-card .tags { color: #9ec5ff; }
+.short-card.is-ready { border-color: rgba(61, 220, 151, 0.5); }
+.pill.ready, .pill.done { color: var(--good); border-color: rgba(61, 220, 151, 0.4); }
+.dl-ready {
+  background: rgba(61, 220, 151, 0.12); border: 1px solid rgba(61, 220, 151, 0.5); color: var(--good);
+  border-radius: 8px; padding: 5px 10px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.dl-ready:hover { background: rgba(61, 220, 151, 0.2); }
+
+/* ---- Upload tab ---- */
+.nav-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--good); color: #062; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.nav-count[hidden] { display: none; }
+.ready-list { display: flex; gap: 12px; overflow-x: auto; padding-bottom: 4px; }
+.ready-card {
+  flex: 0 0 300px; display: flex; gap: 10px; align-items: stretch; text-align: left; padding: 8px; cursor: pointer;
+  border-radius: 12px; background: var(--bg-elev); border: 1px solid var(--border); color: var(--text); font: inherit;
+}
+.ready-card:hover { border-color: #3a4256; }
+.ready-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.ready-card video { width: 64px; aspect-ratio: 9 / 16; border-radius: 8px; background: #000; object-fit: cover; pointer-events: none; }
+.ready-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ready-body .dl-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ready-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: auto; }
+.upload-grid { display: grid; grid-template-columns: 320px 1fr; gap: 18px; align-items: start; margin-top: 18px; }
+.upload-grid[hidden] { display: none; }
+.upload-side { display: flex; flex-direction: column; gap: 10px; position: sticky; top: 84px; }
+.upload-side video { width: 100%; aspect-ratio: 9 / 16; border-radius: 12px; background: #000; }
+.subtabs { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg-elev); border: 1px solid var(--border); align-self: flex-start; }
+.subtabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 18px; border-radius: 9px; font: inherit; font-weight: 600; cursor: pointer; }
+.subtabs button:hover { color: var(--text); }
+.subtabs button.active { background: var(--card-hover); color: var(--text); }
+.texts-source { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.texts-actions { display: flex; gap: 6px; }
+.platform { display: flex; flex-direction: column; gap: 12px; }
+.platform[hidden] { display: none; }
+.paste {
+  margin: 0; padding: 10px 12px; border-radius: 10px; background: var(--bg-elev); border: 1px dashed var(--border);
+  white-space: pre-wrap; word-break: break-word; font-family: inherit; font-size: 13px; line-height: 1.5; color: var(--text); max-height: 260px; overflow: auto;
+}
+.field em.over { color: var(--accent); }
+.account { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--bg-elev); border: 1px solid var(--border); }
+.account img { width: 32px; height: 32px; border-radius: 50%; }
+.account .btn-primary, .account .dl-copy { margin-left: auto; }
+.yt-account { display: flex; flex-direction: column; gap: 6px; }
+.banner-ok { background: rgba(61, 220, 151, 0.08); border: 1px solid rgba(61, 220, 151, 0.35); color: #b9f5da; }
+.banner-ok a { color: #fff; }
+.banner[hidden] { display: none; }
+.quick-times { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.quick-times[hidden], .field[hidden], .hint[hidden] { display: none; }
+.tips { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12px; display: flex; flex-direction: column; gap: 4px; }
+@media (max-width: 900px) {
+  .upload-grid { grid-template-columns: 1fr; }
+  .upload-side { position: static; }
+  .upload-side video { max-height: 60vh; }
+}
 
 @media (max-width: 1050px) {
   .game-head { grid-template-columns: 32px 1fr 110px 80px 110px; }

@@ -165,6 +165,38 @@ Setup: create a key at [Google AI Studio](https://aistudio.google.com/apikey) an
 `gemini-3.8-flash`), `TTS_VOICE`, `TTS_RATE`, `SHORT_TARGET_SECONDS`. On the free tier Google may use
 prompts to improve its products and applies daily limits.
 
+## Upload tab (YouTube / Instagram / TikTok)
+
+In **Create → Your Shorts**, press **Ready to upload** on the videos you want to publish; they move to
+the **Upload** tab (the counter on the tab shows how many). Pick one and switch between three sub-tabs:
+
+- **YouTube:** title (`#shorts` is added), description, hashtags, search tags (450-character budget),
+  visibility, "made for kids" and "altered / synthetic content", and a live preview of the final
+  description with the credits. **Upload to YouTube as a Short** uploads it (resumable, with
+  progress) and shows the Shorts and Studio links. **Visibility → Schedule…** picks a date and time
+  (your local time zone, quick picks like "Tomorrow 18:00"): the video uploads now as private and
+  YouTube publishes it at that time (at least 15 minutes ahead).
+- **Instagram** and **TikTok** (no upload API here): caption, hashtags (Instagram: at most 5) and
+  @mentions in each platform's style, a ready-to-paste text with the credits, **Copy caption**,
+  **Download video**, a link to the upload page and a **Posted** checkbox to keep track.
+
+Texts start from a template built from the Short; **Improve texts with Gemini** rewrites all three
+for their platform (mentions only for official accounts Gemini is sure of). Edits are saved on the
+Short (`output/shorts/<name>.json`).
+
+YouTube setup (once):
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) enable **YouTube Data API v3**, create
+   an OAuth client of type **Desktop app**, and save its JSON as `client_secret.json` in the project
+   folder (git-ignored).
+2. On the OAuth consent screen, add your Google account as a **test user**.
+3. In the Upload tab press **Connect YouTube** and allow access. The token is saved to
+   `token_youtube.json` (git-ignored); **Disconnect** deletes it.
+
+Notes: an upload costs about 100 of the 10,000 daily API quota units. Projects that haven't passed
+YouTube's API audit can only upload **private** videos; make them public in YouTube Studio.
+Vertical videos up to 3 minutes become Shorts.
+
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a

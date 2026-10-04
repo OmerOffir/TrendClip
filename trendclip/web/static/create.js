@@ -440,15 +440,17 @@
       const src = `/media/shorts/${encodeURIComponent(s.filename)}`;
       const when = new Date(s.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
       return `
-        <div class="short-card">
+        <div class="short-card${s.ready ? " is-ready" : ""}">
           <video src="${src}" controls preload="metadata" playsinline></video>
           <div class="dl-body">
-            <div class="dl-title">${esc(s.title)}</div>
+            <div class="dl-title">${s.ready ? '<span class="pill ready">READY</span> ' : ""}${esc(s.title)}</div>
             <div class="dl-meta">${esc(s.game)} · ${s.duration_seconds ? `${Math.round(s.duration_seconds)}s` : ""} · ${esc(when)}</div>
             <div class="dl-meta tags">${esc(s.hashtags.join(" "))}</div>
             ${s.music_title ? `<div class="dl-meta">♪ <a href="${esc(s.music_url)}" target="_blank" rel="noopener">${esc(s.music_title)}</a></div>` : ""}
             ${s.popups && s.popups.length ? `<div class="dl-meta">Pop-ups: ${esc(s.popups.join(", "))}</div>` : ""}
             <div class="dl-actions">
+              <button type="button" class="${s.ready ? "dl-copy" : "dl-ready"}" data-ready-short="${esc(s.filename)}">${s.ready ? "Not ready" : "Ready to upload"}</button>
+              ${s.ready ? `<button type="button" class="dl-copy" data-goto="upload">Open Upload tab</button>` : ""}
               <a href="${src}" download>Download</a>
               <button type="button" class="dl-copy" data-copy-title="${esc(s.filename)}">Copy title</button>
               <button type="button" class="dl-copy" data-copy-desc="${esc(s.filename)}">Copy description</button>
@@ -467,6 +469,23 @@
       setTimeout(() => (button.textContent = label), 1200);
     } catch (_) {
       window.prompt("Copy:", text);
+    }
+  }
+
+  async function toggleReady(short, button) {
+    button.disabled = true;
+    try {
+      const { body } = await api(`/api/shorts/${encodeURIComponent(short.filename)}/ready`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ready: !short.ready }),
+      });
+      Object.assign(short, body);
+      renderShorts();
+      document.dispatchEvent(new CustomEvent("trendclip:ready"));
+    } catch (err) {
+      button.disabled = false;
+      showError(`Could not update: ${err.message}`);
     }
   }
 
@@ -580,6 +599,8 @@
     els.watch.addEventListener("change", saveDraft);
 
     els.shorts.addEventListener("click", (e) => {
+      const goto = e.target.closest("[data-goto]");
+      if (goto) return T.showView(goto.dataset.goto);
       const s = (attr) => {
         const btn = e.target.closest(`[${attr}]`);
         return btn ? [btn, state.shorts.find((x) => x.filename === btn.getAttribute(attr))] : [null, null];
@@ -588,10 +609,13 @@
       if (short) return copy(short.title, btn);
       [btn, short] = s("data-copy-desc");
       if (short) return copy(`${short.description}\n\n${short.hashtags.join(" ")}`.trim(), btn);
+      [btn, short] = s("data-ready-short");
+      if (short) return toggleReady(short, btn);
       [btn, short] = s("data-delete-short");
       if (short) deleteShort(short.filename, btn);
     });
 
+    document.addEventListener("trendclip:shorts-changed", loadShorts);
     document.addEventListener("trendclip:clips", () => {
       if (state.started && !state.clip && clips().length) selectClip(clips()[0].filename);
       else renderPicker();

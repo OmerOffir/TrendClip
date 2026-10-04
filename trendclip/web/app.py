@@ -11,12 +11,14 @@ import time
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from html import escape as html_escape
+
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__, music, script_writer, shorts, video_downloader, voiceover
+from .. import __version__, music, publish, script_writer, shorts, video_downloader, voiceover
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -362,6 +364,146 @@ def delete_short(filename: str) -> dict[str, Any]:
     return {"deleted": filename}
 
 
+# --------------------------------------------------------------------------- Upload tab
+
+
+class ReadyRequest(BaseModel):
+    ready: bool
+
+
+class PostedRequest(BaseModel):
+    posted: bool
+
+
+def _short_or_http(settings: Settings, filename: str) -> shorts.ShortVideo:
+    try:
+        return shorts.get_short(settings, filename)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+
+
+def _with_texts(short: shorts.ShortVideo) -> dict[str, Any]:
+    """Short + ready-to-paste texts for each platform."""
+    data = short.model_dump(mode="json")
+    if short.texts:
+        t = publish.PlatformTexts.model_validate(short.texts)
+        data["paste"] = {
+            "youtube_description": publish.youtube_description(t.youtube, t.credit),
+            "tiktok": publish.full_text(t.tiktok, t.credit),
+            "instagram": publish.full_text(t.instagram, t.credit),
+        }
+    return data
+
+
+@app.post("/api/shorts/{filename}/ready")
+def mark_ready(filename: str, req: ReadyRequest) -> dict[str, Any]:
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    return shorts.set_ready(settings, filename, req.ready).model_dump(mode="json")
+
+
+@app.get("/api/upload/shorts")
+def upload_queue() -> list[dict[str, Any]]:
+    """Shorts marked ready to upload, newest first, with their platform texts."""
+    settings = _base_settings()
+    ready = [s for s in shorts.list_shorts(settings) if s.ready]
+    out = []
+    for s in sorted(ready, key=lambda s: s.ready_at or s.created_at, reverse=True):
+        if not s.texts:
+            s = publish.texts_for(settings, s.filename)
+        out.append(_with_texts(s))
+    return out
+
+
+@app.put("/api/upload/shorts/{filename}/texts")
+def save_texts(filename: str, texts: publish.PlatformTexts) -> dict[str, Any]:
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    return _with_texts(publish.save_texts(settings, filename, texts))
+
+
+@app.post("/api/upload/shorts/{filename}/texts/template")
+def template_texts(filename: str) -> dict[str, Any]:
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    return _with_texts(publish.texts_for(settings, filename, refresh="template"))
+
+
+@app.post("/api/upload/shorts/{filename}/texts/gemini", status_code=202)
+def gemini_texts(filename: str) -> dict[str, Any]:
+    settings = _base_settings()
+    short = _short_or_http(settings, filename)
+    if script_writer.gemini_api_key(settings) is None:
+        raise HTTPException(status_code=400, detail="Add GEMINI_API_KEY to .env (https://aistudio.google.com/apikey)")
+    job = _create.submit("copy", short.game, lambda p: _with_texts(
+        publish.texts_for(settings, filename, refresh="gemini", progress=p)))
+    return job.model_dump(mode="json")
+
+
+@app.post("/api/upload/shorts/{filename}/posted/{platform}")
+def mark_posted(filename: str, platform: Literal["tiktok", "instagram"], req: PostedRequest) -> dict[str, Any]:
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    return _with_texts(publish.set_posted(settings, filename, platform, req.posted))
+
+
+@app.get("/api/upload/youtube/status")
+def youtube_status() -> dict[str, Any]:
+    return publish.youtube_status()
+
+
+def _callback_url(request: Request) -> str:
+    # Desktop OAuth clients accept any loopback port; keep the host the browser used.
+    host = "localhost" if request.url.hostname in ("localhost", "127.0.0.1", "::1") else request.url.hostname
+    return f"http://{host}:{request.url.port or 80}/api/upload/youtube/callback"
+
+
+@app.post("/api/upload/youtube/connect")
+def youtube_connect(request: Request) -> dict[str, Any]:
+    try:
+        return {"auth_url": publish.start_login(_callback_url(request))}
+    except publish.PublishError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.get("/api/upload/youtube/callback", include_in_schema=False)
+def youtube_callback(state: str = "", code: str = "", error: str = "") -> HTMLResponse:
+    if error:
+        message, ok = f"Google login was cancelled or refused ({error}).", False
+    else:
+        try:
+            publish.finish_login(state, code)
+            message, ok = "YouTube connected. You can close this tab.", True
+        except publish.PublishError as err:
+            message, ok = str(err), False
+    color = "#3ddc97" if ok else "#ff4d5e"
+    return HTMLResponse(
+        f"""<!doctype html><meta charset="utf-8"><title>TrendClipper · YouTube</title>
+<body style="background:#0b0d12;color:#e8ebf2;font:16px system-ui;display:grid;place-items:center;height:90vh">
+<div style="text-align:center"><h2 style="color:{color}">{'Connected' if ok else 'Not connected'}</h2>
+<p>{html_escape(message)}</p><p><a style="color:#8b93a7" href="/#upload">Back to TrendClipper</a></p></div>
+<script>if ({'true' if ok else 'false'}) {{ try {{ window.opener && window.opener.postMessage("trendclip:youtube", "*"); }} catch (e) {{}}
+setTimeout(() => {{ if (window.opener) window.close(); else location.href = "/#upload"; }}, 1500); }}</script>""")
+
+
+@app.post("/api/upload/youtube/logout")
+def youtube_logout() -> dict[str, Any]:
+    publish.logout()
+    return {"connected": False}
+
+
+@app.post("/api/upload/shorts/{filename}/youtube", status_code=202)
+def upload_youtube(filename: str, req: publish.YouTubeUploadRequest) -> dict[str, Any]:
+    settings = _base_settings()
+    short = _short_or_http(settings, filename)
+    if not publish.TOKEN_FILE.is_file():
+        raise HTTPException(status_code=400, detail="Connect YouTube first")
+    job = _create.submit("upload", short.game, lambda p: publish.upload_youtube(settings, filename, req, p))
+    return job.model_dump(mode="json")
+
+
 @app.middleware("http")
 async def _no_stale_assets(request, call_next):
     response = await call_next(request)
@@ -388,6 +530,6 @@ def _asset_version() -> str:
 def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     version = _asset_version()
-    for asset in ("styles.css", "app.js", "create.js"):
+    for asset in ("styles.css", "app.js", "create.js", "upload.js"):
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     return HTMLResponse(html)

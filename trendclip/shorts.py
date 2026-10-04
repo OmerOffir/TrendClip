@@ -44,6 +44,12 @@ class ShortVideo(BaseModel):
     title_card: str = ""
     popups: list[str] = Field(default_factory=list)  # words that got a pop-up image
     created_at: datetime = Field(default_factory=utcnow)
+    # Upload tab: marked ready in Create; per-platform texts; where it was published.
+    ready: bool = False
+    ready_at: datetime | None = None
+    texts: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {...}, "tiktok": {...}, "instagram": {...}}
+    uploads: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {"video_id", "url", "privacy", ...}}
+    posted: dict[str, bool] = Field(default_factory=dict)  # manual "I posted it" for TikTok / Instagram
 
 
 class RenderRequest(BaseModel):
@@ -190,6 +196,43 @@ def list_shorts(settings: Settings) -> list[ShortVideo]:
     return sorted(out, key=lambda s: s.created_at, reverse=True)
 
 
+def short_path(settings: Settings, filename: str) -> Path:
+    if Path(filename).name != filename or not filename.endswith(".mp4"):
+        raise ValueError(f"Not a Short: {filename}")
+    path = settings.shorts_dir / filename
+    if not path.is_file() or not path.with_suffix(".json").is_file():
+        raise FileNotFoundError(f"Short not found: {filename}")
+    return path
+
+
+_sidecar_lock = threading.Lock()
+
+
+def get_short(settings: Settings, filename: str) -> ShortVideo:
+    path = short_path(settings, filename)
+    return ShortVideo.model_validate_json(path.with_suffix(".json").read_text(encoding="utf-8"))
+
+
+def update_short(settings: Settings, filename: str, fn: Callable[[ShortVideo], None]) -> ShortVideo:
+    """Read-modify-write the Short's JSON sidecar (serialised: jobs and requests may race)."""
+    with _sidecar_lock:
+        short = get_short(settings, filename)
+        fn(short)
+        sidecar = short_path(settings, filename).with_suffix(".json")
+        tmp = sidecar.with_suffix(".json.tmp")
+        tmp.write_text(short.model_dump_json(indent=2), encoding="utf-8")
+        tmp.replace(sidecar)
+        return short
+
+
+def set_ready(settings: Settings, filename: str, ready: bool) -> ShortVideo:
+    def apply(short: ShortVideo) -> None:
+        short.ready = ready
+        short.ready_at = utcnow() if ready else None
+
+    return update_short(settings, filename, apply)
+
+
 def delete_short(settings: Settings, filename: str) -> bool:
     if Path(filename).name != filename or not filename.endswith(".mp4"):
         raise ValueError(f"Not a Short: {filename}")
@@ -207,7 +250,7 @@ def delete_short(settings: Settings, filename: str) -> bool:
 
 class CreateJob(BaseModel):
     id: str
-    kind: Literal["script", "render"]
+    kind: Literal["script", "render", "copy", "upload"]
     game: str
     status: Literal["queued", "running", "done", "error"] = "queued"
     progress: float | None = None
@@ -223,6 +266,7 @@ class CreateManager:
     def __init__(self, max_jobs: int = 50):
         self._scripts = ThreadPoolExecutor(max_workers=2, thread_name_prefix="script-job")
         self._renders = ThreadPoolExecutor(max_workers=1, thread_name_prefix="render-job")
+        self._uploads = ThreadPoolExecutor(max_workers=1, thread_name_prefix="upload-job")
         self._jobs: dict[str, CreateJob] = {}
         self._lock = threading.Lock()
         self._max_jobs = max_jobs
@@ -264,6 +308,12 @@ class CreateManager:
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:
         job = self._add("render", req.game)
         self._renders.submit(self._run, job.id, lambda p: render_short(settings, req, p))
+        return job
+
+    def submit(self, kind: Literal["copy", "upload"], game: str, fn: Callable[[ProgressFn], Any]) -> CreateJob:
+        """Platform texts (Gemini) run with scripts; uploads one at a time."""
+        job = self._add(kind, game)
+        (self._uploads if kind == "upload" else self._scripts).submit(self._run, job.id, fn)
         return job
 
     def get(self, job_id: str) -> CreateJob | None:

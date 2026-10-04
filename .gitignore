@@ -1,6 +1,10 @@
 .env
 .env.*
 !.env.example
+# YouTube upload OAuth secrets and saved login tokens
+client_secret*.json
+!client_secret.example.json
+token*.json
 .venv/
 __pycache__/
 *.pyc
