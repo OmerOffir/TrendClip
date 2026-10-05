@@ -16,7 +16,8 @@ from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
 from .config import PROJECT_ROOT, Settings
-from .popups import Popup, clean_popups
+from .popups import Popup, _matches, _norm, clean_popups
+from .stickers import Reaction
 
 logger = logging.getLogger(__name__)
 
@@ -48,15 +49,43 @@ class GeminiShort(BaseModel):
     popups: list[Popup] = Field(default_factory=list, description=(
         "3 to 6 pop-up images: concrete, easy to picture things the voiceover mentions (animals, objects, "
         "food, places), spread across the script, in script order. Never abstract words."))
+    reactions: list[Reaction] = Field(default_factory=list, description=(
+        "1 to 3 reaction-sticker beats, in script order: the word where a funny, awkward or shocking "
+        "moment lands (a meme reaction pops up there). Not in the first sentence, not in the call to action."))
 
 
 class ShortScript(GeminiShort):
     game: str
     model: str
     mode: str = "clip"
+    format: str = "short"
     watched_clip: bool
     word_count: int
     estimated_seconds: float
+    part: int | None = None
+    parts_total: int | None = None
+    end_card: str = ""
+
+
+class GeminiSeries(BaseModel):
+    """Response schema for a two-part story."""
+
+    story_name: str = Field(description="2 to 4 word Title Case name of the story, used for file names, e.g. 'The Wrong Uber'.")
+    part1: GeminiShort = Field(description="Part 1: setup and escalation, ending on the cliffhanger.")
+    part2: GeminiShort = Field(description="Part 2: picks up right after the cliffhanger and resolves it.")
+    pinned_comment: str = Field(description=(
+        "A short, friendly comment the creator pins under Part 1 that teases Part 2 without spoiling it. "
+        "No links, no hashtags, at most 200 characters."))
+
+
+class SeriesScript(BaseModel):
+    series_id: str
+    story_name: str
+    model: str
+    game: str
+    handle: str
+    pinned_comment: str
+    parts: list[ShortScript]
 
 
 def gemini_api_key(settings: Settings | None = None) -> str | None:
@@ -88,6 +117,9 @@ Rules:
 - Never mention copyright, footage sources, AI, or that the clip is stock gameplay.
 - End with a short call to action (follow, comment, or a question).
 - Pop-ups: each `word` must appear exactly as written in your script; give the best matching emoji.
+- Reactions: each `word` must appear exactly as written in your script, at the funniest, most awkward
+  or most shocking beats.
+- Never wrap words in backticks, quotes or markdown.
 """
 
 ScriptMode = Literal["clip", "story"]
@@ -102,18 +134,50 @@ random, self-contained story that is NOT about the game or the footage.
 - on_screen: one sentence summarising the story.
 - Title and hashtags describe the story (#storytime is good); you may add one gaming hashtag."""
 
+ScriptFormat = Literal["short", "long", "multi"]
+
+LONG_BRIEF = """Format: LONG-FORM. This one is longer, so it must earn every second:
+- More detail and wit: vivid specific details, funny asides, a running joke or callback that pays off at the end.
+- Two or three escalating beats; each one raises the stakes or the absurdity. No filler, no recap, no padding.
+- Mix short punchy lines with a few longer ones so the rhythm feels like real storytelling.
+- Drop a mini-hook every 15 seconds or so ("and that's when it got worse") so viewers keep watching.
+- Spread the pop-ups across the whole script (4 to 6)."""
+
+SERIES_BRIEF = """Format: TWO-PART SERIES. Write ONE story split into Part 1 and Part 2, released a day apart.
+- Part 1 introduces the situation and the characters, builds tension and humour, and ends on a dramatic or
+  funny CLIFFHANGER: stop right before the big reveal. The last sentence of Part 1 is the cliffhanger itself.
+- Part 2 opens with a one-sentence hook that reminds viewers where Part 1 stopped, then resolves the story
+  with a hilarious twist or a satisfying ending.
+- Do NOT write any call to action in either part (no "follow", "subscribe", "comment", "part 2 tomorrow");
+  this overrides the call-to-action rule. The channel adds its own at the end of each part.
+- Each part has its own hook, title, description, hashtags, title_card and popups. Do not put "Part 1"
+  or "Part 2" in titles or title cards; they are added automatically.
+- story_name names the whole story; pinned_comment teases Part 2."""
+
+CTA_WORDS = 14  # room left in each part for the call to action appended after Gemini
+
 
 def build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes: str, watched: bool,
-                 mode: ScriptMode = "clip") -> str:
+                 mode: ScriptMode = "clip", format: ScriptFormat = "short") -> str:
     words = int(target_seconds * WORDS_PER_SECOND)
-    length = f"Target length: about {target_seconds} seconds of speech, so {words - 8} to {words + 5} words in total."
-    if mode == "story":
-        lines = [STORY_BRIEF, f"Background gameplay: {game}", length]
+    if format == "multi":
+        words -= CTA_WORDS
+        length = (f"Target length: about {target_seconds} seconds of speech PER PART, so {words - 8} to "
+                  f"{words + 5} words in EACH part.")
+        lines = [STORY_BRIEF, SERIES_BRIEF, f"Background gameplay: {game}", length]
         if notes.strip():
             lines.append(f"Creator's notes for the story: {notes.strip()}")
         return "\n".join(lines)
 
-    lines = [f"Game: {game}", length]
+    length = f"Target length: about {target_seconds} seconds of speech, so {words - 8} to {words + 5} words in total."
+    extra = [LONG_BRIEF] if format == "long" else []
+    if mode == "story":
+        lines = [STORY_BRIEF, *extra, f"Background gameplay: {game}", length]
+        if notes.strip():
+            lines.append(f"Creator's notes for the story: {notes.strip()}")
+        return "\n".join(lines)
+
+    lines = [*extra, f"Game: {game}", length]
     if watched:
         lines.append(
             f"The attached video is the exact footage that plays under the voiceover ({target_seconds}s). "
@@ -196,7 +260,7 @@ def _clean_hashtags(tags: list[str]) -> list[str]:
 
 
 def _clean_script(text: str) -> str:
-    text = re.sub(r"\[[^\]]*\]|\([^)]*\)|\*+", "", text)  # stage directions / markdown
+    text = re.sub(r"\[[^\]]*\]|\([^)]*\)|\*+|`+", "", text)  # stage directions / markdown
     text = re.sub(r"#\w+", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
@@ -211,6 +275,7 @@ def write_script(
     target_seconds: int | None = None,
     watch_clip: bool = True,
     mode: ScriptMode = "clip",
+    format: ScriptFormat = "short",
     progress: ProgressFn = lambda f, m: None,
     client=None,
 ) -> ShortScript:
@@ -245,7 +310,8 @@ def write_script(
                 raise ScriptError("Gemini could not process the clip")
             contents.append(uploaded)
 
-        contents.append(build_prompt(game, target, trend_titles or [], notes, watched, mode))
+        contents.append(build_prompt(game, target, trend_titles or [], notes, watched, mode,
+                                     "long" if format == "long" else "short"))
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
@@ -269,7 +335,12 @@ def write_script(
             except Exception:  # noqa: BLE001 - files expire after 48h anyway
                 logger.debug("Could not delete uploaded file %s", uploaded.name)
 
-    script = _clean_script(result.script)
+    return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched)
+
+
+def _finish(result: GeminiShort, *, game: str, model: str, mode: str, format: str, watched: bool,
+            script: str | None = None, **extra) -> ShortScript:
+    script = script if script is not None else _clean_script(result.script)
     return ShortScript(
         on_screen=result.on_screen.strip(),
         hook=result.hook.strip(),
@@ -279,10 +350,137 @@ def write_script(
         hashtags=_clean_hashtags(result.hashtags),
         title_card=re.sub(r"[#*\"]", "", result.title_card).strip().upper()[:40],
         popups=clean_popups(result.popups, script),
+        reactions=clean_reactions(result.reactions, script),
         game=game,
         model=model,
         mode=mode,
+        format=format,
         watched_clip=watched,
         word_count=len(script.split()),
         estimated_seconds=estimate_seconds(script),
+        **extra,
+    )
+
+
+def clean_reactions(reactions: list[Reaction], script: str, limit: int = 3) -> list[Reaction]:
+    """Reactions whose word is in the script, in script order, one per word."""
+    tokens = [_norm(t) for t in script.split()]
+    out, seen = [], set()
+    for r in reactions:
+        first = _norm(r.word.split()[0]) if r.word.split() else ""
+        pos = next((i for i, t in enumerate(tokens) if _matches(t, first)), None)
+        if pos is None or first in seen:
+            continue
+        seen.add(first)
+        out.append((pos, Reaction(word=r.word.strip(), mood=r.mood)))
+    return [r for _, r in sorted(out, key=lambda x: x[0])][:limit]
+
+
+def spoken_handle(handle: str) -> str:
+    """'@SideQuestLogic' -> 'Side Quest Logic': TTS voices stumble over '@' and run-together words."""
+    name = handle.lstrip("@").replace("_", " ").replace(".", " ")
+    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).strip()
+
+
+def series_ctas(handle: str) -> tuple[str, str]:
+    return (f"Sub to {spoken_handle(handle)} for Part 2 dropping tomorrow!",
+            "Sub for daily side quest stories and drop your crazy stories in the comments!")
+
+
+def end_cards(handle: str) -> tuple[str, str]:
+    return f"PART 2 TOMORROW · SUB {handle}", f"SUB {handle} · DROP YOUR STORY BELOW"
+
+
+def _strip_cta(script: str) -> str:
+    """Remove a trailing call to action Gemini may still add, so ours is not doubled."""
+    sentences = re.split(r"(?<=[.!?])\s+", script.strip())
+    while len(sentences) > 1 and re.search(r"\b(subscribe|sub to|follow|part (2|two)|comment)", sentences[-1], re.I):
+        sentences.pop()
+    return " ".join(sentences)
+
+
+def _part_title(title: str, n: int) -> str:
+    title = re.sub(r"\s*[(\[]?\s*part\s*\d\s*[)\]]?\s*$", "", title.strip().strip('"'), flags=re.I)
+    suffix = f" (Part {n})"
+    return title[: 100 - len(suffix)].rstrip() + suffix
+
+
+def _part_tags(tags: list[str], n: int) -> list[str]:
+    tags = [t for t in _clean_hashtags(tags) if not re.fullmatch(r"#part\d", t, re.I)]
+    keep = [t for t in tags if t.lower() not in ("#shorts", "#storytime")][:6]
+    return [f"#part{n}", "#storytime", *keep, "#shorts"]
+
+
+def _slug_name(name: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", re.sub(r"['’]", "", name))[:5]
+    return "".join(w[:1].upper() + w[1:] for w in words) or "Story"
+
+
+def write_series(
+    settings: Settings,
+    game: str,
+    *,
+    notes: str = "",
+    target_seconds: int = 45,
+    handle: str | None = None,
+    progress: ProgressFn = lambda f, m: None,
+    client=None,
+) -> SeriesScript:
+    """One Gemini call writes both parts, so Part 2 really continues Part 1."""
+    import uuid
+
+    api_key = gemini_api_key(settings)
+    if client is None and not api_key:
+        raise ScriptError("GEMINI_API_KEY is not set in .env (create one at https://aistudio.google.com/apikey)")
+    from google import genai
+    from google.genai import errors, types
+
+    handle = handle or settings.channel_handle
+    model = gemini_model(settings)
+    client = client or genai.Client(api_key=api_key)
+    try:
+        config = types.GenerateContentConfig(
+            system_instruction=SYSTEM_INSTRUCTION,
+            response_mime_type="application/json",
+            response_schema=GeminiSeries,
+            temperature=1.1,
+        )
+        prompt = build_prompt(game, target_seconds, [], notes, False, "story", "multi")
+        response, model = _generate_with_fallback(client, model, [prompt], config, progress, errors.APIError)
+        result = response.parsed
+        if not isinstance(result, GeminiSeries):
+            if not response.text:
+                raise ScriptError("Gemini returned an empty answer (possibly blocked); try different notes")
+            result = GeminiSeries.model_validate_json(response.text)
+    except errors.APIError as err:
+        raise _explain(err, model) from err
+
+    ctas = series_ctas(handle)
+    cards = end_cards(handle)
+    notes_for = (f"Part 2 drops tomorrow! Subscribe {handle} so you don't miss it.",
+                 f"This is Part 2. Missed Part 1? It's on {handle}.")
+    parts = []
+    for n, raw in enumerate((result.part1, result.part2), start=1):
+        script = f"{_strip_cta(_clean_script(raw.script))} {ctas[n - 1]}"
+        part = _finish(raw, game=game, model=model, mode="story", format="multi", watched=False,
+                       script=script, part=n, parts_total=2, end_card=cards[n - 1])
+        card = part.title_card or "STORYTIME"
+        part.title_card = f"PART {n}: {card}"[:40]
+        part.title = _part_title(raw.title, n)
+        part.description = f"{part.description}\n\n{notes_for[n - 1]}"
+        part.hashtags = _part_tags(raw.hashtags, n)
+        parts.append(part)
+
+    comment = re.sub(r"https?://\S+|#\w+", "", result.pinned_comment).strip()
+    comment = comment or "Part 2 drops tomorrow and it gets WORSE."
+    if handle.lower() not in comment.lower():
+        comment = f"{comment} Subscribe {handle} so you don't miss Part 2!"
+    return SeriesScript(
+        series_id=uuid.uuid4().hex[:10],
+        story_name=_slug_name(result.story_name),
+        model=model,
+        game=game,
+        handle=handle,
+        pinned_comment=comment[:500],
+        parts=parts,
     )

@@ -35,6 +35,8 @@ _ENV_MAP: dict[str, str] = {
     "short_target_seconds": "SHORT_TARGET_SECONDS",
     "music_channels": "MUSIC_CHANNELS",
     "music_volume": "MUSIC_VOLUME",
+    "channel_handle": "CHANNEL_HANDLE",
+    "stickers_dir": "STICKERS_DIR",
 }
 
 # UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
@@ -77,13 +79,17 @@ class Settings(BaseModel):
         default_factory=lambda: ["pexels", "youtube"]
     )
     assets_dir: Path = PROJECT_ROOT / "assets"
+    # Your own reaction / subscribe stickers (PNG, GIF, WebP, JPG); scanned and tagged automatically.
+    stickers_dir: Path = PROJECT_ROOT / "stickers"
 
     # Create tab: Gemini writes the script, edge-tts speaks it.
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_GEMINI_MODEL
     tts_voice: str = DEFAULT_TTS_VOICE
     tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
-    short_target_seconds: int = Field(30, ge=10, le=90)
+    short_target_seconds: int = Field(30, ge=10, le=180)
+    # Channel handle used in the multi-part calls to action ("Sub to @handle for Part 2").
+    channel_handle: str = Field("@SideQuestLogic", pattern=r"^@[\w.-]{3,30}$")
     # Background music channels (handles / UC ids) and the music level under the voice (0-1).
     music_channels: list[str] = Field(default_factory=lambda: list(DEFAULT_MUSIC_CHANNELS))
     music_volume: float = Field(0.14, ge=0, le=1)  # 12-15% (about -17 dB) sits well under speech
@@ -95,7 +101,7 @@ class Settings(BaseModel):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
-    @field_validator("assets_dir", mode="after")
+    @field_validator("assets_dir", "stickers_dir", mode="after")
     @classmethod
     def _resolve_assets_dir(cls, value: Path) -> Path:
         return value if value.is_absolute() else PROJECT_ROOT / value

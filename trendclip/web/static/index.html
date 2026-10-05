@@ -45,6 +45,14 @@
             <span class="hint" id="geminiInfo">Gemini watches the clip and writes the voiceover, title and hashtags</span>
           </div>
         </div>
+        <div class="field">
+          <span>Format</span>
+          <div class="formats" id="cFormat" role="radiogroup">
+            <button type="button" data-format="short" role="radio"><b>Short</b><small>15–60 s · one video</small></button>
+            <button type="button" data-format="long" role="radio"><b>Long story</b><small>60–90 s · detailed &amp; witty</small></button>
+            <button type="button" data-format="multi" role="radio"><b>Multi-part</b><small>Part 1 cliffhanger + Part 2</small></button>
+          </div>
+        </div>
         <div class="form-row">
           <label class="field field-grow">
             <span>Script type</span>
@@ -66,6 +74,10 @@
               <option value="60">60 seconds</option>
             </select>
           </label>
+          <label class="field" id="cHandleField" hidden>
+            <span>Channel</span>
+            <input id="cHandle" type="text" maxlength="31" placeholder="@SideQuestLogic" />
+          </label>
         </div>
         <label class="field"><span>Notes for Gemini (optional)</span>
           <textarea id="cNotes" rows="2" maxlength="1000" placeholder="Angle or tone, e.g. 'speedrun tips for beginners', 'funny', 'mention the new update'"></textarea>
@@ -77,6 +89,19 @@
         <div id="cScriptJob" class="job" hidden></div>
         <div id="cOnScreen" class="seen" hidden></div>
 
+        <div id="cSeries" class="series-box" hidden>
+          <div class="form-row">
+            <label class="field field-grow"><span>Story name <em>(file names: StoryName_Part1.mp4, _Part2.mp4)</em></span>
+              <input id="cStory" type="text" maxlength="60" placeholder="e.g. TheWrongUber" />
+            </label>
+          </div>
+          <div class="subtabs part-tabs" id="cPartTabs">
+            <button type="button" data-part="0" class="active">Part 1 · cliffhanger</button>
+            <button type="button" data-part="1">Part 2 · twist ending</button>
+          </div>
+          <div class="hint" id="cPartHint"></div>
+        </div>
+
         <label class="field"><span>Voiceover script <em id="cScriptStats"></em></span>
           <textarea id="cScript" rows="7" maxlength="3000" placeholder="Generate with Gemini, or type your own voiceover here."></textarea>
         </label>
@@ -86,6 +111,12 @@
         <label class="field"><span>Title card <em>(top banner for the first 3 seconds, empty = none)</em></span>
           <input id="cTitleCard" type="text" maxlength="40" placeholder="e.g. CAT LOGIC 101" />
         </label>
+        <label class="field"><span>End banner <em>(top banner over the last 3.5 seconds, e.g. the call to action; empty = none)</em></span>
+          <input id="cEndCard" type="text" maxlength="60" placeholder="e.g. PART 2 TOMORROW · SUB @SideQuestLogic" />
+        </label>
+        <label class="field" id="cPinnedField" hidden><span>Pinned comment for Part 1 <em>(shown in the Upload tab; links to Part 2 once it's uploaded)</em></span>
+          <textarea id="cPinned" rows="2" maxlength="500"></textarea>
+        </label>
         <div class="field">
           <span>Pop-up images <em>(pop up when the word is spoken; free emoji / Wikimedia images)</em></span>
           <div class="chips" id="cPopups"></div>
@@ -94,6 +125,23 @@
             <input id="cPopEmoji" type="text" maxlength="8" placeholder="emoji" class="emoji-input" />
             <button type="button" class="dl-copy" id="cPopAdd">Add</button>
           </div>
+        </div>
+        <div class="field">
+          <span>Reaction stickers <em>(your <code>stickers/</code> folder: memes pop up at funny / awkward / shocking beats, away from the captions)</em></span>
+          <div class="chips" id="cReactions"></div>
+          <div class="form-row sticker-toggles">
+            <label class="check"><input type="checkbox" id="cStickers" checked /> Auto reaction stickers</label>
+            <label class="check"><input type="checkbox" id="cCtaSticker" checked /> Subscribe / Part 2 sticker at the call to action</label>
+          </div>
+          <details class="sticker-lib" id="cStickerLib">
+            <summary id="cStickerSummary">Sticker library</summary>
+            <div class="sticker-grid" id="cStickerGrid"></div>
+            <div class="form-row">
+              <button type="button" class="dl-copy" id="cStickerRescan">Rescan folder</button>
+              <button type="button" class="dl-copy" id="cStickerRetag">Re-tag all with Gemini</button>
+              <span class="hint" id="cStickerHint"></span>
+            </div>
+          </details>
         </div>
       </section>
 
@@ -257,11 +305,24 @@
             <button type="button" class="dl-copy" data-quick="tomorrow-12">Tomorrow 12:00</button>
             <button type="button" class="dl-copy" data-quick="tomorrow-18">Tomorrow 18:00</button>
             <button type="button" class="dl-copy" data-quick="weekend-11">Saturday 11:00</button>
+            <button type="button" class="dl-copy" data-quick="after-prev" id="ytAfterPrev" hidden>24 h after Part 1</button>
           </div>
           <div class="hint" id="ytWhenHint" hidden></div>
           <button id="ytUpload" class="btn-primary btn-block" type="button">Upload to YouTube as a Short</button>
           <div id="ytJob" class="job" hidden></div>
           <div id="ytDone" class="banner banner-ok" hidden></div>
+          <div id="ytSeries" class="field" hidden>
+            <span>Story series</span>
+            <div class="series-links" id="ytSeriesLinks"></div>
+            <label class="field"><span id="ytCommentLabel">Pinned comment</span>
+              <textarea id="ytComment" rows="3" maxlength="2000"></textarea>
+            </label>
+            <div class="form-row">
+              <button type="button" class="dl-copy" id="ytCommentCopy">Copy comment</button>
+              <button type="button" class="dl-ready" id="ytCommentPost">Post comment on YouTube</button>
+            </div>
+            <div class="hint" id="ytCommentHint"></div>
+          </div>
         </div>
 
         <div class="platform" data-pane="instagram" hidden>

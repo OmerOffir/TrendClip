@@ -1,0 +1,12 @@
+{
+  "crazy_petric.png": {"category": "reaction", "moods": ["crazy", "funny"], "description": "Patrick going crazy"},
+  "go_out.png": {"category": "reaction", "moods": ["nope"], "description": "Guy walking out the exit"},
+  "image copy 2.png": {"category": "reaction", "moods": ["approve"], "description": "Drake approving"},
+  "image copy 3.png": {"category": "reaction", "moods": ["proud"], "description": "Leo raising a glass"},
+  "image copy 4.png": {"category": "reaction", "moods": ["pain", "awkward"], "description": "Hide-the-pain Harold"},
+  "image copy.png": {"category": "reaction", "moods": ["reject"], "description": "Drake refusing"},
+  "image.png": {"category": "reaction", "moods": ["suspicious"], "description": "Shrek, suspicious"},
+  "me?.png": {"category": "reaction", "moods": ["innocent"], "description": "Who, me?"},
+  "oh_no.png": {"category": "reaction", "moods": ["shocked"], "description": "Willem Dafoe, shocked"},
+  "oh_no_2.png": {"category": "reaction", "moods": ["embarrassed", "awkward"], "description": "Barbie facepalm"}
+}

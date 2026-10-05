@@ -8,6 +8,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -18,7 +19,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__, music, publish, script_writer, shorts, video_downloader, voiceover
+from .. import __version__, music, publish, script_writer, shorts, stickers, video_downloader, voiceover
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -79,7 +80,22 @@ class _TTLCache:
             self._data[key] = (time.monotonic(), value)
 
 
-app = FastAPI(title="TrendClipper", version=__version__)
+def _scan_stickers() -> None:
+    try:
+        found = stickers.scan(get_settings())
+        logger.info("Sticker library: %d files %s", len(found), stickers.summary(found))
+    except Exception:  # noqa: BLE001 - the library is rescanned on the next render anyway
+        logger.exception("Sticker scan failed")
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    # Scan (and tag new stickers with Gemini) in the background so startup stays instant.
+    threading.Thread(target=_scan_stickers, name="sticker-scan", daemon=True).start()
+    yield
+
+
+app = FastAPI(title="TrendClipper", version=__version__, lifespan=_lifespan)
 _cache = _TTLCache()
 _downloads = video_downloader.DownloadManager()
 _create = shorts.CreateManager()
@@ -251,9 +267,11 @@ class ScriptRequest(BaseModel):
     game: str = Field(min_length=1, max_length=80)
     trend_titles: list[str] = Field(default_factory=list, max_length=20)
     notes: str = Field("", max_length=1000)
-    target_seconds: int = Field(30, ge=10, le=90)
+    target_seconds: int = Field(30, ge=10, le=180)  # per part for multi
     watch_clip: bool = True
     mode: Literal["clip", "story"] = "clip"
+    format: Literal["short", "long", "multi"] = "short"
+    channel_handle: str | None = Field(None, pattern=r"^@[\w.-]{3,30}$")
 
 
 class MusicPickRequest(BaseModel):
@@ -280,6 +298,8 @@ def create_status() -> dict[str, Any]:
         "rate": settings.tts_rate,
         "target_seconds": settings.short_target_seconds,
         "words_per_second": script_writer.WORDS_PER_SECOND,
+        "channel_handle": settings.channel_handle,
+        "ctas": script_writer.series_ctas(settings.channel_handle),
     }
 
 
@@ -298,7 +318,8 @@ def create_script(req: ScriptRequest) -> dict[str, Any]:
     if script_writer.gemini_api_key(settings) is None:
         raise HTTPException(status_code=400, detail="Add GEMINI_API_KEY to .env (https://aistudio.google.com/apikey)")
     job = _create.submit_script(settings, req.clip, req.game, req.trend_titles, req.notes,
-                                req.target_seconds, req.watch_clip, req.mode)
+                                req.target_seconds, req.watch_clip,
+                                "story" if req.format == "multi" else req.mode, req.format, req.channel_handle)
     return job.model_dump(mode="json")
 
 
@@ -333,6 +354,39 @@ def create_render(req: shorts.RenderRequest) -> dict[str, Any]:
     settings = _base_settings()
     _clip_or_http(settings, req.clip)
     return _create.submit_render(settings, req).model_dump(mode="json")
+
+
+@app.post("/api/create/render-series", status_code=202)
+def create_render_series(req: shorts.SeriesRenderRequest) -> dict[str, Any]:
+    """Part 1 + Part 2 in one job: output/shorts/<StoryName>_Part1.mp4, _Part2.mp4."""
+    settings = _base_settings()
+    _clip_or_http(settings, req.clip)
+    return _create.submit_series(settings, req).model_dump(mode="json")
+
+
+def _sticker_list(found: list[stickers.StickerInfo]) -> dict[str, Any]:
+    settings = _base_settings()
+    return {
+        "folder": str(settings.stickers_dir),
+        "moods": list(stickers.MOODS),
+        "counts": stickers.summary(found),
+        "stickers": [{**s.model_dump(), "animated": s.animated} for s in found],
+    }
+
+
+@app.get("/api/stickers")
+def list_stickers() -> dict[str, Any]:
+    """The stickers/ folder with each file's category and moods (new files are tagged on the way)."""
+    return _sticker_list(stickers.library(_base_settings()))
+
+
+@app.post("/api/stickers/rescan")
+def rescan_stickers(retag: bool = False) -> dict[str, Any]:
+    settings = _base_settings()
+    if retag:
+        stickers._cache_file(settings).unlink(missing_ok=True)
+        stickers._gemini_failed_at.clear()
+    return _sticker_list(stickers.scan(settings))
 
 
 @app.get("/api/create/jobs")
@@ -385,12 +439,15 @@ def _short_or_http(settings: Settings, filename: str) -> shorts.ShortVideo:
 
 
 def _with_texts(short: shorts.ShortVideo) -> dict[str, Any]:
-    """Short + ready-to-paste texts for each platform."""
+    """Short + ready-to-paste texts for each platform (+ links between the parts of a story)."""
     data = short.model_dump(mode="json")
+    series = publish.series_info(_base_settings(), short) if short.series_id else None
+    data["series"] = series
     if short.texts:
         t = publish.PlatformTexts.model_validate(short.texts)
         data["paste"] = {
-            "youtube_description": publish.youtube_description(t.youtube, t.credit),
+            "youtube_description": publish.youtube_description(t.youtube, t.credit,
+                                                               series["links"] if series else ""),
             "tiktok": publish.full_text(t.tiktok, t.credit),
             "instagram": publish.full_text(t.instagram, t.credit),
         }
@@ -447,6 +504,17 @@ def mark_posted(filename: str, platform: Literal["tiktok", "instagram"], req: Po
     settings = _base_settings()
     _short_or_http(settings, filename)
     return _with_texts(publish.set_posted(settings, filename, platform, req.posted))
+
+
+@app.post("/api/upload/shorts/{filename}/youtube/comment")
+def youtube_comment(filename: str, req: publish.CommentRequest) -> dict[str, Any]:
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    try:
+        publish.post_comment(settings, filename, req.text)
+    except publish.PublishError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return _with_texts(shorts.get_short(settings, filename))
 
 
 @app.get("/api/upload/youtube/status")
@@ -517,7 +585,8 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 if _settings_ok():
     _s = get_settings()
-    for _route, _dir in (("backgrounds", _s.backgrounds_dir), ("shorts", _s.shorts_dir), ("music", _s.music_dir)):
+    for _route, _dir in (("backgrounds", _s.backgrounds_dir), ("shorts", _s.shorts_dir), ("music", _s.music_dir),
+                         ("stickers", _s.stickers_dir)):
         _dir.mkdir(parents=True, exist_ok=True)
         app.mount(f"/media/{_route}", StaticFiles(directory=_dir), name=_route)
 

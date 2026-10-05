@@ -15,10 +15,11 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import music, popups, script_writer, video_assembler, voiceover
+from . import music, popups, script_writer, stickers, video_assembler, voiceover
 from .config import Settings
 from .models import utcnow
 from .popups import Popup
+from .stickers import Reaction
 from .video_downloader import LATEST_FILENAME, BackgroundClip
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,15 @@ class ShortVideo(BaseModel):
     music_url: str = ""
     title_card: str = ""
     popups: list[str] = Field(default_factory=list)  # words that got a pop-up image
+    stickers: list[str] = Field(default_factory=list)  # files from stickers/ that were used
+    end_card: str = ""
+    # Multi-part stories: parts of one story share series_id; the Upload tab links them together.
+    series_id: str | None = None
+    story_name: str = ""
+    part: int | None = None
+    parts_total: int | None = None
+    pinned_comment: str = ""
+    channel_handle: str = ""
     created_at: datetime = Field(default_factory=utcnow)
     # Upload tab: marked ready in Create; per-platform texts; where it was published.
     ready: bool = False
@@ -70,6 +80,52 @@ class RenderRequest(BaseModel):
     music_volume: float | None = Field(None, ge=0, le=1)
     title_card: str = Field("", max_length=60)
     popups: list[Popup] = Field(default_factory=list, max_length=10)
+    end_card: str = Field("", max_length=80)
+    reactions: list[Reaction] = Field(default_factory=list, max_length=6)
+    stickers: bool = True  # reaction stickers from stickers/ (Gemini beats, else spoken-word cues)
+    cta_sticker: bool = True  # subscribe / Part 2 sticker when the call to action starts
+    background_start: float = Field(0.0, ge=0)
+    music_start: float = Field(0.0, ge=0)
+    output_name: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
+    series_id: str | None = Field(None, pattern=r"^[a-f0-9]{6,32}$")
+    story_name: str = Field("", max_length=80)
+    part: int | None = Field(None, ge=1, le=9)
+    parts_total: int | None = Field(None, ge=1, le=9)
+    pinned_comment: str = Field("", max_length=1000)
+    channel_handle: str = Field("", max_length=32)
+
+
+class SeriesPart(BaseModel):
+    script: str = Field(min_length=3, max_length=3000)
+    title: str = Field("", max_length=150)
+    description: str = Field("", max_length=4000)
+    hashtags: list[str] = Field(default_factory=list)
+    title_card: str = Field("", max_length=60)
+    popups: list[Popup] = Field(default_factory=list, max_length=10)
+    end_card: str = Field("", max_length=80)
+    reactions: list[Reaction] = Field(default_factory=list, max_length=6)
+
+
+class SeriesRenderRequest(BaseModel):
+    """Both parts of a story with shared voice, style, music and background clip."""
+
+    clip: str = Field(min_length=1)
+    game: str = Field(min_length=1, max_length=80)
+    story_name: str = Field("Story", max_length=80)
+    series_id: str | None = Field(None, pattern=r"^[a-f0-9]{6,32}$")
+    pinned_comment: str = Field("", max_length=1000)
+    channel_handle: str = Field("", max_length=32)
+    parts: list[SeriesPart] = Field(min_length=2, max_length=2)
+    voice: str | None = None
+    rate: str | None = Field(None, pattern=r"^[+-]\d{1,3}%$")
+    highlight: str = "yellow"
+    fit: Literal["crop", "blur"] = "crop"
+    max_words: int = Field(3, ge=1, le=6)
+    music_source: str = Field("none", max_length=40)
+    music_track: str | None = Field(None, pattern=r"^[\w-]{11}$")
+    music_volume: float | None = Field(None, ge=0, le=1)
+    stickers: bool = True
+    cta_sticker: bool = True
 
 
 def _slug(text: str) -> str:
@@ -102,11 +158,16 @@ def credit_line(meta: BackgroundClip | None) -> str:
 
 def write_script(settings: Settings, clip: str, game: str, trend_titles: list[str], notes: str,
                  target_seconds: int, watch_clip: bool, progress: ProgressFn,
-                 mode: script_writer.ScriptMode = "clip") -> dict[str, Any]:
+                 mode: script_writer.ScriptMode = "clip", format: script_writer.ScriptFormat = "short",
+                 handle: str | None = None) -> dict[str, Any]:
     path = clip_path(settings, clip)
+    if format == "multi":
+        series = script_writer.write_series(settings, game, notes=notes, target_seconds=target_seconds,
+                                            handle=handle, progress=progress)
+        return {"format": "multi", **series.model_dump()}
     result = script_writer.write_script(
         settings, game, path, trend_titles=trend_titles, notes=notes,
-        target_seconds=target_seconds, watch_clip=watch_clip, mode=mode, progress=progress,
+        target_seconds=target_seconds, watch_clip=watch_clip, mode=mode, format=format, progress=progress,
     )
     return result.model_dump()
 
@@ -139,12 +200,35 @@ def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, 
     return overlays, assets, shown
 
 
+def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_overlays: list,
+                     progress: ProgressFn) -> tuple[list, list[str]]:
+    """Reaction stickers at the story beats + a subscribe / Part 2 sticker at the call to action.
+    Sticker problems never fail the render."""
+    if not (req.stickers or req.cta_sticker):
+        return [], []
+    try:
+        lib = stickers.library(settings) if req.stickers else []
+        if req.stickers and lib:
+            progress(None, f"Placing stickers ({len(lib)} in the library)")
+        cta = None
+        if req.cta_sticker:
+            cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
+        return stickers.plan(
+            settings, [s for s in lib if s.category != "off"], words, req.reactions, cta=cta, auto=req.stickers,
+            popups=popup_overlays, title_seconds=3.0 if req.title_card.strip() else 0.0,
+            end_seconds=3.5 if req.end_card.strip() else 0.0, seed=req.script,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Sticker placement failed; rendering without stickers")
+        return [], []
+
+
 def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -> ShortVideo:
     background = clip_path(settings, req.clip)
     meta = _clip_meta(background)
     out_dir = settings.shorts_dir
     out_dir.mkdir(parents=True, exist_ok=True)
-    base = out_dir / f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}"
+    base = out_dir / (req.output_name or f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}")
     voice = req.voice or settings.tts_voice
 
     track = resolve_music(settings, req, progress)
@@ -153,14 +237,17 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
     words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, req.rate or settings.tts_rate)
 
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
+    sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(
         background, base.with_suffix(".mp3"), words, base.with_suffix(".mp4"),
         fit=req.fit, highlight=req.highlight, max_words=req.max_words, progress=progress,
+        background_start=req.background_start,
         music=settings.music_dir / track.filename if track else None,
         music_volume=settings.music_volume if req.music_volume is None else req.music_volume,
-        overlays=overlays, title_card=req.title_card.strip(),
+        music_start=req.music_start,
+        overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
     )
 
     credit = credit_line(meta)
@@ -177,11 +264,66 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
         duration_seconds=round(video_assembler.media_duration(output), 2),
         background=req.clip, background_title=meta.title if meta else "", credit=credit,
         music_title=track.title if track else "", music_url=track.url if track else "",
-        title_card=req.title_card.strip(), popups=shown,
+        title_card=req.title_card.strip(), popups=shown, stickers=used, end_card=req.end_card.strip(),
+        series_id=req.series_id, story_name=req.story_name, part=req.part, parts_total=req.parts_total,
+        pinned_comment=req.pinned_comment.strip(), channel_handle=req.channel_handle,
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     shutil.copyfile(output, settings.output_dir / FINAL_SHORT)
     return short
+
+
+def series_name(settings: Settings, story_name: str, parts: int) -> str:
+    """'TheWrongUber' -> files TheWrongUber_Part1.mp4 ...; a number is added if that story exists."""
+    base = re.sub(r"[^A-Za-z0-9]+", "", story_name)[:50] or "Story"
+    name, n = base, 1
+    while any((settings.shorts_dir / f"{name}_Part{i}.mp4").exists() for i in range(1, parts + 1)):
+        n += 1
+        name = f"{base}{n}"
+    return name
+
+
+def render_series(settings: Settings, req: SeriesRenderRequest, progress: ProgressFn) -> dict[str, Any]:
+    """Render every part in order. Parts share the voice, music track and clip; each part continues
+    the gameplay (and music) where the previous one stopped, so viewers never see the same footage."""
+    series_id = req.series_id or uuid.uuid4().hex[:10]
+    total = len(req.parts)
+    settings.shorts_dir.mkdir(parents=True, exist_ok=True)
+    name = series_name(settings, req.story_name, total)
+    handle = req.channel_handle or settings.channel_handle
+
+    track = resolve_music(settings, RenderRequest(
+        clip=req.clip, game=req.game, script="...", music_source=req.music_source, music_track=req.music_track,
+    ), progress)
+    offset = 0.0
+    shorts: list[ShortVideo] = []
+    for i, part in enumerate(req.parts):
+        n = i + 1
+
+        def scaled(frac: float | None, msg: str, i: int = i, n: int = n) -> None:
+            progress(None if frac is None else (i + frac) / total, f"Part {n}/{total}: {msg}")
+
+        short = render_short(settings, RenderRequest(
+            clip=req.clip, game=req.game, script=part.script, title=part.title, description=part.description,
+            hashtags=part.hashtags, voice=req.voice, rate=req.rate, highlight=req.highlight, fit=req.fit,
+            max_words=req.max_words, music_source=req.music_source if track else "none",
+            music_track=track.video_id if track else None, music_volume=req.music_volume,
+            title_card=part.title_card, popups=part.popups, end_card=part.end_card,
+            reactions=part.reactions, stickers=req.stickers, cta_sticker=req.cta_sticker,
+            background_start=offset, music_start=offset, output_name=f"{name}_Part{n}",
+            series_id=series_id, story_name=req.story_name, part=n, parts_total=total,
+            pinned_comment=req.pinned_comment if n == 1 else "", channel_handle=handle,
+        ), scaled)
+        offset += short.duration_seconds or 0.0
+        shorts.append(short)
+    return {"series_id": series_id, "story_name": req.story_name, "name": name,
+            "shorts": [s.model_dump(mode="json") for s in shorts]}
+
+
+def series_parts(settings: Settings, series_id: str | None) -> list[ShortVideo]:
+    if not series_id:
+        return []
+    return sorted((s for s in list_shorts(settings) if s.series_id == series_id), key=lambda s: s.part or 0)
 
 
 def list_shorts(settings: Settings) -> list[ShortVideo]:
@@ -299,15 +441,21 @@ class CreateManager:
 
     def submit_script(self, settings: Settings, clip: str, game: str, trend_titles: list[str],
                       notes: str, target_seconds: int, watch_clip: bool,
-                      mode: script_writer.ScriptMode = "clip") -> CreateJob:
+                      mode: script_writer.ScriptMode = "clip", format: script_writer.ScriptFormat = "short",
+                      handle: str | None = None) -> CreateJob:
         job = self._add("script", game)
         self._scripts.submit(self._run, job.id, lambda p: write_script(
-            settings, clip, game, trend_titles, notes, target_seconds, watch_clip, p, mode))
+            settings, clip, game, trend_titles, notes, target_seconds, watch_clip, p, mode, format, handle))
         return job
 
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:
         job = self._add("render", req.game)
         self._renders.submit(self._run, job.id, lambda p: render_short(settings, req, p))
+        return job
+
+    def submit_series(self, settings: Settings, req: SeriesRenderRequest) -> CreateJob:
+        job = self._add("render", req.game)
+        self._renders.submit(self._run, job.id, lambda p: render_series(settings, req, p))
         return job
 
     def submit(self, kind: Literal["copy", "upload"], game: str, fn: Callable[[ProgressFn], Any]) -> CreateJob:

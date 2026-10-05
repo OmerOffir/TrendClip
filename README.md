@@ -145,10 +145,55 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    for 1.5-2.5 s exactly when its word is spoken (edge-tts word timings), between the title area and
    the subtitles. Edit the title, remove pop-ups (×) or add your own word + emoji.
 
+**Format** (top of the Script card):
+
+- **Short** (15-60 s): one video, as above.
+- **Long story** (60 / 75 / 90 s ≈ 200 / 250 / 300 words): a more detailed, witty script with
+  escalating beats, a callback and a mini-hook every ~15 s. Works with both script types. The edge-tts
+  voice speaks about 3.3 words per second, so 250-320 words needs 75-95 s (Shorts allow up to 3 min).
+- **Multi-part** (40-50 s per part): one Gemini call writes a story split into **Part 1**, which ends on
+  a cliffhanger, and **Part 2**, which resolves it with a twist. The app appends the calls to action
+  itself (spoken and in the karaoke captions): Part 1 ends with *"Sub to Side Quest Logic for Part 2
+  dropping tomorrow!"*, and Part 2 with *"Sub for daily side quest stories and drop your crazy stories
+  in the comments!"*. Each part also gets a yellow end banner (e.g. `PART 2 TOMORROW · SUB
+  @SideQuestLogic`), "(Part 1)" / "(Part 2)" in the title, `#part1` / `#part2` hashtags, a
+  "PART 1: …" title card, a description line, and a pinned comment for Part 1. Switch parts with the
+  tabs to edit them. **Create Part 1 + Part 2** renders both in one job:
+  `output/shorts/<StoryName>_Part1.mp4` and `_Part2.mp4`. Both parts use the same voice, music and
+  clip, and Part 2 continues the gameplay and the music where Part 1 stopped. The clip loops if it
+  is shorter than the voice; for long formats, download longer clips (Trends → length "whole video").
+  Set your handle with `CHANNEL_HANDLE` in `.env` or the **Channel** field.
+
 Pop-up images are free and need no key: the matching emoji from Microsoft's Fluent Emoji set (MIT)
 on Wikimedia Commons, else Noto Emoji / Twemoji, else a Commons search that keeps only files with a
 real transparent background. Each becomes a sticker (white outline, soft shadow) cached in
 `assets/popups/`; credits are added to the description. A pop-up with no usable image is skipped.
+
+**Reaction stickers** (`stickers/` folder, PNG / WebP / JPG / animated GIF):
+
+- **Scan:** the folder is scanned when the server starts and again whenever a file changes. Gemini
+  looks at each new image once and tags it as a *reaction* (mood: funny, awkward, shocked, approve,
+  reject, proud, pain, nope, innocent, crazy, embarrassed, suspicious) or a *CTA* (subscribe / follow /
+  part 2 / comment). If Gemini is unavailable, the filename is used (`oh_no.png` → shocked,
+  `subscribe_*.gif` → subscribe CTA) and the next scan tries again. Tags are cached in
+  `assets/cache/stickers.json`. See them under **Sticker library** in the Create tab, with
+  **Rescan** and **Re-tag with Gemini** buttons.
+- **Fix a tag:** add it to `stickers/stickers.json`, which always wins, e.g.
+  `{"oh_no_2.png": {"moods": ["embarrassed"]}, "image.png": {"category": "off"}}`.
+- **When they appear:** Gemini marks 1-3 reaction beats in the script (a word + mood, shown as chips
+  you can remove). Without them, keywords in the voiceover are used ("awkward", "oh no", "no way",
+  …). Each sticker pops up for 1.9 s when its word is spoken, at least 4 s apart. In Part 1 of a
+  series, a *shocked* sticker also lands on the cliffhanger line. The CTA sticker (the folder's
+  subscribe / part 2 sticker, or a built-in red **SUBSCRIBE** / **PART 2 TOMORROW** button) pulses
+  above the captions from the moment the spoken CTA starts.
+- **Look:** a bounce scale-in with fade-in and a 0.25 s fade-out. Animated GIFs play, and images with
+  no transparency become rounded white-bordered cards. Slots: bottom-left, top-right, center-left or
+  center-right. A slot is used only if it does not cover the captions, a pop-up at that moment, or the
+  Shorts buttons on the right and bottom.
+- **Toggles:** **Reaction stickers** and **CTA sticker**, per short or series.
+
+Meme images are usually copyrighted. Short reaction clips are common on Shorts, but YouTube can
+still flag them, so prefer stickers you made or that have a free licence.
 
 Shorts are saved in `output/shorts/` (MP4 + voiceover MP3 + subtitles + JSON with title,
 description and hashtags); the newest is also copied to `output/final_short.mp4`. The description
@@ -179,6 +224,14 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
 - **Instagram** and **TikTok** (no upload API here): caption, hashtags (Instagram: at most 5) and
   @mentions in each platform's style, a ready-to-paste text with the credits, **Copy caption**,
   **Download video**, a link to the upload page and a **Posted** checkbox to keep track.
+
+**Multi-part stories:** the YouTube sub-tab shows both parts and their links. Once a part is
+uploaded, the other part's description gets a "Part 1: <link>" / "Part 2: <link>" line. The pinned
+comment updates too: Part 1's comment teases Part 2, then links to it once Part 2 is uploaded.
+**Post comment on YouTube** posts it as your channel. The API can't pin comments, so pin it on
+YouTube (⋮ → Pin). The **24 h after Part 1** quick pick schedules Part 2 for the next day. Posting
+comments needs one extra permission: if you connected YouTube before this feature existed, press
+Disconnect and then Connect again.
 
 Texts start from a template built from the Short; **Improve texts with Gemini** rewrites all three
 for their platform (mentions only for official accounts Gemini is sure of). Edits are saved on the

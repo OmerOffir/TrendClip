@@ -274,6 +274,14 @@ def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True) ->
     return f"Dialogue: 1,{_ass_time(0)},{_ass_time(seconds)},Title,,0,0,0,,{anim}" + r"\N".join(lines)
 
 
+def end_card_event(text: str, start: float, end: float) -> str:
+    """Top banner for the call to action at the end (case kept, so @Handles stay readable)."""
+    wrapped = [line for seg in text.split("·") if seg.strip() for line in wrap_title(seg.strip(), max_chars=20)]
+    lines = [_ass_text(line, False) for line in wrapped[:4]]
+    anim = r"{\fad(120,0)\fscx60\fscy60\t(0,160,\fscx108\fscy108)\t(160,260,\fscx100\fscy100)}"
+    return f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},EndCard,,0,0,0,,{anim}" + r"\N".join(lines)
+
+
 def create_karaoke_ass_file(
     timestamps_data: Any,
     output_ass_path: str | Path,
@@ -292,6 +300,8 @@ def create_karaoke_ass_file(
     title_card: str = "",
     title_seconds: float = 3.0,
     title_size: int = 132,
+    end_card: str = "",
+    end_seconds: float = 3.5,
 ) -> Path:
     """Write a 1080x1920 .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -315,11 +325,16 @@ YCbCr Matrix: TV.709
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,2,0,1,{outline},{shadow},2,70,70,{margin_v},1
 Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,200,1
+Style: EndCard,{font},96,{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,200,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     events = [title_card_event(title_card, title_seconds, uppercase)] if title_card.strip() else []
+    if end_card.strip() and words:
+        last = words[-1].end
+        start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0)
+        events.append(end_card_event(end_card, start, last + 1.0))
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds
@@ -432,20 +447,30 @@ def music_filter(duration: float, volume: float) -> str:
     )
 
 
+POPUP_CENTER_Y = 800  # between the title card (top) and the subtitles (lower middle)
+POPUP_BOX = 460
+POP_SCALES = (0.3, 0.62, 0.92, 1.1, 1.13, 1.07, 1.0)  # pop-in with a small bounce, one frame each
+POP_ALPHA = (0.35, 0.7, 1.0)  # fade-in over the first frames
+
+
 @dataclass
 class Overlay:
-    """A pop-up image (transparent PNG) shown from `start` to `end` seconds."""
+    """An image shown from `start` to `end` seconds: a pop-up (default: centre, transparent PNG) or a
+    sticker at `center` styled as a cut-out ("sticker") or a rounded meme card ("card")."""
 
     image: Path
     start: float
     end: float
     x_offset: int = 0
     tilt: float = 0.0
+    center: tuple[int, int] | None = None
+    box: int = POPUP_BOX
+    style: Literal["asis", "sticker", "card"] = "asis"
+    pulse: bool = False  # gentle breathing while shown (call-to-action stickers)
+    animated: bool = False  # play the GIF / WebP animation
 
-
-POPUP_CENTER_Y = 800  # between the title card (top) and the subtitles (lower middle)
-POPUP_BOX = 460
-POP_SCALES = (0.3, 0.62, 0.92, 1.1, 1.13, 1.07, 1.0)  # pop-in, one frame each
+    def xy(self) -> tuple[int, int]:
+        return self.center or (WIDTH // 2 + self.x_offset, POPUP_CENTER_Y)
 
 
 def popup_layout(index: int) -> tuple[int, float]:
@@ -453,37 +478,88 @@ def popup_layout(index: int) -> tuple[int, float]:
     return [(-70, -7.0), (70, 6.0), (0, -3.0), (60, -5.0), (-60, 5.0)][index % 5]
 
 
-def render_pop_frames(image: Path, out_dir: Path, name: str, box: int = POPUP_BOX, tilt: float = 0.0) -> str:
-    """Pre-render the pop-in animation as PNG frames on a fixed canvas (ffmpeg holds the last one).
+def _source_frames(overlay: Overlay) -> list[tuple[Any, float]]:
+    """(styled RGBA frame, seconds) for each animation frame, or one frame for still images."""
+    from PIL import Image, ImageSequence
+
+    def prepare(img):
+        img = img.convert("RGBA")
+        if overlay.style != "asis":
+            from . import stickers
+
+            info = stickers.StickerInfo(filename=Path(overlay.image).name, transparent=overlay.style == "sticker")
+            img = stickers.style(img, info, overlay.box)
+        scale = overlay.box / max(img.size)
+        img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
+        if overlay.tilt:
+            img = img.rotate(overlay.tilt, resample=Image.BICUBIC, expand=True)
+        return img
+
+    with Image.open(overlay.image) as src:
+        if not (overlay.animated and getattr(src, "n_frames", 1) > 1):
+            return [(prepare(src), 1.0)]
+        out = []
+        for i, frame in enumerate(ImageSequence.Iterator(src)):  # one object, seeked: copy each frame now
+            if i >= 120:
+                break
+            out.append((prepare(frame.copy()), max(frame.info.get("duration", 100), 20) / 1000))
+        return out
+
+
+def render_pop_frames(overlay: Overlay | Path, out_dir: Path, name: str, box: int = POPUP_BOX,
+                      tilt: float = 0.0, fps: int = 30) -> str:
+    """Pre-render the animation as PNG frames on a fixed canvas: pop-in with bounce and fade-in, then
+    (animated / pulsing overlays) one frame per video frame; ffmpeg holds the last frame of still ones.
     Returns the frame pattern relative to out_dir."""
+    import math
+
     from PIL import Image
 
-    img = Image.open(image).convert("RGBA")
-    scale = box / max(img.size)
-    img = img.resize((max(1, round(img.width * scale)), max(1, round(img.height * scale))), Image.LANCZOS)
-    if tilt:
-        img = img.rotate(tilt, resample=Image.BICUBIC, expand=True)
-    side = int(max(img.size) * max(POP_SCALES)) + 4
+    if not isinstance(overlay, Overlay):
+        overlay = Overlay(Path(overlay), 0.0, 2.0, box=box, tilt=tilt)
+    frames = _source_frames(overlay)
+    biggest = max(max(f.size) for f, _ in frames)
+    side = int(biggest * max(POP_SCALES) * (1.06 if overlay.pulse else 1)) + 4
     side += side % 2
-    for i, s in enumerate(POP_SCALES):
-        frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    moving = len(frames) > 1 or overlay.pulse
+    count = max(len(POP_SCALES), math.ceil((overlay.end - overlay.start) * fps)) if moving else len(POP_SCALES)
+    loop = sum(d for _, d in frames)
+    for k in range(count):
+        t = k / fps
+        if len(frames) > 1:
+            at, i = t % loop, 0
+            while i < len(frames) - 1 and at >= frames[i][1]:
+                at -= frames[i][1]
+                i += 1
+            img = frames[i][0]
+        else:
+            img = frames[0][0]
+        s = POP_SCALES[k] if k < len(POP_SCALES) else 1.0
+        if overlay.pulse and k >= len(POP_SCALES):
+            s = 1.0 + 0.045 * math.sin(2 * math.pi * 1.4 * (t - len(POP_SCALES) / fps))
         w, h = max(1, round(img.width * s)), max(1, round(img.height * s))
         sprite = img.resize((w, h), Image.BILINEAR)
+        if k < len(POP_ALPHA):
+            alpha = sprite.getchannel("A").point(lambda a, f=POP_ALPHA[k]: int(a * f))
+            sprite.putalpha(alpha)
+        frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))
         frame.alpha_composite(sprite, ((side - w) // 2, (side - h) // 2))
-        frame.save(out_dir / f"{name}_{i:02d}.png")
-    return f"{name}_%02d.png"
+        frame.save(out_dir / f"{name}_{k:03d}.png")
+    return f"{name}_%03d.png"
 
 
 def overlay_filter(index: int, input_index: int, overlay: Overlay, fps: int, src: str, dst: str) -> str:
-    """Chain one pop-up (input `input_index`, PNG frames) onto video `src` → `dst`."""
+    """Chain one overlay (input `input_index`, PNG frames) onto video `src` → `dst`."""
     duration = max(overlay.end - overlay.start, 0.3)
     hold = max(duration - len(POP_SCALES) / fps, 0.05)
-    fade = min(0.2, duration / 4)
+    fade = min(0.25, duration / 4)
+    cx, cy = overlay.xy()
     return (
         f"[{input_index}:v]format=rgba,tpad=stop_mode=clone:stop_duration={hold:.3f},"
+        f"trim=duration={duration:.3f},"
         f"fade=t=out:st={duration - fade:.3f}:d={fade:.3f}:alpha=1,"
         f"setpts=PTS-STARTPTS+{overlay.start:.3f}/TB[pop{index}];"
-        f"[{src}][pop{index}]overlay=x=(W-w)/2+{overlay.x_offset}:y={POPUP_CENTER_Y}-h/2:eof_action=pass[{dst}]"
+        f"[{src}][pop{index}]overlay=x={cx}-w/2:y={cy}-h/2:eof_action=pass[{dst}]"
     )
 
 
@@ -521,6 +597,10 @@ def assemble_video(
     ffmpeg = ffmpeg_with_libass()
     voice_len = media_duration(voiceover)
     bg_len = media_duration(background)
+    if bg_len > 1:
+        background_start %= bg_len  # seeking past the end of a looped input fails, so wrap around
+    if music is not None and music_start and (music_len := media_duration(Path(music))) > 1:
+        music_start %= music_len
     loop = bg_len - background_start < voice_len
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -549,7 +629,7 @@ def assemble_video(
         current = "base"
         first_input = 3 if music is not None else 2
         for i, ov in enumerate(overlays):
-            pattern = render_pop_frames(Path(ov.image), work_dir, f"pop{i}", tilt=ov.tilt)
+            pattern = render_pop_frames(ov, work_dir, f"pop{i}", fps=fps)
             cmd += ["-framerate", str(fps), "-i", pattern]
             graph += ";" + overlay_filter(i, first_input + i, ov, fps, current, f"ov{i}")
             current = f"ov{i}"

@@ -40,6 +40,14 @@
     ytWhenHint: $("ytWhenHint"),
     ytJob: $("ytJob"),
     ytDone: $("ytDone"),
+    ytAfterPrev: $("ytAfterPrev"),
+    ytSeries: $("ytSeries"),
+    ytSeriesLinks: $("ytSeriesLinks"),
+    ytComment: $("ytComment"),
+    ytCommentLabel: $("ytCommentLabel"),
+    ytCommentCopy: $("ytCommentCopy"),
+    ytCommentPost: $("ytCommentPost"),
+    ytCommentHint: $("ytCommentHint"),
     igCaption: $("igCaption"),
     igHashtags: $("igHashtags"),
     igMentions: $("igMentions"),
@@ -70,7 +78,7 @@
     platform: "youtube",
     yt: null,
     saveTimer: null,
-    busy: { texts: false, upload: false },
+    busy: { texts: false, upload: false, comment: false },
   };
 
   const current = () => state.shorts.find((s) => s.filename === state.selected) || null;
@@ -113,7 +121,8 @@
     };
   }
 
-  const ytDescription = (t) => join([t.youtube.description, t.youtube.hashtags.join(" "), t.credit]);
+  const seriesLinks = () => (current() && current().series ? current().series.links : "");
+  const ytDescription = (t) => join([t.youtube.description, seriesLinks(), t.youtube.hashtags.join(" "), t.credit]);
   const social = (p, credit) => join([p.caption, p.mentions.join(" "), p.hashtags.join(" "), credit]).slice(0, CAPTION_MAX);
 
   function renderFinals() {
@@ -165,7 +174,7 @@
       <button type="button" class="ready-card${s.filename === state.selected ? " selected" : ""}" data-select="${esc(s.filename)}">
         <video src="/media/shorts/${encodeURIComponent(s.filename)}#t=1" muted preload="metadata" playsinline></video>
         <span class="ready-body">
-          <span class="dl-title">${esc(s.title)}</span>
+          <span class="dl-title">${s.part ? `<span class="pill part">PART ${s.part}/${s.parts_total || 2}</span> ` : ""}${esc(s.title)}</span>
           <span class="dl-meta">${esc(s.game)} · ${s.duration_seconds ? `${Math.round(s.duration_seconds)}s` : ""}</span>
           <span class="ready-badges">${badges(s)}</span>
         </span>
@@ -200,8 +209,63 @@
     els.igPosted.checked = !!(s.posted && s.posted.instagram);
     els.ttPosted.checked = !!(s.posted && s.posted.tiktok);
     renderUploaded();
+    renderSeries();
     renderFinals();
     updateButtons();
+  }
+
+  function renderSeries() {
+    const s = current();
+    const info = s && s.series;
+    els.ytSeries.hidden = !info;
+    els.ytAfterPrev.hidden = !(info && info.part > 1 && prevPartTime());
+    if (!info) return;
+    const rows = info.siblings.map((p) => {
+      const me = p.filename === s.filename;
+      const status = p.youtube_url
+        ? `<a href="${esc(p.youtube_url)}" target="_blank" rel="noopener">${esc(p.youtube_url)}</a>${p.scheduled_for ? ` · goes public ${esc(fmtWhen(new Date(p.scheduled_for)))}` : ""}`
+        : p.ready ? "not uploaded yet" : "not marked ready (Create tab)";
+      return `<div>${me ? "<b>" : ""}Part ${p.part}${me ? " (this one)</b>" : ""}: ${status}</div>`;
+    });
+    els.ytSeriesLinks.innerHTML = `<div><b>“${esc(info.story_name)}”</b> · Part ${info.part} of ${info.total} · ${esc(info.handle)}</div>${rows.join("")}`;
+    els.ytCommentLabel.textContent = info.part < info.total ? "Pinned comment (teases / links Part 2)" : "Pinned comment (links back to Part 1)";
+    if (document.activeElement !== els.ytComment) els.ytComment.value = info.pinned_comment;
+    const posted = s.uploads && s.uploads.youtube && s.uploads.youtube.comment;
+    els.ytCommentHint.innerHTML = (posted
+      ? `Posted ${esc(fmtWhen(new Date(posted.posted_at)))} · <a href="${esc(posted.url)}" target="_blank" rel="noopener">open comment</a>. `
+      : "") + "YouTube's API can't pin comments: open the video, tap <b>⋮</b> on your comment → <b>Pin</b>. " +
+      (info.part < info.total ? "Once the next part is uploaded, this comment switches to its link." : "");
+  }
+
+  function prevPartTime() {
+    const info = current() && current().series;
+    if (!info) return null;
+    const prev = info.siblings.find((p) => p.part === info.part - 1);
+    const when = prev && (prev.scheduled_for || prev.uploaded_at);
+    return when ? new Date(when) : null;
+  }
+
+  async function postComment() {
+    const s = current();
+    const text = els.ytComment.value.trim();
+    if (!text || !confirm("Post this comment on YouTube as your channel?")) return;
+    state.busy.comment = true;
+    updateButtons();
+    try {
+      const { body } = await api(`/api/upload/shorts/${encodeURIComponent(s.filename)}/youtube/comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      replace(body);
+      renderSeries();
+      showError("");
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      state.busy.comment = false;
+      updateButtons();
+    }
   }
 
   function renderUploaded() {
@@ -320,6 +384,9 @@
     const badTime = scheduling() && (!when || when.getTime() - Date.now() < MIN_SCHEDULE_MS);
     els.ytUpload.disabled = state.busy.upload || !s || !connected || !els.ytTitle.value.trim() || badTime;
     const again = s && s.uploads && s.uploads.youtube;
+    els.ytCommentPost.disabled = state.busy.comment || !again || !connected;
+    els.ytCommentPost.title = !connected ? "Connect YouTube first" : !again ? "Upload this part first" : "";
+    els.ytCommentPost.textContent = state.busy.comment ? "Posting…" : "Post comment on YouTube";
     els.ytUpload.textContent = state.busy.upload ? "Uploading…"
       : !connected ? "Connect YouTube to upload"
       : scheduling() ? `${again ? "Upload again and schedule" : "Upload and schedule"}${when ? ` for ${fmtWhen(when)}` : ""}`
@@ -382,7 +449,10 @@
 
   function quickTime(key) {
     const map = { "today-18": at(0, 18), "tomorrow-12": at(1, 12), "tomorrow-18": at(1, 18), "weekend-11": at(0, 11, 6) };
+    const prev = prevPartTime();
+    if (prev) map["after-prev"] = new Date(prev.getTime() + 24 * 3600000);
     let d = map[key];
+    if (!d) return;
     if (d.getTime() - Date.now() < MIN_SCHEDULE_MS) d = at(1, d.getHours());
     els.ytWhen.value = toLocalInput(d);
     renderSchedule();
@@ -433,7 +503,8 @@
           ${ch.thumbnail ? `<img src="${esc(ch.thumbnail)}" alt="" referrerpolicy="no-referrer" />` : ""}
           <span>Uploading to <b>${esc(ch.title || "your channel")}</b></span>
           <button type="button" class="dl-copy" id="ytLogout">Disconnect</button>
-        </div>`;
+        </div>
+        ${yt.can_comment === false ? '<div class="hint">To post the Part 1/Part 2 comments from here, Disconnect and Connect once more (adds comment permission).</div>' : ""}`;
       return;
     }
     els.ytAccount.innerHTML = `
@@ -589,6 +660,8 @@
     });
     els.igCopy.addEventListener("click", () => copyText(els.igFinal.textContent, els.igCopy));
     els.ttCopy.addEventListener("click", () => copyText(els.ttFinal.textContent, els.ttCopy));
+    els.ytCommentCopy.addEventListener("click", () => copyText(els.ytComment.value, els.ytCommentCopy));
+    els.ytCommentPost.addEventListener("click", postComment);
     els.igPosted.addEventListener("change", () => setPosted("instagram", els.igPosted.checked));
     els.ttPosted.addEventListener("change", () => setPosted("tiktok", els.ttPosted.checked));
     els.unready.addEventListener("click", unready);

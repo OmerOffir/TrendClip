@@ -33,7 +33,9 @@ TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", PROJECT_ROOT / "token_youtube.
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",  # show which channel is connected
+    "https://www.googleapis.com/auth/youtube.force-ssl",  # post the Part 1 comment (pinning is manual)
 ]
+COMMENT_SCOPE = SCOPES[2]
 GAMING_CATEGORY = "20"
 YT_TITLE_MAX, YT_TAGS_MAX_CHARS, CAPTION_MAX = 100, 450, 2200
 INSTAGRAM_MAX_HASHTAGS = 5  # Instagram allows at most 5 hashtags per post
@@ -144,18 +146,27 @@ def clean(texts: GeminiTexts, credit: str, source: str, model: str = "") -> Plat
     )
 
 
+def _social_cta(short: shorts.ShortVideo) -> str:
+    if not short.part:
+        return "Follow for more 🎮"
+    if short.part < (short.parts_total or 2):
+        return f"Part {short.part + 1} drops tomorrow 🔔 Follow so you don't miss it!"
+    return "Missed Part 1? It's on my page 👆 Drop your crazy stories in the comments!"
+
+
 def template_texts(short: shorts.ShortVideo) -> PlatformTexts:
     """Instant texts from what the Create tab already produced (no API call)."""
     base = [t for t in short.hashtags if t.lower() != "#shorts"]
     game_tag = "#" + re.sub(r"[^\w]", "", short.game.split("/")[0])
     story = _story_part(short)
     first = re.split(r"(?<=[.!?])\s", story, maxsplit=1)[0] if story else short.title
+    tiktok = f"{short.title} 👀" + (f"\n{_social_cta(short)}" if short.part else "")
     texts = GeminiTexts(
         youtube=YouTubeText(title=short.title, description=story,
                             tags=[t.lstrip("#") for t in base] + [short.game, "gaming", "shorts"],
                             hashtags=base[:4]),
-        tiktok=SocialText(caption=f"{short.title} 👀", hashtags=base[:3] + [game_tag, "#fyp"]),
-        instagram=SocialText(caption=f"{first}\n\nFollow for more 🎮", hashtags=base[:4] + [game_tag]),
+        tiktok=SocialText(caption=tiktok, hashtags=base[:3] + [game_tag, "#fyp"]),
+        instagram=SocialText(caption=f"{first}\n\n{_social_cta(short)}", hashtags=base[:4] + [game_tag]),
     )
     return clean(texts, short.credit, "template")
 
@@ -170,6 +181,24 @@ Voiceover script: {script}
 Current description: {description}
 Current hashtags: {hashtags}"""
 
+SERIES_PROMPT = """
+This video is Part {part} of {total} of one story. Every title must contain "(Part {part})" and the
+hashtags must include #part{part}. {cta}"""
+
+
+def _series_prompt(short: shorts.ShortVideo) -> str:
+    if not short.part:
+        return ""
+    total = short.parts_total or 2
+    handle = short.channel_handle or "the channel"
+    if short.part < total:
+        cta = (f"It ends on a cliffhanger: every caption should tease Part {short.part + 1} dropping tomorrow "
+               f"and ask people to subscribe/follow ({handle}) so they don't miss it.")
+    else:
+        cta = ("It resolves the story: mention that Part 1 is on the channel, and ask people to subscribe for "
+               "daily side quest stories and to drop their own crazy stories in the comments.")
+    return SERIES_PROMPT.format(part=short.part, total=total, cta=cta)
+
 
 def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: ProgressFn = lambda f, m: None,
                  client=None) -> PlatformTexts:
@@ -183,6 +212,7 @@ def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: Progres
     client = client or genai.Client(api_key=api_key)
     prompt = PROMPT.format(game=short.game, title=short.title, script=short.script,
                            description=_story_part(short), hashtags=" ".join(short.hashtags))
+    prompt += _series_prompt(short)
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=GeminiTexts,
                                          temperature=0.8)
     try:
@@ -204,9 +234,38 @@ def full_text(text: SocialText, credit: str) -> str:
     return "\n\n".join(p for p in parts if p)[:CAPTION_MAX]
 
 
-def youtube_description(text: YouTubeText, credit: str) -> str:
-    parts = [text.description.strip(), " ".join(text.hashtags), credit.strip()]
+def youtube_description(text: YouTubeText, credit: str, links: str = "") -> str:
+    parts = [text.description.strip(), links.strip(), " ".join(text.hashtags), credit.strip()]
     return "\n\n".join(p for p in parts if p)[:5000]
+
+
+def series_info(settings: Settings, short: shorts.ShortVideo) -> dict[str, Any] | None:
+    """Links between the parts of a story, computed live: once a part is on YouTube, the other parts'
+    descriptions and the pinned comment point to it."""
+    if not short.series_id or not short.part:
+        return None
+    handle = short.channel_handle or settings.channel_handle
+    total = short.parts_total or 2
+    siblings = []
+    for s in shorts.series_parts(settings, short.series_id):
+        yt = s.uploads.get("youtube") or {}
+        siblings.append({"filename": s.filename, "part": s.part, "title": s.title, "ready": s.ready,
+                         "youtube_url": yt.get("url", ""), "scheduled_for": yt.get("scheduled_for"),
+                         "uploaded_at": yt.get("uploaded_at")})
+    url = {s["part"]: s["youtube_url"] for s in siblings if s["youtube_url"]}
+    channel = f"https://www.youtube.com/{handle}"
+    links = [f"Part {p}: {url[p]}" for p in sorted(url) if p != short.part]
+
+    if short.part < total:
+        nxt = url.get(short.part + 1)
+        comment = (f"Part {short.part + 1} is out 👉 {nxt}\nSubscribe {handle} for daily side quest stories!" if nxt
+                   else f"{short.pinned_comment or f'Part {short.part + 1} drops tomorrow!'}\n🔔 {channel}")
+    else:
+        first = url.get(1)
+        comment = (f"Missed Part 1? Watch it here 👉 {first}\n" if first else f"Missed Part 1? It's on {handle} 👉 {channel}\n")
+        comment += "Sub for daily side quest stories & drop your crazy stories in the comments!"
+    return {"part": short.part, "total": total, "story_name": short.story_name, "handle": handle,
+            "siblings": siblings, "links": "\n".join(links), "pinned_comment": comment}
 
 
 def texts_for(settings: Settings, filename: str, refresh: Literal["", "template", "gemini"] = "",
@@ -247,6 +306,7 @@ def youtube_status() -> dict[str, Any]:
         status["error"] = f"Could not reach YouTube: {err}"
         return status
     status["connected"] = True
+    status["can_comment"] = can_comment()
     if items:
         snip = items[0]["snippet"]
         status["channel"] = {"id": items[0]["id"], "title": snip.get("title", ""),
@@ -297,13 +357,27 @@ def logout() -> None:
     TOKEN_FILE.unlink(missing_ok=True)
 
 
+def can_comment() -> bool:
+    """Tokens from before comment posting existed lack the scope; reconnecting adds it."""
+    import json
+
+    try:
+        scopes = json.loads(TOKEN_FILE.read_text(encoding="utf-8")).get("scopes") or []
+    except (OSError, ValueError):
+        return False
+    if isinstance(scopes, str):
+        scopes = scopes.split()
+    return COMMENT_SCOPE in scopes
+
+
 def _credentials():
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
     if not TOKEN_FILE.is_file():
         raise PublishError("YouTube is not connected; press Connect YouTube first")
-    creds = Credentials.from_authorized_user_file(str(TOKEN_FILE), SCOPES)
+    # Keep the scopes stored in the token: asking for new ones on refresh fails with invalid_scope.
+    creds = Credentials.from_authorized_user_file(str(TOKEN_FILE))
     if not creds.valid:
         if not creds.refresh_token:
             raise PublishError("YouTube login expired; connect again")
@@ -418,6 +492,39 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     }
     shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
     progress(1.0, "Uploaded")
+    return record
+
+
+class CommentRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=10000)
+
+
+def post_comment(settings: Settings, filename: str, text: str, youtube=None) -> dict[str, Any]:
+    """Post the comment as the channel. The API cannot pin comments: pin it in YouTube (⋮ → Pin)."""
+    from googleapiclient.errors import HttpError
+
+    short = shorts.get_short(settings, filename)
+    video_id = (short.uploads.get("youtube") or {}).get("video_id")
+    if not video_id:
+        raise PublishError("Upload this Short to YouTube first")
+    if youtube is None and not can_comment():
+        raise PublishError("Reconnect YouTube once to allow posting comments (Disconnect → Connect YouTube)")
+    youtube = youtube or _youtube()
+    body = {"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text.strip()}}}}
+    try:
+        response = youtube.commentThreads().insert(part="snippet", body=body).execute()
+    except HttpError as err:
+        detail = _api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment")
+        if (short.uploads.get("youtube") or {}).get("privacy") == "private":
+            detail += " (comments only work once the video is public or unlisted)"
+        raise PublishError(detail) from err
+    record = {"comment_id": response.get("id", ""), "text": text.strip(), "posted_at": utcnow().isoformat(),
+              "url": f"https://www.youtube.com/watch?v={video_id}&lc={response.get('id', '')}"}
+
+    def apply(s: shorts.ShortVideo) -> None:
+        s.uploads["youtube"] = {**(s.uploads.get("youtube") or {}), "comment": record}
+
+    shorts.update_short(settings, filename, apply)
     return record
 
 
