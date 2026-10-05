@@ -117,7 +117,9 @@ Sources:
   (1 quota unit per 50 videos, cached in `assets/cache/`) and matched to games with the same catalog.
   A random video not downloaded before is picked, and yt-dlp cuts a random segment, skipping the intro.
   Games with no channel videos fall back to a yt-dlp search for "no copyright gameplay <game>".
-  Portrait mode prefers uploads labelled *Vertical*/*9:16*.
+  Portrait mode prefers uploads labelled *Vertical*/*9:16* (mostly Minecraft parkour). For other
+  games it takes a landscape upload and crops the centre to 9:16, so every *Vertical 9:16* download
+  is really vertical.
 
 Every clip gets a `.json` sidecar with its source URL, author and license note. These channels let you
 use their footage, usually with credit, so check the license note before publishing and give the credit

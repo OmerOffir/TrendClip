@@ -148,6 +148,29 @@ def test_short_source_video_is_rejected(monkeypatch, tmp_path):
         vd._download_from_youtube("https://youtu.be/x", tmp_path / "x.mp4", clip_seconds=60)
 
 
+def test_landscape_pick_is_cropped_when_vertical_is_asked(tmp_path, monkeypatch):
+    import subprocess
+
+    ffmpeg = vd.ffmpeg_path()
+    if not ffmpeg:
+        pytest.skip("no ffmpeg")
+    settings = make_settings(tmp_path)
+    lib = vd.NoCopyrightLibrary(settings, client_factory=FakeClient)
+    monkeypatch.setattr(vd, "get_library", lambda s: lib)
+
+    def fake_download(url, target, clip_seconds, progress):
+        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                        "testsrc=size=640x360:rate=30:duration=1", "-pix_fmt", "yuv420p", str(target)], check=True)
+        return {"title": "GTA", "source_url": url, "author": "NCG", "license_note": "credit"}
+
+    monkeypatch.setattr(vd, "_download_from_youtube", fake_download)
+    clip = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="portrait")
+    assert (clip.width, clip.height) == (202, 360)
+    assert vd.probe_video(settings.backgrounds_dir / vd.LATEST_FILENAME)["width"] == 202
+    wide = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="landscape")
+    assert (wide.width, wide.height) == (640, 360)
+
+
 def test_download_background_reports_all_failures(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     lib = vd.NoCopyrightLibrary(settings, client_factory=FakeClient)

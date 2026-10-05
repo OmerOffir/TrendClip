@@ -175,6 +175,25 @@ def _trim(path: Path, seconds: int) -> None:
     os.replace(tmp, path)
 
 
+def _crop_to_portrait(path: Path, progress: ProgressFn = _noop) -> None:
+    """Centre-crop a landscape file to 9:16 in place (re-encodes the video, copies the audio)."""
+    ffmpeg = ffmpeg_path()
+    if not ffmpeg:
+        raise DownloadError("ffmpeg is required to crop clips to vertical (install ffmpeg or imageio-ffmpeg)")
+    progress(None, "Cropping to vertical 9:16")
+    tmp = path.with_name(path.stem + ".crop.mp4")
+    proc = subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-i", str(path),
+         "-vf", "crop=trunc(ih*9/16/2)*2:ih,setsar=1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+         "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(tmp)],
+        capture_output=True, text=True, timeout=3600,
+    )
+    if proc.returncode != 0 or not tmp.exists():
+        tmp.unlink(missing_ok=True)
+        raise DownloadError(f"ffmpeg crop failed: {proc.stderr.strip()[-200:]}")
+    os.replace(tmp, path)
+
+
 def _fetch_from_pexels(
     query: str,
     output_path: Path,
@@ -605,7 +624,17 @@ def download_background(
             meta = None
 
         if meta:
-            meta.update(probe_video(target))
+            size = probe_video(target)
+            if orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0):
+                # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
+                try:
+                    _crop_to_portrait(target, progress)
+                except (DownloadError, OSError, subprocess.SubprocessError) as err:
+                    target.unlink(missing_ok=True)
+                    errors.append(f"{source}: {err}")
+                    continue
+                size = probe_video(target)
+            meta.update(size)
             clip = BackgroundClip(path=str(target), filename=target.name, source=source, game=game_name, query=query, **meta)
             target.with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
             shutil.copyfile(target, out_dir / LATEST_FILENAME)
