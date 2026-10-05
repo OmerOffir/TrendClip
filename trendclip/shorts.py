@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import shutil
@@ -54,6 +55,8 @@ class ShortVideo(BaseModel):
     pinned_comment: str = ""
     channel_handle: str = ""
     created_at: datetime = Field(default_factory=utcnow)
+    edited_at: datetime | None = None
+    render_settings: dict[str, Any] = Field(default_factory=dict)  # the RenderRequest, so the Short can be edited
     # Upload tab: marked ready in Create; per-platform texts; where it was published.
     ready: bool = False
     ready_at: datetime | None = None
@@ -226,7 +229,13 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         return [], []
 
 
-def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -> ShortVideo:
+def _load_words(path: Path) -> list[video_assembler.Word]:
+    return [video_assembler.Word(w["word"], w["start"], w["end"]) for w in json.loads(path.read_text(encoding="utf-8"))]
+
+
+def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
+                 voice_from: Path | None = None) -> ShortVideo:
+    """`voice_from`: an existing voiceover MP3 (+ .words.json) with the same script, voice and speed."""
     background = clip_path(settings, req.clip)
     meta = _clip_meta(background)
     out_dir = settings.shorts_dir
@@ -236,8 +245,14 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
 
     track = resolve_music(settings, req, progress)
 
-    progress(None, f"Recording the voiceover ({voice})")
-    words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, req.rate or settings.tts_rate)
+    if voice_from:
+        progress(None, "Reusing the voiceover (script, voice and speed unchanged)")
+        shutil.copyfile(voice_from, base.with_suffix(".mp3"))
+        shutil.copyfile(voice_from.with_suffix(".words.json"), base.with_suffix(".words.json"))
+        words = _load_words(base.with_suffix(".words.json"))
+    else:
+        progress(None, f"Recording the voiceover ({voice})")
+        words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, req.rate or settings.tts_rate)
 
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)
@@ -270,10 +285,78 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn) -
         title_card=req.title_card.strip(), popups=shown, stickers=used, end_card=req.end_card.strip(),
         series_id=req.series_id, story_name=req.story_name, part=req.part, parts_total=req.parts_total,
         pinned_comment=req.pinned_comment.strip(), channel_handle=req.channel_handle,
+        render_settings=req.model_copy(update={
+            "voice": voice, "music_track": track.video_id if track else None,
+            "music_source": req.music_source if track else "none", "output_name": None,
+        }).model_dump(mode="json"),
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     shutil.copyfile(output, settings.output_dir / FINAL_SHORT)
     return short
+
+
+# --------------------------------------------------------------------------- editing
+
+
+def edit_settings(settings: Settings, short: ShortVideo) -> tuple[dict[str, Any], bool]:
+    """The RenderRequest a Short was made with. Shorts from before this was saved get a best-effort
+    rebuild (pop-ups lose their emoji, reactions and caption style fall back to defaults): (request, legacy)."""
+    if short.render_settings:
+        return dict(short.render_settings), False
+    description = short.description
+    if short.credit and description.endswith(short.credit):
+        description = description[: -len(short.credit)].rstrip()
+    track = re.search(r"v=([\w-]{11})", short.music_url or "")
+    req = RenderRequest(
+        clip=short.background, game=short.game, script=short.script, title=short.title, description=description,
+        hashtags=short.hashtags, voice=short.voice, music_source="random" if track else "none",
+        music_track=track.group(1) if track else None, title_card=short.title_card, end_card=short.end_card,
+        popups=[Popup(word=w[:40], query=w[:60]) for w in short.popups], series_id=short.series_id,
+        story_name=short.story_name, part=short.part, parts_total=short.parts_total,
+        pinned_comment=short.pinned_comment, channel_handle=short.channel_handle,
+    )
+    return req.model_dump(mode="json"), True
+
+
+def rerender_short(settings: Settings, filename: str, req: RenderRequest, progress: ProgressFn) -> ShortVideo:
+    """Render the edited Short next to the old one, then replace it: same file name, and it keeps its
+    ready flag and upload history. The voiceover is reused when the script, voice and speed are unchanged."""
+    old = get_short(settings, filename)
+    old_path = short_path(settings, filename)
+    prev, _ = edit_settings(settings, old)
+    voice = req.voice or settings.tts_voice
+    rate = req.rate or settings.tts_rate
+    same_voice = (prev.get("script", "").strip() == req.script.strip()
+                  and (prev.get("voice") or settings.tts_voice) == voice
+                  and (prev.get("rate") or settings.tts_rate) == rate)
+    mp3 = old_path.with_suffix(".mp3")
+    voice_from = mp3 if same_voice and mp3.is_file() and mp3.with_suffix(".words.json").is_file() else None
+
+    tmp_name = f"{old_path.stem[:70]}__edit"
+    tmp_base = settings.shorts_dir / tmp_name
+    suffixes = (".mp4", ".mp3", ".ass", ".words.json", ".json")
+    try:
+        new = render_short(settings, req.model_copy(update={"output_name": tmp_name}), progress, voice_from)
+    except BaseException:
+        for suffix in suffixes:
+            tmp_base.with_suffix(suffix).unlink(missing_ok=True)
+        raise
+
+    texts_stale = (new.title, new.description, new.hashtags) != (old.title, old.description, old.hashtags)
+    with _sidecar_lock:
+        for suffix in suffixes[:-1]:
+            src = tmp_base.with_suffix(suffix)
+            if src.exists():
+                src.replace(old_path.with_suffix(suffix))
+        tmp_base.with_suffix(".json").unlink(missing_ok=True)
+        merged = new.model_copy(update={
+            "filename": old.filename, "created_at": old.created_at, "edited_at": utcnow(),
+            "ready": old.ready, "ready_at": old.ready_at, "uploads": old.uploads, "posted": old.posted,
+            "texts": {} if texts_stale else old.texts,
+        })
+        old_path.with_suffix(".json").write_text(merged.model_dump_json(indent=2), encoding="utf-8")
+    shutil.copyfile(old_path, settings.output_dir / FINAL_SHORT)
+    return merged
 
 
 def series_name(settings: Settings, story_name: str, parts: int) -> str:
@@ -454,6 +537,11 @@ class CreateManager:
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:
         job = self._add("render", req.game)
         self._renders.submit(self._run, job.id, lambda p: render_short(settings, req, p))
+        return job
+
+    def submit_rerender(self, settings: Settings, filename: str, req: RenderRequest) -> CreateJob:
+        job = self._add("render", req.game)
+        self._renders.submit(self._run, job.id, lambda p: rerender_short(settings, filename, req, p))
         return job
 
     def submit_series(self, settings: Settings, req: SeriesRenderRequest) -> CreateJob:

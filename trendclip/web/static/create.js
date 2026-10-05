@@ -66,6 +66,7 @@
     stickerHint: $("cStickerHint"),
     ideas: $("cIdeas"),
     cleared: $("cCleared"),
+    editing: $("cEditing"),
   };
   const MOOD_EMOJI = { funny: "😂", awkward: "😬", shocked: "😱", approve: "👍", reject: "🙅", proud: "🥂", pain: "🙂",
     nope: "🚪", innocent: "🙋", crazy: "🤪", embarrassed: "🤦", suspicious: "🤨" };
@@ -101,6 +102,7 @@
     part: 0,
     seriesId: null,
     undo: null, // script cleared by picking a new clip
+    editing: null, // {filename, title, request, draft}: the form edits an existing Short
   };
 
   const clips = () => T.getClips() || [];
@@ -296,7 +298,7 @@
     const changed = filename !== state.clip;
     state.clip = filename;
     const clip = selectedClip();
-    if (clip && changed) {
+    if (clip && changed && !state.editing) {  // editing: swap the gameplay, keep the text
       els.game.value = clip.game;
       clearScript();
     }
@@ -454,7 +456,96 @@
       : [els.script.value];
     els.render.disabled = busyRender || state.picking || !hasClip || scripts.some((s) => wordCount(s) < 3);
     els.render.title = multi && scripts.some((s) => wordCount(s) < 3) ? "Both parts need a script" : "";
-    els.render.textContent = busyRender ? "Creating…" : multi ? "Create Part 1 + Part 2" : long ? "Create long Short" : "Create Short";
+    els.render.textContent = busyRender ? (state.editing ? "Saving…" : "Creating…")
+      : state.editing ? "Save changes (re-render this Short)"
+      : multi ? "Create Part 1 + Part 2" : long ? "Create long Short" : "Create Short";
+    for (const b of els.format.querySelectorAll("[data-format]")) {
+      b.disabled = !!state.editing && b.dataset.format === "multi";
+      b.title = b.disabled ? "Editing one Short; each part of a story is edited on its own" : "";
+    }
+  }
+
+  // ---- editing an existing Short -------------------------------------------------------
+
+  const setSelect = (el, value) => {
+    if (value != null && [...el.options].some((o) => o.value === String(value))) el.value = String(value);
+  };
+
+  async function startEdit(filename) {
+    showError("");
+    let data;
+    try {
+      data = (await api(`/api/shorts/${encodeURIComponent(filename)}/edit`)).body;
+    } catch (err) {
+      return showError(`Could not open the Short: ${err.message}`);
+    }
+    if (!data.clip_available) {
+      return showError(`The gameplay clip of this Short (${data.request.clip}) was deleted, so it can't be re-rendered.`);
+    }
+    const r = data.request;
+    if (!state.editing) saveDraft();
+    const draft = state.editing ? state.editing.draft : localStorage.getItem(DRAFT_KEY);
+    state.editing = { filename, title: data.title, request: r, draft };
+    state.undo = null;
+    els.cleared.hidden = true;
+    setFormat("short");
+    state.clip = r.clip;
+    els.game.value = r.game;
+    els.script.value = r.script;
+    els.title.value = r.title;
+    els.desc.value = r.description;
+    els.tags.value = (r.hashtags || []).join(" ");
+    els.titleCard.value = r.title_card || "";
+    els.endCard.value = r.end_card || "";
+    state.popups = r.popups || [];
+    state.reactions = r.reactions || [];
+    setSelect(els.voice, r.voice);
+    setSelect(els.rate, r.rate);
+    setSelect(els.highlight, r.highlight);
+    setSelect(els.words, r.max_words);
+    setSelect(els.fit, r.fit);
+    setSelect(els.musicVol, r.music_volume);
+    els.stickers.checked = r.stickers !== false;
+    els.ctaSticker.checked = r.cta_sticker !== false;
+    els.music.value = [...els.music.options].some((o) => o.value === r.music_source) ? r.music_source
+      : data.track ? "random" : "none";
+    state.track = data.track;
+    els.trackAudio.pause();
+    renderTrack();
+    els.onScreen.hidden = true;
+    els.scriptJob.hidden = true;
+    renderPicker();
+    renderPopups();
+    renderReactions();
+    renderIdeas();
+    scriptStats();
+    els.editing.innerHTML = `<span>✏️ Editing <b>${esc(data.title)}</b>. Change the music, text or style, then save: the video is replaced (same file, keeps its Ready status).</span>
+      <button type="button" class="dl-copy" data-cancel-edit>Cancel</button>
+      ${data.legacy ? '<span class="hint">Made before editing was added: pop-up emojis, reaction stickers and caption style were not saved, so check them.</span>' : ""}
+      ${data.uploaded ? '<span class="hint">Already on YouTube: after saving, upload it again from the Upload tab to publish the new version.</span>' : ""}`;
+    els.editing.hidden = false;
+    renderShorts();
+    updateButtons();
+    $("viewCreate").querySelector(".card").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function stopEdit(restore) {
+    const ed = state.editing;
+    state.editing = null;
+    els.editing.hidden = true;
+    if (restore && ed && ed.draft) {
+      localStorage.setItem(DRAFT_KEY, ed.draft);
+      const draft = loadDraft();
+      setSelect(els.voice, draft.voice);
+      setSelect(els.music, draft.music);
+      renderPicker();
+      renderPopups();
+      renderReactions();
+      renderIdeas();
+      pickTrack();
+    }
+    renderShorts();
+    updateButtons();
   }
 
   // ---- pop-up images -------------------------------------------------------------------
@@ -750,12 +841,16 @@
 
   async function renderShort() {
     showError("");
-    const multi = state.format === "multi" && state.parts;
+    const editing = state.editing;
+    const multi = !editing && state.format === "multi" && state.parts;
+    const url = editing ? `/api/shorts/${encodeURIComponent(editing.filename)}/rerender`
+      : multi ? "/api/create/render-series" : "/api/create/render";
     try {
-      const { body } = await api(multi ? "/api/create/render-series" : "/api/create/render", {
+      const { body } = await api(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(multi ? seriesBody() : {
+          ...(editing ? editing.request : {}),
           ...styleBody(),
           script: els.script.value.trim(),
           title: els.title.value,
@@ -772,9 +867,11 @@
       updateButtons();
       poll(body.id, els.renderJob, async (result) => {
         const made = result.shorts || [result];
-        els.renderJob.innerHTML = `<div class="dl-meta">Done: ${made.map((s) =>
+        els.renderJob.innerHTML = `<div class="dl-meta">${editing ? "Saved" : "Done"}: ${made.map((s) =>
           `<b>${esc(s.filename)}</b> (${Math.round(s.duration_seconds)}s)`).join(" + ")} · see Your Shorts below</div>`;
+        if (editing && state.editing && state.editing.filename === editing.filename) stopEdit(true);
         await loadShorts();
+        document.dispatchEvent(new CustomEvent("trendclip:ready"));
         els.shorts.closest(".card").scrollIntoView({ behavior: "smooth", block: "start" });
       }, () => {
         state.renderJob = null;
@@ -804,9 +901,11 @@
     els.shorts.innerHTML = state.shorts.map((s) => {
       const src = `/media/shorts/${encodeURIComponent(s.filename)}`;
       const when = new Date(s.created_at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+      const v = s.edited_at ? `?v=${encodeURIComponent(s.edited_at)}` : "";
+      const editingThis = state.editing && state.editing.filename === s.filename;
       return `
-        <div class="short-card${s.ready ? " is-ready" : ""}">
-          <video src="${src}" controls preload="metadata" playsinline></video>
+        <div class="short-card${s.ready ? " is-ready" : ""}${editingThis ? " editing" : ""}">
+          <video src="${src}${v}" controls preload="metadata" playsinline></video>
           <div class="dl-body">
             <div class="dl-title">${s.ready ? '<span class="pill ready">READY</span> ' : ""}${s.part ? `<span class="pill part">PART ${s.part}/${s.parts_total || 2}</span> ` : ""}${esc(s.title)}</div>
             ${s.part ? `<div class="dl-meta">📁 ${esc(s.filename)}</div>` : ""}
@@ -818,7 +917,8 @@
             <div class="dl-actions">
               <button type="button" class="${s.ready ? "dl-copy" : "dl-ready"}" data-ready-short="${esc(s.filename)}">${s.ready ? "Not ready" : "Ready to upload"}</button>
               ${s.ready ? `<button type="button" class="dl-copy" data-goto="upload">Open Upload tab</button>` : ""}
-              <a href="${src}" download>Download</a>
+              <button type="button" class="dl-copy" data-edit-short="${esc(s.filename)}" ${editingThis ? "disabled" : ""}>${editingThis ? "Editing…" : "✏️ Edit"}</button>
+              <a href="${src}${v}" download="${esc(s.filename)}">Download</a>
               <button type="button" class="dl-copy" data-copy-title="${esc(s.filename)}">Copy title</button>
               <button type="button" class="dl-copy" data-copy-desc="${esc(s.filename)}">Copy description</button>
               <button type="button" class="dl-delete" data-delete-short="${esc(s.filename)}">Delete</button>
@@ -995,6 +1095,9 @@
       }
     });
     els.watch.addEventListener("change", saveDraft);
+    els.editing.addEventListener("click", (e) => {
+      if (e.target.closest("[data-cancel-edit]")) stopEdit(true);
+    });
     els.ideas.addEventListener("click", (e) => {
       const b = e.target.closest("[data-idea]");
       if (b) pickIdea(b.dataset.idea);
@@ -1016,6 +1119,8 @@
       if (short) return copy(`${short.description}\n\n${short.hashtags.join(" ")}`.trim(), btn);
       [btn, short] = s("data-ready-short");
       if (short) return toggleReady(short, btn);
+      [btn, short] = s("data-edit-short");
+      if (short) return startEdit(short.filename);
       [btn, short] = s("data-delete-short");
       if (short) deleteShort(short.filename, btn);
     });

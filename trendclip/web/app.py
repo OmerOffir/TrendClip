@@ -374,6 +374,32 @@ def create_render(req: shorts.RenderRequest) -> dict[str, Any]:
     return _create.submit_render(settings, req).model_dump(mode="json")
 
 
+@app.get("/api/shorts/{filename}/edit")
+def short_edit_settings(filename: str) -> dict[str, Any]:
+    """What the Create form needs to edit a Short: its render settings and the music track."""
+    settings = _base_settings()
+    short = _short_or_http(settings, filename)
+    request, legacy = shorts.edit_settings(settings, short)
+    track = music.downloaded(settings, request.get("music_track") or "")
+    try:
+        shorts.clip_path(settings, request["clip"])
+        clip_ok = True
+    except (ValueError, FileNotFoundError):
+        clip_ok = False
+    return {"filename": filename, "title": short.title, "request": request, "legacy": legacy,
+            "track": track.model_dump(mode="json") if track else None, "clip_available": clip_ok,
+            "uploaded": bool(short.uploads.get("youtube"))}
+
+
+@app.post("/api/shorts/{filename}/rerender", status_code=202)
+def short_rerender(filename: str, req: shorts.RenderRequest) -> dict[str, Any]:
+    """Re-render an edited Short in place (same file, keeps ready / upload state)."""
+    settings = _base_settings()
+    _short_or_http(settings, filename)
+    _clip_or_http(settings, req.clip)
+    return _create.submit_rerender(settings, filename, req).model_dump(mode="json")
+
+
 @app.post("/api/create/render-series", status_code=202)
 def create_render_series(req: shorts.SeriesRenderRequest) -> dict[str, Any]:
     """Part 1 + Part 2 in one job: output/shorts/<StoryName>_Part1.mp4, _Part2.mp4."""

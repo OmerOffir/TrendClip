@@ -206,6 +206,15 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
 Meme images are usually copyrighted. Short reaction clips are common on Shorts, but YouTube can
 still flag them, so prefer stickers you made or that have a free licence.
 
+**Edit a Short:** press **✏️ Edit** on it in *Your Shorts*. Its settings load back into the form, so you
+can change the script, title, description, title card, end banner, pop-ups, stickers, voice, caption
+style, music track or volume, or even the gameplay clip. Then press **Save changes**. The video is
+re-rendered under the same file name and keeps its Ready status and upload history; **Cancel** brings
+back the draft you had before. If the script, voice and speed are unchanged (e.g. only the music
+changed), the old voiceover is reused, which is faster. Shorts made before editing existed are rebuilt
+from what was saved (pop-up emojis, reaction moments and caption style fall back to defaults). An
+edited Short that is already on YouTube must be uploaded again to publish the new version.
+
 Shorts are saved in `output/shorts/` (MP4 + voiceover MP3 + subtitles + JSON with title,
 description and hashtags); the newest is also copied to `output/final_short.mp4`. The description
 gets credit lines for the gameplay channel and the music track automatically.

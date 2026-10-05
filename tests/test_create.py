@@ -174,6 +174,71 @@ def test_api_errors_are_explained():
 # ---------------------------------------------------------------- render + files
 
 
+def test_edit_rerenders_in_place_and_reuses_the_voice(tmp_path, monkeypatch):
+    settings = make_settings(tmp_path)
+    clip = add_clip(settings)
+    synth, assembled = [], []
+
+    def fake_synth(text, mp3, voice, rate):
+        synth.append(text)
+        mp3.write_bytes(text.encode())
+        words = [Word("hi", 0, 0.5)]
+        mp3.with_suffix(".words.json").write_text('[{"word": "hi", "start": 0, "end": 0.5}]')
+        return words
+
+    def fake_assemble(bg, voice, words, out, **kw):
+        assembled.append(kw)
+        out.write_bytes(f"video {len(assembled)}".encode())
+        return out
+
+    monkeypatch.setattr(shorts.voiceover, "synthesize", fake_synth)
+    monkeypatch.setattr(shorts.video_assembler, "assemble_video", fake_assemble)
+    monkeypatch.setattr(shorts.video_assembler, "media_duration", lambda p: 20.0)
+    req = shorts.RenderRequest(clip=clip, game="Minecraft", script="Hello there friends", title="T",
+                               description="D", hashtags=["#shorts"], title_card="OLD", output_name="my_short")
+    short = shorts.render_short(settings, req, lambda f, m: None)
+    shorts.set_ready(settings, short.filename, True)
+    shorts.update_short(settings, short.filename, lambda s: s.uploads.update(youtube={"video_id": "x"}))
+
+    saved, legacy = shorts.edit_settings(settings, shorts.get_short(settings, "my_short.mp4"))
+    assert not legacy and saved["description"] == "D" and saved["title_card"] == "OLD" and saved["output_name"] is None
+
+    # Only the title card changed: the voiceover is reused, the file name and ready / upload state stay.
+    edit = shorts.RenderRequest(**{**saved, "title_card": "NEW"})
+    new = shorts.rerender_short(settings, "my_short.mp4", edit, lambda f, m: None)
+    assert synth == ["Hello there friends"] and assembled[-1]["title_card"] == "NEW"
+    assert new.filename == "my_short.mp4" and new.ready and new.uploads == {"youtube": {"video_id": "x"}}
+    assert new.edited_at and new.created_at == short.created_at and new.render_settings["title_card"] == "NEW"
+    assert (settings.shorts_dir / "my_short.mp4").read_bytes() == b"video 2"
+    assert sorted(p.name for p in settings.shorts_dir.iterdir()) == [
+        "my_short.json", "my_short.mp3", "my_short.mp4", "my_short.words.json"]
+
+    # A new script records a new voiceover; a failed render keeps the old video untouched.
+    shorts.rerender_short(settings, "my_short.mp4", edit.model_copy(update={"script": "New words here"}),
+                          lambda f, m: None)
+    assert synth[-1] == "New words here"
+
+    def broken(*a, **kw):
+        raise RuntimeError("ffmpeg died")
+
+    monkeypatch.setattr(shorts.video_assembler, "assemble_video", broken)
+    with pytest.raises(RuntimeError):
+        shorts.rerender_short(settings, "my_short.mp4", edit, lambda f, m: None)
+    assert (settings.shorts_dir / "my_short.mp4").read_bytes() == b"video 3"
+    assert not list(settings.shorts_dir.glob("*__edit*"))
+
+
+def test_edit_settings_rebuilds_old_shorts(tmp_path):
+    credit = "Gameplay footage: Orbital - https://youtu.be/abc\nMusic: Song - https://www.youtube.com/watch?v=aaaaaaaaaaa"
+    old = shorts.ShortVideo(filename="a.mp4", game="Minecraft", title="T", description=f"Story text.\n\n{credit}",
+                            hashtags=["#shorts"], script="Hi there you", voice="v", background="clip.mp4",
+                            credit=credit, music_url="https://www.youtube.com/watch?v=aaaaaaaaaaa",
+                            popups=["cat"], title_card="CARD")
+    req, legacy = shorts.edit_settings(make_settings(tmp_path), old)
+    assert legacy and req["description"] == "Story text." and req["music_track"] == "aaaaaaaaaaa"
+    assert req["music_source"] == "random" and req["popups"] == [{"word": "cat", "emoji": "", "query": "cat"}]
+
+
 def test_render_short_writes_video_metadata_and_final_copy(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     clip = add_clip(settings)
