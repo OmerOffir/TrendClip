@@ -200,19 +200,29 @@
             <label class="field field-grow">
               <span>Background music</span>
               <select id="cMusic">
+                <option value="mood" selected>By story mood (music/ folders)</option>
                 <option value="none">No music</option>
                 <option value="random">Random (any channel)</option>
+              </select>
+            </label>
+            <label class="field" id="cMoodField">
+              <span>Story mood <em>(Gemini picks it)</em></span>
+              <select id="cMusicMood">
+                <option value="funny_quirky">😂 Funny / quirky</option>
+                <option value="dramatic_suspense">😱 Dramatic / suspense</option>
+                <option value="chill_lofi" selected>☕ Chill lo-fi</option>
               </select>
             </label>
             <label class="field">
               <span>Music volume</span>
               <select id="cMusicVol">
-                <option value="0.09">Quiet</option>
-                <option value="0.14" selected>Normal</option>
-                <option value="0.22">Loud</option>
+                <option value="0.12">Quiet · 12%</option>
+                <option value="0.14" selected>Normal · 14%</option>
+                <option value="0.15">Loud · 15%</option>
               </select>
             </label>
           </div>
+          <div class="hint" id="cMoodHint" hidden></div>
           <div class="music-track" id="cTrack" hidden>
             <div class="music-row">
               <div class="music-title" id="cTrackTitle"></div>

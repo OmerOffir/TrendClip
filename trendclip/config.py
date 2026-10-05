@@ -37,6 +37,7 @@ _ENV_MAP: dict[str, str] = {
     "music_volume": "MUSIC_VOLUME",
     "channel_handle": "CHANNEL_HANDLE",
     "stickers_dir": "STICKERS_DIR",
+    "music_library_dir": "MUSIC_LIBRARY_DIR",
 }
 
 # UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
@@ -81,6 +82,8 @@ class Settings(BaseModel):
     assets_dir: Path = PROJECT_ROOT / "assets"
     # Your own reaction / subscribe stickers (PNG, GIF, WebP, JPG); scanned and tagged automatically.
     stickers_dir: Path = PROJECT_ROOT / "stickers"
+    # Your own background music, sorted by story mood: music/funny, music/dramatic, music/chill.
+    music_library_dir: Path = PROJECT_ROOT / "music"
 
     # Create tab: Gemini writes the script, edge-tts speaks it.
     gemini_api_key: SecretStr | None = None
@@ -101,7 +104,7 @@ class Settings(BaseModel):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
 
-    @field_validator("assets_dir", "stickers_dir", mode="after")
+    @field_validator("assets_dir", "stickers_dir", "music_library_dir", mode="after")
     @classmethod
     def _resolve_assets_dir(cls, value: Path) -> Path:
         return value if value.is_absolute() else PROJECT_ROOT / value

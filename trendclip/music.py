@@ -54,13 +54,111 @@ class MusicTrack(BaseModel):
 
 
 class DownloadedTrack(BaseModel):
-    video_id: str
+    video_id: str  # YouTube id, or "local:<folder>/<file>" for the mood folders
     title: str
     channel_title: str
     url: str
-    filename: str
+    filename: str  # relative to assets/music (YouTube) or music/ (local)
     duration_seconds: float | None = None
     credit: str
+    local: bool = False
+    mood: str = ""  # story mood it was picked for
+    fallback: bool = False  # the mood folder was empty, so a YouTube channel track was used
+
+
+# --------------------------------------------------------------------------- story moods
+
+MOODS = ("funny_quirky", "dramatic_suspense", "chill_lofi")
+MOOD_FOLDERS = {"funny_quirky": "funny", "dramatic_suspense": "dramatic", "chill_lofi": "chill"}
+MOOD_LABELS = {"funny_quirky": "Funny / quirky", "dramatic_suspense": "Dramatic / suspense", "chill_lofi": "Chill lo-fi"}
+# Which free music channels to fall back on while a mood folder is empty.
+MOOD_CHANNELS = {"funny_quirky": ("audio library",), "dramatic_suspense": ("nocopyrightsounds", "audio library"),
+                 "chill_lofi": ("chillhop",)}
+AUDIO_EXTENSIONS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
+VOLUME_RANGE = (0.12, 0.15)  # 12-15%: always clearly under the voice
+LOCAL_ID = re.compile(r"^local:(funny|dramatic|chill)/([^/\\]{1,120})$")
+
+_MOOD_WORDS = {
+    "dramatic_suspense": r"\b(suddenly|scream\w*|dark|blood|police|missing|vanish\w*|secret|creep\w*|haunt\w*|"
+                         r"ghost|shadow|footsteps|knock\w*|terrif\w*|betray\w*|lied|truth|never came back|"
+                         r"twist|mystery|strange|disappear\w*|locked|warning)\b",
+    "funny_quirky": r"\b(awkward|embarrass\w*|accidentally|weird|ridiculous|hilarious|laugh\w*|oops|"
+                    r"cringe|prank\w*|wrong (person|house|room)|my (mom|dad|grandma)|goat|chicken|pants)\b",
+}
+
+
+def normalize_mood(value: str | None) -> str | None:
+    value = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if value in MOODS:
+        return value
+    for mood_id, folder in MOOD_FOLDERS.items():
+        if value and (value.startswith(folder) or folder in value):
+            return mood_id
+    return None
+
+
+def guess_mood(text: str) -> str:
+    """Keyword guess for scripts Gemini didn't classify (typed by hand)."""
+    scores = {m: len(re.findall(p, text, re.IGNORECASE)) for m, p in _MOOD_WORDS.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] >= 2 else "chill_lofi"
+
+
+def clamp_volume(volume: float) -> float:
+    return min(max(volume, VOLUME_RANGE[0]), VOLUME_RANGE[1])
+
+
+def mood_dir(settings: Settings, mood_id: str) -> Path:
+    return settings.music_library_dir / MOOD_FOLDERS[mood_id]
+
+
+def local_tracks(settings: Settings, mood_id: str) -> list[Path]:
+    folder = mood_dir(settings, mood_id)
+    if not folder.is_dir():
+        return []
+    return sorted(p for p in folder.iterdir()
+                  if p.is_file() and p.suffix.lower() in AUDIO_EXTENSIONS and not p.name.startswith("."))
+
+
+def mood_counts(settings: Settings) -> dict[str, dict]:
+    return {m: {"folder": f"{settings.music_library_dir.name}/{MOOD_FOLDERS[m]}", "label": MOOD_LABELS[m],
+                "tracks": len(local_tracks(settings, m))} for m in MOODS}
+
+
+def _local_track(settings: Settings, path: Path, mood_id: str) -> DownloadedTrack:
+    from .video_downloader import probe_video
+
+    folder = path.parent.name
+    # Optional credit next to the file: "song.mp3" + "song.txt" (e.g. for Creative Commons tracks).
+    credit_file = path.with_suffix(".txt")
+    credit = credit_file.read_text(encoding="utf-8").strip() if credit_file.is_file() else ""
+    title = re.sub(r"[_]+", " ", path.stem).strip()
+    return DownloadedTrack(
+        video_id=f"local:{folder}/{path.name}", title=title, channel_title=f"music/{folder}", url="",
+        filename=f"{folder}/{path.name}", duration_seconds=probe_video(path).get("duration_seconds"),
+        credit=credit, local=True, mood=mood_id,
+    )
+
+
+def track_path(settings: Settings, track: DownloadedTrack) -> Path:
+    return (settings.music_library_dir if track.local else settings.music_dir) / track.filename
+
+
+def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = None) -> DownloadedTrack:
+    """Random track from music/<funny|dramatic|chill>; a matching YouTube channel while the folder is empty."""
+    mood_id = normalize_mood(mood_id) or "chill_lofi"
+    files = local_tracks(settings, mood_id)
+    if files:
+        fresh = [p for p in files if f"local:{p.parent.name}/{p.name}" not in (exclude or set())]
+        return _local_track(settings, random.choice(fresh or files), mood_id)
+    library = get_library(settings)
+    wanted = MOOD_CHANNELS[mood_id]
+    channel_ids = [c["id"] for c in library.channels or []
+                   if any(w in c["title"].lower() for w in wanted)] if library.tracks() else []
+    source = channel_ids[0] if channel_ids else "random"
+    logger.info("music/%s is empty; using a YouTube track (%s)", MOOD_FOLDERS[mood_id], source)
+    track = pick_track(settings, source, exclude)
+    return track.model_copy(update={"mood": mood_id, "fallback": True})
 
 
 def mood(channel_title: str) -> str:
@@ -163,6 +261,11 @@ def _sidecar(settings: Settings, video_id: str) -> Path:
 
 
 def downloaded(settings: Settings, video_id: str) -> DownloadedTrack | None:
+    """A YouTube track already on disk, or a file in the mood folders ("local:chill/song.mp3")."""
+    if m := LOCAL_ID.match(video_id or ""):
+        path = settings.music_library_dir / m.group(1) / m.group(2)
+        mood_id = next(k for k, v in MOOD_FOLDERS.items() if v == m.group(1))
+        return _local_track(settings, path, mood_id) if path.is_file() else None
     if not re.fullmatch(r"[\w-]{11}", video_id or ""):
         return None
     try:

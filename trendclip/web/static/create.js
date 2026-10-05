@@ -67,13 +67,17 @@
     ideas: $("cIdeas"),
     cleared: $("cCleared"),
     editing: $("cEditing"),
+    musicMood: $("cMusicMood"),
+    moodField: $("cMoodField"),
+    moodHint: $("cMoodHint"),
   };
+  const MOOD_FOLDER = { funny_quirky: "funny", dramatic_suspense: "dramatic", chill_lofi: "chill" };
   const MOOD_EMOJI = { funny: "😂", awkward: "😬", shocked: "😱", approve: "👍", reject: "🙅", proud: "🥂", pain: "🙂",
     nope: "🚪", innocent: "🙋", crazy: "🤪", embarrassed: "🤦", suspicious: "🤨" };
 
   const DRAFT_KEY = "trendclip.createDraft";
   const DRAFT_FIELDS = ["mode", "game", "notes", "script", "title", "desc", "tags", "titleCard", "endCard", "voice", "rate",
-    "highlight", "words", "fit", "music", "musicVol", "handle", "story", "pinned"];
+    "highlight", "words", "fit", "music", "musicMood", "musicVol", "handle", "story", "pinned"];
   const PART_FIELDS = ["script", "title", "desc", "tags", "titleCard", "endCard"];
   const LENGTHS = {
     short: { def: 30, opts: [[15, "15 seconds"], [20, "20 seconds"], [30, "30 seconds"], [45, "45 seconds"], [60, "60 seconds"]] },
@@ -102,6 +106,7 @@
     part: 0,
     seriesId: null,
     undo: null, // script cleared by picking a new clip
+    moods: null, // {funny_quirky: {folder, label, tracks}, ...}: the music/ mood folders
     editing: null, // {filename, title, request, draft}: the form edits an existing Short
   };
 
@@ -509,6 +514,8 @@
     els.ctaSticker.checked = r.cta_sticker !== false;
     els.music.value = [...els.music.options].some((o) => o.value === r.music_source) ? r.music_source
       : data.track ? "random" : "none";
+    setSelect(els.musicMood, r.music_mood);
+    renderMood();
     state.track = data.track;
     els.trackAudio.pause();
     renderTrack();
@@ -633,6 +640,7 @@
   async function loadMusic(preferred) {
     try {
       const { body } = await api("/api/create/music");
+      state.moods = body.moods || null;
       for (const s of body.sources) {
         const label = `${s.title}${s.mood ? ` · ${s.mood}` : ""} (${s.tracks} tracks)`;
         els.music.append(new Option(label, s.id));
@@ -641,8 +649,34 @@
       els.music.append(new Option(`Music list unavailable (${err.message})`, "none"));
     }
     if (preferred && [...els.music.options].some((o) => o.value === preferred)) els.music.value = preferred;
-    if (els.music.value !== "none") pickTrack();
+    renderMood();
+    if (els.music.value !== "none" && !state.editing) pickTrack();
   }
+
+  function renderMood() {
+    const on = els.music.value === "mood";
+    els.moodField.hidden = !on;
+    els.moodHint.hidden = !on;
+    if (!on) return;
+    const m = state.moods && state.moods[els.musicMood.value];
+    const counts = state.moods
+      ? Object.values(state.moods).map((x) => `${x.folder}: ${x.tracks}`).join(" · ")
+      : "";
+    els.moodHint.innerHTML = m && !m.tracks
+      ? `<b>${esc(m.folder)}</b> is empty, so a matching free YouTube track is used. Drop MP3 / M4A files in that folder to use your own. <span class="muted">(${esc(counts)})</span>`
+      : `Random track from <b>${esc(m ? m.folder : `music/${MOOD_FOLDER[els.musicMood.value]}`)}</b>; the mood is set by Gemini when it writes the script. <span class="muted">(${esc(counts)})</span>`;
+  }
+
+  function setMood(mood) {
+    if (!MOOD_FOLDER[mood] || els.musicMood.value === mood) return;
+    els.musicMood.value = mood;
+    renderMood();
+    if (els.music.value === "mood") pickTrack();
+  }
+
+  const trackSrc = (t) => t.local
+    ? `/media/library/${t.filename.split("/").map(encodeURIComponent).join("/")}`
+    : `/media/music/${encodeURIComponent(t.filename)}`;
 
   function renderTrack() {
     const t = state.track;
@@ -657,11 +691,14 @@
     els.trackTitle.textContent = t.title;
     els.trackTitle.title = t.title;
     els.trackAudio.hidden = false;
-    const src = `/media/music/${encodeURIComponent(t.filename)}`;
+    const src = trackSrc(t);
     if (els.trackAudio.getAttribute("src") !== src) els.trackAudio.src = src;
     els.trackAudio.volume = 0.6;
     const len = t.duration_seconds ? ` · ${T.fmtLength(t.duration_seconds)}` : "";
-    els.trackMeta.innerHTML = `${esc(t.channel_title)}${esc(len)} · <a href="${esc(t.url)}" target="_blank" rel="noopener">source</a> · credit is added to the description`;
+    const fallback = t.fallback ? ` · <span class="over">fallback: ${esc(`music/${MOOD_FOLDER[t.mood] || ""}`)} is empty</span>` : "";
+    els.trackMeta.innerHTML = t.local
+      ? `Your file · ${esc(t.channel_title)}${esc(len)}${t.credit ? " · credit from the .txt is added to the description" : ""}`
+      : `${esc(t.channel_title)}${esc(len)} · <a href="${esc(t.url)}" target="_blank" rel="noopener">source</a> · credit is added to the description${fallback}`;
   }
 
   async function pickTrack() {
@@ -678,7 +715,7 @@
       const { body } = await api("/api/create/music/pick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: els.music.value, exclude: state.trackHistory.slice(-30) }),
+        body: JSON.stringify({ source: els.music.value, mood: els.musicMood.value, exclude: state.trackHistory.slice(-30) }),
       });
       state.track = body;
       state.trackHistory.push(body.video_id);
@@ -762,6 +799,7 @@
         els.titleCard.value = r.title_card || "";
         state.popups = r.popups || [];
         state.reactions = r.reactions || [];
+        setMood(r.music_mood);
         renderPopups();
         renderReactions();
         els.onScreen.hidden = !r.on_screen;
@@ -787,6 +825,7 @@
     applyPart(state.parts[0]);
     els.story.value = r.story_name;
     els.pinned.value = r.pinned_comment;
+    setMood(r.music_mood);
     if (!els.handle.value.trim()) els.handle.value = r.handle;
     const p1 = r.parts[0];
     els.onScreen.hidden = !p1.on_screen;
@@ -811,6 +850,7 @@
       max_words: Number(els.words.value),
       music_source: els.music.value,
       music_track: state.track ? state.track.video_id : null,
+      music_mood: els.musicMood.value,
       music_volume: Number(els.musicVol.value),
       stickers: els.stickers.checked,
       cta_sticker: els.ctaSticker.checked,
@@ -911,7 +951,7 @@
             ${s.part ? `<div class="dl-meta">📁 ${esc(s.filename)}</div>` : ""}
             <div class="dl-meta">${esc(s.game)} · ${s.duration_seconds ? `${Math.round(s.duration_seconds)}s` : ""} · ${esc(when)}</div>
             <div class="dl-meta tags">${esc(s.hashtags.join(" "))}</div>
-            ${s.music_title ? `<div class="dl-meta">♪ <a href="${esc(s.music_url)}" target="_blank" rel="noopener">${esc(s.music_title)}</a></div>` : ""}
+            ${s.music_title ? `<div class="dl-meta">♪ ${s.music_url ? `<a href="${esc(s.music_url)}" target="_blank" rel="noopener">${esc(s.music_title)}</a>` : esc(s.music_title)}${s.music_mood ? ` · ${esc(s.music_mood.replace("_", " / "))}` : ""}</div>` : ""}
             ${s.popups && s.popups.length ? `<div class="dl-meta">Pop-ups: ${esc(s.popups.join(", "))}</div>` : ""}
             ${s.stickers && s.stickers.length ? `<div class="dl-meta">Stickers: ${esc(s.stickers.join(", "))}</div>` : ""}
             <div class="dl-actions">
@@ -1048,7 +1088,8 @@
         saveDraft();
         if (["fit", "words", "highlight"].includes(key)) updatePreview();
         if (key === "mode") updateButtons();
-        if (key === "music") pickTrack();
+        if (key === "music") { renderMood(); pickTrack(); }
+        if (key === "musicMood") { renderMood(); if (els.music.value === "mood") pickTrack(); }
       });
     }
     els.length.addEventListener("change", () => { saveDraft(); scriptStats(); });

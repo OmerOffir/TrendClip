@@ -26,6 +26,7 @@ from .video_downloader import LATEST_FILENAME, BackgroundClip
 logger = logging.getLogger(__name__)
 
 FINAL_SHORT = "final_short.mp4"
+TRACK_ID = r"^([\w-]{11}|local:(funny|dramatic|chill)/[^/\\]{1,120})$"  # YouTube id or a mood-folder file
 ProgressFn = Callable[[float | None, str], None]
 
 
@@ -43,6 +44,7 @@ class ShortVideo(BaseModel):
     credit: str = ""
     music_title: str = ""
     music_url: str = ""
+    music_mood: str = ""  # funny_quirky / dramatic_suspense / chill_lofi when picked by story mood
     title_card: str = ""
     popups: list[str] = Field(default_factory=list)  # words that got a pop-up image
     stickers: list[str] = Field(default_factory=list)  # files from stickers/ that were used
@@ -78,9 +80,10 @@ class RenderRequest(BaseModel):
     fit: Literal["crop", "blur"] = "crop"
     max_words: int = Field(3, ge=1, le=6)
     # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
-    music_source: str = Field("none", max_length=40)
-    music_track: str | None = Field(None, pattern=r"^[\w-]{11}$")
-    music_volume: float | None = Field(None, ge=0, le=1)
+    music_source: str = Field("none", max_length=40)  # "mood" = music/<funny|dramatic|chill> by music_mood
+    music_track: str | None = Field(None, pattern=TRACK_ID)
+    music_mood: str | None = Field(None, max_length=40)
+    music_volume: float | None = Field(None, ge=0, le=1)  # clamped to 12-15% when mixing
     title_card: str = Field("", max_length=60)
     popups: list[Popup] = Field(default_factory=list, max_length=10)
     end_card: str = Field("", max_length=80)
@@ -125,7 +128,8 @@ class SeriesRenderRequest(BaseModel):
     fit: Literal["crop", "blur"] = "crop"
     max_words: int = Field(3, ge=1, le=6)
     music_source: str = Field("none", max_length=40)
-    music_track: str | None = Field(None, pattern=r"^[\w-]{11}$")
+    music_track: str | None = Field(None, pattern=TRACK_ID)
+    music_mood: str | None = Field(None, max_length=40)
     music_volume: float | None = Field(None, ge=0, le=1)
     stickers: bool = True
     cta_sticker: bool = True
@@ -183,8 +187,16 @@ def resolve_music(settings: Settings, req: RenderRequest, progress: ProgressFn) 
         return None
     if req.music_track and (track := music.downloaded(settings, req.music_track)):
         return track
+    if req.music_source == "mood":
+        mood = music.normalize_mood(req.music_mood) or music.guess_mood(req.script)
+        progress(None, f"Picking {music.MOOD_LABELS[mood].lower()} music")
+        return music.pick_by_mood(settings, mood)
     progress(None, "Picking background music")
     return music.pick_track(settings, req.music_source)
+
+
+def music_volume(settings: Settings, requested: float | None) -> float:
+    return music.clamp_volume(settings.music_volume if requested is None else requested)
 
 
 def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, progress: ProgressFn):
@@ -262,8 +274,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         background, base.with_suffix(".mp3"), words, base.with_suffix(".mp4"),
         fit=req.fit, highlight=req.highlight, max_words=req.max_words, progress=progress,
         background_start=req.background_start,
-        music=settings.music_dir / track.filename if track else None,
-        music_volume=settings.music_volume if req.music_volume is None else req.music_volume,
+        music=music.track_path(settings, track) if track else None,
+        music_volume=music_volume(settings, req.music_volume),
         music_start=req.music_start,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
     )
@@ -288,7 +300,9 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         render_settings=req.model_copy(update={
             "voice": voice, "music_track": track.video_id if track else None,
             "music_source": req.music_source if track else "none", "output_name": None,
+            "music_mood": (track.mood if track else "") or req.music_mood,
         }).model_dump(mode="json"),
+        music_mood=track.mood if track else "",
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     shutil.copyfile(output, settings.output_dir / FINAL_SHORT)
@@ -379,7 +393,8 @@ def render_series(settings: Settings, req: SeriesRenderRequest, progress: Progre
     handle = req.channel_handle or settings.channel_handle
 
     track = resolve_music(settings, RenderRequest(
-        clip=req.clip, game=req.game, script="...", music_source=req.music_source, music_track=req.music_track,
+        clip=req.clip, game=req.game, script=" ".join(p.script for p in req.parts),
+        music_source=req.music_source, music_track=req.music_track, music_mood=req.music_mood,
     ), progress)
     offset = 0.0
     shorts: list[ShortVideo] = []
@@ -393,7 +408,8 @@ def render_series(settings: Settings, req: SeriesRenderRequest, progress: Progre
             clip=req.clip, game=req.game, script=part.script, title=part.title, description=part.description,
             hashtags=part.hashtags, voice=req.voice, rate=req.rate, highlight=req.highlight, fit=req.fit,
             max_words=req.max_words, music_source=req.music_source if track else "none",
-            music_track=track.video_id if track else None, music_volume=req.music_volume,
+            music_track=track.video_id if track else None, music_mood=req.music_mood,
+            music_volume=req.music_volume,
             title_card=part.title_card, popups=part.popups, end_card=part.end_card,
             reactions=part.reactions, stickers=req.stickers, cta_sticker=req.cta_sticker,
             background_start=offset, music_start=offset, output_name=f"{name}_Part{n}",

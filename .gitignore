@@ -11,3 +11,6 @@ __pycache__/
 .pytest_cache/
 output/
 assets/
+music/**/*
+!music/*/
+!music/*/.gitkeep

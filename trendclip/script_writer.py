@@ -15,6 +15,7 @@ from typing import Callable, Literal
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
+from . import music
 from .config import PROJECT_ROOT, Settings
 from .popups import Popup, _matches, _norm, clean_popups
 from .stickers import Reaction
@@ -32,6 +33,12 @@ ProgressFn = Callable[[float | None, str], None]
 
 class ScriptError(RuntimeError):
     pass
+
+
+MUSIC_MOOD_HELP = (
+    "Background music mood for this voiceover, exactly one of: 'funny_quirky' (awkward, weird, embarrassing, "
+    "silly stories), 'dramatic_suspense' (mystery, tension, cliffhangers, big twists, creepy moments), "
+    "'chill_lofi' (casual, cozy, relaxed storytelling, facts, tips).")
 
 
 class GeminiShort(BaseModel):
@@ -52,6 +59,7 @@ class GeminiShort(BaseModel):
     reactions: list[Reaction] = Field(default_factory=list, description=(
         "1 to 3 reaction-sticker beats, in script order: the word where a funny, awkward or shocking "
         "moment lands (a meme reaction pops up there). Not in the first sentence, not in the call to action."))
+    music_mood: str = Field("", description=MUSIC_MOOD_HELP)
 
 
 class ShortScript(GeminiShort):
@@ -76,6 +84,7 @@ class GeminiSeries(BaseModel):
     pinned_comment: str = Field(description=(
         "A short, friendly comment the creator pins under Part 1 that teases Part 2 without spoiling it. "
         "No links, no hashtags, at most 200 characters."))
+    music_mood: str = Field("dramatic_suspense", description=MUSIC_MOOD_HELP + " One mood for both parts.")
 
 
 class SeriesScript(BaseModel):
@@ -86,6 +95,7 @@ class SeriesScript(BaseModel):
     handle: str
     pinned_comment: str
     parts: list[ShortScript]
+    music_mood: str = "dramatic_suspense"
 
 
 def gemini_api_key(settings: Settings | None = None) -> str | None:
@@ -119,6 +129,8 @@ Rules:
 - Pop-ups: each `word` must appear exactly as written in your script; give the best matching emoji.
 - Reactions: each `word` must appear exactly as written in your script, at the funniest, most awkward
   or most shocking beats.
+- music_mood: classify the whole voiceover as funny_quirky, dramatic_suspense or chill_lofi; this picks
+  the background music.
 - Never wrap words in backticks, quotes or markdown.
 """
 
@@ -420,7 +432,7 @@ def _finish(result: GeminiShort, *, game: str, model: str, mode: str, format: st
         watched_clip=watched,
         word_count=len(script.split()),
         estimated_seconds=estimate_seconds(script),
-        **extra,
+        **{"music_mood": music.normalize_mood(result.music_mood) or music.guess_mood(script), **extra},
     )
 
 
@@ -528,11 +540,13 @@ def write_series(
     notes_for = (f"Part 2 drops tomorrow! Subscribe {handle} so you don't miss it.",
                  f"This is Part 2. Missed Part 1? It's on {handle}.")
     parts = []
+    stories = [_strip_cta(_clean_script(p.script)) for p in (result.part1, result.part2)]
+    series_mood = music.normalize_mood(result.music_mood) or music.guess_mood(" ".join(stories))
     for n, raw in enumerate((result.part1, result.part2), start=1):
-        story = fit_length(client, model, _strip_cta(_clean_script(raw.script)), limit, target_seconds, progress)
+        story = fit_length(client, model, stories[n - 1], limit, target_seconds, progress)
         script = f"{story} {ctas[n - 1]}"
         part = _finish(raw, game=game, model=model, mode="story", format="multi", watched=False,
-                       script=script, part=n, parts_total=2, end_card=cards[n - 1])
+                       script=script, part=n, parts_total=2, end_card=cards[n - 1], music_mood=series_mood)
         card = part.title_card or "STORYTIME"
         part.title_card = f"PART {n}: {card}"[:40]
         part.title = _part_title(raw.title, n)
@@ -552,4 +566,5 @@ def write_series(
         handle=handle,
         pinned_comment=comment[:500],
         parts=parts,
+        music_mood=series_mood,
     )

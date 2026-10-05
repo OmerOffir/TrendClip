@@ -439,7 +439,10 @@ def music_filter(duration: float, volume: float) -> str:
     return (
         # Mono voice copied to both channels at full level (a plain stereo upmix costs ~3 dB).
         "[1:a]aformat=sample_rates=48000:channel_layouts=mono,pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
-        f"[2:a]aformat=sample_rates=48000:channel_layouts=stereo,volume={volume:.3f},"
+        # Every track is levelled to the same loudness first, so 12-15% sounds the same for a loud
+        # EDM track and a quiet lo-fi one.
+        "[2:a]loudnorm=I=-14:TP=-2:LRA=11,"
+        f"aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume={volume:.3f},"
         f"afade=t=in:d=0.8,afade=t=out:st={fade_out:.2f}:d=1.5[bed];"
         # Gentle ducking: the music dips ~3-4 dB under speech and swells back in the pauses.
         "[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=400[ducked];"

@@ -143,10 +143,25 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
 3. **Voice & style:** a free edge-tts voice (47 English voices) with exact word timings, speed,
    highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
-4. **Background music (optional):** a random track from NoCopyrightSounds (EDM), the Audio Library
-   (mixed genres) or Chillhop (lo-fi). Preview it, press **Shuffle** for another one, pick
-   Quiet/Normal/Loud (Normal = 14%, about -17 dB). The music loops if it is short, fades in/out and
-   ducks under the voice.
+4. **Background music (optional):** by default the music follows the story's mood. Gemini sorts
+   every script into `funny_quirky` (awkward or weird stories), `dramatic_suspense` (cliffhangers
+   and twists) or `chill_lofi` (casual storytelling), and a random track is picked from the
+   matching folder:
+
+   | Mood | Folder |
+   | --- | --- |
+   | funny_quirky | `music/funny/` |
+   | dramatic_suspense | `music/dramatic/` |
+   | chill_lofi | `music/chill/` |
+
+   Drop `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac` or `.aac` files into those folders. An optional
+   `<song>.txt` next to a file holds its credit line for the description. If a folder is empty, a
+   matching YouTube track is used instead (Audio Library for funny, NoCopyrightSounds for dramatic,
+   Chillhop for chill). You can change the mood by hand, or switch to **Random** (any YouTube track)
+   or **None**. Preview the track and press **Shuffle** for another one. Every track is first
+   levelled to the same loudness and then played at 12%, 14% or 15% (Quiet/Normal/Loud), so it never
+   drowns out the voice. It also loops if it is short, fades in and out, and ducks under the voice.
+   Set `MUSIC_LIBRARY_DIR` to use another folder.
 5. **Title card and pop-ups:** Gemini also suggests a 2-5 word ALL-CAPS title card (shown at the top
    for the first 3 seconds) and 3-6 pop-up images for things the script mentions. Each pop-up appears
    for 1.5-2.5 s exactly when its word is spoken (edge-tts word timings), between the title area and

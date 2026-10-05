@@ -293,7 +293,8 @@ class ScriptRequest(BaseModel):
 
 
 class MusicPickRequest(BaseModel):
-    source: str = Field("random", max_length=40)
+    source: str = Field("random", max_length=40)  # "mood" = the music/<mood> folders
+    mood: str | None = Field(None, max_length=40)
     exclude: list[str] = Field(default_factory=list, max_length=50)
 
 
@@ -351,7 +352,8 @@ def create_music() -> dict[str, Any]:
         raise _youtube_http_error(err) from err
     except music.MusicError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
-    return {"sources": sources, "volume": settings.music_volume}
+    return {"sources": sources, "volume": music.clamp_volume(settings.music_volume),
+            "volume_range": music.VOLUME_RANGE, "moods": music.mood_counts(settings)}
 
 
 @app.post("/api/create/music/pick")
@@ -359,7 +361,10 @@ def pick_music(req: MusicPickRequest) -> dict[str, Any]:
     """Download a random track (a few seconds) so it can be previewed before rendering."""
     settings = _base_settings()
     try:
-        track = music.pick_track(settings, req.source, exclude=set(req.exclude))
+        if req.source == "mood":
+            track = music.pick_by_mood(settings, req.mood or "chill_lofi", exclude=set(req.exclude))
+        else:
+            track = music.pick_track(settings, req.source, exclude=set(req.exclude))
     except YouTubeAPIError as err:
         raise _youtube_http_error(err) from err
     except music.MusicError as err:
@@ -630,9 +635,11 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 if _settings_ok():
     _s = get_settings()
     for _route, _dir in (("backgrounds", _s.backgrounds_dir), ("shorts", _s.shorts_dir), ("music", _s.music_dir),
-                         ("stickers", _s.stickers_dir)):
+                         ("stickers", _s.stickers_dir), ("library", _s.music_library_dir)):
         _dir.mkdir(parents=True, exist_ok=True)
         app.mount(f"/media/{_route}", StaticFiles(directory=_dir), name=_route)
+    for _folder in music.MOOD_FOLDERS.values():
+        (_s.music_library_dir / _folder).mkdir(parents=True, exist_ok=True)
 
 
 def _asset_version() -> str:
