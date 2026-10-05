@@ -105,6 +105,11 @@ from the catalog.
 - **Dashboard:** click **Get gameplay** next to any game. Pick the source, clip length and
   orientation in the *Background gameplay* panel; downloads run in the background and show up there
   with a preview, a download link and a credit link.
+- **From a link:** paste a YouTube video link (a random part of it is cut) or a channel link such as
+  `https://www.youtube.com/@NoCopyrightGameplays` (a random one of its latest 300 videos, read with
+  yt-dlp, no API quota) and press **Get clip**. The optional **Game** keeps only that channel's videos
+  of the game and names the clip; otherwise the game is guessed from the video title. Clip length and
+  orientation come from the controls above.
 - **Python:** `get_background_video("Minecraft")` returns the path of `assets/backgrounds/latest_gameplay.mp4`.
   It tries Pexels first, then No-Copyright YouTube. `get_background_video_async()` returns a `Future`.
 - **CLI:** `.venv/bin/python -m trendclip.video_downloader "Minecraft" --source youtube --seconds 60`
@@ -146,6 +151,10 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    for the first 3 seconds) and 3-6 pop-up images for things the script mentions. Each pop-up appears
    for 1.5-2.5 s exactly when its word is spoken (edge-tts word timings), between the title area and
    the subtitles. Edit the title, remove pop-ups (×) or add your own word + emoji.
+
+The voiceover never outlasts the selected clip. Lengths longer than the clip are greyed out, and the
+target is capped at the clip length (for Multi-part, half the clip per part). If Gemini still writes
+too much, it is asked once to tighten the script; failing that, it is cut at a sentence end.
 
 **Format** (top of the Script card):
 

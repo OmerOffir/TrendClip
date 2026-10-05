@@ -132,7 +132,9 @@ random, self-contained story that is NOT about the game or the footage.
 - Fictional and family friendly: no real people, brands' wrongdoing, violence, or anything hateful.
 - The hook teases the twist without giving it away.
 - on_screen: one sentence summarising the story.
-- Title and hashtags describe the story (#storytime is good); you may add one gaming hashtag."""
+- Title and hashtags describe the story (#storytime is good); you may add one gaming hashtag.
+- The creator's notes win over these defaults: if they ask for a genre (mystery, drama, adventure...) or a
+  different format such as facts, write exactly that, still fast, hooky and not about the footage."""
 
 ScriptFormat = Literal["short", "long", "multi"]
 
@@ -248,6 +250,59 @@ def _generate_with_fallback(client, model: str, contents: list, config, progress
     raise last  # every model failed; the caller explains the last error
 
 
+class Shortened(BaseModel):
+    script: str
+
+
+SHORTEN_PROMPT = """This voiceover is {words} words, but it must be spoken in {seconds} seconds, so it may have
+AT MOST {max_words} words. Rewrite it to {low} to {max_words} words. Keep the hook, the key beats and the
+ending / punchline, and the same voice and language. Cut filler and side details; don't add anything new.
+Plain spoken text only.
+
+Voiceover:
+{script}"""
+
+
+def max_words(seconds: float) -> int:
+    return int(seconds * WORDS_PER_SECOND)
+
+
+def _cut_to(script: str, limit: int) -> str:
+    """Whole sentences up to `limit` words (last resort when Gemini can't shorten)."""
+    out: list[str] = []
+    count = 0
+    for sentence in re.split(r"(?<=[.!?…])\s+", script.strip()):
+        n = len(sentence.split())
+        if count + n > limit:
+            break
+        out.append(sentence)
+        count += n
+    return " ".join(out) if out else " ".join(script.split()[:limit])
+
+
+def fit_length(client, model: str, script: str, limit: int, seconds: float, progress: ProgressFn) -> str:
+    """Gemini often overshoots the target; ask it once to tighten the script, then cut at a sentence end."""
+    words = len(script.split())
+    if words <= limit:
+        return script
+    from google.genai import types
+
+    progress(None, f"Script is {words} words; tightening it to {limit} so it fits {seconds:.0f}s")
+    try:
+        config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=Shortened,
+                                             temperature=0.4)
+        prompt = SHORTEN_PROMPT.format(words=words, seconds=round(seconds), max_words=limit,
+                                       low=max(limit - 25, limit * 3 // 4), script=script)
+        response, _ = _generate_with_fallback(client, model, [prompt], config, progress, Exception)
+        parsed = response.parsed if isinstance(response.parsed, Shortened) else Shortened.model_validate_json(response.text)
+        shorter = _clean_script(parsed.script)
+        if 0 < len(shorter.split()) < words:
+            script = shorter
+    except Exception as err:  # noqa: BLE001 - fall back to cutting whole sentences
+        logger.warning("Could not shorten the script with Gemini: %s", err)
+    return _cut_to(script, limit)
+
+
 def _clean_hashtags(tags: list[str]) -> list[str]:
     out = []
     for tag in tags:
@@ -276,9 +331,11 @@ def write_script(
     watch_clip: bool = True,
     mode: ScriptMode = "clip",
     format: ScriptFormat = "short",
+    max_seconds: float | None = None,
     progress: ProgressFn = lambda f, m: None,
     client=None,
 ) -> ShortScript:
+    """`max_seconds` (the clip length) is a hard cap: the voiceover never outlasts the gameplay."""
     api_key = gemini_api_key(settings)
     if client is None and not api_key:
         raise ScriptError("GEMINI_API_KEY is not set in .env (create one at https://aistudio.google.com/apikey)")
@@ -287,6 +344,10 @@ def write_script(
 
     model = gemini_model(settings)
     target = target_seconds or settings.short_target_seconds
+    capped = bool(max_seconds and max_seconds < target)
+    if capped:
+        target = max(int(max_seconds), 10)
+    limit = max_words(target) + (0 if capped else 5)
     client = client or genai.Client(api_key=api_key)
     watched = bool(mode == "clip" and watch_clip and clip and clip.is_file())
 
@@ -335,7 +396,8 @@ def write_script(
             except Exception:  # noqa: BLE001 - files expire after 48h anyway
                 logger.debug("Could not delete uploaded file %s", uploaded.name)
 
-    return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched)
+    script = fit_length(client, model, _clean_script(result.script), limit, target, progress)
+    return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched, script=script)
 
 
 def _finish(result: GeminiShort, *, game: str, model: str, mode: str, format: str, watched: bool,
@@ -423,10 +485,12 @@ def write_series(
     notes: str = "",
     target_seconds: int = 45,
     handle: str | None = None,
+    max_seconds: float | None = None,
     progress: ProgressFn = lambda f, m: None,
     client=None,
 ) -> SeriesScript:
-    """One Gemini call writes both parts, so Part 2 really continues Part 1."""
+    """One Gemini call writes both parts, so Part 2 really continues Part 1.
+    `max_seconds` caps each part (Part 2 continues the clip where Part 1 stopped)."""
     import uuid
 
     api_key = gemini_api_key(settings)
@@ -438,6 +502,10 @@ def write_series(
     handle = handle or settings.channel_handle
     model = gemini_model(settings)
     client = client or genai.Client(api_key=api_key)
+    capped = bool(max_seconds and max_seconds < target_seconds)
+    if capped:
+        target_seconds = max(int(max_seconds), 15)
+    limit = max_words(target_seconds) - CTA_WORDS + (0 if capped else 5)
     try:
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
@@ -461,7 +529,8 @@ def write_series(
                  f"This is Part 2. Missed Part 1? It's on {handle}.")
     parts = []
     for n, raw in enumerate((result.part1, result.part2), start=1):
-        script = f"{_strip_cta(_clean_script(raw.script))} {ctas[n - 1]}"
+        story = fit_length(client, model, _strip_cta(_clean_script(raw.script)), limit, target_seconds, progress)
+        script = f"{story} {ctas[n - 1]}"
         part = _finish(raw, game=game, model=model, mode="story", format="multi", watched=False,
                        script=script, part=n, parts_total=2, end_card=cards[n - 1])
         card = part.title_card or "STORYTIME"

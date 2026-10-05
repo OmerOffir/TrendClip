@@ -388,6 +388,7 @@ class LibraryVideo(BaseModel):
     channel_id: str
     channel_title: str
     games: list[str] = Field(default_factory=list)
+    duration: float | None = None
 
     @property
     def url(self) -> str:
@@ -624,25 +625,141 @@ def download_background(
             meta = None
 
         if meta:
-            size = probe_video(target)
-            if orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0):
-                # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
-                try:
-                    _crop_to_portrait(target, progress)
-                except (DownloadError, OSError, subprocess.SubprocessError) as err:
-                    target.unlink(missing_ok=True)
-                    errors.append(f"{source}: {err}")
-                    continue
-                size = probe_video(target)
-            meta.update(size)
-            clip = BackgroundClip(path=str(target), filename=target.name, source=source, game=game_name, query=query, **meta)
-            target.with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
-            shutil.copyfile(target, out_dir / LATEST_FILENAME)
-            (out_dir / LATEST_FILENAME).with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
-            progress(1.0, "Done")
-            return clip
+            try:
+                return _save_clip(target, meta, source, game_name, query, orientation, progress)
+            except (DownloadError, OSError, subprocess.SubprocessError) as err:
+                errors.append(f"{source}: {err}")
 
     raise DownloadError("; ".join(errors) or "No download source available")
+
+
+def _save_clip(target: Path, meta: dict, source: Source, game: str, query: str, orientation: Orientation,
+               progress: ProgressFn) -> BackgroundClip:
+    """Crop to 9:16 if asked, write the sidecar and refresh latest_gameplay.mp4."""
+    size = probe_video(target)
+    if orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0):
+        # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
+        try:
+            _crop_to_portrait(target, progress)
+        except (DownloadError, OSError, subprocess.SubprocessError):
+            target.unlink(missing_ok=True)
+            raise
+        size = probe_video(target)
+    meta.update(size)
+    clip = BackgroundClip(path=str(target), filename=target.name, source=source, game=game, query=query, **meta)
+    out_dir = target.parent
+    target.with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
+    shutil.copyfile(target, out_dir / LATEST_FILENAME)
+    (out_dir / LATEST_FILENAME).with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
+    progress(1.0, "Done")
+    return clip
+
+
+# --------------------------------------------------------------------------- from a pasted link
+
+_VIDEO_LINK_RE = re.compile(
+    r"^(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/(?:watch\?(?:[^#]*&)?v=|shorts/|live/|embed/)|youtu\.be/)([\w-]{11})"
+)
+_CHANNEL_LINK_RE = re.compile(
+    r"^(?:https?://)?(?:www\.|m\.)?youtube\.com/(@[\w.%-]+|channel/UC[\w-]{22}|c/[\w.%-]+|user/[\w.%-]+)"
+)
+CHANNEL_SCAN_LIMIT = 300
+
+
+def parse_youtube_link(url: str) -> tuple[Literal["video", "channel"], str]:
+    """('video', watch URL) or ('channel', channel URL); ValueError for anything else."""
+    url = url.strip()
+    if m := _VIDEO_LINK_RE.match(url):
+        return "video", f"https://www.youtube.com/watch?v={m.group(1)}"
+    if m := _CHANNEL_LINK_RE.match(url):
+        return "channel", f"https://www.youtube.com/{m.group(1)}"
+    raise ValueError("Paste a YouTube video link (youtube.com/watch?v=…, youtu.be/…, /shorts/…) "
+                     "or a channel link (youtube.com/@name)")
+
+
+def channel_videos(channel_url: str, limit: int = CHANNEL_SCAN_LIMIT) -> list[LibraryVideo]:
+    """Latest uploads of a channel via yt-dlp (no API quota). Shorts and lives are left out."""
+    yt_dlp = _yt_dlp()
+    opts = {"quiet": True, "no_warnings": True, "extract_flat": "in_playlist", "playlistend": limit,
+            "socket_timeout": 20}
+    try:
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            result = ydl.extract_info(f"{channel_url}/videos", download=False)
+    except yt_dlp.utils.DownloadError as err:
+        raise DownloadError(f"Could not read the channel {channel_url}: {err}") from err
+    channel = result.get("channel") or result.get("uploader") or result.get("title") or "Unknown"
+    out = []
+    for e in result.get("entries") or []:
+        if not e or not re.fullmatch(r"[\w-]{11}", e.get("id") or ""):
+            continue
+        title = e.get("title") or ""
+        out.append(LibraryVideo(video_id=e["id"], title=title, channel_id=result.get("channel_id") or "",
+                                channel_title=channel, games=games.match_title(title),
+                                duration=e.get("duration")))
+    return out
+
+
+def _filter_channel(videos: list[LibraryVideo], game: str, clip_seconds: int,
+                    orientation: Orientation) -> list[LibraryVideo]:
+    """Long enough videos, of the game if one was given, vertical ones first in portrait mode."""
+    long_enough = [v for v in videos if not v.duration or not clip_seconds or v.duration >= clip_seconds + 10]
+    pool = long_enough or videos
+    if game.strip():
+        related = games.related_games(game) | {game}
+        needle = games.normalize(game)
+        of_game = [v for v in pool if related.intersection(v.games) or needle.strip() in games.normalize(v.title)]
+        if not of_game:
+            raise DownloadError(f"No videos of '{game}' among this channel's latest {len(videos)} uploads; "
+                                "leave the game empty to take any video")
+        pool = of_game
+    want_vertical = orientation == "portrait"
+    return [v for v in pool if v.vertical == want_vertical] or pool
+
+
+def download_from_link(
+    url: str,
+    settings: Settings | None = None,
+    game: str = "",
+    clip_seconds: int | None = None,
+    orientation: Orientation | None = None,
+    progress: ProgressFn = _noop,
+) -> BackgroundClip:
+    """A clip from a pasted YouTube video, or from a random video of a pasted channel."""
+    settings = settings or get_settings()
+    clip_seconds = settings.background_clip_seconds if clip_seconds is None else clip_seconds
+    orientation = orientation or settings.background_orientation
+    kind, link = parse_youtube_link(url)
+    out_dir = settings.backgrounds_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if kind == "video":
+        picks = [link]
+    else:
+        progress(None, "Reading the channel's videos")
+        videos = channel_videos(link)
+        if not videos:
+            raise DownloadError(f"No videos found on {link}")
+        picks = [v.url for v in _pick_random(_filter_channel(videos, game, clip_seconds, orientation),
+                                             _used_video_ids(out_dir))]
+
+    errors = []
+    tmp = out_dir / f"link_{uuid.uuid4().hex[:8]}.mp4"
+    for pick in picks:
+        progress(None, f"Downloading {pick}")
+        try:
+            meta = _download_from_youtube(pick, tmp, clip_seconds, progress=progress)
+            break
+        except DownloadError as err:
+            errors.append(f"{pick} failed ({err})")
+    else:
+        raise DownloadError("; ".join(errors))
+
+    name = game.strip() or next(iter(games.match_title(meta.get("title", ""))), "") or "Gameplay"
+    target = out_dir / f"{_slug(name)}_youtube_{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+    os.replace(tmp, target)
+    meta["license_note"] = (f"From a link you pasted ({meta.get('author', 'unknown channel')}). Make sure you "
+                            "may reuse this footage and credit the channel in your description.")
+    return _save_clip(target, meta, "youtube", name, f"link: {url.strip()}", orientation, progress)
 
 
 def get_background_video(game_name: str, **kwargs) -> str:
@@ -707,6 +824,7 @@ class DownloadJob(BaseModel):
     sources: list[Source]
     clip_seconds: int
     orientation: Orientation
+    url: str | None = None  # pasted YouTube video / channel link instead of a game search
     status: Literal["queued", "running", "done", "error"] = "queued"
     progress: float | None = None
     message: str = "Queued"
@@ -731,10 +849,11 @@ class DownloadManager:
         sources: list[Source],
         clip_seconds: int,
         orientation: Orientation,
+        url: str | None = None,
     ) -> DownloadJob:
         job = DownloadJob(
             id=uuid.uuid4().hex[:12], game=game, sources=sources,
-            clip_seconds=clip_seconds, orientation=orientation,
+            clip_seconds=clip_seconds, orientation=orientation, url=url,
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -756,12 +875,16 @@ class DownloadManager:
         if job is None:
             return
         self._update(job_id, status="running", message="Starting")
+        progress = lambda frac, msg: self._update(job_id, progress=frac, message=msg)  # noqa: E731
         try:
-            clip = download_background(
-                job.game, settings=settings, sources=job.sources, clip_seconds=job.clip_seconds,
-                orientation=job.orientation,
-                progress=lambda frac, msg: self._update(job_id, progress=frac, message=msg),
-            )
+            if job.url:
+                clip = download_from_link(job.url, settings=settings, game=job.game, clip_seconds=job.clip_seconds,
+                                          orientation=job.orientation, progress=progress)
+            else:
+                clip = download_background(
+                    job.game, settings=settings, sources=job.sources, clip_seconds=job.clip_seconds,
+                    orientation=job.orientation, progress=progress,
+                )
             self._update(job_id, status="done", progress=1.0, message="Done", clip=clip)
         except Exception as err:  # noqa: BLE001 - surface any failure to the UI instead of losing it
             logger.exception("Background download failed for %s", job.game)

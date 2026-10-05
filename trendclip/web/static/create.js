@@ -64,6 +64,8 @@
     stickerRescan: $("cStickerRescan"),
     stickerRetag: $("cStickerRetag"),
     stickerHint: $("cStickerHint"),
+    ideas: $("cIdeas"),
+    cleared: $("cCleared"),
   };
   const MOOD_EMOJI = { funny: "😂", awkward: "😬", shocked: "😱", approve: "👍", reject: "🙅", proud: "🥂", pain: "🙂",
     nope: "🚪", innocent: "🙋", crazy: "🤪", embarrassed: "🤦", suspicious: "🤨" };
@@ -98,6 +100,7 @@
     parts: null, // multi: [{script, title, desc, tags, titleCard, endCard, popups}] x2; the form shows parts[part]
     part: 0,
     seriesId: null,
+    undo: null, // script cleared by picking a new clip
   };
 
   const clips = () => T.getClips() || [];
@@ -178,11 +181,26 @@
     saveDraft();
   }
 
+  // The voiceover may not outlast the clip (each part gets half of it in a series).
+  function maxSeconds() {
+    const c = selectedClip();
+    if (!c || !c.duration_seconds) return null;
+    return state.format === "multi" ? c.duration_seconds / 2 : c.duration_seconds;
+  }
+
   function buildLengths(wanted) {
     const spec = LENGTHS[state.format];
-    els.length.innerHTML = spec.opts.map(([v, label]) => `<option value="${v}">${label}</option>`).join("");
-    const ok = spec.opts.some(([v]) => String(v) === String(wanted));
-    els.length.value = ok ? String(wanted) : String(spec.def);
+    const max = maxSeconds();
+    const fits = (v) => !max || v <= max + 0.5;
+    const anyFits = spec.opts.some(([v]) => fits(v));
+    const allowed = spec.opts.filter(([v], i) => fits(v) || (!anyFits && i === 0)).map(([v]) => String(v));
+    els.length.innerHTML = spec.opts.map(([v, label]) => {
+      const ok = allowed.includes(String(v));
+      const note = !ok ? " · longer than the clip" : !fits(v) ? ` · cut to the ${Math.round(max)}s clip` : "";
+      return `<option value="${v}" ${ok ? "" : "disabled"}>${label}${note}</option>`;
+    }).join("");
+    const def = allowed.includes(String(spec.def)) ? String(spec.def) : allowed[allowed.length - 1];
+    els.length.value = allowed.includes(String(wanted)) ? String(wanted) : def;
   }
 
   function setFormat(format, wantedLength) {
@@ -243,7 +261,8 @@
 
   function renderPicker() {
     const list = clips();
-    if (state.clip && !list.some((c) => c.filename === state.clip)) state.clip = null;
+    const loaded = T.getClips() !== null;
+    if (loaded && state.clip && !list.some((c) => c.filename === state.clip)) state.clip = null;
     if (!list.length) {
       els.picker.innerHTML =
         '<div class="empty">No clips yet. Go to <a href="#trends" data-goto="trends"><b>Trends</b></a> and press <b>Get gameplay</b> on a game.</div>';
@@ -266,15 +285,94 @@
           </div>
         </button>`;
     }).join("");
+    const before = els.length.value;
+    buildLengths(before);
+    if (state.started && els.length.value !== before) saveDraft();
     updatePreview();
+    scriptStats();
   }
 
   function selectClip(filename) {
-    const previous = selectedClip();
+    const changed = filename !== state.clip;
     state.clip = filename;
     const clip = selectedClip();
-    if (clip && (!els.game.value.trim() || (previous && els.game.value === previous.game))) els.game.value = clip.game;
+    if (clip && changed) {
+      els.game.value = clip.game;
+      clearScript();
+    }
     renderPicker();
+    saveDraft();
+    updateButtons();
+  }
+
+  // A new clip starts from a blank script; the old one stays one click away.
+  function clearScript() {
+    const hasScript = state.parts ? state.parts.some((p) => (p.script || "").trim()) || els.script.value.trim()
+      : els.script.value.trim();
+    if (!hasScript) return;
+    if (state.parts) state.parts[state.part] = capturePart();
+    state.undo = { part: capturePart(), parts: state.parts && structuredClone(state.parts), partIndex: state.part,
+      seriesId: state.seriesId, story: els.story.value, pinned: els.pinned.value };
+    applyPart(emptyPart());
+    if (state.parts) {
+      state.parts = [emptyPart(), emptyPart()];
+      state.part = 0;
+    }
+    state.seriesId = null;
+    els.story.value = "";
+    els.pinned.value = "";
+    renderParts();
+    scriptStats();
+    els.cleared.innerHTML = 'New clip, so the script was cleared. <button type="button" data-undo-clear>Undo</button>';
+    els.cleared.hidden = false;
+  }
+
+  function undoClear() {
+    const u = state.undo;
+    if (!u) return;
+    state.undo = null;
+    if (u.parts && state.format === "multi") {
+      state.parts = u.parts;
+      state.part = u.partIndex;
+      applyPart(state.parts[state.part]);
+    } else {
+      applyPart(u.part);
+    }
+    state.seriesId = u.seriesId;
+    els.story.value = u.story;
+    els.pinned.value = u.pinned;
+    els.cleared.hidden = true;
+    renderParts();
+    scriptStats();
+    saveDraft();
+    updateButtons();
+  }
+
+  const IDEAS = {
+    funny: "Funny story: a relatable, awkward everyday mishap told in first person, getting more embarrassing "
+      + "at every step, with a punchline twist at the end.",
+    mystery: "Mystery story: something strange and unexplained happens; build suspense with small clues "
+      + "and end on a surprising or creepy reveal.",
+    drama: "Drama story: a family, friendship or relationship conflict like a Reddit AITA post, with "
+      + "escalating tension and a satisfying twist at the end.",
+    adventure: "Adventure story: a wild trip or quest full of danger and close calls, ending in triumph "
+      + "or total chaos.",
+    science: "Not a story: 3-4 surprising but true science facts, explained simply and fast, each one more "
+      + "mind-blowing than the last. Open with the craziest one as the hook.",
+  };
+
+  function renderIdeas() {
+    const notes = els.notes.value.trim();
+    for (const b of els.ideas.querySelectorAll("[data-idea]")) {
+      b.classList.toggle("active", notes === IDEAS[b.dataset.idea]);
+    }
+  }
+
+  function pickIdea(key) {
+    if (!IDEAS[key]) return;
+    els.notes.value = IDEAS[key];
+    els.mode.value = "story"; // these aren't about the footage
+    renderIdeas();
     saveDraft();
     updateButtons();
   }
@@ -321,11 +419,10 @@
     const total = state.parts
       ? state.parts.reduce((sum, p, i) => sum + speechSeconds(wordCount(i === state.part ? els.script.value : p.script)), 0)
       : secs;
-    if (words && clip && clip.duration_seconds && total > clip.duration_seconds + 1) {
-      text += ` · clip is ${Math.round(clip.duration_seconds)}s, gameplay will loop`;
-    }
+    const outlasts = words && clip && clip.duration_seconds && total > clip.duration_seconds + 1;
+    if (outlasts) text += ` · longer than the ${Math.round(clip.duration_seconds)}s clip, shorten it`;
     els.scriptStats.textContent = text;
-    els.scriptStats.classList.toggle("over", words > 0 && secs > target + 8);
+    els.scriptStats.classList.toggle("over", words > 0 && (secs > target + 8 || !!outlasts));
     if (state.parts) renderParts();
     updateButtons();
   }
@@ -844,6 +941,8 @@
         if (key === "script" || key === "length" || key === "rate") scriptStats();
         if (key === "script") { renderPopups(); renderReactions(); }
         if (key === "game") updateButtons();
+        if (key === "notes") renderIdeas();
+        if (key === "script" && els.script.value.trim()) { state.undo = null; els.cleared.hidden = true; }
       });
       els[key].addEventListener("change", () => {
         saveDraft();
@@ -896,6 +995,13 @@
       }
     });
     els.watch.addEventListener("change", saveDraft);
+    els.ideas.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-idea]");
+      if (b) pickIdea(b.dataset.idea);
+    });
+    els.cleared.addEventListener("click", (e) => {
+      if (e.target.closest("[data-undo-clear]")) undoClear();
+    });
 
     els.shorts.addEventListener("click", (e) => {
       const goto = e.target.closest("[data-goto]");
@@ -936,6 +1042,7 @@
     if (state.started) return;
     state.started = true;
     const draft = loadDraft();
+    renderIdeas();
     renderPopups();
     renderReactions();
     renderPicker();

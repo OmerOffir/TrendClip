@@ -82,6 +82,15 @@
         <label class="field"><span>Notes for Gemini (optional)</span>
           <textarea id="cNotes" rows="2" maxlength="1000" placeholder="Angle or tone, e.g. 'speedrun tips for beginners', 'funny', 'mention the new update'"></textarea>
         </label>
+        <div class="idea-chips" id="cIdeas">
+          <span class="hint">Ideas:</span>
+          <button type="button" class="idea" data-idea="funny">😂 Funny story</button>
+          <button type="button" class="idea" data-idea="mystery">🕵️ Mystery story</button>
+          <button type="button" class="idea" data-idea="drama">🎭 Drama story</button>
+          <button type="button" class="idea" data-idea="adventure">🗺️ Adventure</button>
+          <button type="button" class="idea" data-idea="science">🔬 Science facts</button>
+        </div>
+        <div class="cleared-note" id="cCleared" hidden></div>
         <div class="form-row form-actions">
           <label class="check"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
           <button id="cWrite" class="btn-primary" type="button">Write script with Gemini</button>
@@ -287,7 +296,7 @@
                 <option value="private">Private</option>
                 <option value="unlisted">Unlisted</option>
                 <option value="public">Public</option>
-                <option value="schedule">Schedule…</option>
+                <option value="schedule">Scheduled (publish later)…</option>
               </select>
             </label>
             <label class="field" id="ytWhenField" hidden>
@@ -298,7 +307,8 @@
             <label class="check" title="YouTube asks to disclose realistic altered or AI-generated content"><input type="checkbox" id="ytSynthetic" /> Altered / synthetic content</label>
           </div>
           <div class="hint">Vertical and under 3 minutes, so YouTube makes it a Short. A Google Cloud project that hasn't
-            passed YouTube's API audit can only upload as <b>Private</b>; switch it to Public in YouTube Studio.</div>
+            passed YouTube's API audit can only upload as <b>Private</b>; switch it to Public in YouTube Studio.
+            To post later, pick <b>Scheduled (publish later)</b> under Visibility.</div>
           <div class="quick-times" id="ytQuick" hidden>
             <span class="hint">Quick pick:</span>
             <button type="button" class="dl-copy" data-quick="today-18">Today 18:00</button>
@@ -458,6 +468,20 @@
           </select>
         </label>
       </div>
+      <form class="controls dl-controls dl-link" id="dlLinkForm">
+        <label class="field field-wide">
+          <span>Or paste a YouTube link <em>(a video, or a channel to take a random video from it)</em></span>
+          <input id="dlUrl" type="text" inputmode="url" autocomplete="off"
+            placeholder="https://www.youtube.com/@NoCopyrightGameplays  or  https://youtu.be/…" />
+        </label>
+        <label class="field">
+          <span>Game <em>(optional)</em></span>
+          <input id="dlGame" type="text" maxlength="80" placeholder="e.g. Minecraft" />
+        </label>
+        <button id="dlLinkGo" class="btn-primary" type="submit">Get clip</button>
+      </form>
+      <div class="hint" id="dlLinkHint">Uses the clip length and orientation above. For a channel, Game picks only its
+        videos of that game; leave it empty for any video. Only use footage you're allowed to reuse, and credit it.</div>
       <div id="downloads" class="downloads"></div>
     </section>
 

@@ -127,6 +127,38 @@ def test_overloaded_model_retries_then_falls_back(monkeypatch):
         script_writer._generate_with_fallback(SimpleNamespace(models=Bad()), "main", [], None, lambda f, m: None, Busy)
 
 
+def test_script_never_outlasts_the_clip(tmp_path):
+    long_story = " ".join(f"Sentence number {i} goes on and on." for i in range(60))  # 420 words
+    short_story = "A short hook. " + " ".join(f"Beat {i} happens." for i in range(40))  # 123 words
+    calls = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            calls.append(contents[-1])
+            if config.response_schema is script_writer.Shortened:
+                return SimpleNamespace(parsed=script_writer.Shortened(script=short_story), text="")
+            return SimpleNamespace(parsed=script_writer.GeminiShort(
+                on_screen="x", hook="x", script=long_story, title="t", description="d", hashtags=[]), text="")
+
+    client = SimpleNamespace(models=Models())
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=75,
+                                        format="long", max_seconds=40, client=client)
+    assert "about 40 seconds" in calls[0]  # the target was capped to the clip
+    assert "AT MOST 132 words" in calls[1]  # 40 s * 3.3 words/s
+    assert result.script == short_story and result.word_count <= 132
+
+    class Stubborn(Models):
+        def generate_content(self, model, contents, config):
+            if config.response_schema is script_writer.Shortened:
+                raise RuntimeError("busy")
+            return super().generate_content(model, contents, config)
+
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=30,
+                                        max_seconds=60, client=SimpleNamespace(models=Stubborn()))
+    assert result.word_count <= script_writer.max_words(30) + 5  # cut at a sentence end
+    assert result.script.endswith("and on.")
+
+
 def test_write_script_needs_a_key(tmp_path, monkeypatch):
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s=None: None)
     with pytest.raises(script_writer.ScriptError, match="GEMINI_API_KEY"):

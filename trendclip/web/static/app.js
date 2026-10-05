@@ -34,6 +34,11 @@
     dlSource: $("dlSource"),
     dlSeconds: $("dlSeconds"),
     dlOrientation: $("dlOrientation"),
+    dlLinkForm: $("dlLinkForm"),
+    dlUrl: $("dlUrl"),
+    dlGame: $("dlGame"),
+    dlLinkGo: $("dlLinkGo"),
+    dlLinkHint: $("dlLinkHint"),
     downloads: $("downloads"),
     libraryInfo: $("libraryInfo"),
   };
@@ -47,7 +52,7 @@
     requestSeq: 0,
     library: null, // { counts: {game: n}, total, channels }
     jobs: [],
-    clips: [],
+    clips: null, // null until /api/backgrounds has answered once
     pollTimer: null,
   };
 
@@ -316,6 +321,39 @@
     }
   }
 
+  const LINK_HINT = els.dlLinkHint.innerHTML;
+  const YT_LINK_RE = /^(https?:\/\/)?(www\.|m\.)?(youtube\.com\/(watch\?|shorts\/|live\/|embed\/|@|channel\/|c\/|user\/)|youtu\.be\/)/i;
+
+  async function startLinkDownload(e) {
+    e.preventDefault();
+    const url = els.dlUrl.value.trim();
+    const bad = !YT_LINK_RE.test(url);
+    els.dlUrl.classList.toggle("invalid", bad);
+    els.dlLinkHint.classList.toggle("over", bad);
+    els.dlLinkHint.innerHTML = bad ? "That isn't a YouTube video or channel link (e.g. https://www.youtube.com/@NoCopyrightGameplays)." : LINK_HINT;
+    if (bad) return;
+    els.dlLinkGo.disabled = true;
+    try {
+      const { body } = await api("/api/backgrounds/download-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          url,
+          game: els.dlGame.value.trim(),
+          seconds: Number(els.dlSeconds.value),
+          orientation: els.dlOrientation.value,
+        }),
+      });
+      state.jobs.unshift(body);
+      renderDownloads();
+      ensurePolling();
+    } catch (err) {
+      showError(`Download could not start: ${err.message}`);
+    } finally {
+      els.dlLinkGo.disabled = false;
+    }
+  }
+
   const isActive = (j) => j.status === "queued" || j.status === "running";
 
   function ensurePolling() {
@@ -344,8 +382,8 @@
       return `
         <div class="dl-item">
           <div class="dl-body">
-            <div class="dl-title">${esc(j.game)}</div>
-            <div class="dl-meta">${esc(j.clip_seconds ? `${j.clip_seconds}s` : "full video")} · ${esc(j.orientation)} · ${esc(j.sources.join(" → "))}</div>
+            <div class="dl-title">${esc(j.game || "From link")}</div>
+            <div class="dl-meta">${esc(j.clip_seconds ? `${j.clip_seconds}s` : "full video")} · ${esc(j.orientation)} · ${j.url ? esc(j.url) : esc(j.sources.join(" → "))}</div>
             ${failed
               ? `<div class="dl-error">${esc(j.error || "Failed")}</div>`
               : `<div class="progress ${pctDone == null ? "indeterminate" : ""}"><i style="width:${pctDone ?? 0}%"></i></div>
@@ -354,7 +392,7 @@
         </div>`;
     });
 
-    const clipCards = state.clips.map((c) => {
+    const clipCards = (state.clips || []).map((c) => {
       const src = `/media/backgrounds/${encodeURIComponent(c.filename)}`;
       const portrait = c.height && c.width && c.height > c.width;
       const start = c.start_seconds != null ? ` · from ${Math.floor(c.start_seconds / 60)}:${String(Math.floor(c.start_seconds % 60)).padStart(2, "0")}` : "";
@@ -394,7 +432,7 @@
     button.disabled = true;
     try {
       await api(`/api/backgrounds/${encodeURIComponent(filename)}`, { method: "DELETE" });
-      state.clips = state.clips.filter((c) => c.filename !== filename);
+      state.clips = (state.clips || []).filter((c) => c.filename !== filename);
       renderDownloads();
       document.dispatchEvent(new CustomEvent("trendclip:clips"));
     } catch (err) {
@@ -549,6 +587,7 @@
   }
 
   function bindEvents() {
+    els.dlLinkForm.addEventListener("submit", startLinkDownload);
     els.region.addEventListener("change", async () => {
       await loadCategories(els.category.value);
       loadTrends();

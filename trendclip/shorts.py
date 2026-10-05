@@ -15,7 +15,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import music, popups, script_writer, stickers, video_assembler, voiceover
+from . import music, popups, script_writer, stickers, video_assembler, video_downloader, voiceover
 from .config import Settings
 from .models import utcnow
 from .popups import Popup
@@ -161,15 +161,18 @@ def write_script(settings: Settings, clip: str, game: str, trend_titles: list[st
                  mode: script_writer.ScriptMode = "clip", format: script_writer.ScriptFormat = "short",
                  handle: str | None = None) -> dict[str, Any]:
     path = clip_path(settings, clip)
+    clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     if format == "multi":
         series = script_writer.write_series(settings, game, notes=notes, target_seconds=target_seconds,
-                                            handle=handle, progress=progress)
-        return {"format": "multi", **series.model_dump()}
+                                            handle=handle, progress=progress,
+                                            max_seconds=clip_seconds / 2 if clip_seconds else None)
+        return {"format": "multi", "clip_seconds": clip_seconds, **series.model_dump()}
     result = script_writer.write_script(
         settings, game, path, trend_titles=trend_titles, notes=notes,
         target_seconds=target_seconds, watch_clip=watch_clip, mode=mode, format=format, progress=progress,
+        max_seconds=clip_seconds,
     )
-    return result.model_dump()
+    return {"clip_seconds": clip_seconds, **result.model_dump()}
 
 
 def resolve_music(settings: Settings, req: RenderRequest, progress: ProgressFn) -> music.DownloadedTrack | None:

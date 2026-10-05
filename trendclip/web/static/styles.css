@@ -275,6 +275,10 @@ table.videos { width: 100%; border-collapse: collapse; font-variant-numeric: tab
 
 /* Downloads panel */
 .dl-controls { box-shadow: none; padding: 0; border: 0; margin-bottom: 14px; }
+.dl-link { align-items: flex-end; margin-bottom: 6px; }
+.dl-link .btn-primary { white-space: nowrap; }
+#dlLinkHint { margin-bottom: 14px; }
+#dlLinkHint.over { color: var(--danger, #ff6b6b); }
 .downloads { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
 .dl-item { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); overflow: hidden; display: flex; flex-direction: column; }
 .dl-item video { width: 100%; aspect-ratio: 16 / 9; background: #000; display: block; }
@@ -482,6 +486,15 @@ input.invalid { border-color: var(--accent) !important; }
 
 /* Create: reaction stickers */
 .chips.disabled { opacity: 0.5; }
+.idea-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: -4px 0 4px; }
+.idea { border: 1px solid var(--border); background: var(--bg-elev); color: var(--text); border-radius: 999px;
+  padding: 4px 11px; font-size: 12px; cursor: pointer; }
+.idea:hover { border-color: var(--accent); }
+.idea.active { border-color: var(--accent); background: rgba(255, 92, 92, 0.15); }
+.cleared-note { font-size: 12px; color: var(--muted); background: var(--bg-elev); border: 1px dashed var(--border);
+  border-radius: 8px; padding: 6px 10px; }
+.cleared-note[hidden] { display: none; }
+.cleared-note button { border: 0; background: none; color: var(--accent); cursor: pointer; font-weight: 600; padding: 0 4px; }
 .sticker-toggles { gap: 18px; flex-wrap: wrap; }
 .sticker-lib { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; background: var(--bg-elev); }
 .sticker-lib summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 600; }

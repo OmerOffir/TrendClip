@@ -246,6 +246,24 @@ def start_download(req: DownloadRequest) -> dict[str, Any]:
     return job.model_dump(mode="json")
 
 
+class LinkDownloadRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=500)
+    game: str = Field("", max_length=80)  # optional: channel links only take videos of this game
+    seconds: int = Field(60, ge=0, le=3600)
+    orientation: Literal["landscape", "portrait"] = "landscape"
+
+
+@app.post("/api/backgrounds/download-link", status_code=202)
+def start_link_download(req: LinkDownloadRequest) -> dict[str, Any]:
+    try:
+        video_downloader.parse_youtube_link(req.url)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    job = _downloads.submit(_base_settings(), req.game.strip(), ["youtube"], req.seconds, req.orientation,
+                            url=req.url.strip())
+    return job.model_dump(mode="json")
+
+
 @app.get("/api/backgrounds/jobs")
 def download_jobs() -> list[dict[str, Any]]:
     return [job.model_dump(mode="json") for job in _downloads.list()]

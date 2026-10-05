@@ -171,6 +171,62 @@ def test_landscape_pick_is_cropped_when_vertical_is_asked(tmp_path, monkeypatch)
     assert (wide.width, wide.height) == (640, 360)
 
 
+def test_parse_youtube_link():
+    vid = ("video", "https://www.youtube.com/watch?v=MoGEOc3kcz8")
+    for url in ("https://www.youtube.com/watch?v=MoGEOc3kcz8", "youtu.be/MoGEOc3kcz8?t=40",
+                "https://m.youtube.com/watch?feature=share&v=MoGEOc3kcz8", "https://youtube.com/shorts/MoGEOc3kcz8"):
+        assert vd.parse_youtube_link(url) == vid
+    assert vd.parse_youtube_link(" https://www.youtube.com/@NoCopyrightGameplays/videos ") == \
+        ("channel", "https://www.youtube.com/@NoCopyrightGameplays")
+    assert vd.parse_youtube_link("youtube.com/channel/UC4r6nalq_1-9rc80qdVLatQ")[0] == "channel"
+    for bad in ("https://vimeo.com/123", "https://www.youtube.com/results?search_query=x", "hello"):
+        with pytest.raises(ValueError):
+            vd.parse_youtube_link(bad)
+
+
+def channel_list():
+    def v(i, title, duration):
+        return vd.LibraryVideo(video_id=f"vid{i:08d}", title=title, channel_id="UC", channel_title="NCG",
+                               games=match_title(title), duration=duration)
+    return [v(1, "Minecraft Parkour No Copyright", 600), v(2, "Minecraft Parkour (Vertical)", 900),
+            v(3, "GTA 5 Driving No Copyright", 1200), v(4, "Minecraft short", 20)]
+
+
+def test_filter_channel_by_game_length_and_orientation():
+    vids = channel_list()
+    assert [v.video_id for v in vd._filter_channel(vids, "", 60, "landscape")] == ["vid00000001", "vid00000003"]
+    assert [v.video_id for v in vd._filter_channel(vids, "Minecraft", 60, "portrait")] == ["vid00000002"]
+    assert [v.video_id for v in vd._filter_channel(vids, "GTA V / Online", 60, "portrait")] == ["vid00000003"]
+    with pytest.raises(vd.DownloadError, match="No videos of 'Fortnite'"):
+        vd._filter_channel(vids, "Fortnite", 60, "landscape")
+
+
+def test_download_from_link_channel_and_video(tmp_path, monkeypatch):
+    settings = make_settings(tmp_path)
+    monkeypatch.setattr(vd, "channel_videos", lambda url: channel_list())
+    got = []
+
+    def fake_download(url, target, clip_seconds, progress):
+        got.append(url)
+        target.write_bytes(b"video")
+        title = "GTA 5 Driving No Copyright" if url.endswith("3") else "Some video"
+        return {"title": title, "source_url": url, "author": "NCG", "license_note": "x"}
+
+    monkeypatch.setattr(vd, "_download_from_youtube", fake_download)
+    monkeypatch.setattr(vd, "probe_video", lambda p: {"width": 1080, "height": 1920})
+    clip = vd.download_from_link("https://www.youtube.com/@NCG", settings=settings, game="GTA V / Online",
+                                 clip_seconds=30, orientation="landscape")
+    assert got == ["https://www.youtube.com/watch?v=vid00000003"]
+    assert clip.game == "GTA V / Online" and clip.filename.startswith("gta-v-online_youtube_")
+    assert clip.query == "link: https://www.youtube.com/@NCG" and "pasted" in clip.license_note
+    assert (settings.backgrounds_dir / clip.filename).exists() and not list(settings.backgrounds_dir.glob("link_*"))
+
+    clip = vd.download_from_link("https://youtu.be/abcdefghijk", settings=settings, clip_seconds=30)
+    assert got[-1] == "https://www.youtube.com/watch?v=abcdefghijk" and clip.game == "Gameplay"
+    with pytest.raises(ValueError):
+        vd.download_from_link("https://example.com", settings=settings)
+
+
 def test_download_background_reports_all_failures(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     lib = vd.NoCopyrightLibrary(settings, client_factory=FakeClient)
