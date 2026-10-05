@@ -192,7 +192,7 @@ def resolve_music(settings: Settings, req: RenderRequest, progress: ProgressFn) 
         progress(None, f"Picking {music.MOOD_LABELS[mood].lower()} music")
         return music.pick_by_mood(settings, mood)
     progress(None, "Picking background music")
-    return music.pick_track(settings, req.music_source)
+    return music.pick(settings, req.music_source)
 
 
 def music_volume(settings: Settings, requested: float | None) -> float:

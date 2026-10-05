@@ -688,7 +688,7 @@
   }
 
   // Shared with create.js (Create tab).
-  const views = { trends: $("viewTrends"), create: $("viewCreate"), upload: $("viewUpload") };
+  const views = { trends: $("viewTrends"), create: $("viewCreate"), upload: $("viewUpload"), plan: $("viewPlan") };
   const nav = $("nav");
 
   function showView(name, clip) {

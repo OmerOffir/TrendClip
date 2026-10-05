@@ -45,6 +45,23 @@ def test_pick_by_mood_uses_the_local_folder(tmp_path):
     assert music.mood_counts(settings)["funny_quirky"]["tracks"] == 2
 
 
+def test_my_music_picks_from_every_folder(tmp_path, monkeypatch):
+    settings = make_settings(tmp_path)
+    with pytest.raises(music.MusicError, match="No music files"):
+        music.pick(settings, "mine")
+    add_tracks(settings, "funny", "Quirky Plucks.mp3")
+    add_tracks(settings, "dramatic", "Suspended Tension.mp3", "Sombra Creeping_2.mp3")
+    picked = {music.pick(settings, "mine").video_id for _ in range(60)}
+    assert picked == {"local:funny/Quirky Plucks.mp3", "local:dramatic/Suspended Tension.mp3",
+                      "local:dramatic/Sombra Creeping_2.mp3"}
+    t = music.pick(settings, "mine", exclude={"local:dramatic/Suspended Tension.mp3", "local:funny/Quirky Plucks.mp3"})
+    assert t.mood == "dramatic_suspense" and t.title == "Sombra Creeping 2"
+
+    monkeypatch.setattr(music, "pick_track", lambda s, source, exclude=None: f"youtube:{source}")
+    assert music.pick(settings, "random") == "youtube:random"
+    assert music.pick(settings, "mood", "funny_quirky").video_id == "local:funny/Quirky Plucks.mp3"
+
+
 def test_empty_mood_folder_falls_back_to_a_youtube_channel(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     lib = SimpleNamespace(channels=[{"id": "UCncs", "title": "NoCopyrightSounds"},

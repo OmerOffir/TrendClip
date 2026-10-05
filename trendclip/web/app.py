@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__, music, publish, script_writer, shorts, stickers, video_downloader, voiceover
+from .. import __version__, music, planner, publish, script_writer, shorts, stickers, video_downloader, voiceover
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -293,7 +293,7 @@ class ScriptRequest(BaseModel):
 
 
 class MusicPickRequest(BaseModel):
-    source: str = Field("random", max_length=40)  # "mood" = the music/<mood> folders
+    source: str = Field("random", max_length=40)  # "mood" = music/<mood> folder, "mine" = any music/ folder
     mood: str | None = Field(None, max_length=40)
     exclude: list[str] = Field(default_factory=list, max_length=50)
 
@@ -361,10 +361,7 @@ def pick_music(req: MusicPickRequest) -> dict[str, Any]:
     """Download a random track (a few seconds) so it can be previewed before rendering."""
     settings = _base_settings()
     try:
-        if req.source == "mood":
-            track = music.pick_by_mood(settings, req.mood or "chill_lofi", exclude=set(req.exclude))
-        else:
-            track = music.pick_track(settings, req.source, exclude=set(req.exclude))
+        track = music.pick(settings, req.source, req.mood, exclude=set(req.exclude))
     except YouTubeAPIError as err:
         raise _youtube_http_error(err) from err
     except music.MusicError as err:
@@ -549,10 +546,64 @@ def gemini_texts(filename: str) -> dict[str, Any]:
 
 
 @app.post("/api/upload/shorts/{filename}/posted/{platform}")
-def mark_posted(filename: str, platform: Literal["tiktok", "instagram"], req: PostedRequest) -> dict[str, Any]:
+def mark_posted(filename: str, platform: Literal["youtube", "tiktok", "instagram"], req: PostedRequest) -> dict[str, Any]:
     settings = _base_settings()
     _short_or_http(settings, filename)
     return _with_texts(publish.set_posted(settings, filename, platform, req.posted))
+
+
+# --------------------------------------------------------------------------- Plan tab
+
+
+@app.get("/api/plan")
+def get_plan() -> dict[str, Any]:
+    return planner.view(_base_settings())
+
+
+def _plan_item_or_http(fn, *args):
+    settings = _base_settings()
+    try:
+        item = fn(settings, *args)
+    except KeyError as err:
+        raise HTTPException(status_code=404, detail="Plan item not found") from err
+    except FileNotFoundError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    short = None
+    if item.short:
+        try:
+            short = shorts.get_short(settings, item.short)
+        except (ValueError, FileNotFoundError):
+            pass
+    return planner.item_view(item, short)
+
+
+@app.post("/api/plan/items")
+def add_plan_item(req: planner.ItemRequest) -> dict[str, Any]:
+    return _plan_item_or_http(planner.add_item, req)
+
+
+@app.patch("/api/plan/items/{item_id}")
+def update_plan_item(item_id: str, req: planner.ItemUpdate) -> dict[str, Any]:
+    return _plan_item_or_http(planner.update_item, item_id, req)
+
+
+@app.delete("/api/plan/items/{item_id}")
+def delete_plan_item(item_id: str) -> dict[str, Any]:
+    if not planner.delete_item(_base_settings(), item_id):
+        raise HTTPException(status_code=404, detail="Plan item not found")
+    return {"deleted": item_id}
+
+
+@app.post("/api/plan/items/{item_id}/posted/{platform}")
+def mark_plan_posted(item_id: str, platform: planner.Platform, req: PostedRequest) -> dict[str, Any]:
+    return _plan_item_or_http(planner.set_posted, item_id, platform, req.posted)
+
+
+@app.put("/api/plan/goals")
+def save_plan_goals(goals: planner.Goals) -> dict[str, Any]:
+    return planner.set_goals(_base_settings(), goals).model_dump(mode="json")
 
 
 @app.post("/api/upload/shorts/{filename}/youtube/comment")

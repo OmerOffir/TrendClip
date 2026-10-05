@@ -74,6 +74,7 @@ Exit codes: `0` ok, `2` config error, `3` YouTube quota/credential error.
 | `trendclip/games.py` | Game catalog + title/tag matching, trending-games leaderboard |
 | `trendclip/aggregator.py` | Keyword extraction, emerging-topic clustering, ranking |
 | `trendclip/main.py` | Orchestration + CLI |
+| `trendclip/planner.py` | Plan tab: upload calendar, goals, per-platform "posted" status |
 | `trendclip/web/app.py` | FastAPI app: JSON API + cached results |
 | `trendclip/web/static/` | Dashboard UI (plain HTML/CSS/JS, no build step) |
 
@@ -126,6 +127,14 @@ Sources:
   games it takes a landscape upload and crops the centre to 9:16, so every *Vertical 9:16* download
   is really vertical.
 
+Every YouTube clip (from a game or a pasted link) starts at a random point after the **first
+minute**, for example 1:45 to 2:45 for a 60 s clip, and stops at least 20 s before the end. Videos
+too short for that skip as much of the start as they can, and channel picks prefer videos long
+enough to skip the full minute. YouTube clips are also always **mirrored** (flipped left to right)
+so they don't look like a straight re-upload. The flip is done in the same ffmpeg pass as the 9:16
+crop, and the sidecar records `"mirrored": true`. Text in the footage, such as the HUD or signs,
+shows reversed. Pexels clips are not mirrored.
+
 Every clip gets a `.json` sidecar with its source URL, author and license note. These channels let you
 use their footage, usually with credit, so check the license note before publishing and give the credit
 it asks for. `assets/` is git-ignored. Needs ffmpeg (system or the bundled `imageio-ffmpeg`).
@@ -157,8 +166,8 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    Drop `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac` or `.aac` files into those folders. An optional
    `<song>.txt` next to a file holds its credit line for the description. If a folder is empty, a
    matching YouTube track is used instead (Audio Library for funny, NoCopyrightSounds for dramatic,
-   Chillhop for chill). You can change the mood by hand, or switch to **Random** (any YouTube track)
-   or **None**. Preview the track and press **Shuffle** for another one. Every track is first
+   Chillhop for chill). You can change the mood by hand, or switch to **My music** (a random file
+   from any of the three folders, whatever the mood), **Random** (any YouTube track) or **None**. Preview the track and press **Shuffle** for another one. Every track is first
    levelled to the same loudness and then played at 12%, 14% or 15% (Quiet/Normal/Loud), so it never
    drowns out the voice. It also loops if it is short, fades in and out, and ducks under the voice.
    Set `MUSIC_LIBRARY_DIR` to use another folder.
@@ -259,6 +268,8 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
 - **Instagram** and **TikTok** (no upload API here): caption, hashtags (Instagram: at most 5) and
   @mentions in each platform's style, a ready-to-paste text with the credits, **Copy caption**,
   **Download video**, a link to the upload page and a **Posted** checkbox to keep track.
+  The YouTube sub-tab has the same kind of box (**Already on YouTube**) for Shorts you uploaded in
+  YouTube Studio.
 
 **Multi-part stories:** the YouTube sub-tab shows both parts and their links. Once a part is
 uploaded, the other part's description gets a "Part 1: <link>" / "Part 2: <link>" line. The pinned
@@ -284,6 +295,40 @@ YouTube setup (once):
 Notes: an upload costs about 100 of the 10,000 daily API quota units. Projects that haven't passed
 YouTube's API audit can only upload **private** videos; make them public in YouTube Studio.
 Vertical videos up to 3 minutes become Shorts.
+
+## Plan tab (what goes out when)
+
+The **Plan** tab is your upload calendar. The default goals are **2 reels a day** on YouTube,
+Instagram and TikTok and **2 long videos a week** on YouTube. You can change the numbers and the
+platforms at the top of the tab.
+
+- **Days:** the board shows 7 days starting with **Today**, **Tomorrow** and **Day after
+  tomorrow**; **Earlier** and **Later** move it a week. Each day has an empty slot for every reel it
+  still needs, plus **+ Long video**. Today's card is outlined.
+- **Not planned yet:** your Shorts that aren't on a day yet. **Tomorrow** or **Day after** puts a
+  Short on that day in one click. **Pick a day…** lets you choose any date. You can also drag a
+  Short onto a day. Planning a Short also marks it **Ready to upload**, so it appears in the Upload
+  tab.
+- **Long videos and other uploads:** add them with **+ Long video**, or with an empty slot and
+  "Something else". They only need a title and an optional note (time, thumbnail idea, …), because
+  long videos are made outside TrendClip.
+- **Marking as uploaded:** every item has a button per platform (YouTube, Instagram, TikTok).
+  Click it once the video is up there and it turns coloured. When every platform is ticked, the item
+  is done. For a Short, the tick is the same as the **Posted** box in the Upload tab, so ticking
+  either one updates both. A YouTube upload made from the Upload tab ticks YouTube by itself; that
+  button then opens the video.
+- **Moving and editing:** drag an item to another day, or use **Edit** to change the day, platforms
+  or notes, or to remove it. **Upload tab** opens the Short there with its captions.
+- **Counters:** the top cards show:
+  - today's reels posted, out of the goal;
+  - how many reels are planned for tomorrow and the day after;
+  - long videos posted this week and next week (Monday to Sunday);
+  - anything **late** (an earlier day not posted everywhere).
+
+  Late items are listed above the days. The number on the Plan tab shows how many uploads are left
+  for today.
+
+The plan is saved in `output/planner.json`.
 
 ## Video assembly (karaoke Shorts)
 

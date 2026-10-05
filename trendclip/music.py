@@ -161,6 +161,26 @@ def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = No
     return track.model_copy(update={"mood": mood_id, "fallback": True})
 
 
+def pick_local(settings: Settings, exclude: set[str] | None = None) -> DownloadedTrack:
+    """Random track from any of the music/ mood folders."""
+    files = [(p, m) for m in MOODS for p in local_tracks(settings, m)]
+    if not files:
+        raise MusicError(f"No music files in {settings.music_library_dir.name}/funny, /dramatic or /chill yet")
+    fresh = [(p, m) for p, m in files if f"local:{p.parent.name}/{p.name}" not in (exclude or set())]
+    path, mood_id = random.choice(fresh or files)
+    return _local_track(settings, path, mood_id)
+
+
+def pick(settings: Settings, source: str, mood_id: str | None = None,
+         exclude: set[str] | None = None) -> DownloadedTrack:
+    """"mood" = the folder for mood_id, "mine" = any music/ folder, else a channel id or "random"."""
+    if source == "mood":
+        return pick_by_mood(settings, mood_id or "chill_lofi", exclude)
+    if source == "mine":
+        return pick_local(settings, exclude)
+    return pick_track(settings, source, exclude)
+
+
 def mood(channel_title: str) -> str:
     low = channel_title.lower()
     return next((m for key, m in CHANNEL_MOODS.items() if key in low), "")

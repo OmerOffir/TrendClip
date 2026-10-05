@@ -49,7 +49,8 @@ LATEST_FILENAME = "latest_gameplay.mp4"
 LIBRARY_TTL_SECONDS = 24 * 3600
 MAX_UPLOADS_PER_CHANNEL = 1000
 MIN_PEXELS_HEIGHT = 720
-INTRO_SKIP_SECONDS = 20
+INTRO_SKIP_SECONDS = 60  # never start in the first minute (intros, logos, menus)
+OUTRO_SKIP_SECONDS = 20
 
 Source = Literal["pexels", "youtube"]
 Orientation = Literal["landscape", "portrait"]
@@ -74,6 +75,7 @@ class BackgroundClip(BaseModel):
     start_seconds: float | None = None
     width: int | None = None
     height: int | None = None
+    mirrored: bool = False
     license_note: str
     downloaded_at: datetime = Field(default_factory=utcnow)
 
@@ -175,22 +177,26 @@ def _trim(path: Path, seconds: int) -> None:
     os.replace(tmp, path)
 
 
-def _crop_to_portrait(path: Path, progress: ProgressFn = _noop) -> None:
-    """Centre-crop a landscape file to 9:16 in place (re-encodes the video, copies the audio)."""
+def _reframe(path: Path, crop: bool = False, mirror: bool = False, progress: ProgressFn = _noop) -> None:
+    """Centre-crop to 9:16 and/or flip left-right, in place, in one re-encode (audio copied)."""
+    if not crop and not mirror:
+        return
     ffmpeg = ffmpeg_path()
     if not ffmpeg:
-        raise DownloadError("ffmpeg is required to crop clips to vertical (install ffmpeg or imageio-ffmpeg)")
-    progress(None, "Cropping to vertical 9:16")
-    tmp = path.with_name(path.stem + ".crop.mp4")
+        raise DownloadError("ffmpeg is required to crop or mirror clips (install ffmpeg or imageio-ffmpeg)")
+    filters = (["crop=trunc(ih*9/16/2)*2:ih"] if crop else []) + (["hflip"] if mirror else []) + ["setsar=1"]
+    progress(None, " and ".join(w for w, on in (("Cropping to vertical 9:16", crop), ("mirroring", mirror)) if on)
+             .capitalize())
+    tmp = path.with_name(path.stem + ".reframe.mp4")
     proc = subprocess.run(
         [ffmpeg, "-y", "-loglevel", "error", "-i", str(path),
-         "-vf", "crop=trunc(ih*9/16/2)*2:ih,setsar=1", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+         "-vf", ",".join(filters), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
          "-pix_fmt", "yuv420p", "-c:a", "copy", "-movflags", "+faststart", str(tmp)],
         capture_output=True, text=True, timeout=3600,
     )
     if proc.returncode != 0 or not tmp.exists():
         tmp.unlink(missing_ok=True)
-        raise DownloadError(f"ffmpeg crop failed: {proc.stderr.strip()[-200:]}")
+        raise DownloadError(f"ffmpeg crop/mirror failed: {proc.stderr.strip()[-200:]}")
     os.replace(tmp, path)
 
 
@@ -274,9 +280,13 @@ def _yt_dlp():
 
 
 def _random_start(duration: float | None, clip_seconds: int) -> float:
-    if not duration or not clip_seconds or duration <= clip_seconds + INTRO_SKIP_SECONDS * 2:
+    """A random start after the first minute and before the outro; short videos skip what they can."""
+    if not duration or not clip_seconds or duration <= clip_seconds:
         return 0.0
-    return round(random.uniform(INTRO_SKIP_SECONDS, duration - clip_seconds - INTRO_SKIP_SECONDS), 1)
+    room = duration - clip_seconds
+    low = min(INTRO_SKIP_SECONDS, room)
+    high = max(low, room - OUTRO_SKIP_SECONDS)
+    return round(random.uniform(low, high), 1)
 
 
 def _download_from_youtube(
@@ -635,17 +645,19 @@ def download_background(
 
 def _save_clip(target: Path, meta: dict, source: Source, game: str, query: str, orientation: Orientation,
                progress: ProgressFn) -> BackgroundClip:
-    """Crop to 9:16 if asked, write the sidecar and refresh latest_gameplay.mp4."""
+    """Crop to 9:16 if asked, mirror YouTube footage, write the sidecar and refresh latest_gameplay.mp4."""
     size = probe_video(target)
-    if orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0):
-        # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
-        try:
-            _crop_to_portrait(target, progress)
-        except (DownloadError, OSError, subprocess.SubprocessError):
-            target.unlink(missing_ok=True)
-            raise
+    # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
+    crop = orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0)
+    mirror = source == "youtube"  # flipped, so it doesn't look like a straight re-upload
+    try:
+        _reframe(target, crop=crop, mirror=mirror, progress=progress)
+    except (DownloadError, OSError, subprocess.SubprocessError):
+        target.unlink(missing_ok=True)
+        raise
+    if crop or mirror:
         size = probe_video(target)
-    meta.update(size)
+    meta.update(size, mirrored=mirror)
     clip = BackgroundClip(path=str(target), filename=target.name, source=source, game=game, query=query, **meta)
     out_dir = target.parent
     target.with_suffix(".json").write_text(clip.model_dump_json(indent=2), encoding="utf-8")
@@ -701,17 +713,21 @@ def channel_videos(channel_url: str, limit: int = CHANNEL_SCAN_LIMIT) -> list[Li
 
 def _filter_channel(videos: list[LibraryVideo], game: str, clip_seconds: int,
                     orientation: Orientation) -> list[LibraryVideo]:
-    """Long enough videos, of the game if one was given, vertical ones first in portrait mode."""
-    long_enough = [v for v in videos if not v.duration or not clip_seconds or v.duration >= clip_seconds + 10]
-    pool = long_enough or videos
+    """Videos of the game if one was given, preferring ones long enough to skip the first minute,
+    vertical ones first in portrait mode."""
+    pool = videos
     if game.strip():
         related = games.related_games(game) | {game}
         needle = games.normalize(game)
-        of_game = [v for v in pool if related.intersection(v.games) or needle.strip() in games.normalize(v.title)]
-        if not of_game:
+        pool = [v for v in videos if related.intersection(v.games) or needle.strip() in games.normalize(v.title)]
+        if not pool:
             raise DownloadError(f"No videos of '{game}' among this channel's latest {len(videos)} uploads; "
                                 "leave the game empty to take any video")
-        pool = of_game
+
+    def fits(extra: int) -> list[LibraryVideo]:
+        return [v for v in pool if not v.duration or not clip_seconds or v.duration >= clip_seconds + extra]
+
+    pool = fits(INTRO_SKIP_SECONDS + OUTRO_SKIP_SECONDS) or fits(10) or pool
     want_vertical = orientation == "portrait"
     return [v for v in pool if v.vertical == want_vertical] or pool
 

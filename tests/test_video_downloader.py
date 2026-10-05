@@ -80,15 +80,27 @@ def test_pick_pexels_file_prefers_orientation_and_resolution():
     assert vd._pick_pexels_file({"video_files": [video["video_files"][3]]}, "landscape") is None
 
 
-def test_random_start_skips_intro_and_fits_clip():
-    for _ in range(50):
-        start = vd._random_start(600, 60)
-        assert vd.INTRO_SKIP_SECONDS <= start <= 600 - 60 - vd.INTRO_SKIP_SECONDS
-    assert vd._random_start(70, 60) == 0.0
+def test_random_start_skips_the_first_minute_and_fits_clip():
+    starts = [vd._random_start(600, 60) for _ in range(200)]
+    assert vd.INTRO_SKIP_SECONDS == 60
+    assert all(60 <= s <= 600 - 60 - vd.OUTRO_SKIP_SECONDS for s in starts)
+    assert len(set(starts)) > 50  # really random, not always 1:00
+    assert 60 <= vd._random_start(130, 60) <= 70  # little room: still past the first minute
+    assert vd._random_start(100, 60) == 40.0  # shorter than 1 min + clip: skip as much as possible
+    assert vd._random_start(60, 60) == 0.0
     assert vd._random_start(None, 60) == 0.0
 
 
-def test_download_background_youtube_path(tmp_path, monkeypatch):
+@pytest.fixture
+def no_reframe(monkeypatch):
+    """Fake downloads aren't real videos: record the crop/mirror instead of running ffmpeg."""
+    calls = []
+    monkeypatch.setattr(vd, "_reframe", lambda path, crop=False, mirror=False, progress=None:
+                        calls.append((path.name, crop, mirror)))
+    return calls
+
+
+def test_download_background_youtube_path(tmp_path, monkeypatch, no_reframe):
     settings = make_settings(tmp_path)
     lib = vd.NoCopyrightLibrary(settings, client_factory=FakeClient)
     monkeypatch.setattr(vd, "get_library", lambda s: lib)
@@ -105,7 +117,8 @@ def test_download_background_youtube_path(tmp_path, monkeypatch):
     assert path == str(out / "latest_gameplay.mp4")
     assert (out / "latest_gameplay.mp4").read_bytes() == b"mp4"
     meta = json.loads((out / "latest_gameplay.json").read_text())
-    assert meta["source"] == "youtube" and meta["width"] == 1920
+    assert meta["source"] == "youtube" and meta["width"] == 1920 and meta["mirrored"] is True
+    assert len(no_reframe) == 1 and no_reframe[0][1:] == (False, True)
     assert len(vd.list_backgrounds(settings)) == 1
 
 
@@ -165,10 +178,36 @@ def test_landscape_pick_is_cropped_when_vertical_is_asked(tmp_path, monkeypatch)
 
     monkeypatch.setattr(vd, "_download_from_youtube", fake_download)
     clip = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="portrait")
-    assert (clip.width, clip.height) == (202, 360)
+    assert (clip.width, clip.height) == (202, 360) and clip.mirrored
     assert vd.probe_video(settings.backgrounds_dir / vd.LATEST_FILENAME)["width"] == 202
     wide = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="landscape")
-    assert (wide.width, wide.height) == (640, 360)
+    assert (wide.width, wide.height) == (640, 360) and wide.mirrored
+
+
+def test_mirror_flips_the_picture(tmp_path):
+    import subprocess
+
+    from PIL import Image
+
+    ffmpeg = vd.ffmpeg_path()
+    if not ffmpeg:
+        pytest.skip("no ffmpeg")
+    clip = tmp_path / "c.mp4"
+    # Left half red, right half blue.
+    subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i", "color=red:size=320x180:duration=1",
+                    "-f", "lavfi", "-i", "color=blue:size=320x180:duration=1", "-filter_complex",
+                    "[0][1]hstack,format=yuv420p", str(clip)], check=True)
+
+    def left_pixel():
+        png = tmp_path / "f.png"
+        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-i", str(clip), "-frames:v", "1", str(png)], check=True)
+        return Image.open(png).convert("RGB").getpixel((20, 90))
+
+    assert left_pixel()[0] > 200  # red on the left
+    vd._reframe(clip, mirror=True)
+    r, g, b = left_pixel()
+    assert b > 200 and r < 60  # now blue on the left
+    assert vd.probe_video(clip)["width"] == 640
 
 
 def test_parse_youtube_link():
@@ -199,9 +238,14 @@ def test_filter_channel_by_game_length_and_orientation():
     assert [v.video_id for v in vd._filter_channel(vids, "GTA V / Online", 60, "portrait")] == ["vid00000003"]
     with pytest.raises(vd.DownloadError, match="No videos of 'Fortnite'"):
         vd._filter_channel(vids, "Fortnite", 60, "landscape")
+    # Videos with room to skip the first minute win; a game with only shorter ones still works.
+    mixed = vids + [vd.LibraryVideo(video_id="vid00000005", title="Minecraft quick run", channel_id="UC",
+                                    channel_title="NCG", games=["Minecraft"], duration=100)]
+    assert "vid00000005" not in [v.video_id for v in vd._filter_channel(mixed, "Minecraft", 60, "landscape")]
+    assert [v.video_id for v in vd._filter_channel(mixed[3:], "Minecraft", 60, "landscape")] == ["vid00000005"]
 
 
-def test_download_from_link_channel_and_video(tmp_path, monkeypatch):
+def test_download_from_link_channel_and_video(tmp_path, monkeypatch, no_reframe):
     settings = make_settings(tmp_path)
     monkeypatch.setattr(vd, "channel_videos", lambda url: channel_list())
     got = []
@@ -218,7 +262,7 @@ def test_download_from_link_channel_and_video(tmp_path, monkeypatch):
                                  clip_seconds=30, orientation="landscape")
     assert got == ["https://www.youtube.com/watch?v=vid00000003"]
     assert clip.game == "GTA V / Online" and clip.filename.startswith("gta-v-online_youtube_")
-    assert clip.query == "link: https://www.youtube.com/@NCG" and "pasted" in clip.license_note
+    assert clip.query == "link: https://www.youtube.com/@NCG" and "pasted" in clip.license_note and clip.mirrored
     assert (settings.backgrounds_dir / clip.filename).exists() and not list(settings.backgrounds_dir.glob("link_*"))
 
     clip = vd.download_from_link("https://youtu.be/abcdefghijk", settings=settings, clip_seconds=30)

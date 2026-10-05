@@ -19,6 +19,7 @@
       <button type="button" role="tab" data-view="trends" class="active">Trends</button>
       <button type="button" role="tab" data-view="create">Create</button>
       <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
+      <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
     </nav>
     <div class="status" id="status" aria-live="polite"></div>
   </header>
@@ -201,6 +202,7 @@
               <span>Background music</span>
               <select id="cMusic">
                 <option value="mood" selected>By story mood (music/ folders)</option>
+                <option value="mine">My music (any music/ folder)</option>
                 <option value="none">No music</option>
                 <option value="random">Random (any channel)</option>
               </select>
@@ -332,6 +334,7 @@
           <button id="ytUpload" class="btn-primary btn-block" type="button">Upload to YouTube as a Short</button>
           <div id="ytJob" class="job" hidden></div>
           <div id="ytDone" class="banner banner-ok" hidden></div>
+          <label class="check" id="ytPostedField"><input type="checkbox" id="ytPosted" /> Already on YouTube (uploaded in YouTube Studio)</label>
           <div id="ytSeries" class="field" hidden>
             <span>Story series</span>
             <div class="series-links" id="ytSeriesLinks"></div>
@@ -381,6 +384,74 @@
         </div>
       </section>
     </div>
+  </main>
+
+  <main class="container view" id="viewPlan" hidden>
+    <div id="planError" class="banner banner-error" hidden></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Upload plan</h2>
+          <span class="hint">Put a reel or long video on a day, then tick each platform once it's up there.</span>
+        </div>
+        <div class="week-nav">
+          <button type="button" class="dl-copy" id="pPrev">‹ Earlier</button>
+          <button type="button" class="dl-copy" id="pToday">Today</button>
+          <button type="button" class="dl-copy" id="pNext">Later ›</button>
+        </div>
+      </div>
+      <div class="plan-goals" id="pGoals">
+        <label class="goal">
+          <input type="number" id="gReels" min="0" max="10" step="1" /> reels a day on
+          <span class="goal-platforms" data-goal="reel_platforms"></span>
+        </label>
+        <label class="goal">
+          <input type="number" id="gLong" min="0" max="14" step="1" /> long videos a week on
+          <span class="goal-platforms" data-goal="long_platforms"></span>
+        </label>
+      </div>
+      <div class="plan-stats" id="pStats"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Not planned yet</h2>
+          <span class="hint">Your Shorts that aren't on a day yet; one click puts them on tomorrow or the day after.</span>
+        </div>
+        <label class="check"><input type="checkbox" id="pShowPosted" /> Show already posted</label>
+      </div>
+      <div class="backlog" id="pBacklog"></div>
+    </section>
+
+    <div class="plan-days" id="pDays"></div>
+
+    <dialog class="plan-dialog" id="pDialog">
+      <form method="dialog" id="pForm">
+        <h3 id="pFormTitle">Add to plan</h3>
+        <div class="subtabs" id="pKind">
+          <button type="button" data-kind="reel" class="active">Reel / Short</button>
+          <button type="button" data-kind="long">Long video</button>
+        </div>
+        <label class="field"><span>What</span>
+          <select id="pShort"></select>
+        </label>
+        <label class="field" id="pTitleField"><span>Title <em>(for videos made outside TrendClip)</em></span>
+          <input type="text" id="pTitle" maxlength="150" placeholder="e.g. Minecraft hardcore day 1-100" />
+        </label>
+        <label class="field"><span>Day</span><input type="date" id="pDate" required /></label>
+        <div class="field"><span>Upload to</span>
+          <div class="goal-platforms" id="pPlatforms"></div>
+        </div>
+        <label class="field"><span>Notes</span><textarea id="pNotes" rows="2" maxlength="500" placeholder="time, hashtags, thumbnail idea…"></textarea></label>
+        <div class="dialog-actions">
+          <button type="button" class="dl-delete" id="pDelete" hidden>Remove from plan</button>
+          <button type="button" class="dl-copy" id="pCancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="pSave">Save</button>
+        </div>
+      </form>
+    </dialog>
   </main>
 
   <main class="container view" id="viewTrends">
@@ -546,5 +617,6 @@
   <script src="/static/app.js"></script>
   <script src="/static/create.js"></script>
   <script src="/static/upload.js"></script>
+  <script src="/static/plan.js"></script>
 </body>
 </html>

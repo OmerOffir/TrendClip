@@ -519,6 +519,93 @@ input.invalid { border-color: var(--accent) !important; }
 .spinner { width: 38px; height: 38px; border-radius: 50%; border: 3px solid var(--border); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+/* ---- Plan tab ---- */
+.nav-count.todo { background: var(--warn); color: #3a2a00; }
+.week-nav { display: flex; gap: 6px; }
+.week-nav button:disabled { opacity: 0.4; cursor: default; }
+input[type="number"], input[type="date"] {
+  background: var(--bg-elev); color: var(--text); border: 1px solid var(--border); border-radius: 10px;
+  padding: 8px 10px; font: inherit; outline: none; color-scheme: dark;
+}
+input[type="number"]:focus, input[type="date"]:focus { border-color: var(--accent); }
+.plan-goals { display: flex; flex-wrap: wrap; gap: 10px 28px; margin-bottom: 14px; }
+.goal { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+.goal input { width: 64px; text-align: center; font-weight: 700; }
+.goal-platforms { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+.pf-chip {
+  padding: 4px 10px; border-radius: 999px; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--muted); transition: background 0.15s, color 0.15s;
+}
+.pf-chip:hover { color: var(--text); border-color: #3a4256; }
+.pf-chip.on { color: #fff; border-color: transparent; }
+.pf-chip.on.pf-youtube { background: #c4302b; }
+.pf-chip.on.pf-instagram { background: linear-gradient(135deg, #833ab4, #e1306c 60%, #f77737); }
+.pf-chip.on.pf-tiktok { background: #111; border-color: #25f4ee; box-shadow: 2px 0 0 #fe2c55 inset; }
+.pf-chip.auto { cursor: alias; }
+.plan-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.plan-stat { border: 1px solid var(--border); border-radius: 12px; padding: 10px 14px; background: var(--bg-elev); display: flex; flex-direction: column; gap: 2px; }
+.plan-stat-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.plan-stat.good { border-color: rgba(61, 220, 151, 0.45); }
+.plan-stat.good .plan-stat-value { color: var(--good); }
+.plan-stat.warn .plan-stat-value { color: var(--warn); }
+.plan-stat.bad { border-color: rgba(255, 77, 94, 0.5); }
+.plan-stat.bad .plan-stat-value { color: var(--accent); }
+
+.backlog { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.backlog-card, .plan-item {
+  display: grid; grid-template-columns: 46px 1fr; gap: 10px; align-items: center;
+  border: 1px solid var(--border); border-radius: 12px; padding: 8px; background: var(--bg-elev); cursor: grab;
+}
+.backlog-card video, .plan-item video, .thumb-ph {
+  width: 46px; aspect-ratio: 9 / 16; border-radius: 6px; background: #000; object-fit: cover; pointer-events: none;
+}
+.thumb-ph { display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; background: var(--card-hover); }
+.backlog-body, .plan-item-body { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.backlog-body .dl-title, .plan-item-body .dl-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.backlog-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.backlog-actions .dl-copy, .plan-item-actions .dl-copy { padding: 3px 8px; font-size: 12px; }
+.dragging { opacity: 0.4; }
+
+.plan-days { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; align-items: start; }
+.plan-late-head { grid-column: 1 / -1; display: flex; align-items: baseline; gap: 12px; margin-top: 4px; }
+.plan-late-head h2 { margin: 0; font-size: 15px; }
+.plan-day { display: flex; flex-direction: column; gap: 10px; padding: 14px; transition: border-color 0.15s, background 0.15s; }
+.plan-day.today { border-color: rgba(255, 77, 94, 0.55); box-shadow: 0 0 0 1px rgba(255, 77, 94, 0.3) inset, var(--shadow); }
+.plan-day.past { opacity: 0.85; }
+.plan-day.drop-over { border-color: var(--good); background: rgba(61, 220, 151, 0.06); }
+.plan-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.plan-day-head h3 { margin: 0 0 2px; font-size: 15px; }
+.plan-group { display: flex; flex-direction: column; gap: 8px; }
+.plan-group.long { padding-top: 8px; border-top: 1px dashed var(--border); }
+.plan-item { grid-template-columns: 46px 1fr auto; }
+.plan-item.done { border-color: rgba(61, 220, 151, 0.4); }
+.plan-item.done .dl-title { color: var(--muted); }
+.done-mark { color: var(--good); }
+.plan-item-actions { display: flex; flex-direction: column; gap: 4px; }
+.pf-row { display: flex; gap: 4px; flex-wrap: wrap; }
+.pf-row .pf-chip { padding: 2px 8px; font-size: 11px; }
+.item-notes { font-style: italic; }
+.pill.long { color: #fff; background: #3b5bdb; border: 0; }
+.plan-slot, .plan-add-long {
+  border: 1px dashed #3a4256; border-radius: 12px; background: transparent; color: var(--muted);
+  font: inherit; font-weight: 600; padding: 14px; cursor: pointer; text-align: center;
+}
+.plan-slot:hover, .plan-add-long:hover { color: var(--text); border-color: var(--accent); background: rgba(255, 77, 94, 0.05); }
+.plan-add-long { padding: 8px; font-size: 12px; }
+
+.plan-dialog {
+  width: min(480px, calc(100vw - 32px)); border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card); color: var(--text); padding: 20px; box-shadow: var(--shadow);
+}
+.plan-dialog::backdrop { background: rgba(0, 0, 0, 0.6); backdrop-filter: blur(2px); }
+.plan-dialog form { display: flex; flex-direction: column; gap: 12px; }
+.plan-dialog h3 { margin: 0; font-size: 16px; }
+.plan-dialog select, .plan-dialog input[type="date"] { width: 100%; }
+.check[hidden], .dl-delete[hidden] { display: none; }
+.dialog-actions { display: flex; gap: 8px; align-items: center; justify-content: flex-end; }
+.dialog-actions .dl-delete { margin-left: 0; margin-right: auto; }
+.dialog-actions .btn-primary { margin-left: 0; }
+
 @media (max-width: 1050px) {
   .grid, .create-grid { grid-template-columns: 1fr; }
   .stats { grid-template-columns: repeat(2, 1fr); }

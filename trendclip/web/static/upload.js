@@ -40,6 +40,8 @@
     ytWhenHint: $("ytWhenHint"),
     ytJob: $("ytJob"),
     ytDone: $("ytDone"),
+    ytPosted: $("ytPosted"),
+    ytPostedField: $("ytPostedField"),
     ytAfterPrev: $("ytAfterPrev"),
     ytSeries: $("ytSeries"),
     ytSeriesLinks: $("ytSeriesLinks"),
@@ -157,6 +159,7 @@
       const label = yt.scheduled_for ? `scheduled ${fmtWhen(new Date(yt.scheduled_for))}` : yt.privacy;
       out.push(`<span class="pill done">YouTube · ${esc(label)}</span>`);
     }
+    else if (s.posted && s.posted.youtube) out.push('<span class="pill done">YouTube</span>');
     if (s.posted && s.posted.instagram) out.push('<span class="pill done">Instagram</span>');
     if (s.posted && s.posted.tiktok) out.push('<span class="pill done">TikTok</span>');
     return out.join("");
@@ -271,6 +274,8 @@
   function renderUploaded() {
     const up = current() && current().uploads && current().uploads.youtube;
     els.ytDone.hidden = !up;
+    els.ytPostedField.hidden = !!up;
+    els.ytPosted.checked = !!(current() && current().posted && current().posted.youtube);
     if (!up) return;
     const scheduled = up.scheduled_for ? new Date(up.scheduled_for) : null;
     const wanted = up.requested_publish_at ? new Date(up.requested_publish_at) : null;
@@ -601,6 +606,7 @@
       });
       replace(body);
       renderList();
+      document.dispatchEvent(new CustomEvent("trendclip:posted"));
     } catch (err) {
       showError(err.message);
     }
@@ -662,6 +668,7 @@
     els.ttCopy.addEventListener("click", () => copyText(els.ttFinal.textContent, els.ttCopy));
     els.ytCommentCopy.addEventListener("click", () => copyText(els.ytComment.value, els.ytCommentCopy));
     els.ytCommentPost.addEventListener("click", postComment);
+    els.ytPosted.addEventListener("change", () => setPosted("youtube", els.ytPosted.checked));
     els.igPosted.addEventListener("change", () => setPosted("instagram", els.igPosted.checked));
     els.ttPosted.addEventListener("change", () => setPosted("tiktok", els.ttPosted.checked));
     els.unready.addEventListener("click", unready);
@@ -669,8 +676,15 @@
       if (e.data === "trendclip:youtube") loadYouTube();
     });
     document.addEventListener("trendclip:ready", load);
+    document.addEventListener("trendclip:plan-changed", load);
     document.addEventListener("trendclip:view", (e) => {
-      if (e.detail.view === "upload") start();
+      if (e.detail.view === "upload") {
+        if (e.detail.clip) {
+          flushSave();
+          state.selected = e.detail.clip;
+        }
+        start();
+      }
       else {
         els.video.pause();
         flushSave();

@@ -1167,6 +1167,7 @@
     });
 
     document.addEventListener("trendclip:shorts-changed", loadShorts);
+    document.addEventListener("trendclip:plan-changed", loadShorts);
     document.addEventListener("trendclip:clips", () => {
       if (state.started && !state.clip && clips().length) selectClip(clips()[0].filename);
       else renderPicker();

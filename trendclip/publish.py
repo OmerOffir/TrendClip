@@ -528,5 +528,6 @@ def post_comment(settings: Settings, filename: str, text: str, youtube=None) -> 
     return record
 
 
-def set_posted(settings: Settings, filename: str, platform: Literal["tiktok", "instagram"], posted: bool):
+def set_posted(settings: Settings, filename: str, platform: Literal["youtube", "tiktok", "instagram"], posted: bool):
+    """Manual "I posted it" (YouTube too, for videos uploaded in YouTube Studio)."""
     return shorts.update_short(settings, filename, lambda s: s.posted.__setitem__(platform, posted))
