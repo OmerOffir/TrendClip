@@ -198,9 +198,31 @@ def trends(
 
 class DownloadRequest(BaseModel):
     game: str = Field(min_length=1, max_length=80)
-    source: Literal["auto", "youtube", "pexels"] = "auto"
+    # "random" = a random video from all your channels (YouTube search if none has the game)
+    source: Literal["random", "auto", "youtube", "pexels"] = "random"
+    channel_id: str | None = Field(None, pattern=r"^UC[\w-]{22}$")  # only this channel
     seconds: int = Field(60, ge=0, le=3600)  # 0 = whole video
     orientation: Literal["landscape", "portrait"] = "landscape"
+
+
+@app.get("/api/backgrounds/options")
+def background_options(game: str = Query(min_length=1, max_length=80)) -> dict[str, Any]:
+    """Where a game's gameplay can come from: each source channel with its number of videos of it."""
+    settings = _base_settings()
+    library = video_downloader.get_library(settings)
+    try:
+        library.videos()
+    except YouTubeAPIError as err:
+        raise _youtube_http_error(err) from err
+    added = {c["channel_id"] for c in video_downloader.saved_channels(settings)}
+    channels = []
+    for c in library.channels:
+        found = library.matches(game, c["id"])
+        channels.append({"id": c["id"], "title": c["title"], "videos": len(found), "added": c["id"] in added,
+                         "vertical": sum(1 for v in found if v.vertical)})
+    channels.sort(key=lambda c: (-c["videos"], c["title"].lower()))
+    return {"game": game, "channels": channels, "total": sum(c["videos"] for c in channels),
+            "pexels": settings.pexels_enabled}
 
 
 @app.get("/api/backgrounds/library")
@@ -212,11 +234,67 @@ def background_library(refresh: bool = False) -> dict[str, Any]:
         videos = library.videos(refresh=refresh)
     except YouTubeAPIError as err:
         raise _youtube_http_error(err) from err
+    added = {c["channel_id"] for c in video_downloader.saved_channels(settings)}
+    per_channel: dict[str, int] = {}
+    for v in videos:
+        per_channel[v.channel_id] = per_channel.get(v.channel_id, 0) + 1
     return {
-        "channels": [{"id": c["id"], "title": c["title"], "video_count": c["video_count"]} for c in library.channels],
+        "channels": [{"id": c["id"], "title": c["title"], "video_count": c["video_count"],
+                      "listed": per_channel.get(c["id"], 0), "added": c["id"] in added} for c in library.channels],
         "total": len(videos),
         "counts": library.counts(),
     }
+
+
+@app.get("/api/sources/search")
+def search_sources(q: str = Query("", max_length=100), show_all: bool = Query(False, alias="all")) -> dict[str, Any]:
+    """YouTube search (yt-dlp, no quota) for gameplay that says it is free to use."""
+    settings = _base_settings()
+    try:
+        results = video_downloader.search_youtube(q, only_free=not show_all)
+    except video_downloader.DownloadError as err:
+        raise HTTPException(status_code=502, detail=str(err)) from err
+    library = video_downloader.get_library(settings)
+    try:
+        library.videos()  # cached for a day; tells which channels are already sources
+    except YouTubeAPIError:
+        pass
+    known = {c["channel_id"] for c in video_downloader.saved_channels(settings)}
+    known |= {c["id"] for c in library.channels}
+    used = video_downloader._used_video_ids(settings.backgrounds_dir)
+    return {
+        "query": q,
+        "results": [{**r.model_dump(), "url": r.url, "vertical": r.vertical, "used": r.video_id in used,
+                     "in_sources": r.channel_id in known} for r in results],
+        "channels": video_downloader.suggest_channels(results, known),
+    }
+
+
+class ChannelRequest(BaseModel):
+    channel_id: str = Field(pattern=r"^UC[\w-]{22}$")
+    title: str = Field("", max_length=100)
+    handle: str = Field("", max_length=100)
+
+
+@app.get("/api/sources/channels")
+def list_sources() -> dict[str, Any]:
+    settings = _base_settings()
+    return {"env": settings.ncg_channels, "added": video_downloader.saved_channels(settings)}
+
+
+@app.post("/api/sources/channels")
+def add_source(req: ChannelRequest) -> dict[str, Any]:
+    settings = _base_settings()
+    return {"env": settings.ncg_channels,
+            "added": video_downloader.add_channel(settings, req.channel_id, req.title, req.handle)}
+
+
+@app.delete("/api/sources/channels/{channel_id}")
+def remove_source(channel_id: str) -> dict[str, Any]:
+    settings = _base_settings()
+    if not video_downloader.remove_channel(settings, channel_id):
+        raise HTTPException(status_code=404, detail="That channel wasn't added from the dashboard")
+    return {"env": settings.ncg_channels, "added": video_downloader.saved_channels(settings)}
 
 
 @app.get("/api/backgrounds")
@@ -239,10 +317,20 @@ def delete_background(filename: str) -> dict[str, Any]:
 @app.post("/api/backgrounds/download", status_code=202)
 def start_download(req: DownloadRequest) -> dict[str, Any]:
     settings = _base_settings()
-    sources = list(settings.background_sources) if req.source == "auto" else [req.source]
+    if req.channel_id or req.source == "random":
+        sources = ["youtube"]
+    else:
+        sources = list(settings.background_sources) if req.source == "auto" else [req.source]
     if sources == ["pexels"] and not settings.pexels_enabled:
         raise HTTPException(status_code=400, detail="Pexels needs PEXELS_API_KEY in .env")
-    job = _downloads.submit(settings, req.game, sources, req.seconds, req.orientation)
+    title = ""
+    if req.channel_id:
+        library = video_downloader.get_library(settings)
+        title = next((c["title"] for c in library.channels if c["id"] == req.channel_id), "")
+        if not title:
+            raise HTTPException(status_code=400, detail="That channel isn't one of your gameplay sources")
+    job = _downloads.submit(settings, req.game, sources, req.seconds, req.orientation,
+                            channel_id=req.channel_id, channel_title=title)
     return job.model_dump(mode="json")
 
 

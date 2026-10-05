@@ -117,8 +117,8 @@ def test_download_background_youtube_path(tmp_path, monkeypatch, no_reframe):
     assert path == str(out / "latest_gameplay.mp4")
     assert (out / "latest_gameplay.mp4").read_bytes() == b"mp4"
     meta = json.loads((out / "latest_gameplay.json").read_text())
-    assert meta["source"] == "youtube" and meta["width"] == 1920 and meta["mirrored"] is True
-    assert len(no_reframe) == 1 and no_reframe[0][1:] == (False, True)
+    assert meta["source"] == "youtube" and meta["width"] == 1920 and meta["mirrored"] is False
+    assert len(no_reframe) == 1 and no_reframe[0][1:] == (False, False)
     assert len(vd.list_backgrounds(settings)) == 1
 
 
@@ -178,10 +178,10 @@ def test_landscape_pick_is_cropped_when_vertical_is_asked(tmp_path, monkeypatch)
 
     monkeypatch.setattr(vd, "_download_from_youtube", fake_download)
     clip = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="portrait")
-    assert (clip.width, clip.height) == (202, 360) and clip.mirrored
+    assert (clip.width, clip.height) == (202, 360) and not clip.mirrored
     assert vd.probe_video(settings.backgrounds_dir / vd.LATEST_FILENAME)["width"] == 202
     wide = vd.download_background("GTA V / Online", settings=settings, sources=["youtube"], orientation="landscape")
-    assert (wide.width, wide.height) == (640, 360) and wide.mirrored
+    assert (wide.width, wide.height) == (640, 360) and not wide.mirrored
 
 
 def test_mirror_flips_the_picture(tmp_path):
@@ -262,7 +262,7 @@ def test_download_from_link_channel_and_video(tmp_path, monkeypatch, no_reframe)
                                  clip_seconds=30, orientation="landscape")
     assert got == ["https://www.youtube.com/watch?v=vid00000003"]
     assert clip.game == "GTA V / Online" and clip.filename.startswith("gta-v-online_youtube_")
-    assert clip.query == "link: https://www.youtube.com/@NCG" and "pasted" in clip.license_note and clip.mirrored
+    assert clip.query == "link: https://www.youtube.com/@NCG" and "pasted" in clip.license_note and not clip.mirrored
     assert (settings.backgrounds_dir / clip.filename).exists() and not list(settings.backgrounds_dir.glob("link_*"))
 
     clip = vd.download_from_link("https://youtu.be/abcdefghijk", settings=settings, clip_seconds=30)

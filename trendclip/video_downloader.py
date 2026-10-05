@@ -31,6 +31,7 @@ import uuid
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime
+from itertools import zip_longest
 from pathlib import Path
 from typing import Literal
 
@@ -51,6 +52,7 @@ MAX_UPLOADS_PER_CHANNEL = 1000
 MIN_PEXELS_HEIGHT = 720
 INTRO_SKIP_SECONDS = 60  # never start in the first minute (intros, logos, menus)
 OUTRO_SKIP_SECONDS = 20
+MIRROR_CLIPS = False
 
 Source = Literal["pexels", "youtube"]
 Orientation = Literal["landscape", "portrait"]
@@ -428,7 +430,7 @@ class NoCopyrightLibrary:
         except (OSError, ValueError):
             return False
         fresh = time.time() - data.get("fetched_at", 0) < LIBRARY_TTL_SECONDS
-        if not fresh or data.get("refs") != self.settings.ncg_channels:
+        if not fresh or data.get("refs") != channel_refs(self.settings):
             return False
         self.channels = data["channels"]
         self._videos = [LibraryVideo(**v) for v in data["videos"]]
@@ -439,7 +441,8 @@ class NoCopyrightLibrary:
         channels: list[dict] = []
         seen_ids: set[str] = set()
         # Explicit handles / ids first, so plain names that duplicate them cost nothing.
-        refs = sorted(self.settings.ncg_channels, key=lambda r: not r.startswith(("@", "UC")))
+        all_refs = channel_refs(self.settings)
+        refs = sorted(all_refs, key=lambda r: not r.startswith(("@", "UC")))
         for ref in refs:
             if not ref.startswith(("@", "UC")) and any(
                 games.normalize(ref) == games.normalize(c["title"]) for c in channels
@@ -473,7 +476,7 @@ class NoCopyrightLibrary:
             json.dumps(
                 {
                     "fetched_at": time.time(),
-                    "refs": self.settings.ncg_channels,
+                    "refs": all_refs,
                     "channels": channels,
                     "videos": [v.model_dump() for v in videos],
                 }
@@ -487,15 +490,20 @@ class NoCopyrightLibrary:
                 self._refresh()
             return list(self._videos or [])
 
-    def find(self, game_name: str, orientation: Orientation = "landscape") -> list[LibraryVideo]:
-        """Best matches for a game: exact game, else same franchise, else title text match."""
-        pool = self.videos()
+    def matches(self, game_name: str, channel_id: str | None = None) -> list[LibraryVideo]:
+        """Videos of a game: exact game, else same franchise, else title text match (one channel if given)."""
+        pool = [v for v in self.videos() if not channel_id or v.channel_id == channel_id]
         exact = [v for v in pool if game_name in v.games]
         related = games.related_games(game_name)
         family = [v for v in pool if related.intersection(v.games)]
         needle = games.normalize(game_name)
         text = [v for v in pool if needle.strip() and needle in games.normalize(v.title)]
-        matches = exact or family or text
+        return exact or family or text
+
+    def find(self, game_name: str, orientation: Orientation = "landscape",
+             channel_id: str | None = None) -> list[LibraryVideo]:
+        """Best matches for a game, vertical uploads first in portrait mode."""
+        matches = self.matches(game_name, channel_id)
         want_vertical = orientation == "portrait"
         preferred = [v for v in matches if v.vertical == want_vertical]
         return preferred or matches
@@ -508,36 +516,163 @@ class NoCopyrightLibrary:
         return out
 
 
-def search_no_copyright(game_name: str, limit: int = 15) -> list[LibraryVideo]:
-    """Fallback without quota: yt-dlp search, keeping only results that say 'no copyright'."""
+# --------------------------------------------------------------------------- YouTube search (no quota)
+
+FREE_TO_USE = re.compile(
+    r"no[\s_-]*copy[\s_-]*right|copyright[\s_-]*free|free[\s_-]*to[\s_-]*use|royalty[\s_-]*free"
+    r"|creative[\s_-]*commons|\bncg\b|gameplay[\s_-]*for[\s_-]*creators",
+    re.IGNORECASE,
+)
+FREE_CHANNEL = re.compile(FREE_TO_USE.pattern + r"|for[\s_-]*free|free[\s_-]*gameplay", re.IGNORECASE)
+SEARCH_PHRASES = ("{q} no copyright gameplay", "{q} copyright free gameplay", "{q} free to use gameplay no commentary")
+
+
+class SearchResult(BaseModel):
+    video_id: str
+    title: str
+    channel_id: str = ""
+    channel_title: str = "Unknown"
+    channel_handle: str = ""
+    duration: float | None = None
+    views: int | None = None
+    description: str = ""
+    says_free: Literal["title", "description", "channel", ""] = ""  # where it says no copyright
+    games: list[str] = Field(default_factory=list)
+
+    @property
+    def url(self) -> str:
+        return f"https://www.youtube.com/watch?v={self.video_id}"
+
+    @property
+    def vertical(self) -> bool:
+        return bool(re.search(r"\b(vertical|9\s*[:x/]\s*16|shorts?)\b", self.title, re.IGNORECASE))
+
+
+def _says_free(title: str, description: str, channel: str) -> str:
+    for where, text in (("title", title), ("description", description)):
+        if FREE_TO_USE.search(text or ""):
+            return where
+    return "channel" if FREE_CHANNEL.search(channel or "") else ""
+
+
+def _yt_search(query: str, limit: int) -> list[dict]:
     yt_dlp = _yt_dlp()
-    query = f"ytsearch{limit}:{game_name} no copyright gameplay"
     try:
         with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "extract_flat": True}) as ydl:
-            result = ydl.extract_info(query, download=False)
+            return ydl.extract_info(f"ytsearch{limit}:{query}", download=False).get("entries") or []
     except yt_dlp.utils.DownloadError as err:
-        logger.warning("yt-dlp search failed: %s", err)
+        logger.warning("yt-dlp search failed for %r: %s", query, err)
         return []
+
+
+def search_youtube(query: str = "", limit: int = 30, only_free: bool = True) -> list[SearchResult]:
+    """Search YouTube with yt-dlp (no API quota) using a few "no copyright" phrasings at once.
+
+    only_free keeps videos whose title, description snippet or channel name says it is free to use.
+    """
+    q = re.sub(r"\s+", " ", query).strip()
+    phrases = [p.format(q=q).strip() for p in SEARCH_PHRASES]
+    with ThreadPoolExecutor(max_workers=len(phrases)) as pool:
+        batches = list(pool.map(lambda p: _yt_search(p, limit), phrases))
+    seen: set[str] = set()
+    out: list[SearchResult] = []
+    for entries in zip_longest(*batches):
+        for e in entries:  # interleaved, so every phrasing's best results come first
+            if not e or not e.get("id") or e["id"] in seen or e.get("live_status") in ("is_live", "is_upcoming"):
+                continue
+            seen.add(e["id"])
+            title, desc = e.get("title") or "", e.get("description") or ""
+            channel = e.get("channel") or e.get("uploader") or "Unknown"
+            result = SearchResult(
+                video_id=e["id"], title=title, channel_id=e.get("channel_id") or "", channel_title=channel,
+                channel_handle=e.get("uploader_id") or "", duration=e.get("duration"), views=e.get("view_count"),
+                description=desc[:300], says_free=_says_free(title, desc, channel), games=games.match_title(title),
+            )
+            if result.says_free or not only_free:
+                out.append(result)
+    return out
+
+
+def suggest_channels(results: list[SearchResult], known_ids: set[str]) -> list[dict]:
+    """Channels behind the free-to-use results, most hits first."""
+    by_channel: dict[str, dict] = {}
+    for r in results:
+        if not r.channel_id or not r.says_free:
+            continue
+        c = by_channel.setdefault(r.channel_id, {
+            "channel_id": r.channel_id, "title": r.channel_title, "handle": r.channel_handle,
+            "url": f"https://www.youtube.com/{r.channel_handle}" if r.channel_handle.startswith("@")
+            else f"https://www.youtube.com/channel/{r.channel_id}",
+            "hits": 0, "games": [], "in_sources": r.channel_id in known_ids,
+            "says_in_name": bool(FREE_CHANNEL.search(r.channel_title)),
+        })
+        c["hits"] += 1
+        for g in r.games:
+            if g not in c["games"]:
+                c["games"].append(g)
+    return sorted(by_channel.values(), key=lambda c: (-c["hits"], -c["says_in_name"], c["title"].lower()))
+
+
+def search_no_copyright(game_name: str, limit: int = 15) -> list[LibraryVideo]:
+    """Fallback without quota: search results of the game that say 'no copyright'."""
     needle = games.normalize(game_name)
     related = games.related_games(game_name) | {game_name}
-    out = []
-    for entry in result.get("entries") or []:
-        title = entry.get("title") or ""
-        norm = games.normalize(title)
-        if " no copyright " not in norm and " copyright free " not in norm:
-            continue
-        matched = games.match_title(title)
-        if related.intersection(matched) or needle in norm:
-            out.append(
-                LibraryVideo(
-                    video_id=entry["id"],
-                    title=title,
-                    channel_id=entry.get("channel_id") or "",
-                    channel_title=entry.get("channel") or entry.get("uploader") or "Unknown",
-                    games=matched,
-                )
-            )
-    return out
+    return [
+        LibraryVideo(video_id=r.video_id, title=r.title, channel_id=r.channel_id, channel_title=r.channel_title,
+                     games=r.games, duration=r.duration)
+        for r in search_youtube(game_name, limit)
+        if related.intersection(r.games) or (needle.strip() and needle in games.normalize(r.title))
+    ]
+
+
+# --------------------------------------------------------------------------- your extra channels
+
+
+def saved_channels_path(settings: Settings) -> Path:
+    return settings.assets_dir / "ncg_channels.json"
+
+
+def saved_channels(settings: Settings) -> list[dict]:
+    """Channels added from the dashboard: [{"channel_id", "title", "handle", "added_at"}]."""
+    try:
+        data = json.loads(saved_channels_path(settings).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return [c for c in data if isinstance(c, dict) and re.fullmatch(r"UC[\w-]{22}", c.get("channel_id", ""))]
+
+
+def _write_saved(settings: Settings, channels: list[dict]) -> None:
+    path = saved_channels_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(channels, indent=2), encoding="utf-8")
+    tmp.replace(path)
+
+
+def add_channel(settings: Settings, channel_id: str, title: str = "", handle: str = "") -> list[dict]:
+    if not re.fullmatch(r"UC[\w-]{22}", channel_id or ""):
+        raise ValueError(f"Not a YouTube channel id: {channel_id!r}")
+    channels = [c for c in saved_channels(settings) if c["channel_id"] != channel_id]
+    channels.append({"channel_id": channel_id, "title": title.strip()[:100], "handle": handle.strip()[:100],
+                     "added_at": utcnow().isoformat()})
+    _write_saved(settings, channels)
+    return channels
+
+
+def remove_channel(settings: Settings, channel_id: str) -> bool:
+    channels = saved_channels(settings)
+    kept = [c for c in channels if c["channel_id"] != channel_id]
+    if len(kept) == len(channels):
+        return False
+    _write_saved(settings, kept)
+    return True
+
+
+def channel_refs(settings: Settings) -> list[str]:
+    """NCG_CHANNELS from .env plus the channels added in the dashboard."""
+    refs = list(settings.ncg_channels)
+    refs += [c["channel_id"] for c in saved_channels(settings) if c["channel_id"] not in refs]
+    return refs
 
 
 # --------------------------------------------------------------------------- orchestration
@@ -567,7 +702,7 @@ _library_lock = threading.Lock()
 
 
 def get_library(settings: Settings) -> NoCopyrightLibrary:
-    key = (tuple(settings.ncg_channels), str(settings.assets_dir))
+    key = (tuple(channel_refs(settings)), str(settings.assets_dir))
     with _library_lock:
         if key not in _library_cache:
             _library_cache[key] = NoCopyrightLibrary(settings)
@@ -581,8 +716,12 @@ def download_background(
     clip_seconds: int | None = None,
     orientation: Orientation | None = None,
     progress: ProgressFn = _noop,
+    channel_id: str | None = None,
 ) -> BackgroundClip:
-    """Try each source in order; save the clip + sidecar and refresh latest_gameplay.mp4."""
+    """Try each source in order; save the clip + sidecar and refresh latest_gameplay.mp4.
+
+    channel_id limits YouTube to that one source channel (no search fallback).
+    """
     settings = settings or get_settings()
     sources = sources or list(settings.background_sources)
     clip_seconds = settings.background_clip_seconds if clip_seconds is None else clip_seconds
@@ -610,12 +749,19 @@ def download_background(
                     errors.append(f"Pexels: no HD results of {clip_seconds}s+ for '{query}'")
             else:
                 progress(None, "Looking up No-Copyright channel videos")
+                library = get_library(settings)
                 try:
-                    candidates = get_library(settings).find(game_name, orientation)
+                    candidates = library.find(game_name, orientation, channel_id)
                 except YouTubeAPIError as err:
                     errors.append(f"No-Copyright channels unavailable: {err}")
                     candidates = []
                 query = f"No-Copyright channels: {game_name}"
+                if channel_id:
+                    name = next((c["title"] for c in library.channels if c["id"] == channel_id), channel_id)
+                    query = f"{name}: {game_name}"
+                    if not candidates:
+                        errors.append(f"{name} has no videos of '{game_name}'; pick another source or Random")
+                        continue
                 if not candidates:
                     progress(None, f"Searching YouTube for '{game_name} no copyright gameplay'")
                     candidates = search_no_copyright(game_name)
@@ -645,11 +791,11 @@ def download_background(
 
 def _save_clip(target: Path, meta: dict, source: Source, game: str, query: str, orientation: Orientation,
                progress: ProgressFn) -> BackgroundClip:
-    """Crop to 9:16 if asked, mirror YouTube footage, write the sidecar and refresh latest_gameplay.mp4."""
+    """Crop to 9:16 if asked, write the sidecar and refresh latest_gameplay.mp4."""
     size = probe_video(target)
     # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
     crop = orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0)
-    mirror = source == "youtube"  # flipped, so it doesn't look like a straight re-upload
+    mirror = MIRROR_CLIPS
     try:
         _reframe(target, crop=crop, mirror=mirror, progress=progress)
     except (DownloadError, OSError, subprocess.SubprocessError):
@@ -841,6 +987,8 @@ class DownloadJob(BaseModel):
     clip_seconds: int
     orientation: Orientation
     url: str | None = None  # pasted YouTube video / channel link instead of a game search
+    channel_id: str | None = None  # only this source channel
+    channel_title: str = ""
     status: Literal["queued", "running", "done", "error"] = "queued"
     progress: float | None = None
     message: str = "Queued"
@@ -866,10 +1014,13 @@ class DownloadManager:
         clip_seconds: int,
         orientation: Orientation,
         url: str | None = None,
+        channel_id: str | None = None,
+        channel_title: str = "",
     ) -> DownloadJob:
         job = DownloadJob(
             id=uuid.uuid4().hex[:12], game=game, sources=sources,
             clip_seconds=clip_seconds, orientation=orientation, url=url,
+            channel_id=channel_id, channel_title=channel_title,
         )
         with self._lock:
             self._jobs[job.id] = job
@@ -899,7 +1050,7 @@ class DownloadManager:
             else:
                 clip = download_background(
                     job.game, settings=settings, sources=job.sources, clip_seconds=job.clip_seconds,
-                    orientation=job.orientation, progress=progress,
+                    orientation=job.orientation, progress=progress, channel_id=job.channel_id,
                 )
             self._update(job_id, status="done", progress=1.0, message="Done", clip=clip)
         except Exception as err:  # noqa: BLE001 - surface any failure to the UI instead of losing it

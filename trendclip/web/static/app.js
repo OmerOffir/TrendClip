@@ -31,7 +31,13 @@
     statVideos: $("statVideos"),
     statVideosSub: $("statVideosSub"),
     statOutliers: $("statOutliers"),
-    dlSource: $("dlSource"),
+    srcDialog: $("srcDialog"),
+    srcForm: $("srcForm"),
+    srcGame: $("srcGame"),
+    srcOptions: $("srcOptions"),
+    srcSeconds: $("srcSeconds"),
+    srcOrientation: $("srcOrientation"),
+    srcCancel: $("srcCancel"),
     dlSeconds: $("dlSeconds"),
     dlOrientation: $("dlOrientation"),
     dlLinkForm: $("dlLinkForm"),
@@ -299,14 +305,86 @@
     document.dispatchEvent(new CustomEvent("trendclip:clips"));
   }
 
-  async function startDownload(game) {
+  // ---- "Get gameplay" asks where from: random, one of your channels, YouTube search or Pexels ----
+
+  const SOURCE_KEY = "trendclip.gameplaySource";
+  let srcGame = null;
+
+  function sourceOption(value, title, sub, { disabled = false, checked = false } = {}) {
+    return `<label class="source-option${disabled ? " disabled" : ""}">
+      <input type="radio" name="src" value="${esc(value)}" ${disabled ? "disabled" : ""} ${checked ? "checked" : ""} />
+      <span><b>${title}</b><small>${sub}</small></span>
+    </label>`;
+  }
+
+  async function openSourceDialog(game) {
+    srcGame = game;
+    els.srcGame.textContent = game;
+    els.srcSeconds.innerHTML = els.dlSeconds.innerHTML;
+    els.srcSeconds.value = els.dlSeconds.value;
+    els.srcOrientation.innerHTML = els.dlOrientation.innerHTML;
+    els.srcOrientation.value = els.dlOrientation.value;
+    els.srcOptions.innerHTML = '<div class="hint">Loading sources…</div>';
+    els.srcDialog.showModal();
+    let opts;
+    try {
+      opts = (await api(`/api/backgrounds/options?game=${encodeURIComponent(game)}`)).body;
+    } catch (err) {
+      opts = { channels: [], total: 0, pexels: false, error: err.message };
+    }
+    if (srcGame !== game) return;
+    const last = localStorage.getItem(SOURCE_KEY) || "random";
+    const has = (v) => v === "random" || v === "search" || (v === "pexels" && opts.pexels) ||
+      opts.channels.some((c) => c.id === v && c.videos);
+    const pick = has(last) ? last : "random";
+    const withGame = opts.channels.filter((c) => c.videos);
+    const rows = [
+      sourceOption("random", "🎲 Random",
+        opts.total
+          ? `Any of your ${withGame.length} channel${withGame.length === 1 ? "" : "s"} with ${game} · ${whole.format(opts.total)} videos`
+          : "None of your channels has it, so YouTube is searched for no-copyright videos",
+        { checked: pick === "random" }),
+      ...opts.channels.map((c) => sourceOption(c.id, esc(c.title),
+        c.videos
+          ? `${whole.format(c.videos)} ${esc(game)} video${c.videos === 1 ? "" : "s"}${c.vertical ? ` · ${c.vertical} vertical` : ""}${c.added ? " · added by you" : ""}`
+          : `No ${esc(game)} videos on this channel`,
+        { disabled: !c.videos, checked: pick === c.id })),
+      sourceOption("search", "🔎 Search YouTube…", "Pick a video yourself from results that say no copyright",
+        { checked: pick === "search" }),
+      sourceOption("pexels", "Pexels stock footage",
+        opts.pexels ? "Free stock videos (mostly generic, few game-specific)" : "Add PEXELS_API_KEY to .env to use it",
+        { disabled: !opts.pexels, checked: pick === "pexels" }),
+    ];
+    els.srcOptions.innerHTML = (opts.error ? `<div class="banner banner-warn">Channel list unavailable: ${esc(opts.error)}</div>` : "") + rows.join("");
+  }
+
+  async function submitSourceDialog(e) {
+    e.preventDefault();
+    const choice = (els.srcForm.querySelector('input[name="src"]:checked') || {}).value;
+    if (!choice || !srcGame) return;
+    localStorage.setItem(SOURCE_KEY, choice);
+    els.dlSeconds.value = els.srcSeconds.value;
+    els.dlOrientation.value = els.srcOrientation.value;
+    els.srcDialog.close();
+    const game = srcGame;
+    srcGame = null;
+    if (choice === "search") {
+      document.dispatchEvent(new CustomEvent("trendclip:find", { detail: { query: game } }));
+      return;
+    }
+    const channel = choice.startsWith("UC") ? choice : null;
+    await startDownload(game, channel ? "youtube" : choice, channel);
+  }
+
+  async function startDownload(game, source = "random", channelId = null) {
     try {
       const { body } = await api("/api/backgrounds/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           game,
-          source: els.dlSource.value,
+          source,
+          channel_id: channelId,
           seconds: Number(els.dlSeconds.value),
           orientation: els.dlOrientation.value,
         }),
@@ -334,24 +412,30 @@
     if (bad) return;
     els.dlLinkGo.disabled = true;
     try {
-      const { body } = await api("/api/backgrounds/download-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          url,
-          game: els.dlGame.value.trim(),
-          seconds: Number(els.dlSeconds.value),
-          orientation: els.dlOrientation.value,
-        }),
-      });
-      state.jobs.unshift(body);
-      renderDownloads();
-      ensurePolling();
+      await submitLink(url, els.dlGame.value.trim());
     } catch (err) {
       showError(`Download could not start: ${err.message}`);
     } finally {
       els.dlLinkGo.disabled = false;
     }
+  }
+
+  // Shared with find.js: a clip from one video (or a channel), with the length/orientation chosen above.
+  async function submitLink(url, game) {
+    const { body } = await api("/api/backgrounds/download-link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        url,
+        game: game || "",
+        seconds: Number(els.dlSeconds.value),
+        orientation: els.dlOrientation.value,
+      }),
+    });
+    state.jobs.unshift(body);
+    renderDownloads();
+    ensurePolling();
+    return body;
   }
 
   const isActive = (j) => j.status === "queued" || j.status === "running";
@@ -383,7 +467,7 @@
         <div class="dl-item">
           <div class="dl-body">
             <div class="dl-title">${esc(j.game || "From link")}</div>
-            <div class="dl-meta">${esc(j.clip_seconds ? `${j.clip_seconds}s` : "full video")} · ${esc(j.orientation)} · ${j.url ? esc(j.url) : esc(j.sources.join(" → "))}</div>
+            <div class="dl-meta">${esc(j.clip_seconds ? `${j.clip_seconds}s` : "full video")} · ${esc(j.orientation)} · ${j.url ? esc(j.url) : j.channel_title ? esc(j.channel_title) : esc(j.sources.join(" → "))}</div>
             ${failed
               ? `<div class="dl-error">${esc(j.error || "Failed")}</div>`
               : `<div class="progress ${pctDone == null ? "indeterminate" : ""}"><i style="width:${pctDone ?? 0}%"></i></div>
@@ -443,12 +527,6 @@
 
   function setupDownloadOptions(cfg) {
     const bg = cfg.backgrounds || {};
-    const pexelsOpt = els.dlSource.querySelector('option[value="pexels"]');
-    if (!bg.pexels_enabled) {
-      pexelsOpt.disabled = true;
-      pexelsOpt.textContent = "Pexels (add PEXELS_API_KEY to .env)";
-      els.dlSource.querySelector('option[value="auto"]').textContent = "Auto (No-Copyright YouTube; Pexels needs a key)";
-    }
     ensureOption(els.dlSeconds, String(bg.clip_seconds ?? 60), `${bg.clip_seconds}s`);
     els.dlOrientation.value = bg.orientation || "landscape";
   }
@@ -588,6 +666,11 @@
 
   function bindEvents() {
     els.dlLinkForm.addEventListener("submit", startLinkDownload);
+    els.srcForm.addEventListener("submit", submitSourceDialog);
+    els.srcCancel.addEventListener("click", () => {
+      srcGame = null;
+      els.srcDialog.close();
+    });
     els.region.addEventListener("change", async () => {
       await loadCategories(els.category.value);
       loadTrends();
@@ -621,8 +704,7 @@
       const dl = e.target.closest("[data-download]");
       if (dl) {
         e.stopPropagation();
-        dl.disabled = true;
-        startDownload(dl.dataset.download);
+        openSourceDialog(dl.dataset.download);
         return;
       }
       const btn = e.target.closest("[data-show-game]");
@@ -713,6 +795,12 @@
     getData: () => state.data,
     getClips: () => state.clips,
     reloadClips: loadClips,
+    submitLink,
+    reloadLibrary: () => loadLibrary(),
+    getLibrary: () => state.library,
+    getTopGames: () => (state.data ? [...state.data.games].sort((a, b) => b.score - a.score).map((g) => g.name) : []),
+    fmtDuration,
+    compact: (n) => compact.format(n),
   };
 
   init();

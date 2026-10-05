@@ -524,14 +524,6 @@
         </div>
       </div>
       <div class="controls dl-controls">
-        <label class="field field-wide">
-          <span>Source</span>
-          <select id="dlSource">
-            <option value="auto">Auto (Pexels, then No-Copyright YouTube)</option>
-            <option value="youtube">No-Copyright YouTube channels</option>
-            <option value="pexels">Pexels</option>
-          </select>
-        </label>
         <label class="field">
           <span>Clip length</span>
           <select id="dlSeconds">
@@ -565,6 +557,48 @@
       <div class="hint" id="dlLinkHint">Uses the clip length and orientation above. For a channel, Game picks only its
         videos of that game; leave it empty for any video. Only use footage you're allowed to reuse, and credit it.</div>
       <div id="downloads" class="downloads"></div>
+
+      <dialog class="plan-dialog source-dialog" id="srcDialog">
+        <form method="dialog" id="srcForm">
+          <h3>Get gameplay: <span id="srcGame"></span></h3>
+          <span class="hint">Where should the clip come from?</span>
+          <div class="source-options" id="srcOptions"><div class="hint">Loading sources…</div></div>
+          <div class="form-row">
+            <label class="field"><span>Clip length</span><select id="srcSeconds"></select></label>
+            <label class="field"><span>Orientation</span><select id="srcOrientation"></select></label>
+          </div>
+          <div class="dialog-actions">
+            <button type="button" class="dl-copy" id="srcCancel">Cancel</button>
+            <button type="submit" class="btn-primary" id="srcGo">Get clip</button>
+          </div>
+        </form>
+      </dialog>
+    </section>
+
+    <section class="card" id="findCard" aria-label="Find no-copyright gameplay on YouTube">
+      <div class="card-head">
+        <div>
+          <h2>Find more gameplay on YouTube</h2>
+          <span class="hint">Searches YouTube for videos that say <b>no copyright</b>, <b>copyright free</b> or <b>free to use</b>
+            (no API quota). Take a clip from any result, or add its channel to your sources so <b>Get gameplay</b> uses it too.</span>
+        </div>
+      </div>
+      <form class="controls dl-controls" id="fForm">
+        <label class="field field-wide">
+          <span>Game or keywords <em>(empty = any game)</em></span>
+          <input id="fQuery" type="text" maxlength="100" autocomplete="off" placeholder="e.g. Minecraft parkour, GTA 5 driving, Subway Surfers" />
+        </label>
+        <label class="check" title="Also show results that don't say they are free to use"><input type="checkbox" id="fAll" /> Show all results</label>
+        <button id="fGo" class="btn-primary" type="submit">Search YouTube</button>
+      </form>
+      <div class="find-quick" id="fQuick"></div>
+      <div id="fStatus" class="hint" hidden></div>
+      <div id="fChannels" class="find-channels" hidden></div>
+      <div id="fResults" class="outliers find-results"></div>
+      <details class="find-sources" id="fSources">
+        <summary>Your gameplay channels</summary>
+        <div id="fSourceList"></div>
+      </details>
     </section>
 
     <div class="grid">
@@ -618,5 +652,6 @@
   <script src="/static/create.js"></script>
   <script src="/static/upload.js"></script>
   <script src="/static/plan.js"></script>
+  <script src="/static/find.js"></script>
 </body>
 </html>

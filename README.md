@@ -103,14 +103,38 @@ from the catalog.
 
 `trendclip/video_downloader.py` fetches a random gameplay clip for a game, to use as a Shorts background.
 
-- **Dashboard:** click **Get gameplay** next to any game. Pick the source, clip length and
-  orientation in the *Background gameplay* panel; downloads run in the background and show up there
-  with a preview, a download link and a credit link.
+- **Dashboard:** click **Get gameplay** next to any game. A window asks where the clip should come
+  from:
+  - **🎲 Random:** a random video of that game from any of your channels, or a YouTube search when
+    none of them has it.
+  - **One channel:** each of your channels is listed with how many videos of that game it has (and
+    how many are vertical); channels without the game are greyed out.
+  - **🔎 Search YouTube…:** opens *Find more gameplay* with the game filled in, so you pick a video
+    yourself.
+  - **Pexels:** only available with `PEXELS_API_KEY`.
+
+  The window also sets the clip length and orientation, and it remembers your last choice.
+  Downloads run in the background and show up in the *Background gameplay* panel with a preview, a
+  download link and a credit link.
 - **From a link:** paste a YouTube video link (a random part of it is cut) or a channel link such as
   `https://www.youtube.com/@NoCopyrightGameplays` (a random one of its latest 300 videos, read with
   yt-dlp, no API quota) and press **Get clip**. The optional **Game** keeps only that channel's videos
   of the game and names the clip; otherwise the game is guessed from the video title. Clip length and
   orientation come from the controls above.
+- **Find more gameplay on YouTube** (the card under *Background gameplay*): type a game or keywords
+  (or click a trending game) and press **Search YouTube**.
+  - **How it searches:** it runs three yt-dlp searches at once, so it uses no API quota: "<words>
+    no copyright gameplay", "... copyright free gameplay" and "... free to use gameplay no
+    commentary".
+  - **What it keeps:** only videos whose title, description or channel name says no copyright /
+    copyright free / free to use / royalty free. Tick **Show all results** to see everything.
+  - **Get clip:** takes a clip from that video, using the length and orientation above.
+  - **+ Add as source:** the channel suggestions above the results show which channels had the most
+    matching videos. Adding one saves it to `assets/ncg_channels.json`, and from then on **Get
+    gameplay** also picks random clips from that channel's uploads, together with `NCG_CHANNELS`.
+  - **Removing channels:** open *Your gameplay channels* to see and remove them.
+  - **Licences:** "no copyright" is the uploader's own claim. Read the description before
+    publishing and credit the channel (the clip's licence note reminds you).
 - **Python:** `get_background_video("Minecraft")` returns the path of `assets/backgrounds/latest_gameplay.mp4`.
   It tries Pexels first, then No-Copyright YouTube. `get_background_video_async()` returns a `Future`.
 - **CLI:** `.venv/bin/python -m trendclip.video_downloader "Minecraft" --source youtube --seconds 60`
@@ -122,7 +146,8 @@ Sources:
 - **No-Copyright YouTube** (`NCG_CHANNELS`): the uploads of these channels are listed once a day
   (1 quota unit per 50 videos, cached in `assets/cache/`) and matched to games with the same catalog.
   A random video not downloaded before is picked, and yt-dlp cuts a random segment, skipping the intro.
-  Games with no channel videos fall back to a yt-dlp search for "no copyright gameplay <game>".
+  Games with no channel videos fall back to the same YouTube search as *Find more gameplay*,
+  keeping only results of that game that say no copyright.
   Portrait mode prefers uploads labelled *Vertical*/*9:16* (mostly Minecraft parkour). For other
   games it takes a landscape upload and crops the centre to 9:16, so every *Vertical 9:16* download
   is really vertical.
@@ -130,10 +155,8 @@ Sources:
 Every YouTube clip (from a game or a pasted link) starts at a random point after the **first
 minute**, for example 1:45 to 2:45 for a 60 s clip, and stops at least 20 s before the end. Videos
 too short for that skip as much of the start as they can, and channel picks prefer videos long
-enough to skip the full minute. YouTube clips are also always **mirrored** (flipped left to right)
-so they don't look like a straight re-upload. The flip is done in the same ffmpeg pass as the 9:16
-crop, and the sidecar records `"mirrored": true`. Text in the footage, such as the HUD or signs,
-shows reversed. Pexels clips are not mirrored.
+enough to skip the full minute. Clips are **not mirrored**; set `MIRROR_CLIPS = True` in
+`trendclip/video_downloader.py` to flip them left to right again (the sidecar records `"mirrored"`).
 
 Every clip gets a `.json` sidecar with its source URL, author and license note. These channels let you
 use their footage, usually with credit, so check the license note before publishing and give the credit
