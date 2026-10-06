@@ -272,6 +272,7 @@
         <div class="plan-item-actions">
           ${s ? `<button type="button" class="dl-copy" data-open-upload="${esc(item.short)}" title="Texts, captions and YouTube upload">Upload tab</button>` : ""}
           <button type="button" class="dl-copy" data-edit="${esc(item.id)}">Edit</button>
+          <button type="button" class="dl-delete" data-remove="${esc(item.id)}" title="Take it off the plan (the video itself is kept)">Remove</button>
         </div>
       </div>`;
   }
@@ -439,6 +440,12 @@
       : send("/api/plan/items", "POST", body)));
   }
 
+  function removeItem(id) {
+    const item = state.data.items.find((i) => i.id === id);
+    if (!item || !confirm(`Remove "${item.title}" from the plan? The video itself is kept.`)) return;
+    return mutate(() => send(`/api/plan/items/${encodeURIComponent(id)}`, "DELETE"));
+  }
+
   async function deleteFromForm() {
     const id = state.form && state.form.id;
     if (!id) return;
@@ -461,6 +468,7 @@
     if (t.dataset.pickShort) return openDialog({ short: t.dataset.pickShort });
     if (t.dataset.add) return openDialog({ kind: t.dataset.add, day: t.dataset.day });
     if (t.dataset.edit) return openDialog({ id: t.dataset.edit });
+    if (t.dataset.remove) return removeItem(t.dataset.remove);
     if (t.dataset.openUpload) return T.showView("upload", t.dataset.openUpload);
     if (t.dataset.goalPlatform) return toggleGoalPlatform(t.closest("[data-goal]").dataset.goal, t.dataset.goalPlatform);
   }
