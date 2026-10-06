@@ -137,8 +137,45 @@
         <span class="hint">added${counts[c.channel_id] != null ? ` · ${counts[c.channel_id]} videos` : ""}</span>
         <button type="button" class="dl-delete" data-remove-channel="${esc(c.channel_id)}">Remove</button>
       </li>`).join("");
-    els.sourceList.innerHTML = `<ul class="source-list">${env}${added}</ul>
-      ${s.added.length ? "" : '<div class="hint">Search above and press <b>+ Add as source</b> to add channels.</div>'}`;
+    const typed = els.sourceList.querySelector("#fChannelLink");
+    const keep = typed ? typed.value : "";
+    els.sourceList.innerHTML = `
+      <form class="channel-add" id="fChannelForm">
+        <input id="fChannelLink" type="text" placeholder="Paste a channel link, e.g. https://www.youtube.com/@NoCopyrightGameplays or @handle" />
+        <button type="submit" class="dl-ready" id="fChannelAdd">+ Add channel</button>
+      </form>
+      <ul class="source-list">${env}${added}</ul>
+      ${s.added.length ? "" : '<div class="hint">Paste a channel above, or search and press <b>+ Add as source</b>.</div>'}`;
+    els.sourceList.querySelector("#fChannelLink").value = keep;
+  }
+
+  async function addChannelLink(e) {
+    e.preventDefault();
+    const input = els.sourceList.querySelector("#fChannelLink");
+    const btn = els.sourceList.querySelector("#fChannelAdd");
+    const link = input.value.trim();
+    if (!link) return input.focus();
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+    try {
+      const body = (await api("/api/sources/channels/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ link }),
+      })).body;
+      state.sources = body;
+      input.value = "";
+      markChannel(body.channel.channel_id, true);
+      renderSources();
+      setStatus(`Added ${body.channel.title} (${body.channel.video_count} videos). Listing its videos…`);
+      await T.reloadLibrary();
+      renderSources();
+      setStatus(`Added ${body.channel.title} to your gameplay channels: Get gameplay now also picks clips from it.`);
+    } catch (err) {
+      setStatus(`Could not add the channel: ${err.message}`, true);
+      btn.disabled = false;
+      btn.textContent = "+ Add channel";
+    }
   }
 
   async function addChannel(btn) {
@@ -197,6 +234,9 @@
   }
 
   els.form.addEventListener("submit", search);
+  els.sourceList.addEventListener("submit", (e) => {
+    if (e.target.id === "fChannelForm") addChannelLink(e);
+  });
   els.all.addEventListener("change", () => state.data && search());
   els.quick.addEventListener("click", (e) => {
     const b = e.target.closest("[data-q]");

@@ -291,6 +291,14 @@ def _random_start(duration: float | None, clip_seconds: int) -> float:
     return round(random.uniform(low, high), 1)
 
 
+DOWNLOAD_ATTEMPTS = 3
+FFMPEG_RECONNECT = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
+                    "-reconnect_delay_max", "10"]
+_ANSI = re.compile(r"\x1b\[[0-9;]*m|\[[0-9;]+m")
+_TRANSIENT = re.compile(r"ffmpeg exited with code|timed out|connection|reset by peer|temporar|HTTP Error 5\d\d|"
+                        r"Unable to download|IncompleteRead|Read timed out", re.IGNORECASE)
+
+
 def _download_from_youtube(
     video_url: str,
     output_path: Path,
@@ -349,12 +357,23 @@ def _download_from_youtube(
         end = start_seconds + clip_seconds
         opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(start_seconds, end)])
         opts["force_keyframes_at_cuts"] = True
+        # ffmpeg streams the section from YouTube for minutes; reconnect instead of dying ("code 8").
+        opts["external_downloader_args"] = {"ffmpeg_i": FFMPEG_RECONNECT}
 
-    try:
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            ydl.download([info.get("webpage_url") or video_url])
-    except yt_dlp.utils.DownloadError as err:
-        raise DownloadError(f"yt-dlp download failed: {err}") from err
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([info.get("webpage_url") or video_url])
+            break
+        except yt_dlp.utils.DownloadError as err:
+            message = _ANSI.sub("", str(err)).removeprefix("ERROR: ").strip()
+            if attempt + 1 < DOWNLOAD_ATTEMPTS and _TRANSIENT.search(message):
+                logger.warning("Download of %s failed (%s); retrying", video_url, message)
+                progress(None, f"Connection dropped; retrying ({attempt + 2}/{DOWNLOAD_ATTEMPTS})")
+                time.sleep(3 * (attempt + 1))
+                continue
+            hint = " (the connection to YouTube dropped; check your internet and try again)" if _TRANSIENT.search(message) else ""
+            raise DownloadError(f"yt-dlp download failed: {message}{hint}") from err
 
     produced = sorted(output_path.parent.glob(tmp_base.name + ".*"), key=lambda p: p.stat().st_size, reverse=True)
     produced = [p for p in produced if p.suffix == ".mp4"] or produced
@@ -657,6 +676,39 @@ def add_channel(settings: Settings, channel_id: str, title: str = "", handle: st
                      "added_at": utcnow().isoformat()})
     _write_saved(settings, channels)
     return channels
+
+
+_CHANNEL_LINK = re.compile(
+    r"(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:(?P<handle>@[\w.-]+)|channel/(?P<id>UC[\w-]{22})|(?:c|user)/(?P<name>[\w.-]+))",
+    re.IGNORECASE)
+
+
+def channel_ref_from_link(text: str) -> str:
+    """A channel link, @handle, channel id or name -> what YouTubeClient.resolve_channel takes."""
+    text = text.strip()
+    if m := _CHANNEL_LINK.search(text):
+        return m.group("handle") or m.group("id") or m.group("name")
+    if re.fullmatch(r"UC[\w-]{22}", text) or re.fullmatch(r"@[\w.-]{3,100}", text):
+        return text
+    if re.search(r"youtu\.?be", text, re.IGNORECASE):
+        raise ValueError("That is a video link; paste the channel link (youtube.com/@name) instead")
+    if not re.fullmatch(r"[\w .-]{2,100}", text):
+        raise ValueError("Paste a channel link like https://www.youtube.com/@ChannelName, an @handle or a channel id")
+    return text
+
+
+def add_channel_by_link(settings: Settings, text: str, client=None) -> dict:
+    """Resolve a pasted channel (1 API unit for links / handles) and add it to your sources."""
+    ref = channel_ref_from_link(text)
+    if client is None:
+        if settings.youtube_api_key is None:
+            raise ValueError("Adding a channel needs YOUTUBE_API_KEY in .env")
+        client = YouTubeClient(settings.youtube_api_key.get_secret_value(), settings.request_timeout)
+    info = client.resolve_channel(ref)
+    if not info:
+        raise LookupError(f"No YouTube channel found for {ref}")
+    add_channel(settings, info["id"], info["title"], ref if ref.startswith("@") else "")
+    return info
 
 
 def remove_channel(settings: Settings, channel_id: str) -> bool:

@@ -132,6 +132,10 @@ from the catalog.
   - **+ Add as source:** the channel suggestions above the results show which channels had the most
     matching videos. Adding one saves it to `assets/ncg_channels.json`, and from then on **Get
     gameplay** also picks random clips from that channel's uploads, together with `NCG_CHANNELS`.
+  - **Add a channel by link:** in *Your gameplay channels*, paste a channel link
+    (`https://www.youtube.com/@Name`, `/channel/UC…`, `/c/Name`), an `@handle` or a channel id and
+    press **+ Add channel** (1 API unit; a plain name costs a search, 100 units). Video links are
+    rejected: paste the channel's link.
   - **Removing channels:** open *Your gameplay channels* to see and remove them.
   - **Licences:** "no copyright" is the uploader's own claim. Read the description before
     publishing and credit the channel (the clip's licence note reminds you).

@@ -290,3 +290,67 @@ def test_failed_download_jobs_can_be_dismissed():
     manager._jobs.update({"bad": failed, "busy": running})
     assert manager.dismiss("bad") and not manager.dismiss("busy") and not manager.dismiss("nope")
     assert [j.id for j in manager.list()] == ["busy"]
+
+
+def test_channel_links_are_parsed():
+    ref = vd.channel_ref_from_link
+    assert ref("https://www.youtube.com/@NoCopyrightGameplays/videos") == "@NoCopyrightGameplays"
+    assert ref("youtube.com/channel/UCabcdefghijklmnopqrstuv") == "UCabcdefghijklmnopqrstuv"
+    assert ref("https://m.youtube.com/c/SomeName") == "SomeName"
+    assert ref("@gaming.clips") == "@gaming.clips" and ref("Fox Gameplay") == "Fox Gameplay"
+    with pytest.raises(ValueError):
+        ref("https://www.youtube.com/watch?v=MoGEOc3kcz8")
+
+
+def test_add_channel_by_link(tmp_path):
+    settings = Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "out")
+    seen = []
+
+    class Client:
+        def resolve_channel(self, ref):
+            seen.append(ref)
+            return {"id": "UCabcdefghijklmnopqrstuv", "title": "Free Gameplay", "uploads": "UU", "video_count": 12}
+
+    info = vd.add_channel_by_link(settings, "https://www.youtube.com/@FreeGameplay", client=Client())
+    assert seen == ["@FreeGameplay"] and info["title"] == "Free Gameplay"
+    saved = vd.saved_channels(settings)
+    assert [(c["channel_id"], c["handle"]) for c in saved] == [("UCabcdefghijklmnopqrstuv", "@FreeGameplay")]
+    assert "UCabcdefghijklmnopqrstuv" in vd.channel_refs(settings)
+
+
+def test_dropped_connection_is_retried(monkeypatch, tmp_path):
+    calls = {"n": 0, "opts": None}
+
+    class Err(Exception):
+        pass
+
+    class FakeYDL:
+        def __init__(self, opts): self.opts = opts
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, url, download=False): return {"duration": 600, "width": 1920, "height": 1080}
+        def download(self, urls):
+            calls["n"] += 1
+            calls["opts"] = self.opts
+            if calls["n"] < 3:
+                raise Err("\x1b[0;31mERROR:\x1b[0m ffmpeg exited with code 8")
+            (tmp_path / "x.dl.mp4").write_bytes(b"video")
+
+    class FakeModule:
+        YoutubeDL = FakeYDL
+        class utils:
+            DownloadError = Err
+            @staticmethod
+            def download_range_func(a, b): return b
+
+    monkeypatch.setattr(vd, "_yt_dlp", lambda: FakeModule)
+    monkeypatch.setattr(vd, "ffmpeg_path", lambda: "ffmpeg")
+    monkeypatch.setattr(vd.time, "sleep", lambda s: None)
+    vd._download_from_youtube("https://youtu.be/x", tmp_path / "x.mp4", clip_seconds=60, start_seconds=10)
+    assert calls["n"] == 3 and (tmp_path / "x.mp4").read_bytes() == b"video"
+    assert "-reconnect" in calls["opts"]["external_downloader_args"]["ffmpeg_i"]
+
+    calls["n"] = -10  # keeps failing: a clean message with a hint, no colour codes
+    with pytest.raises(vd.DownloadError) as err:
+        vd._download_from_youtube("https://youtu.be/x", tmp_path / "y.mp4", clip_seconds=60, start_seconds=10)
+    assert "[0;31m" not in str(err.value) and "connection to YouTube dropped" in str(err.value)

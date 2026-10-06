@@ -289,6 +289,26 @@ def add_source(req: ChannelRequest) -> dict[str, Any]:
             "added": video_downloader.add_channel(settings, req.channel_id, req.title, req.handle)}
 
 
+class ChannelLinkRequest(BaseModel):
+    link: str = Field(min_length=2, max_length=300)
+
+
+@app.post("/api/sources/channels/link")
+def add_source_by_link(req: ChannelLinkRequest) -> dict[str, Any]:
+    """A pasted channel link / @handle / channel id becomes a gameplay source."""
+    settings = _base_settings()
+    try:
+        info = video_downloader.add_channel_by_link(settings, req.link)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except LookupError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except YouTubeAPIError as err:
+        raise HTTPException(status_code=502, detail=f"YouTube: {err}") from err
+    return {"env": settings.ncg_channels, "added": video_downloader.saved_channels(settings),
+            "channel": {"channel_id": info["id"], "title": info["title"], "video_count": info["video_count"]}}
+
+
 @app.delete("/api/sources/channels/{channel_id}")
 def remove_source(channel_id: str) -> dict[str, Any]:
     settings = _base_settings()
