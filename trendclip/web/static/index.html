@@ -50,7 +50,7 @@
           <span>Format</span>
           <div class="formats" id="cFormat" role="radiogroup">
             <button type="button" data-format="short" role="radio"><b>Short</b><small>15–60 s · one video</small></button>
-            <button type="button" data-format="long" role="radio"><b>Long story</b><small>60–90 s · detailed &amp; witty</small></button>
+            <button type="button" data-format="long" role="radio"><b>Long story</b><small>60–90 s · landscape 16:9 · regular YouTube video</small></button>
             <button type="button" data-format="multi" role="radio"><b>Multi-part</b><small>Part 1 cliffhanger + Part 2</small></button>
           </div>
         </div>
@@ -305,10 +305,17 @@
           <div class="yt-account" id="ytAccount"></div>
           <label class="field"><span>Title <em id="ytTitleCount"></em></span><input id="ytTitle" type="text" maxlength="100" /></label>
           <label class="field"><span>Description</span><textarea id="ytDesc" rows="4" maxlength="4000"></textarea></label>
-          <label class="field"><span>Hashtags <em>(shown above the title; #shorts is kept)</em></span><input id="ytHashtags" type="text" /></label>
+          <label class="field"><span>Hashtags <em id="ytHashtagsNote">(shown above the title; #shorts is kept)</em></span><input id="ytHashtags" type="text" /></label>
           <label class="field"><span>Tags <em id="ytTagsCount"></em></span><input id="ytTags" type="text" placeholder="comma separated search keywords" /></label>
           <div class="field"><span>Final description (what YouTube gets, credits included)</span><pre class="paste" id="ytFinal"></pre></div>
           <div class="form-row">
+            <label class="field">
+              <span>Upload as</span>
+              <select id="ytAs">
+                <option value="short">YouTube Short (vertical, #shorts)</option>
+                <option value="video">Regular video (long / 16:9, no #shorts)</option>
+              </select>
+            </label>
             <label class="field">
               <span>Visibility</span>
               <select id="ytPrivacy">
@@ -325,7 +332,7 @@
             <label class="check"><input type="checkbox" id="ytKids" /> Made for kids</label>
             <label class="check" title="YouTube asks to disclose realistic altered or AI-generated content"><input type="checkbox" id="ytSynthetic" /> Altered / synthetic content</label>
           </div>
-          <div class="hint">Vertical and under 3 minutes, so YouTube makes it a Short. A Google Cloud project that hasn't
+          <div class="hint"><span id="ytAsHint">Vertical and under 3 minutes, so YouTube makes it a Short.</span> A Google Cloud project that hasn't
             passed YouTube's API audit can only upload as <b>Private</b>; switch it to Public in YouTube Studio.
             To post later, pick <b>Scheduled (publish later)</b> under Visibility.</div>
           <div class="quick-times" id="ytQuick" hidden>

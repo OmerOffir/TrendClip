@@ -30,9 +30,14 @@ TRACK_ID = r"^([\w-]{11}|local:(funny|dramatic|chill)/[^/\\]{1,120})$"  # YouTub
 ProgressFn = Callable[[float | None, str], None]
 
 
+Aspect = Literal["vertical", "landscape"]
+SHORTS_MAX_SECONDS = 180  # YouTube only makes vertical videos up to 3 minutes Shorts
+
+
 class ShortVideo(BaseModel):
     filename: str
     game: str
+    aspect: Aspect = "vertical"
     title: str
     description: str
     hashtags: list[str]
@@ -78,6 +83,7 @@ class RenderRequest(BaseModel):
     rate: str | None = Field(None, pattern=r"^[+-]\d{1,3}%$")
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
+    aspect: Aspect = "vertical"  # "landscape": 16:9 for long videos
     max_words: int = Field(3, ge=1, le=6)
     # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
     music_source: str = Field("none", max_length=200)  # see music.pick ("mood", "folder:dramatic", "local:…")
@@ -309,6 +315,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         music_volume=music_volume(settings, req.music_volume),
         music_start=req.music_start,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
+        landscape=req.aspect == "landscape",
     )
 
     credit = credit_line(meta)
@@ -320,7 +327,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     if credit and credit not in description:
         description = f"{description}\n\n{credit}".strip()
     short = ShortVideo(
-        filename=output.name, game=req.game, title=req.title.strip() or f"{req.game} #shorts",
+        filename=output.name, game=req.game, aspect=req.aspect,
+        title=req.title.strip() or (req.game if req.aspect == "landscape" else f"{req.game} #shorts"),
         description=description, hashtags=req.hashtags, script=req.script, voice=voice,
         duration_seconds=round(video_assembler.media_duration(output), 2),
         background=req.clip, background_title=meta.title if meta else "", credit=credit,

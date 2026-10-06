@@ -30,6 +30,9 @@
     ytTagsCount: $("ytTagsCount"),
     ytFinal: $("ytFinal"),
     ytPrivacy: $("ytPrivacy"),
+    ytAs: $("ytAs"),
+    ytAsHint: $("ytAsHint"),
+    ytHashtagsNote: $("ytHashtagsNote"),
     ytKids: $("ytKids"),
     ytSynthetic: $("ytSynthetic"),
     ytUpload: $("ytUpload"),
@@ -124,8 +127,14 @@
     };
   }
 
+  const SHORTS_MAX_SECONDS = 180;
+  const canBeShort = (s) => !!s && s.aspect !== "landscape" && (s.duration_seconds || 0) <= SHORTS_MAX_SECONDS;
+  const asShort = () => els.ytAs.value === "short";
+  const noShortsTag = (text) => text.replace(/\s*#shorts\b/gi, "").trim();
+
   const seriesLinks = () => (current() && current().series ? current().series.links : "");
-  const ytDescription = (t) => join([t.youtube.description, seriesLinks(), t.youtube.hashtags.join(" "), t.credit]);
+  const ytHashtags = (t) => (asShort() ? t.youtube.hashtags : t.youtube.hashtags.filter((h) => h.toLowerCase() !== "#shorts"));
+  const ytDescription = (t) => join([t.youtube.description, seriesLinks(), ytHashtags(t).join(" "), t.credit]);
   const social = (p, credit) => join([p.caption, p.mentions.join(" "), p.hashtags.join(" "), credit]).slice(0, CAPTION_MAX);
 
   function renderFinals() {
@@ -134,7 +143,15 @@
     const t = readTexts();
     els.ytFinal.textContent = ytDescription(t);
     const title = els.ytTitle.value.trim();
-    els.ytTitleCount.textContent = `${title.length}/100${/#shorts/i.test(title) ? "" : " · #shorts is added"}`;
+    const shortsNote = asShort() ? (/#shorts/i.test(title) ? "" : " · #shorts is added") : /#shorts/i.test(title) ? " · #shorts is removed" : "";
+    els.ytTitleCount.textContent = `${title.length}/100${shortsNote}`;
+    els.ytHashtagsNote.textContent = asShort() ? "(shown above the title; #shorts is kept)" : "(shown above the title; no #shorts for a regular video)";
+    const s2 = current();
+    els.ytAsHint.textContent = asShort()
+      ? "Vertical and under 3 minutes, so YouTube makes it a Short."
+      : canBeShort(s2)
+        ? "Uploaded without #shorts. YouTube decides by shape: a vertical video under 3 minutes may still show up as a Short."
+        : `${s2 && s2.aspect === "landscape" ? "16:9 landscape" : "Longer than 3 minutes"}, so it is uploaded as a regular YouTube video (not a Short).`;
     const tagChars = ytTagChars(t.youtube.tags);
     els.ytTagsCount.textContent = `${tagChars}/${YT_TAGS_MAX} characters`;
     els.ytTagsCount.classList.toggle("over", tagChars > YT_TAGS_MAX);
@@ -200,7 +217,10 @@
 
     const t = s.texts;
     els.source.textContent = t.source === "gemini" ? `Texts written by Gemini (${t.model})` : "Texts from the template (edit freely, or let Gemini improve them)";
-    els.ytTitle.value = t.youtube.title;
+    const short = canBeShort(s);
+    els.ytAs.value = short ? "short" : "video";
+    els.ytAs.querySelector('[value="short"]').disabled = !short;
+    els.ytTitle.value = short ? t.youtube.title : noShortsTag(t.youtube.title);
     els.ytDesc.value = t.youtube.description;
     els.ytHashtags.value = t.youtube.hashtags.join(" ");
     els.ytTags.value = t.youtube.tags.join(", ");
@@ -404,7 +424,7 @@
     els.ytUpload.textContent = state.busy.upload ? "Uploading…"
       : !connected ? "Connect YouTube to upload"
       : scheduling() ? `${again ? "Upload again and schedule" : "Upload and schedule"}${when ? ` for ${fmtWhen(when)}` : ""}`
-      : again ? "Upload again to YouTube" : "Upload to YouTube as a Short";
+      : again ? "Upload again to YouTube" : asShort() ? "Upload to YouTube as a Short" : "Upload to YouTube as a video";
   }
 
   async function improveWithGemini() {
@@ -572,9 +592,10 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: els.ytTitle.value.trim(),
+          title: asShort() ? els.ytTitle.value.trim() : noShortsTag(els.ytTitle.value),
           description: ytDescription(t),
           tags: t.youtube.tags,
+          as_short: asShort(),
           privacy,
           publish_at: when ? when.toISOString() : null,
           made_for_kids: els.ytKids.checked,
@@ -663,6 +684,11 @@
     els.template.addEventListener("click", resetTemplate);
     els.ytUpload.addEventListener("click", uploadYouTube);
     els.ytPrivacy.addEventListener("change", renderSchedule);
+    els.ytAs.addEventListener("change", () => {
+      if (!asShort()) els.ytTitle.value = noShortsTag(els.ytTitle.value);
+      renderFinals();
+      updateButtons();
+    });
     els.ytWhen.addEventListener("input", renderSchedule);
     els.ytQuick.addEventListener("click", (e) => {
       const btn = e.target.closest("[data-quick]");

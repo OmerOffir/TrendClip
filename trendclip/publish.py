@@ -116,8 +116,18 @@ def _tags(tags: list[str]) -> list[str]:
     return out
 
 
-def _yt_title(title: str) -> str:
+_SHORTS_TAG = re.compile(r"\s*#shorts\b", re.IGNORECASE)
+
+
+def is_short(short: shorts.ShortVideo) -> bool:
+    """Vertical and up to 3 minutes: YouTube makes it a Short. Landscape / longer ones are regular videos."""
+    return short.aspect != "landscape" and (short.duration_seconds or 0) <= shorts.SHORTS_MAX_SECONDS
+
+
+def _yt_title(title: str, as_short: bool = True) -> str:
     title = re.sub(r"\s+", " ", title.replace("<", "").replace(">", "")).strip()
+    if not as_short:
+        return _SHORTS_TAG.sub("", title).strip()[:YT_TITLE_MAX]
     if "#shorts" not in title.lower():
         title = f"{title[: YT_TITLE_MAX - 8].rstrip()} #shorts"
     return title[:YT_TITLE_MAX]
@@ -131,11 +141,14 @@ def _story_part(short: shorts.ShortVideo) -> str:
     return text.strip()
 
 
-def clean(texts: GeminiTexts, credit: str, source: str, model: str = "") -> PlatformTexts:
+def clean(texts: GeminiTexts, credit: str, source: str, model: str = "", as_short: bool = True) -> PlatformTexts:
     yt = texts.youtube
-    hashtags = _hashtags(yt.hashtags + ["#shorts"], 5)
+    if as_short:
+        hashtags = _hashtags(yt.hashtags + ["#shorts"], 5)
+    else:
+        hashtags = _hashtags([h for h in yt.hashtags if h.lstrip("#").lower() != "shorts"], 5)
     return PlatformTexts(
-        youtube=YouTubeText(title=_yt_title(yt.title), description=yt.description.strip(),
+        youtube=YouTubeText(title=_yt_title(yt.title, as_short), description=yt.description.strip(),
                             tags=_tags(yt.tags), hashtags=hashtags),
         tiktok=SocialText(caption=texts.tiktok.caption.strip(), hashtags=_hashtags(texts.tiktok.hashtags, 6),
                           mentions=_mentions(texts.tiktok.mentions)),
@@ -163,15 +176,16 @@ def template_texts(short: shorts.ShortVideo) -> PlatformTexts:
     tiktok = f"{short.title} 👀" + (f"\n{_social_cta(short)}" if short.part else "")
     texts = GeminiTexts(
         youtube=YouTubeText(title=short.title, description=story,
-                            tags=[t.lstrip("#") for t in base] + [short.game, "gaming", "shorts"],
+                            tags=[t.lstrip("#") for t in base] + [short.game, "gaming"]
+                            + (["shorts"] if is_short(short) else ["storytime", "gameplay"]),
                             hashtags=base[:4]),
         tiktok=SocialText(caption=tiktok, hashtags=base[:3] + [game_tag, "#fyp"]),
         instagram=SocialText(caption=f"{first}\n\n{_social_cta(short)}", hashtags=base[:4] + [game_tag]),
     )
-    return clean(texts, short.credit, "template")
+    return clean(texts, short.credit, "template", as_short=is_short(short))
 
 
-PROMPT = """Write upload texts for this vertical video for YouTube Shorts, TikTok and Instagram Reels.
+PROMPT = """Write upload texts for this {kind}.
 Match each platform's style. English. Do not include credits (they are added automatically).
 Do not invent facts that are not in the script.
 
@@ -210,7 +224,10 @@ def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: Progres
 
     model = script_writer.gemini_model(settings)
     client = client or genai.Client(api_key=api_key)
-    prompt = PROMPT.format(game=short.game, title=short.title, script=short.script,
+    kind = ("vertical video for YouTube Shorts, TikTok and Instagram Reels" if is_short(short) else
+            "16:9 video: a regular (long-form) YouTube video, NOT a Short, so never use #shorts; "
+            "TikTok and Instagram get it too")
+    prompt = PROMPT.format(kind=kind, game=short.game, title=short.title, script=short.script,
                            description=_story_part(short), hashtags=" ".join(short.hashtags))
     prompt += _series_prompt(short)
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=GeminiTexts,
@@ -225,7 +242,7 @@ def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: Progres
         if not response.text:
             raise PublishError("Gemini returned an empty answer; try again")
         result = GeminiTexts.model_validate_json(response.text)
-    return clean(result, short.credit, "gemini", model)
+    return clean(result, short.credit, "gemini", model, as_short=is_short(short))
 
 
 def full_text(text: SocialText, credit: str) -> str:
@@ -279,7 +296,8 @@ def texts_for(settings: Settings, filename: str, refresh: Literal["", "template"
 
 
 def save_texts(settings: Settings, filename: str, texts: PlatformTexts) -> shorts.ShortVideo:
-    cleaned = clean(texts, texts.credit, texts.source, texts.model)
+    cleaned = clean(texts, texts.credit, texts.source, texts.model,
+                    as_short=is_short(shorts.get_short(settings, filename)))
     return shorts.update_short(settings, filename, lambda s: setattr(s, "texts", cleaned.model_dump()))
 
 
@@ -404,6 +422,7 @@ class YouTubeUploadRequest(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=60)
     privacy: Privacy = "private"
     category_id: str = Field(GAMING_CATEGORY, pattern=r"^\d{1,3}$")
+    as_short: bool | None = None  # None: from the video (vertical and ≤ 3 min); False: a regular video
     made_for_kids: bool = False
     synthetic_media: bool = False  # "altered or synthetic content" disclosure
     # Scheduled publishing: uploaded as private, YouTube makes it public at this time.
@@ -443,14 +462,18 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     from googleapiclient.http import MediaFileUpload
 
     path = shorts.short_path(settings, filename)
-    title = _yt_title(req.title)
+    can_be_short = is_short(shorts.get_short(settings, filename))
+    as_short = can_be_short if req.as_short is None else req.as_short and can_be_short
+    title = _yt_title(req.title, as_short)
+    description = req.description if as_short else _SHORTS_TAG.sub("", req.description)
     privacy = "private" if req.publish_at else req.privacy  # YouTube only schedules private videos
     status_body = {"privacyStatus": privacy, "selfDeclaredMadeForKids": req.made_for_kids,
                    "containsSyntheticMedia": req.synthetic_media}
     if req.publish_at:
         status_body["publishAt"] = req.publish_at.strftime("%Y-%m-%dT%H:%M:%SZ")
     body = {
-        "snippet": {"title": title, "description": req.description, "tags": _tags(req.tags),
+        "snippet": {"title": title, "description": description,
+                    "tags": _tags(req.tags if as_short else [t for t in req.tags if t.lower().lstrip("#") != "shorts"]),
                     "categoryId": req.category_id},
         "status": status_body,
     }
@@ -480,7 +503,8 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     status = response.get("status") or {}
     record = {
         "video_id": video_id,
-        "url": f"https://youtube.com/shorts/{video_id}",
+        "url": f"https://youtube.com/shorts/{video_id}" if as_short else f"https://www.youtube.com/watch?v={video_id}",
+        "as_short": as_short,
         "studio_url": f"https://studio.youtube.com/video/{video_id}/edit",
         "privacy": status.get("privacyStatus", privacy),
         "requested_privacy": "scheduled" if req.publish_at else req.privacy,

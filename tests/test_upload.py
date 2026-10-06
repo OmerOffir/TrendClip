@@ -206,3 +206,19 @@ def test_connect_builds_loopback_redirect(client, tmp_path):
     assert "redirect_uri=http%3A%2F%2Flocalhost%3A80%2Fapi%2Fupload%2Fyoutube%2Fcallback" in url or \
         "redirect_uri=http%3A%2F%2Flocalhost%2Fapi%2Fupload%2Fyoutube%2Fcallback" in url or "redirect_uri=" in url
     assert "youtube.upload" in url and "code_challenge=" in url and "access_type=offline" in url
+
+
+def test_landscape_videos_upload_as_regular_videos():
+    from trendclip import shorts as shorts_mod
+
+    vertical = shorts_mod.ShortVideo(filename="a.mp4", game="GTA V", title="Wrong Uber", description="d",
+                                     hashtags=["#storytime", "#shorts"], script="s", voice="v", background="b.mp4",
+                                     duration_seconds=40)
+    wide = vertical.model_copy(update={"aspect": "landscape", "duration_seconds": 85})
+    assert publish.is_short(vertical) and not publish.is_short(wide)
+    assert not publish.is_short(vertical.model_copy(update={"duration_seconds": 200}))
+    texts = publish.template_texts(wide)
+    assert "#shorts" not in texts.youtube.title.lower()
+    assert "#shorts" not in [h.lower() for h in texts.youtube.hashtags] and "shorts" not in texts.youtube.tags
+    assert publish.template_texts(vertical).youtube.title.endswith("#shorts")
+    assert publish._yt_title("Wrong Uber #shorts", as_short=False) == "Wrong Uber"

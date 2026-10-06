@@ -234,6 +234,7 @@
       b.setAttribute("aria-checked", on ? "true" : "false");
     }
     buildLengths(changed ? wantedLength : wantedLength ?? els.length.value);
+    els.phone.classList.toggle("landscape", format === "long");
     renderParts();
     updateButtons();
     scriptStats();
@@ -505,7 +506,7 @@
     state.editing = { filename, title: data.title, request: r, draft };
     state.undo = null;
     els.cleared.hidden = true;
-    setFormat("short");
+    setFormat(r.aspect === "landscape" ? "long" : "short");
     state.clip = r.clip;
     els.game.value = r.game;
     els.script.value = r.script;
@@ -945,6 +946,7 @@
         body: JSON.stringify(multi ? seriesBody() : {
           ...(editing ? editing.request : {}),
           ...styleBody(),
+          aspect: state.format === "long" ? "landscape" : "vertical",
           script: els.script.value.trim(),
           title: els.title.value,
           description: els.desc.value,

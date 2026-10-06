@@ -244,7 +244,11 @@ too much, it is asked once to tighten the script; failing that, it is cut at a s
 - **Short** (15-60 s): one video, as above.
 - **Long story** (60 / 75 / 90 s ≈ 200 / 250 / 300 words): a more detailed, witty script with
   escalating beats, a callback and a mini-hook every ~15 s. Works with both script types. The edge-tts
-  voice speaks about 3.3 words per second, so 250-320 words needs 75-95 s (Shorts allow up to 3 min).
+  voice speaks about 3.3 words per second, so 250-320 words needs 75-95 s. Long stories render as
+  **landscape 16:9 (1920x1080)**, so YouTube treats them as regular videos, not Shorts: the title
+  card, pop-ups and stickers are moved to the matching spots of the wide frame (things that sit below
+  the captions on 9:16, like the subscribe sticker, go to the right side), and the captions are sized
+  for 16:9. The Create preview turns wide too. Short and Multi-part stay vertical 9:16.
 - **Multi-part** (40-50 s per part): one Gemini call writes a story split into **Part 1**, which ends on
   a cliffhanger, and **Part 2**, which resolves it with a twist. The app appends the calls to action
   itself (spoken and in the karaoke captions), each after the part's short closing question:
@@ -323,7 +327,11 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
 
 - **YouTube:** title (`#shorts` is added), description, hashtags, search tags (450-character budget),
   visibility, "made for kids" and "altered / synthetic content", and a live preview of the final
-  description with the credits. **Upload to YouTube as a Short** uploads it (resumable, with
+  description with the credits. **Upload as** picks *YouTube Short* or *Regular video*: landscape
+  or longer than 3 minutes is always a regular video (no `#shorts` in the title, hashtags, tags or
+  description, a normal `watch?v=` link), and you can also send a vertical video without `#shorts`
+  (YouTube still decides by shape, so it may show it as a Short). Texts written for a landscape video
+  (template or Gemini) leave `#shorts` out. **Upload to YouTube as a Short / as a video** uploads it (resumable, with
   progress) and shows the Shorts and Studio links. **Visibility → Schedule…** picks a date and time
   (your local time zone, quick picks like "Tomorrow 18:00"): the video uploads now as private and
   YouTube publishes it at that time (at least 15 minutes ahead).

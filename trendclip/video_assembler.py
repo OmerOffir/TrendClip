@@ -41,6 +41,11 @@ from .config import PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 WIDTH, HEIGHT = 1080, 1920
+LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
+LANDSCAPE_OVERLAY_SCALE = 0.72
+# Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
+LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
+                       "title_chars": 26}
 DEFAULT_BACKGROUND = PROJECT_ROOT / "assets" / "backgrounds" / "latest_gameplay.mp4"
 DEFAULT_OUTPUT = PROJECT_ROOT / "output" / "final_short.mp4"
 DEFAULT_MUSIC = PROJECT_ROOT / "assets" / "music" / "background.mp3"
@@ -267,9 +272,9 @@ def wrap_title(text: str, max_chars: int = 14, max_lines: int = 3) -> list[str]:
     return lines[:max_lines]
 
 
-def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True) -> str:
+def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True, max_chars: int = 14) -> str:
     """Top banner for the first seconds: pops in, fades out."""
-    lines = [_ass_text(line, uppercase) for line in wrap_title(text)]
+    lines = [_ass_text(line, uppercase) for line in wrap_title(text, max_chars=max_chars)]
     anim = r"{\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)}"
     return f"Dialogue: 1,{_ass_time(0)},{_ass_time(seconds)},Title,,0,0,0,,{anim}" + r"\N".join(lines)
 
@@ -302,8 +307,11 @@ def create_karaoke_ass_file(
     title_size: int = 132,
     end_card: str = "",
     end_seconds: float = 3.5,
+    size: tuple[int, int] = (WIDTH, HEIGHT),
+    top_margin: int = 200,
+    title_chars: int = 14,
 ) -> Path:
-    """Write a 1080x1920 .ass file: 2-4 words per line, the spoken word recoloured for its duration.
+    """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
     Each word gets its own Dialogue event showing the whole line with that word highlighted, from the
     word's start until the next word starts, so the colour moves exactly with the voice. An optional
@@ -315,8 +323,8 @@ def create_karaoke_ass_file(
 
     header = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: {WIDTH}
-PlayResY: {HEIGHT}
+PlayResX: {size[0]}
+PlayResY: {size[1]}
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 YCbCr Matrix: TV.709
@@ -324,13 +332,13 @@ YCbCr Matrix: TV.709
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,2,0,1,{outline},{shadow},2,70,70,{margin_v},1
-Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,200,1
-Style: EndCard,{font},96,{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,200,1
+Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,{top_margin},1
+Style: EndCard,{font},{round(title_size * 96 / 132)},{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,{top_margin},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = [title_card_event(title_card, title_seconds, uppercase)] if title_card.strip() else []
+    events = [title_card_event(title_card, title_seconds, uppercase, title_chars)] if title_card.strip() else []
     if end_card.strip() and words:
         last = words[-1].end
         start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0)
@@ -419,16 +427,17 @@ def find_font_file(preferred: str | None = None) -> tuple[str, Path | None]:
     return preferred or "Arial", None
 
 
-def video_filter(fit: Literal["crop", "blur"], fps: int) -> str:
-    """Filter graph from input 0 to a 1080x1920 [base] stream."""
-    cover = f"scale={WIDTH}:{HEIGHT}:force_original_aspect_ratio=increase,crop={WIDTH}:{HEIGHT}"
+def video_filter(fit: Literal["crop", "blur"], fps: int, size: tuple[int, int] = (WIDTH, HEIGHT)) -> str:
+    """Filter graph from input 0 to a 1080x1920 (or `size`) [base] stream."""
+    w, h = size
+    cover = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
     if fit == "crop":
         return f"[0:v]{cover},setsar=1,fps={fps}[base]"
-    # Whole 16:9 frame in the middle, a blurred zoomed copy filling the rest.
+    # Whole frame in the middle, a blurred zoomed copy filling the rest.
     return (
         f"[0:v]split=2[bgsrc][fgsrc];"
         f"[bgsrc]{cover},boxblur=24:2,eq=brightness=-0.08[bg];"
-        f"[fgsrc]scale={WIDTH}:-2[fg];"
+        f"[fgsrc]scale={w}:{h}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={fps}[base]"
     )
 
@@ -474,6 +483,21 @@ class Overlay:
 
     def xy(self) -> tuple[int, int]:
         return self.center or (WIDTH // 2 + self.x_offset, POPUP_CENTER_Y)
+
+
+def to_landscape(overlay: Overlay, size: tuple[int, int] = LANDSCAPE) -> Overlay:
+    """Move an overlay laid out on the 9:16 canvas to the same spot of a 16:9 one. Things below the
+    9:16 captions (call-to-action, bottom stickers) would land on the 16:9 captions, so they go to the side."""
+    from dataclasses import replace
+
+    w, h = size
+    x, y = overlay.xy()
+    nx, ny = round(x * w / WIDTH), round(y * h / HEIGHT)
+    if y > 1310:
+        ny = round(h * 0.62)
+        if abs(x - WIDTH // 2) < 200:
+            nx = round(w * 0.84)
+    return replace(overlay, center=(nx, ny), box=round(overlay.box * LANDSCAPE_OVERLAY_SCALE))
 
 
 def popup_layout(index: int) -> tuple[int, float]:
@@ -583,12 +607,18 @@ def assemble_video(
     music_volume: float = 0.14,
     music_start: float = 0.0,
     overlays: list[Overlay] | None = None,
+    landscape: bool = False,
     **subtitle_style: Any,
 ) -> Path:
     """Render the final Short: 9:16 background + pop-up images + karaoke subtitles (+ title card via
-    `title_card=`) + voiceover (+ ducked music)."""
+    `title_card=`) + voiceover (+ ducked music). `landscape`: a 16:9 1920x1080 video instead (overlays
+    are laid out for 9:16 and moved over)."""
     background, voiceover, output = Path(background), Path(voiceover), Path(output)
     overlays = [o for o in overlays or [] if o.end > o.start]
+    size = LANDSCAPE if landscape else (WIDTH, HEIGHT)
+    if landscape:
+        overlays = [to_landscape(o) for o in overlays]
+        subtitle_style = {**LANDSCAPE_SUBTITLES, **subtitle_style, "size": size}
     checks = [(background, "Background video"), (voiceover, "Voiceover")]
     if music is not None:
         checks.append((Path(music), "Music track"))
@@ -623,7 +653,7 @@ def assemble_video(
         if background_start:
             cmd += ["-ss", f"{background_start:.2f}"]
         cmd += ["-i", str(background.resolve()), "-i", str(voiceover.resolve())]
-        graph = video_filter(fit, fps)
+        graph = video_filter(fit, fps, size)
         audio_out = "1:a:0"
         if music is not None:
             cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]
