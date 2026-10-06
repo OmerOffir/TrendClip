@@ -80,7 +80,7 @@ class RenderRequest(BaseModel):
     fit: Literal["crop", "blur"] = "crop"
     max_words: int = Field(3, ge=1, le=6)
     # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
-    music_source: str = Field("none", max_length=40)  # "mood" = music/<funny|dramatic|chill> by music_mood
+    music_source: str = Field("none", max_length=200)  # see music.pick ("mood", "folder:dramatic", "local:…")
     music_track: str | None = Field(None, pattern=TRACK_ID)
     music_mood: str | None = Field(None, max_length=40)
     music_volume: float | None = Field(None, ge=0, le=1)  # clamped to 12-15% when mixing
@@ -127,7 +127,7 @@ class SeriesRenderRequest(BaseModel):
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
     max_words: int = Field(3, ge=1, le=6)
-    music_source: str = Field("none", max_length=40)
+    music_source: str = Field("none", max_length=200)
     music_track: str | None = Field(None, pattern=TRACK_ID)
     music_mood: str | None = Field(None, max_length=40)
     music_volume: float | None = Field(None, ge=0, le=1)
@@ -180,6 +180,37 @@ def write_script(settings: Settings, clip: str, game: str, trend_titles: list[st
         max_seconds=clip_seconds,
     )
     return {"clip_seconds": clip_seconds, **result.model_dump()}
+
+
+class DescribeRequest(BaseModel):
+    """Your own story: Gemini fills in everything except the voiceover."""
+
+    clip: str | None = None
+    game: str = Field(min_length=1, max_length=80)
+    notes: str = Field("", max_length=1000)
+    mode: script_writer.ScriptMode = "story"
+    format: script_writer.ScriptFormat = "short"
+    target_seconds: int = Field(45, ge=10, le=600)
+    script: str = Field("", max_length=6000)
+    parts: list[str] = Field(default_factory=list, max_length=2)
+    channel_handle: str | None = Field(None, pattern=r"^@[\w.-]{3,30}$")
+
+
+def describe(settings: Settings, req: DescribeRequest, progress: ProgressFn) -> dict[str, Any]:
+    clip_seconds = None
+    if req.clip:
+        clip_seconds = video_downloader.probe_video(clip_path(settings, req.clip)).get("duration_seconds")
+    if req.format == "multi":
+        one, two = (req.parts + ["", ""])[:2]
+        series = script_writer.describe_series(settings, req.game, one, two, notes=req.notes,
+                                               handle=req.channel_handle, target_seconds=req.target_seconds,
+                                               max_seconds=clip_seconds / 2 if clip_seconds else None,
+                                               progress=progress)
+        return {"format": "multi", "clip_seconds": clip_seconds, "own_story": True, **series.model_dump()}
+    result = script_writer.describe_script(settings, req.game, req.script, notes=req.notes, mode=req.mode,
+                                           format=req.format, target_seconds=req.target_seconds,
+                                           max_seconds=clip_seconds, progress=progress)
+    return {"clip_seconds": clip_seconds, "own_story": True, **result.model_dump()}
 
 
 def resolve_music(settings: Settings, req: RenderRequest, progress: ProgressFn) -> music.DownloadedTrack | None:
@@ -548,6 +579,11 @@ class CreateManager:
         job = self._add("script", game)
         self._scripts.submit(self._run, job.id, lambda p: write_script(
             settings, clip, game, trend_titles, notes, target_seconds, watch_clip, p, mode, format, handle))
+        return job
+
+    def submit_describe(self, settings: Settings, req: "DescribeRequest") -> CreateJob:
+        job = self._add("script", req.game)
+        self._scripts.submit(self._run, job.id, lambda p: describe(settings, req, p))
         return job
 
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:

@@ -94,6 +94,7 @@
         <div class="cleared-note" id="cCleared" hidden></div>
         <div class="form-row form-actions">
           <label class="check"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
+          <button id="cDescribe" class="btn-secondary" type="button">✨ Fill the rest for my story</button>
           <button id="cWrite" class="btn-primary" type="button">Write script with Gemini</button>
         </div>
         <div id="cScriptJob" class="job" hidden></div>
@@ -201,8 +202,14 @@
             <label class="field field-grow">
               <span>Background music</span>
               <select id="cMusic">
-                <option value="mood" selected>By story mood (music/funny or music/chill)</option>
-                <option value="mine">My music (music/funny + music/chill)</option>
+                <option value="mood" selected>By story mood (Gemini: funny or chill)</option>
+                <optgroup label="Your music folders">
+                  <option value="folder:dramatic">😱 Dramatic / horror (music/dramatic)</option>
+                  <option value="folder:funny">😂 Funny / quirky (music/funny)</option>
+                  <option value="folder:chill">☕ Chill lo-fi (music/chill)</option>
+                  <option value="mine">🎲 My music (any of your tracks)</option>
+                </optgroup>
+                <optgroup label="Your tracks" id="cMusicTracks" hidden></optgroup>
                 <option value="none">No music</option>
                 <option value="random">Random (any channel)</option>
               </select>

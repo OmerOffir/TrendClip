@@ -66,21 +66,28 @@ async def _synthesize(text: str, voice: str, rate: str) -> tuple[bytes, list[Wor
     return bytes(audio), words
 
 
-def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%", retries: int = 2) -> list[Word]:
+RETRY_WAITS = (2, 4, 8, 15)  # edge-tts needs the internet; ride out short Wi-Fi / DNS drops
+
+
+def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
+               waits: tuple[float, ...] = RETRY_WAITS) -> list[Word]:
     """Write the MP3 and a <name>.words.json next to it; returns the timed words."""
     text = text.strip()
     if not text:
         raise VoiceError("The script is empty")
     last_error: Exception | None = None
-    for attempt in range(retries + 1):
+    for wait in (*waits, None):
         try:
             audio, words = asyncio.run(_synthesize(text, voice, rate))
             break
         except Exception as err:  # noqa: BLE001 - network / service errors from edge-tts
             last_error = err
-            time.sleep(1.5 * (attempt + 1))
+            if wait is not None:
+                time.sleep(wait)
     else:
-        raise VoiceError(f"Voice generation failed ({type(last_error).__name__}: {last_error})")
+        offline = re.search(r"connect|dns|nodename|servname|timeout|network", f"{type(last_error).__name__} {last_error}", re.I)
+        hint = "Can't reach Microsoft's voice server: check your internet connection and try again. " if offline else ""
+        raise VoiceError(f"Voice generation failed. {hint}({type(last_error).__name__}: {last_error})")
     if not audio or not words:
         raise VoiceError(f"The voice '{voice}' returned no audio; pick another voice")
 

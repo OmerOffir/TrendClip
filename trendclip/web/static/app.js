@@ -469,7 +469,8 @@
             <div class="dl-title">${esc(j.game || "From link")}</div>
             <div class="dl-meta">${esc(j.clip_seconds ? `${j.clip_seconds}s` : "full video")} · ${esc(j.orientation)} · ${j.url ? esc(j.url) : j.channel_title ? esc(j.channel_title) : esc(j.sources.join(" → "))}</div>
             ${failed
-              ? `<div class="dl-error">${esc(j.error || "Failed")}</div>`
+              ? `<div class="dl-error">${esc(j.error || "Failed")}</div>
+                 <div class="dl-actions"><button class="dl-delete" type="button" data-dismiss="${esc(j.id)}">Dismiss</button></div>`
               : `<div class="progress ${pctDone == null ? "indeterminate" : ""}"><i style="width:${pctDone ?? 0}%"></i></div>
                  <div class="dl-meta">${esc(j.message)}${pctDone != null ? ` · ${pctDone}%` : ""}</div>`}
           </div>
@@ -523,6 +524,15 @@
       button.disabled = false;
       showError(`Could not delete clip: ${err.message}`);
     }
+  }
+
+  async function dismissJob(id, button) {
+    button.disabled = true;
+    try {
+      await api(`/api/backgrounds/jobs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    } catch (_) { /* already gone after a restart */ }
+    state.jobs = state.jobs.filter((j) => j.id !== id);
+    renderDownloads();
   }
 
   function setupDownloadOptions(cfg) {
@@ -696,6 +706,8 @@
     els.downloads.addEventListener("click", (e) => {
       const del = e.target.closest("[data-delete]");
       if (del) deleteClip(del.dataset.delete, del);
+      const dismiss = e.target.closest("[data-dismiss]");
+      if (dismiss) dismissJob(dismiss.dataset.dismiss, dismiss);
       const create = e.target.closest("[data-create]");
       if (create) window.TrendClip.showView("create", create.dataset.create);
     });

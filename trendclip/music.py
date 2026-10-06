@@ -69,13 +69,15 @@ class DownloadedTrack(BaseModel):
 # --------------------------------------------------------------------------- story moods
 
 MOODS = ("funny_quirky", "dramatic_suspense", "chill_lofi")
-# Background music stays chill lo-fi / quirky: automatic picks never use music/dramatic (its tracks can
-# still be pinned by hand) and dramatic stories get chill lo-fi.
+# "By story mood" stays chill lo-fi / quirky: Gemini's moods never pick music/dramatic. Dramatic /
+# horror music is only used when you choose it (the folder, one of its tracks, or My music).
 BACKGROUND_MOODS = ("funny_quirky", "chill_lofi")
 MOOD_FOLDERS = {"funny_quirky": "funny", "dramatic_suspense": "dramatic", "chill_lofi": "chill"}
-MOOD_LABELS = {"funny_quirky": "Funny / quirky", "dramatic_suspense": "Dramatic / suspense", "chill_lofi": "Chill lo-fi"}
+MOOD_LABELS = {"funny_quirky": "Funny / quirky", "dramatic_suspense": "Dramatic / horror", "chill_lofi": "Chill lo-fi"}
 # Which free music channels to fall back on while a mood folder is empty.
-MOOD_CHANNELS = {"funny_quirky": ("chillhop",), "dramatic_suspense": ("chillhop",), "chill_lofi": ("chillhop",)}
+MOOD_CHANNELS = {"funny_quirky": ("chillhop",), "dramatic_suspense": ("nocopyrightsounds", "audio library"),
+                 "chill_lofi": ("chillhop",)}
+FOLDER_SOURCE = re.compile(r"^folder:(funny|dramatic|chill)$")
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
 VOLUME_RANGE = (0.12, 0.15)  # 12-15%: always clearly under the voice
 LOCAL_ID = re.compile(r"^local:(funny|dramatic|chill)/([^/\\]{1,120})$")
@@ -84,11 +86,16 @@ _FUNNY_WORDS = (r"\b(awkward|embarrass\w*|accidentally|weird|ridiculous|hilariou
                 r"cringe|prank\w*|wrong (person|house|room)|my (mom|dad|grandma)|goat|chicken|pants)\b")
 
 
-def normalize_mood(value: str | None) -> str | None:
-    """A background mood (funny_quirky or chill_lofi); 'dramatic' becomes chill_lofi."""
+def mood_id_of(value: str | None) -> str | None:
+    """Any of MOODS, from an id or a folder name ('dramatic' -> dramatic_suspense)."""
     value = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    mood_id = value if value in MOODS else next(
+    return value if value in MOODS else next(
         (m for m, folder in MOOD_FOLDERS.items() if value and folder in value), None)
+
+
+def normalize_mood(value: str | None) -> str | None:
+    """A story-mood pick (funny_quirky or chill_lofi); 'dramatic' becomes chill_lofi."""
+    mood_id = mood_id_of(value)
     return "chill_lofi" if mood_id == "dramatic_suspense" else mood_id
 
 
@@ -115,7 +122,14 @@ def local_tracks(settings: Settings, mood_id: str) -> list[Path]:
 
 def mood_counts(settings: Settings) -> dict[str, dict]:
     return {m: {"folder": f"{settings.music_library_dir.name}/{MOOD_FOLDERS[m]}", "label": MOOD_LABELS[m],
-                "tracks": len(local_tracks(settings, m))} for m in BACKGROUND_MOODS}
+                "tracks": len(local_tracks(settings, m))} for m in MOODS}
+
+
+def library_tracks(settings: Settings) -> list[dict]:
+    """Every file in the music/ folders, for picking one by hand."""
+    return [{"id": f"local:{p.parent.name}/{p.name}", "title": re.sub(r"[_]+", " ", p.stem).strip(),
+             "folder": MOOD_FOLDERS[m], "mood": m}
+            for m in MOODS for p in local_tracks(settings, m)]
 
 
 def _local_track(settings: Settings, path: Path, mood_id: str) -> DownloadedTrack:
@@ -137,9 +151,11 @@ def track_path(settings: Settings, track: DownloadedTrack) -> Path:
     return (settings.music_library_dir if track.local else settings.music_dir) / track.filename
 
 
-def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = None) -> DownloadedTrack:
-    """Random track from music/<funny|chill>; Chillhop while the folder is empty."""
-    mood_id = normalize_mood(mood_id) or "chill_lofi"
+def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = None,
+                 strict: bool = True) -> DownloadedTrack:
+    """Random track from music/<funny|chill> (any folder with strict=False, e.g. dramatic chosen by
+    hand); a matching YouTube channel while the folder is empty."""
+    mood_id = (normalize_mood(mood_id) if strict else mood_id_of(mood_id)) or "chill_lofi"
     files = local_tracks(settings, mood_id)
     if files:
         fresh = [p for p in files if f"local:{p.parent.name}/{p.name}" not in (exclude or set())]
@@ -155,10 +171,10 @@ def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = No
 
 
 def pick_local(settings: Settings, exclude: set[str] | None = None) -> DownloadedTrack:
-    """Random track from music/funny or music/chill."""
-    files = [(p, m) for m in BACKGROUND_MOODS for p in local_tracks(settings, m)]
+    """Random track from any of your music/ folders."""
+    files = [(p, m) for m in MOODS for p in local_tracks(settings, m)]
     if not files:
-        raise MusicError(f"No music files in {settings.music_library_dir.name}/funny or /chill yet")
+        raise MusicError(f"No music files in {settings.music_library_dir.name}/funny, /dramatic or /chill yet")
     fresh = [(p, m) for p, m in files if f"local:{p.parent.name}/{p.name}" not in (exclude or set())]
     path, mood_id = random.choice(fresh or files)
     return _local_track(settings, path, mood_id)
@@ -166,9 +182,16 @@ def pick_local(settings: Settings, exclude: set[str] | None = None) -> Downloade
 
 def pick(settings: Settings, source: str, mood_id: str | None = None,
          exclude: set[str] | None = None) -> DownloadedTrack:
-    """"mood" = the folder for mood_id, "mine" = any music/ folder, else a channel id or "random"."""
+    """"mood" = Gemini's mood (funny or chill), "folder:<funny|dramatic|chill>" = that folder,
+    "local:<folder>/<file>" = that file, "mine" = any music/ folder, else a channel id or "random"."""
     if source == "mood":
         return pick_by_mood(settings, mood_id or "chill_lofi", exclude)
+    if m := FOLDER_SOURCE.match(source):
+        return pick_by_mood(settings, m.group(1), exclude, strict=False)
+    if LOCAL_ID.match(source):
+        if track := downloaded(settings, source):
+            return track
+        raise MusicError(f"{source.removeprefix('local:')} is no longer in the music folder")
     if source == "mine":
         return pick_local(settings, exclude)
     return pick_track(settings, source, exclude)

@@ -1066,6 +1066,15 @@ class DownloadManager:
         with self._lock:
             return [j.model_copy(deep=True) for j in sorted(self._jobs.values(), key=lambda j: j.created_at, reverse=True)]
 
+    def dismiss(self, job_id: str) -> bool:
+        """Forget a finished or failed job (running ones keep going)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status in ("queued", "running"):
+                return False
+            del self._jobs[job_id]
+            return True
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Download background gameplay footage for a game")

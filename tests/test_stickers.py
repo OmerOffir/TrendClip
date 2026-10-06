@@ -1,5 +1,6 @@
 import json
 import subprocess
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -69,6 +70,13 @@ def test_scan_inspects_tags_and_applies_overrides(tmp_path, monkeypatch):
     assert final["oh_no.jpg"].moods == ["shocked", "crazy"] and final["oh_no.jpg"].source == "manual"
     assert final["image copy.png"].category == "off"
     assert stickers.library(settings) is stickers.library(settings)  # unchanged folder: no rescan
+
+    import os
+    overrides = settings.stickers_dir / "stickers.json"
+    overrides.write_text(json.dumps({"oh_no.jpg": {"category": "off"}}))
+    os.utime(overrides, (time.time() + 5, time.time() + 5))
+    edited = {s.filename: s for s in stickers.library(settings)}  # editing stickers.json is picked up
+    assert edited["oh_no.jpg"].category == "off" and edited["image copy.png"].category != "off"
 
 
 def test_keyword_cues_and_cta_detection():

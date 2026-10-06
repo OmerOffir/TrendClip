@@ -256,6 +256,12 @@ table.videos { width: 100%; border-collapse: collapse; font-variant-numeric: tab
   background: transparent; border: 1px dashed var(--border); color: var(--muted); font: inherit; cursor: pointer;
 }
 .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+.btn-secondary {
+  padding: 10px 16px; border-radius: 10px; background: transparent; color: var(--text);
+  border: 1px solid var(--border); font: inherit; font-weight: 600; cursor: pointer;
+}
+.btn-secondary:hover:not(:disabled) { border-color: var(--muted); }
+.btn-secondary:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .game-tag { font-size: 12px; font-weight: 600; color: var(--text); }
 .game-tag.none { color: var(--muted); font-weight: 400; }

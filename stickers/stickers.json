@@ -8,5 +8,7 @@
   "image.png": {"category": "reaction", "moods": ["suspicious"], "description": "Shrek, suspicious"},
   "me?.png": {"category": "reaction", "moods": ["innocent"], "description": "Who, me?"},
   "oh_no.png": {"category": "reaction", "moods": ["shocked"], "description": "Willem Dafoe, shocked"},
-  "oh_no_2.png": {"category": "reaction", "moods": ["embarrassed", "awkward"], "description": "Barbie facepalm"}
+  "oh_no_2.png": {"category": "reaction", "moods": ["embarrassed", "awkward"], "description": "Barbie facepalm"},
+  "image copy 11.png": {"category": "off", "description": "Duplicate of image copy 12 (Barney thumbs up)"},
+  "image copy 12.png": {"category": "reaction", "moods": ["approve", "proud", "funny"], "description": "Barney Stinson, double thumbs up"}
 }

@@ -166,6 +166,7 @@ class StickerTags(BaseModel):
 
 _lock = threading.Lock()
 _memory: dict[str, list[StickerInfo]] = {}
+_overrides_seen: dict[str, str] = {}  # stickers.json signature at the last scan
 _gemini_failed_at: dict[str, float] = {}
 GEMINI_RETRY_SECONDS = 600
 
@@ -331,11 +332,16 @@ def scan(settings: Settings, *, use_gemini: bool = True, client=None) -> list[St
 
 
 def library(settings: Settings) -> list[StickerInfo]:
-    """The tagged library; rescans when files were added, changed or removed."""
-    current = _memory.get(str(settings.stickers_dir))
+    """The tagged library; rescans when files were added, changed or removed, or stickers.json was edited."""
+    key = str(settings.stickers_dir)
+    current = _memory.get(key)
     files = {p.name: _signature(p) for p in sticker_files(settings)}
-    if current is not None and {s.filename: s.signature for s in current} == files:
+    overrides = settings.stickers_dir / OVERRIDES_FILE
+    tags_sig = _signature(overrides) if overrides.is_file() else ""
+    if current is not None and {s.filename: s.signature for s in current} == files \
+            and _overrides_seen.get(key) == tags_sig:
         return current
+    _overrides_seen[key] = tags_sig
     return scan(settings)
 
 

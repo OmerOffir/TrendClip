@@ -365,6 +365,13 @@ def download_job(job_id: str) -> dict[str, Any]:
     return job.model_dump(mode="json")
 
 
+@app.delete("/api/backgrounds/jobs/{job_id}")
+def dismiss_download_job(job_id: str) -> dict[str, Any]:
+    if not _downloads.dismiss(job_id):
+        raise HTTPException(status_code=409, detail="Only finished or failed downloads can be dismissed")
+    return {"dismissed": job_id}
+
+
 # --------------------------------------------------------------------------- Create tab
 
 
@@ -381,7 +388,7 @@ class ScriptRequest(BaseModel):
 
 
 class MusicPickRequest(BaseModel):
-    source: str = Field("random", max_length=40)  # "mood" = music/<mood> folder, "mine" = any music/ folder
+    source: str = Field("random", max_length=200)  # see music.pick: mood, folder:<name>, local:<file>, mine…
     mood: str | None = Field(None, max_length=40)
     exclude: list[str] = Field(default_factory=list, max_length=50)
 
@@ -430,6 +437,20 @@ def create_script(req: ScriptRequest) -> dict[str, Any]:
     return job.model_dump(mode="json")
 
 
+@app.post("/api/create/describe", status_code=202)
+def create_describe(req: shorts.DescribeRequest) -> dict[str, Any]:
+    """Your own story: Gemini writes the title, hashtags, stickers, pop-ups, question, pinned comment…"""
+    settings = _base_settings()
+    if req.clip:
+        _clip_or_http(settings, req.clip)
+    if script_writer.gemini_api_key(settings) is None:
+        raise HTTPException(status_code=400, detail="Add GEMINI_API_KEY to .env (https://aistudio.google.com/apikey)")
+    text = " ".join(req.parts) if req.format == "multi" else req.script
+    if len(text.split()) < 3:
+        raise HTTPException(status_code=400, detail="Write or paste your story in the voiceover box first")
+    return _create.submit_describe(settings, req).model_dump(mode="json")
+
+
 @app.get("/api/create/music")
 def create_music() -> dict[str, Any]:
     """Music channels with their track counts (upload lists cached on disk for a day)."""
@@ -441,7 +462,8 @@ def create_music() -> dict[str, Any]:
     except music.MusicError as err:
         raise HTTPException(status_code=502, detail=str(err)) from err
     return {"sources": sources, "volume": music.clamp_volume(settings.music_volume),
-            "volume_range": music.VOLUME_RANGE, "moods": music.mood_counts(settings)}
+            "volume_range": music.VOLUME_RANGE, "moods": music.mood_counts(settings),
+            "tracks": music.library_tracks(settings)}
 
 
 @app.post("/api/create/music/pick")

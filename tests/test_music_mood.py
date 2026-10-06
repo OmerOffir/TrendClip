@@ -46,19 +46,30 @@ def test_pick_by_mood_uses_the_local_folder(tmp_path):
     assert music.mood_counts(settings)["funny_quirky"]["tracks"] == 2
 
 
-def test_my_music_picks_from_the_lofi_and_quirky_folders(tmp_path, monkeypatch):
+def test_your_folders_and_tracks_can_be_picked_by_hand(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
-    add_tracks(settings, "dramatic", "Suspended Tension.mp3")
     with pytest.raises(music.MusicError, match="No music files"):
-        music.pick(settings, "mine")  # music/dramatic is never picked automatically
+        music.pick(settings, "mine")
     add_tracks(settings, "funny", "Quirky Plucks.mp3")
-    add_tracks(settings, "chill", "Rainy_Desk.mp3", "Sombra Creeping_2.mp3")
-    picked = {music.pick(settings, "mine").video_id for _ in range(60)}
-    assert picked == {"local:funny/Quirky Plucks.mp3", "local:chill/Rainy_Desk.mp3", "local:chill/Sombra Creeping_2.mp3"}
-    t = music.pick(settings, "mine", exclude={"local:chill/Rainy_Desk.mp3", "local:funny/Quirky Plucks.mp3"})
-    assert t.mood == "chill_lofi" and t.title == "Sombra Creeping 2"
-    assert set(music.mood_counts(settings)) == {"funny_quirky", "chill_lofi"}
-    assert music.pick(settings, "mood", "dramatic_suspense").video_id.startswith("local:chill/")
+    add_tracks(settings, "dramatic", "Suspended Tension.mp3", "Sombra Creeping_2.mp3")
+    add_tracks(settings, "chill", "Rainy_Desk.mp3")
+    picked = {music.pick(settings, "mine").video_id for _ in range(80)}  # My music = every folder
+    assert picked == {"local:funny/Quirky Plucks.mp3", "local:dramatic/Suspended Tension.mp3",
+                      "local:dramatic/Sombra Creeping_2.mp3", "local:chill/Rainy_Desk.mp3"}
+    horror = {music.pick(settings, "folder:dramatic").video_id for _ in range(30)}
+    assert horror == {"local:dramatic/Suspended Tension.mp3", "local:dramatic/Sombra Creeping_2.mp3"}
+    t = music.pick(settings, "local:dramatic/Sombra Creeping_2.mp3")
+    assert t.mood == "dramatic_suspense" and t.title == "Sombra Creeping 2"
+    with pytest.raises(music.MusicError, match="no longer"):
+        music.pick(settings, "local:dramatic/gone.mp3")
+    assert music.pick(settings, "mood", "dramatic_suspense").video_id == "local:chill/Rainy_Desk.mp3"  # Gemini: lo-fi
+    assert [t["title"] for t in music.library_tracks(settings)] == [
+        "Quirky Plucks", "Sombra Creeping 2", "Suspended Tension", "Rainy Desk"]
+    assert music.mood_counts(settings)["dramatic_suspense"]["tracks"] == 2
+
+    req = shorts.RenderRequest(clip="c.mp4", game="g", script="hi there you",
+                               music_source="local:dramatic/Suspended Tension.mp3")
+    assert shorts.resolve_music(settings, req, lambda f, m: None).filename == "dramatic/Suspended Tension.mp3"
 
     monkeypatch.setattr(music, "pick_track", lambda s, source, exclude=None: f"youtube:{source}")
     assert music.pick(settings, "random") == "youtube:random"

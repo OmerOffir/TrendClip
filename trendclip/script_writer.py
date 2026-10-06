@@ -304,7 +304,7 @@ class Shortened(BaseModel):
 SHORTEN_PROMPT = """This voiceover is {words} words, but it must be spoken in {seconds} seconds, so it may have
 AT MOST {max_words} words. Rewrite it to {low} to {max_words} words. Keep the hook, the key beats and the
 ending / punchline, and the same voice and language. Cut filler and side details; don't add anything new.
-Plain spoken text only.
+Plain spoken text only.{extra}
 
 Voiceover:
 {script}"""
@@ -327,7 +327,13 @@ def _cut_to(script: str, limit: int) -> str:
     return " ".join(out) if out else " ".join(script.split()[:limit])
 
 
-def fit_length(client, model: str, script: str, limit: int, seconds: float, progress: ProgressFn) -> str:
+OWN_STORY_SHORTEN = """
+This is the creator's own story: keep their sentences and wording wherever possible. Mostly drop whole
+sentences or clauses; only rephrase to join what is left. Keep every clue the ending depends on."""
+
+
+def fit_length(client, model: str, script: str, limit: int, seconds: float, progress: ProgressFn,
+               own: bool = False) -> str:
     """Gemini often overshoots the target; ask it once to tighten the script, then cut at a sentence end."""
     words = len(script.split())
     if words <= limit:
@@ -339,7 +345,8 @@ def fit_length(client, model: str, script: str, limit: int, seconds: float, prog
         config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=Shortened,
                                              temperature=0.4)
         prompt = SHORTEN_PROMPT.format(words=words, seconds=round(seconds), max_words=limit,
-                                       low=max(limit - 25, limit * 3 // 4), script=script)
+                                       low=max(limit - 25, limit * 3 // 4), script=script,
+                                       extra=OWN_STORY_SHORTEN if own else "")
         response, _ = _generate_with_fallback(client, model, [prompt], config, progress, Exception)
         parsed = response.parsed if isinstance(response.parsed, Shortened) else Shortened.model_validate_json(response.text)
         shorter = _clean_script(parsed.script)
@@ -367,8 +374,18 @@ def _clean_script(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+_ABBREVIATION = re.compile(r"\b(mr|mrs|ms|dr|st|vs|jr|sr)\.$", re.IGNORECASE)
+
+
 def _sentences(text: str) -> list[str]:
-    return [s for s in re.split(r"(?<=[.!?…])\s+", text.strip()) if s]
+    """Sentences; 'a.m. she', 'Mr. Smith' and similar don't end one."""
+    sentences: list[str] = []
+    for piece in re.split(r"(?<=[.!?…])\s+", text.strip()):
+        if sentences and (piece[:1].islower() or _ABBREVIATION.search(sentences[-1])):
+            sentences[-1] += f" {piece}"
+        elif piece:
+            sentences.append(piece)
+    return sentences
 
 
 def _words(text: str) -> list[str]:
@@ -613,8 +630,6 @@ def write_series(
 ) -> SeriesScript:
     """One Gemini call writes both parts, so Part 2 really continues Part 1.
     `max_seconds` caps each part (Part 2 continues the clip where Part 1 stopped)."""
-    import uuid
-
     api_key = gemini_api_key(settings)
     if client is None and not api_key:
         raise ScriptError("GEMINI_API_KEY is not set in .env (create one at https://aistudio.google.com/apikey)")
@@ -644,6 +659,14 @@ def write_series(
             result = GeminiSeries.model_validate_json(response.text)
     except errors.APIError as err:
         raise _explain(err, model) from err
+    return _assemble_series(result, game=game, model=model, handle=handle,
+                            fit=lambda story: fit_length(client, model, story, limit, target_seconds, progress))
+
+
+def _assemble_series(result: GeminiSeries, *, game: str, model: str, handle: str,
+                     fit: Callable[[str], str] = lambda story: story) -> SeriesScript:
+    """Both parts with their closing question + CTA, (Part n) titles, tags, cards and the pinned comment."""
+    import uuid
 
     ctas = series_ctas(handle, result.part2.script)
     cards = end_cards(handle)
@@ -661,7 +684,7 @@ def write_series(
         questions.append(clean_question(p.question) or SERIES_QUESTIONS[n - 1])
     series_mood = music.normalize_mood(result.music_mood) or music.guess_mood(" ".join(stories))
     for n, raw in enumerate(raws, start=1):
-        story = fit_length(client, model, stories[n - 1], limit, target_seconds, progress)
+        story = fit(stories[n - 1])
         script = f"{story} {questions[n - 1]} {ctas[n - 1]}"
         part = _finish(raw, game=game, model=model, mode="story", format="multi", watched=False,
                        script=script, question=questions[n - 1], part=n, parts_total=2, end_card=cards[n - 1], music_mood=series_mood)
@@ -686,3 +709,179 @@ def write_series(
         parts=parts,
         music_mood=series_mood,
     )
+
+
+# --------------------------------------------------------------------------- your own story
+
+
+class GeminiExtras(BaseModel):
+    """Everything around a voiceover the creator wrote: Gemini must not touch the script itself."""
+
+    on_screen: str = Field(description="One sentence summarising the story.")
+    title: str = GeminiShort.model_fields["title"]
+    description: str = GeminiShort.model_fields["description"]
+    hashtags: list[str] = GeminiShort.model_fields["hashtags"]
+    title_card: str = GeminiShort.model_fields["title_card"]
+    popups: list[Popup] = GeminiShort.model_fields["popups"]
+    reactions: list[Reaction] = GeminiShort.model_fields["reactions"]
+    music_mood: str = GeminiShort.model_fields["music_mood"]
+    question: str = GeminiShort.model_fields["question"]
+    pinned_comment: str = GeminiShort.model_fields["pinned_comment"]
+
+
+class GeminiSeriesExtras(BaseModel):
+    story_name: str = GeminiSeries.model_fields["story_name"]
+    part2_starts_with: str = Field("", description=(
+        "Only when PART 2 is empty: the first 6 to 10 words of the sentence where Part 2 should begin, copied "
+        "exactly from the story. Split right after the best cliffhanger, roughly in the middle."))
+    part1: GeminiExtras
+    part2: GeminiExtras
+    pinned_comment: str = GeminiSeries.model_fields["pinned_comment"]
+    music_mood: str = GeminiSeries.model_fields["music_mood"]
+
+
+DESCRIBE_INSTRUCTION = """You package voiceovers for vertical Shorts (YouTube Shorts, TikTok, Reels). The creator
+wrote the voiceover themselves: NEVER rewrite, shorten, translate or add to it. Write everything else for it.
+
+Rules:
+- title: a curiosity-building title (at most 70 characters, no hashtags) that makes people click.
+- title_card: a 2 to 5 word ALL-CAPS banner for the first 3 seconds, punchy, different from the title.
+- description: two or three short sentences, no hashtags, no spoilers of the ending.
+- hashtags: 5 to 8 relevant ones, including #shorts (and #storytime for stories).
+- Pop-ups: each `word` must appear exactly as written in the voiceover; concrete, easy to picture things,
+  one every 3 to 5 seconds of speech (about one per 12 words), spread from start to end, in script order.
+- Reactions: each `word` must appear exactly as written in the voiceover, at the funniest, most awkward,
+  creepiest or most shocking beats; not in the first sentence.
+- question: a punchy 2 to 5 word question that makes viewers comment their own story; it is spoken
+  after the voiceover.
+- pinned_comment: the comment the creator pins right after upload; it keeps the conversation going.
+- music_mood: funny_quirky or chill_lofi.
+- Never wrap words in backticks, quotes or markdown.
+"""
+
+_HEADING = re.compile(r"^\s*(part|chapter)\s+(one|two|three|[1-9])\b[^.!?\n]*$", re.IGNORECASE | re.MULTILINE)
+
+
+def clean_own_script(text: str) -> str:
+    """The creator's text as it will be spoken: 'Part One: The Call' headings and markdown removed."""
+    return _clean_script(_HEADING.sub("", text or ""))
+
+
+def split_story(story: str, starts_with: str) -> tuple[str, str]:
+    """Split at the sentence that starts with `starts_with` (Gemini's pick), else at the middle sentence."""
+    sentences = _sentences(story)
+    if len(sentences) < 2:
+        raise ScriptError("The story is too short to split into two parts")
+    key = _words(starts_with)[:6]
+    at = next((i for i, s in enumerate(sentences) if key and i > 0 and _words(s)[:len(key)] == key), None)
+    if at is None:
+        total, count, at = len(story.split()), 0, len(sentences) // 2
+        for i, s in enumerate(sentences):
+            count += len(s.split())
+            if count >= total / 2:
+                at = max(1, min(i + 1, len(sentences) - 1))
+                break
+    return " ".join(sentences[:at]), " ".join(sentences[at:])
+
+
+def _gemini(settings: Settings, client=None):
+    api_key = gemini_api_key(settings)
+    if client is None and not api_key:
+        raise ScriptError("GEMINI_API_KEY is not set in .env (create one at https://aistudio.google.com/apikey)")
+    from google import genai
+
+    return client or genai.Client(api_key=api_key), gemini_model(settings)
+
+
+def _own_limit(target_seconds: float, max_seconds: float | None) -> tuple[int, float]:
+    """Words your story may use (before the question + CTA), and the seconds that is."""
+    seconds = min(target_seconds, max_seconds) if max_seconds else target_seconds
+    seconds = max(seconds, 10)
+    return max_words(seconds) - CTA_WORDS, seconds
+
+
+def _ask_gemini(client, model: str, schema: type[BaseModel], prompt: str, progress: ProgressFn):
+    from google.genai import errors, types
+
+    config = types.GenerateContentConfig(system_instruction=DESCRIBE_INSTRUCTION, response_mime_type="application/json",
+                                         response_schema=schema, temperature=0.8)
+    try:
+        response, model = _generate_with_fallback(client, model, [prompt], config, progress, errors.APIError)
+    except errors.APIError as err:
+        raise _explain(err, model) from err
+    result = response.parsed
+    if not isinstance(result, schema):
+        if not response.text:
+            raise ScriptError("Gemini returned an empty answer (possibly blocked); try again")
+        result = schema.model_validate_json(response.text)
+    return result, model
+
+
+def _with_script(extras: GeminiExtras, script: str) -> GeminiShort:
+    first = (_sentences(script) or [script])[0]
+    return GeminiShort(hook=first, script=script, **extras.model_dump())
+
+
+def describe_script(settings: Settings, game: str, script: str, *, notes: str = "",
+                    mode: ScriptMode = "story", format: ScriptFormat = "short", target_seconds: float | None = None,
+                    max_seconds: float | None = None, progress: ProgressFn = lambda f, m: None,
+                    client=None) -> ShortScript:
+    """Your own voiceover; Gemini writes the title, description, hashtags, title card, pop-ups, reaction
+    beats, music mood, closing question and pinned comment. A story too long for the chosen length is
+    tightened first (keeping your wording where possible); otherwise your words are kept as they are.
+    The question and the follow CTA are added at the end (a short question you already end on is kept)."""
+    story = _strip_cta(clean_own_script(script))
+    if len(story.split()) < 3:
+        raise ScriptError("Write or paste your story in the voiceover box first")
+    client, model = _gemini(settings, client)
+    limit, seconds = _own_limit(target_seconds or settings.short_target_seconds, max_seconds)
+    story = fit_length(client, model, story, limit, seconds, progress, own=True)
+    body, own = split_question(story)
+    prompt = "\n".join([f"Background gameplay: {game}",
+                        *( [f"Creator's notes: {notes.strip()}"] if notes.strip() else []),
+                        "VOICEOVER (do not change it):", story])
+    progress(None, "Gemini is reading your story")
+    extras, model = _ask_gemini(client, model, GeminiExtras, prompt, progress)
+    question = clean_question(own) or clean_question(extras.question) or DEFAULT_QUESTION
+    body = body if clean_question(own) else story
+    script = f"{body} {question} {follow_cta(settings.channel_handle, body)}"
+    return _finish(_with_script(extras, script), game=game, model=model, mode=mode, format=format,
+                   watched=False, script=script, question=question)
+
+
+def describe_series(settings: Settings, game: str, part1: str, part2: str = "", *, notes: str = "",
+                    handle: str | None = None, target_seconds: float = 45, max_seconds: float | None = None,
+                    progress: ProgressFn = lambda f, m: None, client=None) -> SeriesScript:
+    """Your own two-part story (or one story to split at the best cliffhanger); each part is tightened
+    to the chosen length per part when it is too long."""
+    handle = handle or settings.channel_handle
+    one, two = _strip_cta(clean_own_script(part1)), _strip_cta(clean_own_script(part2))
+    if len((one + " " + two).split()) < 6:
+        raise ScriptError("Write or paste your story in the Part 1 box first")
+    client, model = _gemini(settings, client)
+    limit, seconds = _own_limit(target_seconds, max_seconds)
+    if two:
+        one = fit_length(client, model, one, limit, seconds, progress, own=True)
+        two = fit_length(client, model, two, limit, seconds, progress, own=True)
+    else:
+        one = fit_length(client, model, one, 2 * limit, 2 * seconds, progress, own=True)
+    lines = [f"Background gameplay: {game}",
+             "A TWO-PART SERIES released a day apart: Part 1 ends on a cliffhanger, Part 2 resolves it.",
+             "Do not put 'Part 1' or 'Part 2' in titles or title cards; they are added automatically.",
+             "pinned_comment teases Part 2 without spoiling it."]
+    if notes.strip():
+        lines.append(f"Creator's notes: {notes.strip()}")
+    if two:
+        lines += ["PART 1 (do not change it):", one, "PART 2 (do not change it):", two]
+    else:
+        lines += ["PART 2 is empty: this is the whole story. Pick where Part 2 starts (part2_starts_with) and "
+                  "describe each half.", "STORY (do not change it):", one]
+    progress(None, "Gemini is reading your story")
+    extras, model = _ask_gemini(client, model, GeminiSeriesExtras, "\n".join(lines), progress)
+    if not two:
+        one, two = split_story(one, extras.part2_starts_with)
+    result = GeminiSeries(story_name=extras.story_name, part1=_with_script(extras.part1, one),
+                          part2=_with_script(extras.part2, two), pinned_comment=extras.pinned_comment,
+                          music_mood=extras.music_mood)
+    return _assemble_series(result, game=game, model=model, handle=handle,
+                            fit=lambda story: fit_length(client, model, story, limit, seconds, progress, own=True))

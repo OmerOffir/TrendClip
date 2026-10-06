@@ -192,27 +192,37 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    - **Pinned comment:** Gemini writes one for every Short (no links or hashtags). It is saved with the
      Short and shown in the Upload tab with **Copy comment** / **Post comment on YouTube**, so you
      can pin it right after uploading (YouTube's API can't pin, so use ⋮ → Pin).
+   - **✨ Fill the rest for my story:** paste your own story in the voiceover box (or in Part 1 /
+     Part 2 for Multi-part) and press this instead. Gemini keeps your words exactly and writes
+     everything else: title, description, hashtags, title card, pop-ups, reaction stickers, music
+     mood, closing question and pinned comment (story name too for Multi-part). Heading lines like
+     *"Part One: The Call"* are removed from the voiceover. A story that fits the chosen length is
+     kept word for word; a longer one is tightened by Gemini first (per part for Multi-part, capped by
+     the clip length), keeping your sentences and the clues the ending needs, so the pop-ups and
+     stickers match the final text. The closing question + follow CTA are added at the end (a
+     question of 2-5 words you already end on is kept). If Part 2 is empty, Gemini picks the cliffhanger sentence
+     where Part 2 starts (otherwise the story is split in the middle). Endpoint:
+     `POST /api/create/describe`.
    **Script type → Random story** makes Gemini write a self-contained first-person storytime that is
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
-3. **Voice & style:** a free edge-tts voice (47 English voices) with exact word timings, speed,
+3. **Voice & style:** (edge-tts needs the internet; a failed request is retried for about 30 s
+   before the "Voice generation failed" error, which then says when the voice server can't be
+   reached) a free edge-tts voice (47 English voices) with exact word timings, speed,
    highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
-4. **Background music (optional):** background music stays strictly **chill lo-fi / quirky**. Gemini
-   sorts every script into `funny_quirky` (awkward, weird, chaotic stories) or `chill_lofi`
-   (everything else, including mysteries and cliffhangers), and a random track is picked from the
-   matching folder:
+4. **Background music (optional):** pick it in the **Background music** menu:
+   - **By story mood** (default): automatic, strictly **chill lo-fi / quirky**. Gemini sorts every
+     script into `funny_quirky` (awkward, weird, chaotic stories) or `chill_lofi` (everything else,
+     including mysteries), and a random track comes from `music/funny/` or `music/chill/`. If the
+     folder is empty, a free Chillhop lo-fi track is used.
+   - **Your music folders**: **😱 Dramatic / horror** (`music/dramatic/`), **😂 Funny / quirky**,
+     **☕ Chill lo-fi** (a random track from that folder, with its track count shown), or
+     **🎲 My music** (a random track from any of your folders).
+   - **Your tracks**: every file in your music folders by name, to use exactly that track.
+   - **No music**, **Random** (any YouTube music channel) or one channel.
 
-   | Mood | Folder |
-   | --- | --- |
-   | funny_quirky | `music/funny/` |
-   | chill_lofi | `music/chill/` |
-
-   `music/dramatic/` is never picked automatically, and a "dramatic" mood becomes chill lo-fi. Its
-   tracks only play when a Short's saved track is one of them (older Shorts you edit).
-   Drop `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac` or `.aac` files into those folders. An optional
-   `<song>.txt` next to a file holds its credit line for the description. If a folder is empty, a
-   free Chillhop lo-fi track is used instead. You can change the mood by hand, or switch to
-   **My music** (a random file from `music/funny` or `music/chill`), **Random** (any YouTube music
-   channel, your explicit choice) or **None**. Preview the track and press **Shuffle** for another one. Every track is first
+   Drop `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac` or `.aac` files into `music/funny/`,
+   `music/dramatic/` or `music/chill/`; new files show up after a page reload. An optional
+   `<song>.txt` next to a file holds its credit line for the description. Preview the track and press **Shuffle** for another one. Every track is first
    levelled to the same loudness and then played at 12%, 14% or 15% (Quiet/Normal/Loud), so it never
    drowns out the voice. It also loops if it is short, fades in and out, and ducks under the voice.
    Set `MUSIC_LIBRARY_DIR` to use another folder.

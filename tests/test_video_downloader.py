@@ -280,3 +280,13 @@ def test_download_background_reports_all_failures(tmp_path, monkeypatch):
         vd.download_background("Pokemon", settings=settings, sources=["pexels", "youtube"])
     message = str(exc.value)
     assert "PEXELS_API_KEY" in message and "no no-copyright videos" in message
+
+
+def test_failed_download_jobs_can_be_dismissed():
+    manager = vd.DownloadManager()
+    failed = vd.DownloadJob(id="bad", game="GTA V", sources=["youtube"], clip_seconds=60, orientation="landscape",
+                            status="error", error="ffmpeg exited with code 8")
+    running = failed.model_copy(update={"id": "busy", "status": "running", "error": None})
+    manager._jobs.update({"bad": failed, "busy": running})
+    assert manager.dismiss("bad") and not manager.dismiss("busy") and not manager.dismiss("nope")
+    assert [j.id for j in manager.list()] == ["busy"]

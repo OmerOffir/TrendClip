@@ -14,6 +14,7 @@
     notes: $("cNotes"),
     watch: $("cWatch"),
     write: $("cWrite"),
+    describe: $("cDescribe"),
     scriptJob: $("cScriptJob"),
     onScreen: $("cOnScreen"),
     script: $("cScript"),
@@ -72,7 +73,8 @@
     moodField: $("cMoodField"),
     moodHint: $("cMoodHint"),
   };
-  const MOOD_FOLDER = { funny_quirky: "funny", chill_lofi: "chill" };
+  const MOOD_FOLDER = { funny_quirky: "funny", chill_lofi: "chill" }; // what "By story mood" picks from
+  const MOOD_FOLDER_ALL = { ...MOOD_FOLDER, dramatic_suspense: "dramatic" };
   const MOOD_EMOJI = { funny: "😂", awkward: "😬", shocked: "😱", approve: "👍", reject: "🙅", proud: "🥂", pain: "🙂",
     nope: "🚪", innocent: "🙋", crazy: "🤪", embarrassed: "🤦", suspicious: "🤨" };
 
@@ -457,6 +459,12 @@
       : multi ? "Write Part 1 + Part 2 with Gemini"
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
+    const words = ownStory().reduce((n, s) => n + wordCount(s), 0);
+    els.describe.disabled = busyScript || !els.game.value.trim() || !gemini || badHandle || words < 3;
+    els.describe.title = !gemini ? "Add GEMINI_API_KEY to .env first"
+      : words < 3 ? "Paste your own story in the voiceover box first"
+      : "Keeps your words; Gemini writes the title, description, hashtags, title card, pop-ups, stickers, question and pinned comment";
+    els.describe.textContent = busyScript ? "Working…" : "✨ Fill the rest for my story";
     els.watch.disabled = story;
     els.watch.closest(".check").classList.toggle("disabled", story);
     els.watch.closest(".check").title = story ? "Not needed: the story is not about the clip" : "";
@@ -517,7 +525,9 @@
     setSelect(els.musicVol, r.music_volume);
     els.stickers.checked = r.stickers !== false;
     els.ctaSticker.checked = r.cta_sticker !== false;
-    els.music.value = [...els.music.options].some((o) => o.value === r.music_source) ? r.music_source
+    const hasOption = (v) => [...els.music.options].some((o) => o.value === v);
+    els.music.value = hasOption(r.music_source) ? r.music_source
+      : data.track && data.track.local && hasOption(data.track.video_id) ? data.track.video_id
       : data.track ? "random" : "none";
     setSelect(els.musicMood, r.music_mood);
     renderMood();
@@ -646,6 +656,15 @@
     try {
       const { body } = await api("/api/create/music");
       state.moods = body.moods || null;
+      const icon = { dramatic: "😱", funny: "😂", chill: "☕" };
+      const group = $("cMusicTracks");
+      group.replaceChildren(...(body.tracks || []).map((t) =>
+        new Option(`${icon[t.folder] || "♪"} ${t.title} (music/${t.folder})`, t.id)));
+      group.hidden = !group.children.length;
+      for (const [mood, m] of Object.entries(state.moods || {})) {
+        const opt = els.music.querySelector(`option[value="folder:${MOOD_FOLDER_ALL[mood]}"]`);
+        if (opt) opt.textContent = `${opt.textContent.replace(/ · \d+ tracks?$| · empty$/, "")} · ${m.tracks ? `${m.tracks} track${m.tracks === 1 ? "" : "s"}` : "empty"}`;
+      }
       for (const s of body.sources) {
         const label = `${s.title}${s.mood ? ` · ${s.mood}` : ""} (${s.tracks} tracks)`;
         els.music.append(new Option(label, s.id));
@@ -669,7 +688,7 @@
       : "";
     els.moodHint.innerHTML = m && !m.tracks
       ? `<b>${esc(m.folder)}</b> is empty, so a free Chillhop lo-fi track is used. Drop MP3 / M4A files in that folder to use your own. <span class="muted">(${esc(counts)})</span>`
-      : `Random track from <b>${esc(m ? m.folder : `music/${MOOD_FOLDER[els.musicMood.value]}`)}</b>; the mood is set by Gemini when it writes the script. Background music stays chill lo-fi / quirky (music/dramatic is not used) at 12-15%. <span class="muted">(${esc(counts)})</span>`;
+      : `Random track from <b>${esc(m ? m.folder : `music/${MOOD_FOLDER[els.musicMood.value]}`)}</b>; the mood is set by Gemini when it writes the script and stays chill lo-fi / quirky. For horror or drama, pick <b>😱 Dramatic / horror</b> or one of your tracks above. <span class="muted">(${esc(counts)})</span>`;
   }
 
   function setMood(mood) {
@@ -700,7 +719,7 @@
     if (els.trackAudio.getAttribute("src") !== src) els.trackAudio.src = src;
     els.trackAudio.volume = 0.6;
     const len = t.duration_seconds ? ` · ${T.fmtLength(t.duration_seconds)}` : "";
-    const fallback = t.fallback ? ` · <span class="over">fallback: ${esc(`music/${MOOD_FOLDER[t.mood] || ""}`)} is empty</span>` : "";
+    const fallback = t.fallback ? ` · <span class="over">fallback: ${esc(`music/${MOOD_FOLDER_ALL[t.mood] || ""}`)} is empty</span>` : "";
     els.trackMeta.innerHTML = t.local
       ? `Your file · ${esc(t.channel_title)}${esc(len)}${t.credit ? " · credit from the .txt is added to the description" : ""}`
       : `${esc(t.channel_title)}${esc(len)} · <a href="${esc(t.url)}" target="_blank" rel="noopener">source</a> · credit is added to the description${fallback}`;
@@ -772,25 +791,51 @@
     return [...match.videos].sort((a, b) => b.views_per_hour - a.views_per_hour).slice(0, 8).map((v) => v.title);
   }
 
-  async function writeScript() {
-    showError("");
+  const chosenHandle = () => (HANDLE_RE.test(els.handle.value.trim()) ? els.handle.value.trim() : null);
+
+  function writeScript() {
     const game = els.game.value.trim();
     const titles = trendTitles(game);
+    startScriptJob("/api/create/script", {
+      clip: state.clip,
+      game,
+      trend_titles: titles,
+      notes: els.notes.value,
+      target_seconds: Number(els.length.value),
+      watch_clip: els.watch.checked,
+      mode: els.mode.value,
+      format: state.format,
+      channel_handle: chosenHandle(),
+    }, titles);
+  }
+
+  function ownStory() {
+    if (state.format !== "multi" || !state.parts) return [els.script.value];
+    return state.parts.map((p, i) => (i === state.part ? els.script.value : p.script));
+  }
+
+  function describeStory() {
+    const story = ownStory();
+    startScriptJob("/api/create/describe", {
+      clip: state.clip,
+      game: els.game.value.trim(),
+      notes: els.notes.value,
+      mode: els.mode.value,
+      format: state.format,
+      target_seconds: Number(els.length.value),
+      script: story[0],
+      parts: state.format === "multi" ? story : [],
+      channel_handle: chosenHandle(),
+    }, []);
+  }
+
+  async function startScriptJob(url, payload, titles) {
+    showError("");
     try {
-      const { body } = await api("/api/create/script", {
+      const { body } = await api(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          clip: state.clip,
-          game,
-          trend_titles: titles,
-          notes: els.notes.value,
-          target_seconds: Number(els.length.value),
-          watch_clip: els.watch.checked,
-          mode: els.mode.value,
-          format: state.format,
-          channel_handle: HANDLE_RE.test(els.handle.value.trim()) ? els.handle.value.trim() : null,
-        }),
+        body: JSON.stringify(payload),
       });
       state.scriptJob = body.id;
       renderJob(els.scriptJob, body);
@@ -809,10 +854,11 @@
         renderPopups();
         renderReactions();
         els.onScreen.hidden = !r.on_screen;
-        const label = r.mode === "story" ? "Story" : r.watched_clip ? "Gemini saw" : "Gemini assumed";
+        const label = r.own_story ? "Your story" : r.mode === "story" ? "Story" : r.watched_clip ? "Gemini saw" : "Gemini assumed";
         els.onScreen.innerHTML = `<b>${label}:</b> ${esc(r.on_screen)}` +
           (titles.length && r.mode !== "story" ? ` <span class="hint">· used ${titles.length} trending titles</span>` : "");
-        els.scriptJob.innerHTML = `<div class="dl-meta">Written by ${esc(r.model)} · ${r.word_count} words ≈ ${Math.round(r.estimated_seconds)}s · edit anything below</div>`;
+        const by = r.own_story ? `Your words kept · title, tags, stickers and pop-ups by ${esc(r.model)}` : `Written by ${esc(r.model)}`;
+        els.scriptJob.innerHTML = `<div class="dl-meta">${by} · ${r.word_count} words ≈ ${Math.round(r.estimated_seconds)}s · edit anything below</div>`;
         scriptStats();
         saveDraft();
       }, () => {
@@ -837,7 +883,8 @@
     els.onScreen.hidden = !p1.on_screen;
     els.onScreen.innerHTML = `<b>Story:</b> ${esc(p1.on_screen)}`;
     const stat = (p) => `Part ${p.part}: ${p.word_count} words ≈ ${Math.round(p.estimated_seconds)}s`;
-    els.scriptJob.innerHTML = `<div class="dl-meta">Written by ${esc(r.model)} · “${esc(r.story_name)}” · ${r.parts.map(stat).join(" · ")} · switch parts with the tabs</div>`;
+    const by = r.own_story ? `Your words kept · the rest by ${esc(r.model)}` : `Written by ${esc(r.model)}`;
+    els.scriptJob.innerHTML = `<div class="dl-meta">${by} · “${esc(r.story_name)}” · ${r.parts.map(stat).join(" · ")} · switch parts with the tabs</div>`;
     renderParts();
     scriptStats();
     saveDraft();
@@ -1078,6 +1125,7 @@
     });
 
     els.write.addEventListener("click", writeScript);
+    els.describe.addEventListener("click", describeStory);
     els.render.addEventListener("click", renderShort);
     els.banner.addEventListener("click", (e) => {
       if (e.target.id === "cRecheck") loadStatus();
@@ -1087,7 +1135,7 @@
         saveDraft();
         if (key === "script" || key === "length" || key === "rate") scriptStats();
         if (key === "script") { renderPopups(); renderReactions(); }
-        if (key === "game") updateButtons();
+        if (key === "game" || key === "script") updateButtons();
         if (key === "notes") renderIdeas();
         if (key === "script" && els.script.value.trim()) { state.undo = null; els.cleared.hidden = true; }
       });
