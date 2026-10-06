@@ -20,10 +20,11 @@ def add_tracks(settings, folder, *names):
 
 
 def test_mood_helpers():
-    assert music.normalize_mood("Dramatic_Suspense") == "dramatic_suspense"
+    assert music.normalize_mood("Dramatic_Suspense") == "chill_lofi"  # background music stays lo-fi / quirky
     assert music.normalize_mood("chill") == "chill_lofi" and music.normalize_mood("rock") is None
+    assert music.normalize_mood("Funny_Quirky") == "funny_quirky"
     assert music.guess_mood("I accidentally waved at the wrong person. So awkward.") == "funny_quirky"
-    assert music.guess_mood("Suddenly I heard footsteps. The door was locked.") == "dramatic_suspense"
+    assert music.guess_mood("Suddenly I heard footsteps. The door was locked.") == "chill_lofi"
     assert music.guess_mood("Three tips for building a base.") == "chill_lofi"
     assert music.clamp_volume(0.4) == 0.15 and music.clamp_volume(0.05) == 0.12 and music.clamp_volume(0.14) == 0.14
 
@@ -45,17 +46,19 @@ def test_pick_by_mood_uses_the_local_folder(tmp_path):
     assert music.mood_counts(settings)["funny_quirky"]["tracks"] == 2
 
 
-def test_my_music_picks_from_every_folder(tmp_path, monkeypatch):
+def test_my_music_picks_from_the_lofi_and_quirky_folders(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
+    add_tracks(settings, "dramatic", "Suspended Tension.mp3")
     with pytest.raises(music.MusicError, match="No music files"):
-        music.pick(settings, "mine")
+        music.pick(settings, "mine")  # music/dramatic is never picked automatically
     add_tracks(settings, "funny", "Quirky Plucks.mp3")
-    add_tracks(settings, "dramatic", "Suspended Tension.mp3", "Sombra Creeping_2.mp3")
+    add_tracks(settings, "chill", "Rainy_Desk.mp3", "Sombra Creeping_2.mp3")
     picked = {music.pick(settings, "mine").video_id for _ in range(60)}
-    assert picked == {"local:funny/Quirky Plucks.mp3", "local:dramatic/Suspended Tension.mp3",
-                      "local:dramatic/Sombra Creeping_2.mp3"}
-    t = music.pick(settings, "mine", exclude={"local:dramatic/Suspended Tension.mp3", "local:funny/Quirky Plucks.mp3"})
-    assert t.mood == "dramatic_suspense" and t.title == "Sombra Creeping 2"
+    assert picked == {"local:funny/Quirky Plucks.mp3", "local:chill/Rainy_Desk.mp3", "local:chill/Sombra Creeping_2.mp3"}
+    t = music.pick(settings, "mine", exclude={"local:chill/Rainy_Desk.mp3", "local:funny/Quirky Plucks.mp3"})
+    assert t.mood == "chill_lofi" and t.title == "Sombra Creeping 2"
+    assert set(music.mood_counts(settings)) == {"funny_quirky", "chill_lofi"}
+    assert music.pick(settings, "mood", "dramatic_suspense").video_id.startswith("local:chill/")
 
     monkeypatch.setattr(music, "pick_track", lambda s, source, exclude=None: f"youtube:{source}")
     assert music.pick(settings, "random") == "youtube:random"
@@ -65,6 +68,7 @@ def test_my_music_picks_from_every_folder(tmp_path, monkeypatch):
 def test_empty_mood_folder_falls_back_to_a_youtube_channel(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     lib = SimpleNamespace(channels=[{"id": "UCncs", "title": "NoCopyrightSounds"},
+                                    {"id": "UCaudio", "title": "Audio Library"},
                                     {"id": "UCchill", "title": "Chillhop Music"}], tracks=lambda: ["x"])
     monkeypatch.setattr(music, "get_library", lambda s: lib)
     asked = []
@@ -77,15 +81,18 @@ def test_empty_mood_folder_falls_back_to_a_youtube_channel(tmp_path, monkeypatch
     monkeypatch.setattr(music, "pick_track", fake_pick)
     t = music.pick_by_mood(settings, "chill_lofi")
     assert asked == ["UCchill"] and t.fallback and t.mood == "chill_lofi" and not t.local
+    music.pick_by_mood(settings, "funny_quirky")
+    assert asked == ["UCchill", "UCchill"]  # never the EDM / mixed-genre channels
 
 
 def test_render_picks_music_by_mood(tmp_path, monkeypatch):
     settings = make_settings(tmp_path)
     add_tracks(settings, "dramatic", "tension.mp3")
+    add_tracks(settings, "chill", "lofi.mp3")
     req = shorts.RenderRequest(clip="c.mp4", game="g", script="Suddenly the lights went out. Footsteps.",
-                               music_source="mood")
-    track = shorts.resolve_music(settings, req, lambda f, m: None)  # no mood given: guessed from the script
-    assert track.filename == "dramatic/tension.mp3"
+                               music_source="mood", music_mood="dramatic_suspense")
+    track = shorts.resolve_music(settings, req, lambda f, m: None)
+    assert track.filename == "chill/lofi.mp3"  # a suspense story still gets lo-fi
     pinned = shorts.RenderRequest(clip="c.mp4", game="g", script="hi there you", music_source="mood",
                                   music_track="local:dramatic/tension.mp3", music_mood="chill_lofi")
     assert shorts.resolve_music(settings, pinned, lambda f, m: None).video_id == "local:dramatic/tension.mp3"

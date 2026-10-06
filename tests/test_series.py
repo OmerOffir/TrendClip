@@ -42,7 +42,9 @@ def test_spoken_handle_and_ctas():
     assert script_writer.spoken_handle("@side_quest.logic") == "side quest logic"
     p1, p2 = script_writer.series_ctas("@SideQuestLogic")
     assert p1 == "Sub to Side Quest Logic for Part 2 dropping tomorrow!"
-    assert p2.startswith("Sub for daily side quest stories")
+    assert p2 == "Hit that subscribe button for daily side quest stories!"
+    assert script_writer.series_ctas("@SideQuestLogic", "x")[1] in [
+        c.format(name="Side Quest Logic") for c in script_writer.FOLLOW_CTAS]
 
 
 def test_write_series_adds_ctas_titles_and_tags(tmp_path):
@@ -68,9 +70,11 @@ def test_write_series_adds_ctas_titles_and_tags(tmp_path):
     p1, p2 = series.parts
     assert series.story_name == "TheWrongUbers" and len(series.series_id) == 10
     assert "`" not in p1.script
-    assert p1.script.endswith("turned around. Sub to Side Quest Logic for Part 2 dropping tomorrow!")
+    assert p1.script.endswith("turned around. What would you do? Sub to Side Quest Logic for Part 2 dropping tomorrow!")
     assert "Follow for part two" not in p1.script  # Gemini's own CTA is replaced by ours
-    assert p2.script.endswith("Sub for daily side quest stories and drop your crazy stories in the comments!")
+    follow = script_writer.series_ctas("@SideQuestLogic", "So the driver turned around. It was my dad. He drives Uber now.")[1]
+    assert p2.script.endswith(f"He drives Uber now. Ever happened to you? {follow}")
+    assert p1.question == "What would you do?"
     assert p1.title == "I Got In The Wrong Uber (Part 1)" and p2.title == "It Was My DAD (Part 2)"
     assert p1.hashtags[:2] == ["#part1", "#storytime"] and p1.hashtags[-1] == "#shorts"
     assert p2.hashtags[0] == "#part2" and "#part1" not in p2.hashtags

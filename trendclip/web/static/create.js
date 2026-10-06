@@ -56,6 +56,7 @@
     endCard: $("cEndCard"),
     pinned: $("cPinned"),
     pinnedField: $("cPinnedField"),
+    pinnedLabel: $("cPinnedLabel"),
     reactions: $("cReactions"),
     stickers: $("cStickers"),
     ctaSticker: $("cCtaSticker"),
@@ -71,7 +72,7 @@
     moodField: $("cMoodField"),
     moodHint: $("cMoodHint"),
   };
-  const MOOD_FOLDER = { funny_quirky: "funny", dramatic_suspense: "dramatic", chill_lofi: "chill" };
+  const MOOD_FOLDER = { funny_quirky: "funny", chill_lofi: "chill" };
   const MOOD_EMOJI = { funny: "😂", awkward: "😬", shocked: "😱", approve: "👍", reject: "🙅", proud: "🥂", pain: "🙂",
     nope: "🚪", innocent: "🙋", crazy: "🤪", embarrassed: "🤦", suspicious: "🤨" };
 
@@ -164,7 +165,10 @@
   function renderParts() {
     const multi = state.format === "multi";
     els.series.hidden = !multi;
-    els.pinnedField.hidden = !multi || state.part !== 0;
+    els.pinnedField.hidden = multi && state.part !== 0;
+    els.pinnedLabel.innerHTML = multi
+      ? "Pinned comment for Part 1 <em>(shown in the Upload tab; links to Part 2 once it's uploaded)</em>"
+      : "Pinned comment <em>(Gemini writes it; copy or post it from the Upload tab and pin it right after uploading)</em>";
     els.handleField.hidden = !multi;
     if (!multi) return;
     for (const b of els.partTabs.querySelectorAll("[data-part]")) {
@@ -174,8 +178,8 @@
       b.dataset.empty = words < 3 ? "1" : "";
     }
     els.partHint.textContent = state.part === 0
-      ? "Part 1 ends on the cliffhanger, then the call to action \"Sub to … for Part 2 dropping tomorrow!\". Title gets (Part 1), hashtags #part1."
-      : "Part 2 picks up the cliffhanger and ends with \"Sub for daily side quest stories and drop your crazy stories in the comments!\". It continues the gameplay where Part 1 stopped.";
+      ? "Part 1 ends on the cliffhanger, a short question for the comments, then \"Sub to … for Part 2 dropping tomorrow!\". Title gets (Part 1), hashtags #part1."
+      : "Part 2 picks up the cliffhanger and ends with a short question for the comments, then a follow line (e.g. \"Hit that subscribe button for daily side quest stories!\"). It continues the gameplay where Part 1 stopped.";
   }
 
   function switchPart(i) {
@@ -502,6 +506,7 @@
     els.tags.value = (r.hashtags || []).join(" ");
     els.titleCard.value = r.title_card || "";
     els.endCard.value = r.end_card || "";
+    els.pinned.value = r.pinned_comment || "";
     state.popups = r.popups || [];
     state.reactions = r.reactions || [];
     setSelect(els.voice, r.voice);
@@ -663,8 +668,8 @@
       ? Object.values(state.moods).map((x) => `${x.folder}: ${x.tracks}`).join(" · ")
       : "";
     els.moodHint.innerHTML = m && !m.tracks
-      ? `<b>${esc(m.folder)}</b> is empty, so a matching free YouTube track is used. Drop MP3 / M4A files in that folder to use your own. <span class="muted">(${esc(counts)})</span>`
-      : `Random track from <b>${esc(m ? m.folder : `music/${MOOD_FOLDER[els.musicMood.value]}`)}</b>; the mood is set by Gemini when it writes the script. <span class="muted">(${esc(counts)})</span>`;
+      ? `<b>${esc(m.folder)}</b> is empty, so a free Chillhop lo-fi track is used. Drop MP3 / M4A files in that folder to use your own. <span class="muted">(${esc(counts)})</span>`
+      : `Random track from <b>${esc(m ? m.folder : `music/${MOOD_FOLDER[els.musicMood.value]}`)}</b>; the mood is set by Gemini when it writes the script. Background music stays chill lo-fi / quirky (music/dramatic is not used) at 12-15%. <span class="muted">(${esc(counts)})</span>`;
   }
 
   function setMood(mood) {
@@ -797,6 +802,7 @@
         els.desc.value = r.description;
         els.tags.value = r.hashtags.join(" ");
         els.titleCard.value = r.title_card || "";
+        els.pinned.value = r.pinned_comment || "";
         state.popups = r.popups || [];
         state.reactions = r.reactions || [];
         setMood(r.music_mood);
@@ -898,6 +904,7 @@
           hashtags: hashtags(els.tags.value),
           title_card: els.titleCard.value.trim(),
           end_card: els.endCard.value.trim(),
+          pinned_comment: els.pinned.value.trim(),
           popups: state.popups.filter((p) => inScript(p.word)),
           reactions: state.reactions.filter((r) => inScript(r.word)),
         }),

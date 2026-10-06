@@ -82,7 +82,7 @@ class Settings(BaseModel):
     assets_dir: Path = PROJECT_ROOT / "assets"
     # Your own reaction / subscribe stickers (PNG, GIF, WebP, JPG); scanned and tagged automatically.
     stickers_dir: Path = PROJECT_ROOT / "stickers"
-    # Your own background music, sorted by story mood: music/funny, music/dramatic, music/chill.
+    # Your own background music, sorted by story mood: music/funny and music/chill (lo-fi / quirky only).
     music_library_dir: Path = PROJECT_ROOT / "music"
 
     # Create tab: Gemini writes the script, edge-tts speaks it.

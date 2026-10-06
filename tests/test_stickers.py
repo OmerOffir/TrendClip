@@ -98,7 +98,7 @@ def test_plan_places_reactions_and_cta_without_overlaps(tmp_path):
     words = words_of(text, 0.4)
     popup = va.Overlay(tmp_path / "p.png", 4.0, 6.0)  # a pop-up in the middle of the screen
     overlays, used = stickers.plan(settings, lib(), words, [Reaction(word="silence", mood="awkward")], cta="part2",
-                                   popups=[popup], title_seconds=3.0, end_seconds=3.5, seed="x")
+                                   popups=[popup], title_seconds=3.0, end_seconds=3.5, seed="x", pace=False)
     cta = next(o for o in overlays if o.pulse)
     sub = stickers.find_cta_start(words)
     assert cta.start == pytest.approx(words[sub].start - 0.05) and cta.center == stickers.CTA_CENTER
@@ -116,6 +116,36 @@ def test_plan_places_reactions_and_cta_without_overlaps(tmp_path):
         if o.start < popup.end and popup.start < o.end:
             assert not stickers._hits(rect, stickers._rect(popup.xy(), popup.box, popup.box))
     assert used == ["hidden.png", "harold.png", "dafoe.png"]
+
+
+def test_plan_keeps_something_new_on_screen_every_3_to_5_seconds(tmp_path):
+    settings = make_settings(tmp_path)
+    words = words_of(" ".join(f"plain{i}" for i in range(100)) + " Follow for more!", 0.3)  # ~31 s, no cues
+    popups = [va.Overlay(tmp_path / "p.png", s, s + 2.0) for s in (4.0, 8.0, 20.0)]
+    overlays, _ = stickers.plan(settings, lib()[:3], words, [], cta="subscribe", popups=popups,
+                                title_seconds=3.0, seed="pace")
+    cta = next(o for o in overlays if o.pulse)
+    starts = sorted([p.start for p in popups] + [o.start for o in overlays if not o.pulse] + [cta.start])
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert max(gaps) <= stickers.PACE[1] + 0.3 and min(gaps) >= 3.0
+    fillers = [o for o in overlays if not o.pulse]
+    assert len(fillers) >= 3 and all(o.end <= cta.start for o in fillers)
+    off, _ = stickers.plan(settings, lib()[:3], words, [], cta="subscribe", popups=popups, title_seconds=3.0, pace=False)
+    assert [o for o in off if not o.pulse] == []
+
+
+def test_cta_sticker_starts_with_the_cta_sentence_after_the_question(tmp_path):
+    settings = make_settings(tmp_path)
+    words = words_of("We waited by the door for a long time. He slowly looked back at me. "
+                     "Ever done this? Hit that subscribe button for daily side quests!")
+    texts = [w.text for w in words]
+    start = stickers.find_cta_start(words)
+    assert words[start].text == "Hit"
+    overlays, _ = stickers.plan(settings, lib(), words, [], cta="part2", seed="q", pace=False)
+    cta = next(o for o in overlays if o.pulse)
+    assert cta.start == pytest.approx(words[start].start - 0.05)
+    cliff = next(o for o in overlays if not o.pulse)
+    assert cliff.start == pytest.approx(words[texts.index("He")].start - 0.05)  # the cliffhanger, not the question
 
 
 def test_plan_falls_back_to_keywords_and_builtin_cta(tmp_path):

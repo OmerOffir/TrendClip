@@ -69,39 +69,32 @@ class DownloadedTrack(BaseModel):
 # --------------------------------------------------------------------------- story moods
 
 MOODS = ("funny_quirky", "dramatic_suspense", "chill_lofi")
+# Background music stays chill lo-fi / quirky: automatic picks never use music/dramatic (its tracks can
+# still be pinned by hand) and dramatic stories get chill lo-fi.
+BACKGROUND_MOODS = ("funny_quirky", "chill_lofi")
 MOOD_FOLDERS = {"funny_quirky": "funny", "dramatic_suspense": "dramatic", "chill_lofi": "chill"}
 MOOD_LABELS = {"funny_quirky": "Funny / quirky", "dramatic_suspense": "Dramatic / suspense", "chill_lofi": "Chill lo-fi"}
 # Which free music channels to fall back on while a mood folder is empty.
-MOOD_CHANNELS = {"funny_quirky": ("audio library",), "dramatic_suspense": ("nocopyrightsounds", "audio library"),
-                 "chill_lofi": ("chillhop",)}
+MOOD_CHANNELS = {"funny_quirky": ("chillhop",), "dramatic_suspense": ("chillhop",), "chill_lofi": ("chillhop",)}
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".aac", ".wav", ".ogg", ".opus", ".flac"}
 VOLUME_RANGE = (0.12, 0.15)  # 12-15%: always clearly under the voice
 LOCAL_ID = re.compile(r"^local:(funny|dramatic|chill)/([^/\\]{1,120})$")
 
-_MOOD_WORDS = {
-    "dramatic_suspense": r"\b(suddenly|scream\w*|dark|blood|police|missing|vanish\w*|secret|creep\w*|haunt\w*|"
-                         r"ghost|shadow|footsteps|knock\w*|terrif\w*|betray\w*|lied|truth|never came back|"
-                         r"twist|mystery|strange|disappear\w*|locked|warning)\b",
-    "funny_quirky": r"\b(awkward|embarrass\w*|accidentally|weird|ridiculous|hilarious|laugh\w*|oops|"
-                    r"cringe|prank\w*|wrong (person|house|room)|my (mom|dad|grandma)|goat|chicken|pants)\b",
-}
+_FUNNY_WORDS = (r"\b(awkward|embarrass\w*|accidentally|weird|ridiculous|hilarious|laugh\w*|oops|"
+                r"cringe|prank\w*|wrong (person|house|room)|my (mom|dad|grandma)|goat|chicken|pants)\b")
 
 
 def normalize_mood(value: str | None) -> str | None:
+    """A background mood (funny_quirky or chill_lofi); 'dramatic' becomes chill_lofi."""
     value = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
-    if value in MOODS:
-        return value
-    for mood_id, folder in MOOD_FOLDERS.items():
-        if value and (value.startswith(folder) or folder in value):
-            return mood_id
-    return None
+    mood_id = value if value in MOODS else next(
+        (m for m, folder in MOOD_FOLDERS.items() if value and folder in value), None)
+    return "chill_lofi" if mood_id == "dramatic_suspense" else mood_id
 
 
 def guess_mood(text: str) -> str:
     """Keyword guess for scripts Gemini didn't classify (typed by hand)."""
-    scores = {m: len(re.findall(p, text, re.IGNORECASE)) for m, p in _MOOD_WORDS.items()}
-    best = max(scores, key=scores.get)
-    return best if scores[best] >= 2 else "chill_lofi"
+    return "funny_quirky" if len(re.findall(_FUNNY_WORDS, text, re.IGNORECASE)) >= 2 else "chill_lofi"
 
 
 def clamp_volume(volume: float) -> float:
@@ -122,7 +115,7 @@ def local_tracks(settings: Settings, mood_id: str) -> list[Path]:
 
 def mood_counts(settings: Settings) -> dict[str, dict]:
     return {m: {"folder": f"{settings.music_library_dir.name}/{MOOD_FOLDERS[m]}", "label": MOOD_LABELS[m],
-                "tracks": len(local_tracks(settings, m))} for m in MOODS}
+                "tracks": len(local_tracks(settings, m))} for m in BACKGROUND_MOODS}
 
 
 def _local_track(settings: Settings, path: Path, mood_id: str) -> DownloadedTrack:
@@ -145,7 +138,7 @@ def track_path(settings: Settings, track: DownloadedTrack) -> Path:
 
 
 def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = None) -> DownloadedTrack:
-    """Random track from music/<funny|dramatic|chill>; a matching YouTube channel while the folder is empty."""
+    """Random track from music/<funny|chill>; Chillhop while the folder is empty."""
     mood_id = normalize_mood(mood_id) or "chill_lofi"
     files = local_tracks(settings, mood_id)
     if files:
@@ -162,10 +155,10 @@ def pick_by_mood(settings: Settings, mood_id: str, exclude: set[str] | None = No
 
 
 def pick_local(settings: Settings, exclude: set[str] | None = None) -> DownloadedTrack:
-    """Random track from any of the music/ mood folders."""
-    files = [(p, m) for m in MOODS for p in local_tracks(settings, m)]
+    """Random track from music/funny or music/chill."""
+    files = [(p, m) for m in BACKGROUND_MOODS for p in local_tracks(settings, m)]
     if not files:
-        raise MusicError(f"No music files in {settings.music_library_dir.name}/funny, /dramatic or /chill yet")
+        raise MusicError(f"No music files in {settings.music_library_dir.name}/funny or /chill yet")
     fresh = [(p, m) for p, m in files if f"local:{p.parent.name}/{p.name}" not in (exclude or set())]
     path, mood_id = random.choice(fresh or files)
     return _local_track(settings, path, mood_id)

@@ -124,7 +124,7 @@
         <label class="field"><span>End banner <em>(top banner over the last 3.5 seconds, e.g. the call to action; empty = none)</em></span>
           <input id="cEndCard" type="text" maxlength="60" placeholder="e.g. PART 2 TOMORROW · SUB @SideQuestLogic" />
         </label>
-        <label class="field" id="cPinnedField" hidden><span>Pinned comment for Part 1 <em>(shown in the Upload tab; links to Part 2 once it's uploaded)</em></span>
+        <label class="field" id="cPinnedField"><span id="cPinnedLabel">Pinned comment <em>(Gemini writes it; copy or post it from the Upload tab and pin it right after uploading)</em></span>
           <textarea id="cPinned" rows="2" maxlength="500"></textarea>
         </label>
         <div class="field">
@@ -201,8 +201,8 @@
             <label class="field field-grow">
               <span>Background music</span>
               <select id="cMusic">
-                <option value="mood" selected>By story mood (music/ folders)</option>
-                <option value="mine">My music (any music/ folder)</option>
+                <option value="mood" selected>By story mood (music/funny or music/chill)</option>
+                <option value="mine">My music (music/funny + music/chill)</option>
                 <option value="none">No music</option>
                 <option value="random">Random (any channel)</option>
               </select>
@@ -211,7 +211,6 @@
               <span>Story mood <em>(Gemini picks it)</em></span>
               <select id="cMusicMood">
                 <option value="funny_quirky">😂 Funny / quirky</option>
-                <option value="dramatic_suspense">😱 Dramatic / suspense</option>
                 <option value="chill_lofi" selected>☕ Chill lo-fi</option>
               </select>
             </label>
@@ -338,6 +337,8 @@
           <div id="ytSeries" class="field" hidden>
             <span>Story series</span>
             <div class="series-links" id="ytSeriesLinks"></div>
+          </div>
+          <div id="ytCommentBox" class="field" hidden>
             <label class="field"><span id="ytCommentLabel">Pinned comment</span>
               <textarea id="ytComment" rows="3" maxlength="2000"></textarea>
             </label>

@@ -110,7 +110,9 @@ SLOTS = {  # centres of the reaction sticker positions
 }
 CTA_CENTER = (WIDTH // 2, 1490)
 REACTION_SECONDS = 1.9
-MIN_GAP = 4.0
+MIN_GAP = 3.0
+PACE = (3.0, 5.0)  # something new pops up every 3-5 s: reaction stickers fill longer gaps between pop-ups
+FILLER_MOODS = ("funny", "suspicious", "shocked", "awkward", "crazy", "innocent")
 
 
 class StickerInfo(BaseModel):
@@ -429,11 +431,13 @@ def _clean(text: str) -> str:
 
 
 def find_cta_start(words: list) -> int | None:
-    """Index of the first word of the closing call to action ('Sub to…', 'Subscribe…', 'Follow…')."""
+    """Index of the first word of the closing call-to-action sentence ('Sub to…', 'Hit that subscribe…',
+    'Follow…'): the last sentence that says sub / subscribe / follow, within the last 22 words."""
     tail = max(0, len(words) - 22)
-    for i in range(tail, len(words)):
+    for i in range(len(words) - 1, tail - 1, -1):
         if _clean(words[i].text) in ("sub", "subscribe", "follow"):
-            return i
+            start = sentence_start(words, i)
+            return start if i - start <= 4 else i  # "Hit that subscribe…", not a whole unpunctuated script
     return None
 
 
@@ -475,7 +479,7 @@ def pick(lib: list[StickerInfo], mood: str, used: set[str], rng: random.Random) 
         if options:
             fresh = [s for s in options if s.filename not in used] or options
             return rng.choice(fresh)
-    fresh = [s for s in reactions if s.filename not in used]
+    fresh = [s for s in reactions if s.filename not in used] or reactions
     return rng.choice(fresh) if fresh else None
 
 
@@ -491,9 +495,11 @@ def plan(
     title_seconds: float = 0.0,
     end_seconds: float = 0.0,
     seed: str = "",
-    max_reactions: int = 3,
+    max_reactions: int = 5,
+    pace: bool = True,
 ) -> tuple[list[Overlay], list[str]]:
-    """Sticker overlays for one Short: (overlays, sticker file names used)."""
+    """Sticker overlays for one Short: (overlays, sticker file names used). With `pace`, extra reactions
+    fill every stretch longer than 5 s without a new pop-up or sticker."""
     if not words:
         return [], []
     total = words[-1].end + 0.3
@@ -536,8 +542,10 @@ def plan(
             cursor = hit + 1
     if not moments and auto:
         moments = keyword_moments(words)
-    if cta == "part2" and cta_index is not None:  # the cliffhanger: the sentence right before the CTA
+    if cta == "part2" and cta_index is not None:  # the cliffhanger: the sentence before the question + CTA
         cliff = sentence_start(words, max(cta_index - 1, 0))
+        if cliff > 0 and words[cta_index - 1].text.endswith("?"):
+            cliff = sentence_start(words, cliff - 1)
         if not any(cta_time - 4.0 <= words[i].start < cta_time for i, _ in moments):
             moments.append((cliff, "shocked"))
     moments.sort()
@@ -545,18 +553,12 @@ def plan(
     stop = cta_time if cta_time is not None else total
     placed, last = 0, -1e9
     slot_names = list(SLOTS)
-    for index, mood in moments:
-        if placed >= max_reactions + (1 if cta == "part2" else 0):
-            break
-        start = max(words[index].start - 0.05, 0.0)
-        if start < 0.8 or start - last < MIN_GAP:
-            continue
-        end = min(start + REACTION_SECONDS, stop - 0.05)
-        if end - start < 1.0:
-            continue
+
+    def place(start: float, end: float, mood: str) -> bool:
+        nonlocal placed, last
         info = pick(lib, mood, set(used), rng)
         if info is None:
-            break
+            return False
         order = slot_names[placed % len(slot_names):] + slot_names[: placed % len(slot_names)]
         for name in order:
             center = SLOTS[name]
@@ -570,6 +572,57 @@ def plan(
                 used.append(info.filename)
                 placed += 1
                 last = start
-                break
+                return True
+        return False
+
+    for index, mood in moments:
+        if placed >= max_reactions + (1 if cta == "part2" else 0):
+            break
+        start = max(words[index].start - 0.05, 0.0)
+        if start < 0.8 or start - last < MIN_GAP:
+            continue
+        end = min(start + REACTION_SECONDS, stop - 0.05)
+        if end - start < 1.0:
+            continue
+        if not any(s.category == "reaction" for s in lib):
+            break
+        place(start, end, mood)
+
+    if pace and auto and any(s.category == "reaction" for s in lib):
+        _fill_gaps(words, moments, [o.start for o in popups or []] + [o.start for o in out],
+                   max(title_seconds, words[0].start), stop, place)
     out.sort(key=lambda o: o.start)
     return out, list(dict.fromkeys(used))
+
+
+def _fill_gaps(words: list, moments: list[tuple[int, str]], starts: list[float], begin: float, stop: float,
+               place) -> None:
+    """Walk the timeline and drop a reaction about 4 s after the last visual whenever the next one is
+    more than 5 s away. Fillers start on a spoken word, using the nearest keyword mood if there is one."""
+    low, high = PACE
+    events = sorted(starts)
+    prev, n = begin, 0
+    while True:
+        nxt = next((t for t in events if t > prev + 0.01), stop)
+        if nxt - prev <= high:
+            if nxt >= stop:
+                return
+            prev = nxt
+            continue
+        target = prev + min((low + high) / 2, (nxt - prev) / 2)  # a 6 s gap is split 3 + 3, not 4 + 2
+        options = [i for i, w in enumerate(words) if prev + low <= w.start <= min(prev + high, stop - 1.1)]
+        if not options:
+            later = [i for i, w in enumerate(words) if w.start >= prev + low]
+            if not later or words[later[0]].start > stop - 1.1:
+                return
+            options = later[:1]
+        index = min(options, key=lambda i: abs(words[i].start - target))
+        start = max(words[index].start - 0.05, 0.0)
+        end = min(start + REACTION_SECONDS, nxt - 0.1, stop - 0.05)
+        near = [m for i, m in moments if abs(i - index) <= 3]
+        mood = near[0] if near else FILLER_MOODS[n % len(FILLER_MOODS)]
+        if end - start >= 1.0 and place(start, end, mood):
+            events.append(start)
+            events.sort()
+            n += 1
+        prev = start

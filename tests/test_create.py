@@ -1,3 +1,4 @@
+import re
 import time
 from types import SimpleNamespace
 
@@ -93,7 +94,10 @@ def test_write_script_watches_clip_and_cleans_output(tmp_path, monkeypatch):
     assert result.watched_clip and client.files.deleted == ["files/1"] and not preview.exists()
     prompt = client.models.contents[-1]
     assert "Game: Minecraft" in prompt and "Top 10 jumps" in prompt and "funny" in prompt and "20 seconds" in prompt
-    assert result.script == "This jump should be impossible. Watch the timing! Follow for more."
+    cta = script_writer.follow_cta("@SideQuestLogic", "This jump should be impossible. Watch the timing!")
+    assert result.script == f"This jump should be impossible. Watch the timing! What would you do? {cta}"
+    assert "Follow for more" not in result.script  # Gemini's own CTA is replaced by ours
+    assert result.question == "What would you do?" and "What would you do?" in result.pinned_comment
     assert result.title == "Impossible Minecraft Jump"
     assert result.hashtags == ["#minecraft", "#parkour", "#shorts"]
 
@@ -129,7 +133,7 @@ def test_overloaded_model_retries_then_falls_back(monkeypatch):
 
 def test_script_never_outlasts_the_clip(tmp_path):
     long_story = " ".join(f"Sentence number {i} goes on and on." for i in range(60))  # 420 words
-    short_story = "A short hook. " + " ".join(f"Beat {i} happens." for i in range(40))  # 123 words
+    short_story = "A short hook. " + " ".join(f"Beat {i} happens." for i in range(36))  # 111 words
     calls = []
 
     class Models:
@@ -138,14 +142,17 @@ def test_script_never_outlasts_the_clip(tmp_path):
             if config.response_schema is script_writer.Shortened:
                 return SimpleNamespace(parsed=script_writer.Shortened(script=short_story), text="")
             return SimpleNamespace(parsed=script_writer.GeminiShort(
-                on_screen="x", hook="x", script=long_story, title="t", description="d", hashtags=[]), text="")
+                on_screen="x", hook="Sentence number 0 goes on and on.", script=long_story, title="t",
+                description="d", hashtags=[]), text="")
 
     client = SimpleNamespace(models=Models())
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=75,
                                         format="long", max_seconds=40, client=client)
     assert "about 40 seconds" in calls[0]  # the target was capped to the clip
-    assert "AT MOST 132 words" in calls[1]  # 40 s * 3.3 words/s
-    assert result.script == short_story and result.word_count <= 132
+    cta = script_writer.follow_cta("@SideQuestLogic", long_story)
+    budget = 132 - 4 - len(cta.split())  # 40 s * 3.3 words/s, minus the closing question and the CTA
+    assert f"AT MOST {budget} words" in calls[1]
+    assert result.script == f"{short_story} What would you do? {cta}" and result.word_count <= 132
 
     class Stubborn(Models):
         def generate_content(self, model, contents, config):
@@ -156,7 +163,47 @@ def test_script_never_outlasts_the_clip(tmp_path):
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=30,
                                         max_seconds=60, client=SimpleNamespace(models=Stubborn()))
     assert result.word_count <= script_writer.max_words(30) + 5  # cut at a sentence end
-    assert result.script.endswith("and on.")
+    assert re.search(r"and on\. What would you do\? .+!$", result.script)
+    assert result.script.split("? ", 1)[1] in [c.format(name="Side Quest Logic") for c in script_writer.FOLLOW_CTAS]
+
+
+def test_hook_first_and_short_closing_question():
+    assert script_writer.clean_question("ever done this") == "Ever done this?"
+    assert script_writer.clean_question('"What would YOU do?"') == "What would YOU do?"
+    assert script_writer.clean_question("Have you ever had a coworker this weird?") is None  # 6+ words
+    assert script_writer.clean_question("Why?") is None
+    assert script_writer.split_question("A thing. Then more. Ever done this?") == ("A thing. Then more.", "Ever done this?")
+    assert script_writer.split_question("Who was it? I never found out.") == ("Who was it? I never found out.", "")
+
+    hook = "I accidentally committed a crime at my office."
+    assert script_writer.lead_with_hook(f"{hook} It started with lunch.", hook).startswith(hook)
+    slow = f"So this happened last week. {hook} It started with lunch."
+    assert script_writer.lead_with_hook(slow, hook) == f"{hook} It started with lunch."  # slow opener dropped
+    assert script_writer.lead_with_hook("It started with lunch.", hook) == f"{hook} It started with lunch."
+    assert script_writer.clean_pinned("Who else? https://x.y #storytime", "Ever done this?") == "Who else?"
+    assert script_writer.clean_pinned("", "Ever done this?").startswith("Ever done this?")
+    for rule in ("HOOK", "curiosity gap", "I once", "question", "pinned_comment", "every 3 to 5 seconds"):
+        assert rule in script_writer.SYSTEM_INSTRUCTION
+    assert "about 11 pop-ups" in script_writer.build_prompt("GTA V", 45, [], "", False, "story")
+
+
+def test_gemini_question_replaces_its_long_ending(tmp_path):
+    class Models:
+        def generate_content(self, model, contents, config):
+            return SimpleNamespace(parsed=script_writer.GeminiShort(
+                on_screen="x", hook="My boss hired my ex.", title="t", description="d", hashtags=[],
+                script="Hi guys. My boss hired my ex. Now we share a desk. Have you ever had a boss do something this crazy?",
+                question="Worst boss story?", pinned_comment="My desk is a war zone now. Worst boss you ever had?"),
+                text="")
+
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story",
+                                        client=SimpleNamespace(models=Models()))
+    cta = script_writer.follow_cta("@SideQuestLogic", "Hi guys. My boss hired my ex. Now we share a desk.")
+    assert result.script == f"My boss hired my ex. Now we share a desk. Worst boss story? {cta}"
+    assert 9 <= len(cta.split()) <= 12  # about 3-3.5 s of speech
+    assert {script_writer.follow_cta("@SideQuestLogic", f"seed {i}") for i in range(40)} == {
+        c.format(name="Side Quest Logic") for c in script_writer.FOLLOW_CTAS}
+    assert result.question == "Worst boss story?" and result.pinned_comment.endswith("Worst boss you ever had?")
 
 
 def test_write_script_needs_a_key(tmp_path, monkeypatch):

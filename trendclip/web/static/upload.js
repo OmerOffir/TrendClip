@@ -46,6 +46,7 @@
     ytSeries: $("ytSeries"),
     ytSeriesLinks: $("ytSeriesLinks"),
     ytComment: $("ytComment"),
+    ytCommentBox: $("ytCommentBox"),
     ytCommentLabel: $("ytCommentLabel"),
     ytCommentCopy: $("ytCommentCopy"),
     ytCommentPost: $("ytCommentPost"),
@@ -222,7 +223,7 @@
     const info = s && s.series;
     els.ytSeries.hidden = !info;
     els.ytAfterPrev.hidden = !(info && info.part > 1 && prevPartTime());
-    if (!info) return;
+    if (!info) return renderComment(s);
     const rows = info.siblings.map((p) => {
       const me = p.filename === s.filename;
       const status = p.youtube_url
@@ -231,13 +232,21 @@
       return `<div>${me ? "<b>" : ""}Part ${p.part}${me ? " (this one)</b>" : ""}: ${status}</div>`;
     });
     els.ytSeriesLinks.innerHTML = `<div><b>“${esc(info.story_name)}”</b> · Part ${info.part} of ${info.total} · ${esc(info.handle)}</div>${rows.join("")}`;
-    els.ytCommentLabel.textContent = info.part < info.total ? "Pinned comment (teases / links Part 2)" : "Pinned comment (links back to Part 1)";
-    if (document.activeElement !== els.ytComment) els.ytComment.value = info.pinned_comment;
+    renderComment(s, info);
+  }
+
+  function renderComment(s, info = null) {
+    const text = info ? info.pinned_comment : (s && s.pinned_comment) || "";
+    els.ytCommentBox.hidden = !text;
+    if (!text) return;
+    els.ytCommentLabel.textContent = !info ? "Pinned comment (pin it right after uploading, on every platform)"
+      : info.part < info.total ? "Pinned comment (teases / links Part 2)" : "Pinned comment (links back to Part 1)";
+    if (document.activeElement !== els.ytComment) els.ytComment.value = text;
     const posted = s.uploads && s.uploads.youtube && s.uploads.youtube.comment;
     els.ytCommentHint.innerHTML = (posted
       ? `Posted ${esc(fmtWhen(new Date(posted.posted_at)))} · <a href="${esc(posted.url)}" target="_blank" rel="noopener">open comment</a>. `
       : "") + "YouTube's API can't pin comments: open the video, tap <b>⋮</b> on your comment → <b>Pin</b>. " +
-      (info.part < info.total ? "Once the next part is uploaded, this comment switches to its link." : "");
+      (info && info.part < info.total ? "Once the next part is uploaded, this comment switches to its link." : "");
   }
 
   function prevPartTime() {

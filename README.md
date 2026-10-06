@@ -169,35 +169,61 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
 1. **Pick a background clip** (or press **Create Short** on a clip in the Trends tab).
 2. **Write script with Gemini:** Gemini watches the part of the clip the Short uses (a small 480p
    copy is uploaded and deleted afterwards), reads the game's current trending video titles, and
-   returns a hook + voiceover sized to the chosen length, a title, a description and hashtags. Every
-   field stays editable, and you can also type a script without Gemini.
+   returns a hook + voiceover sized to the chosen length, a title, a description, hashtags and a
+   **pinned comment**. Every field stays editable, and you can also type a script without Gemini.
+   - **Hook (first 3 seconds):** the first sentence is always a high-stakes, surprising line or a bold
+     claim with a curiosity gap ("I accidentally committed a crime at my office."). Slow openers
+     ("So…", "I once…", "One day…", "Hey guys") are banned in the prompt. If Gemini still puts one
+     before its hook, the app drops it, and if the hook isn't spoken at all, the app puts it first.
+   - **Closing question:** the story ends with a punchy question of 2-5 words that invites viewers
+     to comment their own story ("Ever done this?", "Worst boss story?"). The app enforces it: a
+     longer final question is swapped for Gemini's short one, and *"What would you do?"* is the
+     fallback.
+   - **Follow CTA (last ~3 s):** after the question, the app adds one quick follow line as the very
+     last sentence. It picks from *"Hit that subscribe button for daily side quest stories!"*,
+     *"Follow Side Quest Logic so you never miss a single story!"*, *"Subscribe to see if your story
+     gets featured in the next one!"* and *"Subscribe for a brand new side quest story every single
+     day!"*. Each takes about 3-3.5 s with the edge-tts voice (`FOLLOW_CTAS` in
+     `trendclip/script_writer.py`), the same
+     script always gets the same line, and the handle comes from `CHANNEL_HANDLE`, spoken without the
+     `@`. Gemini is told not to write its own, and any "follow for more" it still adds is removed. The
+     script is tightened to leave room for the question and the CTA, and the subscribe sticker pops
+     up when the CTA sentence starts.
+   - **Pinned comment:** Gemini writes one for every Short (no links or hashtags). It is saved with the
+     Short and shown in the Upload tab with **Copy comment** / **Post comment on YouTube**, so you
+     can pin it right after uploading (YouTube's API can't pin, so use ⋮ → Pin).
    **Script type → Random story** makes Gemini write a self-contained first-person storytime that is
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
 3. **Voice & style:** a free edge-tts voice (47 English voices) with exact word timings, speed,
    highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
-4. **Background music (optional):** by default the music follows the story's mood. Gemini sorts
-   every script into `funny_quirky` (awkward or weird stories), `dramatic_suspense` (cliffhangers
-   and twists) or `chill_lofi` (casual storytelling), and a random track is picked from the
+4. **Background music (optional):** background music stays strictly **chill lo-fi / quirky**. Gemini
+   sorts every script into `funny_quirky` (awkward, weird, chaotic stories) or `chill_lofi`
+   (everything else, including mysteries and cliffhangers), and a random track is picked from the
    matching folder:
 
    | Mood | Folder |
    | --- | --- |
    | funny_quirky | `music/funny/` |
-   | dramatic_suspense | `music/dramatic/` |
    | chill_lofi | `music/chill/` |
 
+   `music/dramatic/` is never picked automatically, and a "dramatic" mood becomes chill lo-fi. Its
+   tracks only play when a Short's saved track is one of them (older Shorts you edit).
    Drop `.mp3`, `.m4a`, `.wav`, `.ogg`, `.flac` or `.aac` files into those folders. An optional
    `<song>.txt` next to a file holds its credit line for the description. If a folder is empty, a
-   matching YouTube track is used instead (Audio Library for funny, NoCopyrightSounds for dramatic,
-   Chillhop for chill). You can change the mood by hand, or switch to **My music** (a random file
-   from any of the three folders, whatever the mood), **Random** (any YouTube track) or **None**. Preview the track and press **Shuffle** for another one. Every track is first
+   free Chillhop lo-fi track is used instead. You can change the mood by hand, or switch to
+   **My music** (a random file from `music/funny` or `music/chill`), **Random** (any YouTube music
+   channel, your explicit choice) or **None**. Preview the track and press **Shuffle** for another one. Every track is first
    levelled to the same loudness and then played at 12%, 14% or 15% (Quiet/Normal/Loud), so it never
    drowns out the voice. It also loops if it is short, fades in and out, and ducks under the voice.
    Set `MUSIC_LIBRARY_DIR` to use another folder.
 5. **Title card and pop-ups:** Gemini also suggests a 2-5 word ALL-CAPS title card (shown at the top
-   for the first 3 seconds) and 3-6 pop-up images for things the script mentions. Each pop-up appears
-   for 1.5-2.5 s exactly when its word is spoken (edge-tts word timings), between the title area and
+   for the first 3 seconds) and pop-up images for things the script mentions: about one every 4 s
+   (11 for a 45 s Short, at most 15). Each pop-up appears for 1.5-2.5 s exactly when its word is
+   spoken (edge-tts word timings), at least 2.5 s after the previous one, between the title area and
    the subtitles. Edit the title, remove pop-ups (×) or add your own word + emoji.
+   **Visual pacing:** something new pops up every 3-5 s. Whenever more than 5 s would pass without a
+   new pop-up or sticker, a reaction sticker from your library fills the gap, about 4 s after the
+   last visual, on a spoken word.
 
 The voiceover never outlasts the selected clip. Lengths longer than the clip are greyed out, and the
 target is capped at the clip length (for Multi-part, half the clip per part). If Gemini still writes
@@ -211,9 +237,10 @@ too much, it is asked once to tighten the script; failing that, it is cut at a s
   voice speaks about 3.3 words per second, so 250-320 words needs 75-95 s (Shorts allow up to 3 min).
 - **Multi-part** (40-50 s per part): one Gemini call writes a story split into **Part 1**, which ends on
   a cliffhanger, and **Part 2**, which resolves it with a twist. The app appends the calls to action
-  itself (spoken and in the karaoke captions): Part 1 ends with *"Sub to Side Quest Logic for Part 2
-  dropping tomorrow!"*, and Part 2 with *"Sub for daily side quest stories and drop your crazy stories
-  in the comments!"*. Each part also gets a yellow end banner (e.g. `PART 2 TOMORROW · SUB
+  itself (spoken and in the karaoke captions), each after the part's short closing question:
+  Part 1 ends with *"What would you do? Sub to Side Quest Logic for Part 2 dropping tomorrow!"*, and
+  Part 2 with *"Ever happened to you?"* plus one of the follow lines above (Gemini's own 2-5 word
+  question replaces the defaults). A question that ends Part 1's story is kept as the cliffhanger. Each part also gets a yellow end banner (e.g. `PART 2 TOMORROW · SUB
   @SideQuestLogic`), "(Part 1)" / "(Part 2)" in the title, `#part1` / `#part2` hashtags, a
   "PART 1: …" title card, a description line, and a pinned comment for Part 1. Switch parts with the
   tabs to edit them. **Create Part 1 + Part 2** renders both in one job:
@@ -238,9 +265,11 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
   **Rescan** and **Re-tag with Gemini** buttons.
 - **Fix a tag:** add it to `stickers/stickers.json`, which always wins, e.g.
   `{"oh_no_2.png": {"moods": ["embarrassed"]}, "image.png": {"category": "off"}}`.
-- **When they appear:** Gemini marks 1-3 reaction beats in the script (a word + mood, shown as chips
+- **When they appear:** Gemini marks 2-5 reaction beats in the script (a word + mood, shown as chips
   you can remove). Without them, keywords in the voiceover are used ("awkward", "oh no", "no way",
-  …). Each sticker pops up for 1.9 s when its word is spoken, at least 4 s apart. In Part 1 of a
+  …). Each sticker pops up for 1.9 s when its word is spoken, at least 3 s apart. Extra stickers
+  fill any stretch longer than 5 s without a new pop-up or sticker, using the nearby keyword's mood
+  or a rotating one (funny, suspicious, shocked…). In Part 1 of a
   series, a *shocked* sticker also lands on the cliffhanger line. The CTA sticker (the folder's
   subscribe / part 2 sticker, or a built-in red **SUBSCRIBE** / **PART 2 TOMORROW** button) pulses
   above the captions from the moment the spoken CTA starts.

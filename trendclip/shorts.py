@@ -85,9 +85,9 @@ class RenderRequest(BaseModel):
     music_mood: str | None = Field(None, max_length=40)
     music_volume: float | None = Field(None, ge=0, le=1)  # clamped to 12-15% when mixing
     title_card: str = Field("", max_length=60)
-    popups: list[Popup] = Field(default_factory=list, max_length=10)
+    popups: list[Popup] = Field(default_factory=list, max_length=20)
     end_card: str = Field("", max_length=80)
-    reactions: list[Reaction] = Field(default_factory=list, max_length=6)
+    reactions: list[Reaction] = Field(default_factory=list, max_length=10)
     stickers: bool = True  # reaction stickers from stickers/ (Gemini beats, else spoken-word cues)
     cta_sticker: bool = True  # subscribe / Part 2 sticker when the call to action starts
     background_start: float = Field(0.0, ge=0)
@@ -107,9 +107,9 @@ class SeriesPart(BaseModel):
     description: str = Field("", max_length=4000)
     hashtags: list[str] = Field(default_factory=list)
     title_card: str = Field("", max_length=60)
-    popups: list[Popup] = Field(default_factory=list, max_length=10)
+    popups: list[Popup] = Field(default_factory=list, max_length=20)
     end_card: str = Field("", max_length=80)
-    reactions: list[Reaction] = Field(default_factory=list, max_length=6)
+    reactions: list[Reaction] = Field(default_factory=list, max_length=10)
 
 
 class SeriesRenderRequest(BaseModel):

@@ -37,16 +37,28 @@ class ScriptError(RuntimeError):
 
 MUSIC_MOOD_HELP = (
     "Background music mood for this voiceover, exactly one of: 'funny_quirky' (awkward, weird, embarrassing, "
-    "silly stories), 'dramatic_suspense' (mystery, tension, cliffhangers, big twists, creepy moments), "
-    "'chill_lofi' (casual, cozy, relaxed storytelling, facts, tips).")
+    "silly, chaotic stories) or 'chill_lofi' (casual, cozy, relaxed storytelling, mysteries, facts, tips).")
+QUESTION_MAX_WORDS = 5  # "under 6 words"
+DEFAULT_QUESTION = "What would you do?"
+PINNED_MAX = 200
 
 
 class GeminiShort(BaseModel):
     """Response schema sent to Gemini (field descriptions become part of the instructions)."""
 
     on_screen: str = Field(description="One or two sentences on what actually happens in the clip.")
-    hook: str = Field(description="The first sentence of the script: a scroll-stopping hook, at most 12 words.")
-    script: str = Field(description="The full voiceover, starting with the hook. Plain spoken English only.")
+    hook: str = Field(description=(
+        "The first sentence of the script, at most 12 words: a high-stakes, surprising or bold claim that opens "
+        "a curiosity gap in the first 3 seconds, e.g. 'I accidentally committed a crime at my office.'"))
+    script: str = Field(description=(
+        "The full voiceover: starts with the hook word for word and ends with the question (no follow / "
+        "subscribe line: the channel adds it). Plain spoken English only."))
+    question: str = Field("", description=(
+        f"The last sentence of the script: a punchy, conversational question of 2 to {QUESTION_MAX_WORDS} words "
+        "that makes viewers comment their own story, e.g. 'Ever done this?' or 'What would you do?'"))
+    pinned_comment: str = Field("", description=(
+        f"A friendly comment the creator pins under the video right after upload, at most {PINNED_MAX} characters: "
+        "a playful line about the story plus a question that invites viewers to share their own. No links, no hashtags."))
     title: str = Field(description="YouTube Shorts title, at most 70 characters, no hashtags.")
     description: str = Field(description="Two or three short sentences for the video description, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 relevant hashtags, each starting with #, including #shorts.")
@@ -54,11 +66,13 @@ class GeminiShort(BaseModel):
         "2 to 5 word ALL-CAPS banner shown at the top for the first 3 seconds, e.g. 'CAT LOGIC 101'. "
         "Punchy and curiosity-building; different from the title."))
     popups: list[Popup] = Field(default_factory=list, description=(
-        "3 to 6 pop-up images: concrete, easy to picture things the voiceover mentions (animals, objects, "
-        "food, places), spread across the script, in script order. Never abstract words."))
+        "Pop-up images, one every 3 to 5 seconds of speech (about one per 12 words): concrete, easy to picture "
+        "things the voiceover mentions (animals, objects, food, places), spread evenly from the first sentence "
+        "to the end, in script order. Never abstract words."))
     reactions: list[Reaction] = Field(default_factory=list, description=(
-        "1 to 3 reaction-sticker beats, in script order: the word where a funny, awkward or shocking "
-        "moment lands (a meme reaction pops up there). Not in the first sentence, not in the call to action."))
+        "2 to 5 reaction-sticker beats, in script order: the word where a funny, awkward or shocking "
+        "moment lands (a meme reaction pops up there). Between the pop-ups, not in the first sentence, "
+        "not in the closing question."))
     music_mood: str = Field("", description=MUSIC_MOOD_HELP)
 
 
@@ -82,9 +96,9 @@ class GeminiSeries(BaseModel):
     part1: GeminiShort = Field(description="Part 1: setup and escalation, ending on the cliffhanger.")
     part2: GeminiShort = Field(description="Part 2: picks up right after the cliffhanger and resolves it.")
     pinned_comment: str = Field(description=(
-        "A short, friendly comment the creator pins under Part 1 that teases Part 2 without spoiling it. "
-        "No links, no hashtags, at most 200 characters."))
-    music_mood: str = Field("dramatic_suspense", description=MUSIC_MOOD_HELP + " One mood for both parts.")
+        "A short, friendly comment the creator pins under Part 1 that teases Part 2 without spoiling it and "
+        f"asks viewers to guess what happens. No links, no hashtags, at most {PINNED_MAX} characters."))
+    music_mood: str = Field("chill_lofi", description=MUSIC_MOOD_HELP + " One mood for both parts.")
 
 
 class SeriesScript(BaseModel):
@@ -95,7 +109,7 @@ class SeriesScript(BaseModel):
     handle: str
     pinned_comment: str
     parts: list[ShortScript]
-    music_mood: str = "dramatic_suspense"
+    music_mood: str = "chill_lofi"
 
 
 def gemini_api_key(settings: Settings | None = None) -> str | None:
@@ -120,17 +134,29 @@ The voiceover is read by a text-to-speech voice over gameplay footage, with kara
 
 Rules:
 - The script is plain spoken English. No emojis, hashtags, stage directions, brackets, timestamps or speaker labels.
-- The first sentence is the hook and must make people stop scrolling within two seconds.
+- HOOK (the first 3 seconds decide everything): the very first sentence is the hook. It drops the viewer
+  straight into the most high-stakes, surprising or absurd moment with a bold claim or a curiosity gap
+  that only the rest of the video answers.
+  - Bad (slow): "I once stole someone's lunch at work." / "So this happened last week." / "Let me tell you
+    about my neighbour."
+  - Good: "I accidentally committed a crime at my office." / "My neighbour has been living in my attic." /
+    "This one mistake got me banned from every server."
+  - Never open with "So", "Hey guys", "One day", "I once", "Let me tell you", "This is the story of",
+    a greeting, background or scene-setting; context comes after the hook.
 - Short punchy sentences. Talk to the viewer ("you"). Keep energy high but natural.
 - Only state facts you are confident are true about the game; prefer tips, reactions, questions and
   observations over specific numbers, dates or patch details you are unsure of.
 - Never mention copyright, footage sources, AI, or that the clip is stock gameplay.
-- End with a short call to action (follow, comment, or a question).
+- ENDING: the last sentence of the script is `question`: a short, punchy, conversational question (2 to 5
+  words) that makes viewers comment their own story, e.g. "Ever done this?", "What would you do?",
+  "Worst coworker story?". Do NOT write a follow / subscribe call to action: the channel adds its own
+  one-line call to action right after your question, as the very last line.
+- pinned_comment: the comment the creator pins right after upload; it keeps the conversation going.
 - Pop-ups: each `word` must appear exactly as written in your script; give the best matching emoji.
+  Keep the screen busy: a new pop-up every 3 to 5 seconds of speech.
 - Reactions: each `word` must appear exactly as written in your script, at the funniest, most awkward
   or most shocking beats.
-- music_mood: classify the whole voiceover as funny_quirky, dramatic_suspense or chill_lofi; this picks
-  the background music.
+- music_mood: classify the whole voiceover as funny_quirky or chill_lofi; this picks the background music.
 - Never wrap words in backticks, quotes or markdown.
 """
 
@@ -142,7 +168,8 @@ random, self-contained story that is NOT about the game or the footage.
   a weird coincidence...). Vary it every time; avoid the most obvious clichés.
 - First person, past tense, like a friend telling it. Clear setup, escalating middle, twist or punchline.
 - Fictional and family friendly: no real people, brands' wrongdoing, violence, or anything hateful.
-- The hook teases the twist without giving it away.
+- The hook is the most dramatic or absurd line of the story, told first: a bold claim that teases the
+  twist without giving it away. Then jump back to how it started.
 - on_screen: one sentence summarising the story.
 - Title and hashtags describe the story (#storytime is good); you may add one gaming hashtag.
 - The creator's notes win over these defaults: if they ask for a genre (mystery, drama, adventure...) or a
@@ -155,30 +182,38 @@ LONG_BRIEF = """Format: LONG-FORM. This one is longer, so it must earn every sec
 - Two or three escalating beats; each one raises the stakes or the absurdity. No filler, no recap, no padding.
 - Mix short punchy lines with a few longer ones so the rhythm feels like real storytelling.
 - Drop a mini-hook every 15 seconds or so ("and that's when it got worse") so viewers keep watching.
-- Spread the pop-ups across the whole script (4 to 6)."""
+- Spread the pop-ups across the whole script, one every 3 to 5 seconds."""
 
 SERIES_BRIEF = """Format: TWO-PART SERIES. Write ONE story split into Part 1 and Part 2, released a day apart.
 - Part 1 introduces the situation and the characters, builds tension and humour, and ends on a dramatic or
   funny CLIFFHANGER: stop right before the big reveal. The last sentence of Part 1 is the cliffhanger itself.
-- Part 2 opens with a one-sentence hook that reminds viewers where Part 1 stopped, then resolves the story
-  with a hilarious twist or a satisfying ending.
-- Do NOT write any call to action in either part (no "follow", "subscribe", "comment", "part 2 tomorrow");
-  this overrides the call-to-action rule. The channel adds its own at the end of each part.
+- Part 1's hook follows the HOOK rule. Part 2 opens with a high-stakes one-sentence hook that drops viewers
+  right back into the cliffhanger, then resolves the story with a hilarious twist or a satisfying ending.
+- Do NOT write "follow", "subscribe" or "part 2 tomorrow" in the script, and do NOT end the script with the
+  question: put each part's closing question only in its `question` field. The channel adds that question
+  and then its own call to action at the end of each part.
 - Each part has its own hook, title, description, hashtags, title_card and popups. Do not put "Part 1"
   or "Part 2" in titles or title cards; they are added automatically.
 - story_name names the whole story; pinned_comment teases Part 2."""
 
-CTA_WORDS = 14  # room left in each part for the call to action appended after Gemini
+CTA_WORDS = 16  # room left in each part for the call to action + question appended after Gemini
+POPUP_EVERY_SECONDS = 4
+
+
+def popup_target(seconds: float) -> int:
+    return max(3, min(15, round(seconds / POPUP_EVERY_SECONDS)))
 
 
 def build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes: str, watched: bool,
                  mode: ScriptMode = "clip", format: ScriptFormat = "short") -> str:
     words = int(target_seconds * WORDS_PER_SECOND)
+    pace = (f"Visual pacing: about {popup_target(target_seconds)} pop-ups{' per part' if format == 'multi' else ''}, "
+            "one every 3 to 5 seconds, so something new pops up on screen all the time.")
     if format == "multi":
         words -= CTA_WORDS
         length = (f"Target length: about {target_seconds} seconds of speech PER PART, so {words - 8} to "
                   f"{words + 5} words in EACH part.")
-        lines = [STORY_BRIEF, SERIES_BRIEF, f"Background gameplay: {game}", length]
+        lines = [STORY_BRIEF, SERIES_BRIEF, f"Background gameplay: {game}", length, pace]
         if notes.strip():
             lines.append(f"Creator's notes for the story: {notes.strip()}")
         return "\n".join(lines)
@@ -186,12 +221,12 @@ def build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes:
     length = f"Target length: about {target_seconds} seconds of speech, so {words - 8} to {words + 5} words in total."
     extra = [LONG_BRIEF] if format == "long" else []
     if mode == "story":
-        lines = [STORY_BRIEF, *extra, f"Background gameplay: {game}", length]
+        lines = [STORY_BRIEF, *extra, f"Background gameplay: {game}", length, pace]
         if notes.strip():
             lines.append(f"Creator's notes for the story: {notes.strip()}")
         return "\n".join(lines)
 
-    lines = [*extra, f"Game: {game}", length]
+    lines = [*extra, f"Game: {game}", length, pace]
     if watched:
         lines.append(
             f"The attached video is the exact footage that plays under the voiceover ({target_seconds}s). "
@@ -332,6 +367,51 @@ def _clean_script(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?…])\s+", text.strip()) if s]
+
+
+def _words(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9']+", text.lower())
+
+
+def clean_question(text: str | None) -> str | None:
+    """A closing question of 2 to 5 words ending in '?', or None."""
+    text = re.sub(r"[\"“”`*#]|\s+", " ", text or "").strip().rstrip(".!")
+    if not text:
+        return None
+    text = text[:1].upper() + text[1:]
+    text = text if text.endswith("?") else f"{text}?"
+    return text if 2 <= len(text.split()) <= QUESTION_MAX_WORDS else None
+
+
+def split_question(script: str) -> tuple[str, str]:
+    """(script without its closing question, that question or '')."""
+    sentences = _sentences(script)
+    if len(sentences) > 1 and sentences[-1].endswith("?"):
+        return " ".join(sentences[:-1]), sentences[-1]
+    return script.strip(), ""
+
+
+def lead_with_hook(script: str, hook: str) -> str:
+    """The hook is spoken first: drop a slow opener Gemini put before it, or put the hook in front."""
+    hook = _clean_script(hook)
+    key = _words(hook)[:5]
+    if not key:
+        return script
+    sentences = _sentences(script)
+    for i, sentence in enumerate(sentences[:3]):
+        if _words(sentence)[:len(key)] == key:
+            return " ".join(sentences[i:])
+    return f"{hook if hook[-1] in '.!?…' else hook + '.'} {script}".strip()
+
+
+def clean_pinned(text: str, question: str) -> str:
+    text = re.sub(r"https?://\S+|#\w+", "", text or "")
+    text = re.sub(r"\s+", " ", text).strip().strip('"')
+    return (text or f"{question} Tell me your story below 👇")[:PINNED_MAX * 2]
+
+
 def write_script(
     settings: Settings,
     game: str,
@@ -408,14 +488,24 @@ def write_script(
             except Exception:  # noqa: BLE001 - files expire after 48h anyway
                 logger.debug("Could not delete uploaded file %s", uploaded.name)
 
-    script = fit_length(client, model, _clean_script(result.script), limit, target, progress)
-    return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched, script=script)
+    body, own_question = split_question(_strip_cta(_clean_script(result.script)))
+    body = _strip_cta(body)  # "Follow for more. What would you do?": both are replaced by ours
+    question = clean_question(result.question) or clean_question(own_question) or DEFAULT_QUESTION
+    cta = follow_cta(settings.channel_handle, body)
+    body = lead_with_hook(body, result.hook)
+    body = fit_length(client, model, body, limit - len(question.split()) - len(cta.split()), target, progress)
+    script = f"{body} {question} {cta}"
+    return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched, script=script,
+                   question=question)
 
 
 def _finish(result: GeminiShort, *, game: str, model: str, mode: str, format: str, watched: bool,
-            script: str | None = None, **extra) -> ShortScript:
+            script: str | None = None, question: str | None = None, **extra) -> ShortScript:
     script = script if script is not None else _clean_script(result.script)
+    question = question or clean_question(result.question) or DEFAULT_QUESTION
     return ShortScript(
+        question=question,
+        pinned_comment=clean_pinned(result.pinned_comment, question),
         on_screen=result.on_screen.strip(),
         hook=result.hook.strip(),
         script=script,
@@ -436,7 +526,7 @@ def _finish(result: GeminiShort, *, game: str, model: str, mode: str, format: st
     )
 
 
-def clean_reactions(reactions: list[Reaction], script: str, limit: int = 3) -> list[Reaction]:
+def clean_reactions(reactions: list[Reaction], script: str, limit: int = 5) -> list[Reaction]:
     """Reactions whose word is in the script, in script order, one per word."""
     tokens = [_norm(t) for t in script.split()]
     out, seen = [], set()
@@ -456,9 +546,29 @@ def spoken_handle(handle: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", name).strip()
 
 
-def series_ctas(handle: str) -> tuple[str, str]:
-    return (f"Sub to {spoken_handle(handle)} for Part 2 dropping tomorrow!",
-            "Sub for daily side quest stories and drop your crazy stories in the comments!")
+# The last line of every Short (about 3 s of speech), after the closing question.
+FOLLOW_CTAS = (
+    "Hit that subscribe button for daily side quest stories!",
+    "Follow {name} so you never miss a single story!",
+    "Subscribe to see if your story gets featured in the next one!",
+    "Subscribe for a brand new side quest story every single day!",
+)
+
+
+def follow_cta(handle: str, seed: str = "") -> str:
+    """One of FOLLOW_CTAS, the same one for the same script."""
+    import hashlib
+
+    pick = int(hashlib.sha1(seed.encode()).hexdigest(), 16) % len(FOLLOW_CTAS) if seed else 0
+    return FOLLOW_CTAS[pick].format(name=spoken_handle(handle))
+
+
+def series_ctas(handle: str, seed: str = "") -> tuple[str, str]:
+    """Spoken after each part's closing question, as its last line."""
+    return f"Sub to {spoken_handle(handle)} for Part 2 dropping tomorrow!", follow_cta(handle, seed)
+
+
+SERIES_QUESTIONS = ("What would you do?", "Ever happened to you?")
 
 
 def end_cards(handle: str) -> tuple[str, str]:
@@ -535,18 +645,26 @@ def write_series(
     except errors.APIError as err:
         raise _explain(err, model) from err
 
-    ctas = series_ctas(handle)
+    ctas = series_ctas(handle, result.part2.script)
     cards = end_cards(handle)
     notes_for = (f"Part 2 drops tomorrow! Subscribe {handle} so you don't miss it.",
                  f"This is Part 2. Missed Part 1? It's on {handle}.")
     parts = []
-    stories = [_strip_cta(_clean_script(p.script)) for p in (result.part1, result.part2)]
+    raws = (result.part1, result.part2)
+    stories, questions = [], []
+    for n, p in enumerate(raws, start=1):
+        story = _strip_cta(_clean_script(p.script))
+        body, last = split_question(story)
+        if last and _words(last) == _words(p.question):  # else that question is the cliffhanger: keep it
+            story = body
+        stories.append(lead_with_hook(story, p.hook))
+        questions.append(clean_question(p.question) or SERIES_QUESTIONS[n - 1])
     series_mood = music.normalize_mood(result.music_mood) or music.guess_mood(" ".join(stories))
-    for n, raw in enumerate((result.part1, result.part2), start=1):
+    for n, raw in enumerate(raws, start=1):
         story = fit_length(client, model, stories[n - 1], limit, target_seconds, progress)
-        script = f"{story} {ctas[n - 1]}"
+        script = f"{story} {questions[n - 1]} {ctas[n - 1]}"
         part = _finish(raw, game=game, model=model, mode="story", format="multi", watched=False,
-                       script=script, part=n, parts_total=2, end_card=cards[n - 1], music_mood=series_mood)
+                       script=script, question=questions[n - 1], part=n, parts_total=2, end_card=cards[n - 1], music_mood=series_mood)
         card = part.title_card or "STORYTIME"
         part.title_card = f"PART {n}: {card}"[:40]
         part.title = _part_title(raw.title, n)

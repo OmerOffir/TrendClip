@@ -26,6 +26,8 @@ USER_AGENT = "TrendClip/1.0 (local YouTube Shorts maker; python-requests)"
 THUMB_WIDTH = 640
 STICKER_SIZE = 460  # longest side of the sticker on the 1080x1920 canvas
 MIN_SECONDS, MAX_SECONDS = 1.5, 2.5
+MIN_SPACING = 2.5  # seconds between two pop-ups starting; the target pace is one every 3-5 s
+MAX_POPUPS = 15
 # (file name pattern, credit) in order of preference; {} is the emoji's codepoints, e.g. 1f408-200d-2b1b.
 EMOJI_SETS = [
     ("Fluent Emoji Color {}.svg", "Fluent Emoji by Microsoft (MIT)"),
@@ -100,7 +102,7 @@ def schedule(popups: list[Popup], words: list, total: float | None = None, *,
         if hit is None:
             continue
         start = max(words[hit].start - 0.05, 0.0)
-        if starts and start < starts[-1][1] + min_seconds + 0.1:
+        if starts and start < starts[-1][1] + max(min_seconds + 0.1, MIN_SPACING):
             continue
         starts.append((popup, start))
         cursor = hit + 1
@@ -263,7 +265,7 @@ def fetch_asset(settings: Settings, popup: Popup, session: requests.Session | No
     return None
 
 
-def clean_popups(popups: list[Popup], script: str, limit: int = 6) -> list[Popup]:
+def clean_popups(popups: list[Popup], script: str, limit: int = MAX_POPUPS) -> list[Popup]:
     """Keep pop-ups whose trigger word is actually in the script, once each, in script order."""
     tokens = [_norm(t) for t in script.split()]
     seen, out = set(), []
