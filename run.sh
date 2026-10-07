@@ -3,6 +3,7 @@
 #
 #   ./run.sh                    # web dashboard at http://127.0.0.1:8000 (default)
 #   ./run.sh web --port 8080    # dashboard on another port (--reload for dev)
+#   ./run.sh bot                # Discord bot (DISCORD_BOT_TOKEN etc. in .env)
 #   ./run.sh cli [options]      # one pipeline run in the terminal, e.g. --category 28
 #   ./run.sh assemble --demo    # 9:16 Short with karaoke subtitles -> output/final_short.mp4
 #                               # (real input: --voice voice.mp3 --timestamps words.json)
@@ -53,13 +54,14 @@ cmd="${1:-web}"
 
 case "$cmd" in
   web)   setup; exec "$PY" run.py --web "$@" ;;
+  bot)   setup; exec "$PY" run.py --bot "$@" ;;
   cli)   setup; exec "$PY" run.py "$@" ;;
   assemble) setup; exec "$PY" -m trendclip.video_assembler "$@" ;;
   test)  setup; exec "$PY" -m pytest -q "$@" ;;
   setup) setup; echo "==> Environment ready" ;;
   -h|--help|help)
-    sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//' ;;
+    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//' ;;
   *)
-    echo "Unknown command: $cmd (use: web | cli | assemble | test | setup | help)" >&2
+    echo "Unknown command: $cmd (use: web | bot | cli | assemble | test | setup | help)" >&2
     exit 2 ;;
 esac

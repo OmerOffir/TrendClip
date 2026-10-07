@@ -6,6 +6,7 @@ Uses the project's .venv automatically, so activation isn't required.
 Examples:
     python3 run.py --web                   # start the dashboard at http://127.0.0.1:8000
     python3 run.py --web --port 8080
+    python3 run.py --bot                   # Discord bot (DISCORD_BOT_TOKEN in .env)
     python3 run.py                         # run the pipeline once (CLI, from .env)
     python3 run.py --test                  # run unit tests, then the pipeline
     python3 run.py --test-only             # unit tests only
@@ -93,6 +94,7 @@ def main() -> int:
     test_only = _pop_flag(args, "--test-only")
     with_tests = _pop_flag(args, "--test") or test_only
     web = _pop_flag(args, "--web")
+    bot = _pop_flag(args, "--bot")
 
     if with_tests:
         code = _run_tests()
@@ -103,6 +105,10 @@ def main() -> int:
     sys.path.insert(0, str(ROOT))
     if web:
         return _run_web(args)
+    if bot:
+        from trendclip.discord_bot import main as bot_main
+
+        return bot_main(args)
 
     from trendclip.main import main as pipeline_main
 

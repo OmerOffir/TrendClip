@@ -110,6 +110,7 @@ SLOTS = {  # centres of the reaction sticker positions
 }
 CTA_CENTER = (WIDTH // 2, 1490)
 REACTION_SECONDS = 1.9
+ANIMATED_MAX_SECONDS = 3.2  # an animated reaction stays until its loop ends, at most this long
 MIN_GAP = 3.0
 PACE = (3.0, 5.0)  # something new pops up every 3-5 s: reaction stickers fill longer gaps between pop-ups
 FILLER_MOODS = ("funny", "suspicious", "shocked", "awkward", "crazy", "innocent")
@@ -124,6 +125,7 @@ class StickerInfo(BaseModel):
     width: int = 0
     height: int = 0
     frames: int = 1
+    loop_seconds: float = 0.0  # one pass of the animation (GIF / WebP)
     transparent: bool = False
     source: str = "filename"  # filename | gemini | manual
     signature: str = ""
@@ -202,8 +204,14 @@ def inspect(path: Path) -> StickerInfo:
 
     with Image.open(path) as img:
         frames = getattr(img, "n_frames", 1)
+        loop = 0.0
+        if frames > 1:
+            for i in range(frames):
+                img.seek(i)
+                loop += max(img.info.get("duration", 100), 20) / 1000
+            img.seek(0)
         info = StickerInfo(filename=path.name, width=img.width, height=img.height, frames=frames,
-                           transparent=has_transparency(img), signature=_signature(path))
+                           loop_seconds=round(loop, 2), transparent=has_transparency(img), signature=_signature(path))
     return guess(info)
 
 
@@ -216,23 +224,36 @@ def guess(info: StickerInfo) -> StickerInfo:
 
 
 def _thumb_png(path: Path, size: int = 256) -> bytes:
+    """A PNG for Gemini: the image, or for animations a strip of 4 frames from start to end, so the
+    expression the GIF builds up to is judged, not just its first frame."""
     from PIL import Image
 
     with Image.open(path) as img:
-        img.seek(0)
-        frame = img.convert("RGBA")
-    frame.thumbnail((size, size))
-    bg = Image.new("RGBA", frame.size, (255, 255, 255, 255))
-    bg.alpha_composite(frame)
+        count = getattr(img, "n_frames", 1)
+        picks = sorted({round(i * (count - 1) / 3) for i in range(4)}) if count > 1 else [0]
+        frames = []
+        for i in picks:
+            img.seek(i)
+            frame = img.convert("RGBA")
+            frame.thumbnail((size, size))
+            frames.append(frame)
+    gap = 8
+    sheet = Image.new("RGBA", (sum(f.width for f in frames) + gap * (len(frames) - 1), max(f.height for f in frames)),
+                      (255, 255, 255, 255))
+    x = 0
+    for frame in frames:
+        sheet.alpha_composite(frame, (x, 0))
+        x += frame.width + gap
     buf = io.BytesIO()
-    bg.convert("RGB").save(buf, "PNG")
+    sheet.convert("RGB").save(buf, "PNG")
     return buf.getvalue()
 
 
 TAG_PROMPT = """You label sticker images for a vertical-video editor. Each image is a sticker that pops up
 over gameplay while a funny story is narrated. For every image (by index) give its category, the moods
 it expresses (reactions only), the CTA kind (cta only) and a short description. Judge from the picture;
-the file names are often meaningless."""
+the file names are often meaningless. Animated GIFs come as a strip of frames from start to end (left to
+right): tag the reaction the animation shows as a whole and say what happens in the description."""
 
 
 def tag_with_gemini(settings: Settings, infos: list[StickerInfo], client=None) -> list[StickerInfo]:
@@ -560,11 +581,14 @@ def plan(
     placed, last = 0, -1e9
     slot_names = list(SLOTS)
 
-    def place(start: float, end: float, mood: str) -> bool:
+    def place(start: float, end: float, mood: str, room: float | None = None) -> bool:
+        """`room`: how long an animated sticker may stay so its animation plays through once."""
         nonlocal placed, last
         info = pick(lib, mood, set(used), rng)
         if info is None:
             return False
+        if info.animated and room is not None:
+            end = max(end, min(start + min(info.loop_seconds, ANIMATED_MAX_SECONDS), room))
         order = slot_names[placed % len(slot_names):] + slot_names[: placed % len(slot_names)]
         for name in order:
             center = SLOTS[name]
@@ -592,7 +616,8 @@ def plan(
             continue
         if not any(s.category == "reaction" for s in lib):
             break
-        place(start, end, mood)
+        nxt = next((words[i].start for i, _ in moments if words[i].start > start + MIN_GAP), stop)
+        place(start, end, mood, room=min(nxt - 0.1, stop - 0.05))
 
     if pace and auto and any(s.category == "reaction" for s in lib):
         _fill_gaps(words, moments, [o.start for o in popups or []] + [o.start for o in out],
@@ -627,7 +652,7 @@ def _fill_gaps(words: list, moments: list[tuple[int, str]], starts: list[float],
         end = min(start + REACTION_SECONDS, nxt - 0.1, stop - 0.05)
         near = [m for i, m in moments if abs(i - index) <= 3]
         mood = near[0] if near else FILLER_MOODS[n % len(FILLER_MOODS)]
-        if end - start >= 1.0 and place(start, end, mood):
+        if end - start >= 1.0 and place(start, end, mood, room=min(nxt - 0.1, stop - 0.05)):
             events.append(start)
             events.sort()
             n += 1

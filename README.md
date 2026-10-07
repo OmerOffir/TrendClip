@@ -21,6 +21,7 @@ changes), creates `.env` if missing, and starts the dashboard:
 ```bash
 ./run.sh                    # web dashboard at http://127.0.0.1:8000
 ./run.sh web --port 8080
+./run.sh bot                # Discord bot (see "Discord bot" below)
 ./run.sh cli --category 28  # one terminal run
 ./run.sh test
 ./run.sh setup              # environment only
@@ -278,14 +279,17 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
   looks at each new image once and tags it as a *reaction* (mood: funny, awkward, shocked, approve,
   reject, proud, pain, nope, innocent, crazy, embarrassed, suspicious) or a *CTA* (subscribe / follow /
   part 2 / comment). If Gemini is unavailable, the filename is used (`oh_no.png` → shocked,
-  `subscribe_*.gif` → subscribe CTA) and the next scan tries again. Tags are cached in
+  `subscribe_*.gif` → subscribe CTA) and the next scan tries again. For an animated GIF, Gemini sees
+  4 frames from start to end, so it tags what the whole animation shows. Tags are cached in
   `assets/cache/stickers.json`. See them under **Sticker library** in the Create tab, with
   **Rescan** and **Re-tag with Gemini** buttons.
 - **Fix a tag:** add it to `stickers/stickers.json`, which always wins, e.g.
   `{"oh_no_2.png": {"moods": ["embarrassed"]}, "image.png": {"category": "off"}}`.
 - **When they appear:** Gemini marks 2-5 reaction beats in the script (a word + mood, shown as chips
   you can remove). Without them, keywords in the voiceover are used ("awkward", "oh no", "no way",
-  …). Each sticker pops up for 1.9 s when its word is spoken, at least 3 s apart. Extra stickers
+  …). Each sticker pops up for 1.9 s when its word is spoken, at least 3 s apart. An animated GIF
+  stays until its animation has played once (up to 3.2 s), unless the next sticker or the CTA starts
+  first. Extra stickers
   fill any stretch longer than 5 s without a new pop-up or sticker, using the nearby keyword's mood
   or a rotating one (funny, suspicious, shocked…). In Part 1 of a
   series, a *shocked* sticker also lands on the cliffhanger line. The CTA sticker (the folder's
@@ -391,8 +395,12 @@ platforms at the top of the tab.
   is done. For a Short, the tick is the same as the **Posted** box in the Upload tab, so ticking
   either one updates both. A YouTube upload made from the Upload tab ticks YouTube by itself; that
   button then opens the video.
-- **Moving and editing:** drag an item to another day, or use **Edit** to change the day, platforms
-  or notes, or to remove it. **Upload tab** opens the Short there with its captions.
+- **Upload times:** a day has two upload slots, **18:00** and **23:00** (in `TIMEZONE`, default
+  Asia/Jerusalem). The empty slots of a day are labelled **+ 18:00 reel** / **+ 23:00 reel**, and the
+  dialog has an **Upload time** field. Each slot holds one item; an item can also have no fixed time.
+- **Moving and editing:** drag an item to another day, or use **Edit** to change the day, time,
+  platforms or notes, or to remove it. If you drag an item onto a day where its time is already taken,
+  it keeps no fixed time. **Upload tab** opens the Short there with its captions.
 - **Counters:** the top cards show:
   - today's reels posted, out of the goal;
   - how many reels are planned for tomorrow and the day after;
@@ -403,6 +411,49 @@ platforms at the top of the tab.
   for today.
 
 The plan is saved in `output/planner.json`.
+
+## Discord bot
+
+Run `./run.sh bot` next to the dashboard (or on its own) to control TrendClip from your Discord server
+with slash commands.
+
+| Command | What it does |
+|---------|--------------|
+| `/today` | Today's 18:00 and 23:00 videos, with **Show** and **Upload** buttons |
+| `/slot time:18:00` | Sends the video planned for that slot (`day:` for another day) |
+| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. `game:` picks the gameplay. |
+| `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
+| `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
+| `/videos` | Videos that are made but not planned or uploaded |
+| `/status` | YouTube connection, Gemini key, next free slot, today's plan |
+
+On its own the bot posts to `DISCORD_CHANNEL_ID`:
+
+- a morning summary of the day's plan at `DISCORD_MORNING_TIME`;
+- each slot's video `DISCORD_REMINDER_MINUTES` before 18:00 and 23:00, with an **Upload now**
+  button. An empty slot gets a **Create a random video** button instead.
+
+Setup:
+
+1. https://discord.com/developers/applications → **New Application** → **Bot** → **Reset Token**,
+   and put the token in `.env` as `DISCORD_BOT_TOKEN`.
+2. **OAuth2 → URL Generator**: tick the `bot` and `applications.commands` scopes, then the bot
+   permissions *Send Messages*, *Attach Files*, *Embed Links* and *Read Message History*. Open the
+   generated link and add the bot to your server.
+3. In Discord, go to **Settings → Advanced** and turn on **Developer Mode**. Right-click your server →
+   **Copy Server ID** and put it in `DISCORD_GUILD_ID`. Right-click the reminder channel → **Copy
+   Channel ID** and put it in `DISCORD_CHANNEL_ID`. Optional: `DISCORD_ALLOWED_USERS=<your user id>`
+   lets only you use the bot.
+4. `./run.sh bot`. The commands show up on the server right away.
+
+Uploading needs YouTube connected once from the dashboard (**Upload → Connect YouTube**). The bot
+uses the same `token_youtube.json`.
+
+Videos bigger than the server's upload limit (10 MB without boosts) are sent as a smaller copy,
+cached in `output/discord/`. Your original file is never changed.
+
+Which reminders have already gone out is stored in `output/discord_state.json`, so restarting the bot
+doesn't send them again.
 
 ## Video assembly (karaoke Shorts)
 

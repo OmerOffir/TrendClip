@@ -468,6 +468,13 @@
           <input type="text" id="pTitle" maxlength="150" placeholder="e.g. Minecraft hardcore day 1-100" />
         </label>
         <label class="field"><span>Day</span><input type="date" id="pDate" required /></label>
+        <label class="field"><span>Upload time</span>
+          <select id="pSlot">
+            <option value="">No fixed time</option>
+            <option value="18:00">18:00</option>
+            <option value="23:00">23:00</option>
+          </select>
+        </label>
         <div class="field"><span>Upload to</span>
           <div class="goal-platforms" id="pPlatforms"></div>
         </div>

@@ -142,6 +142,24 @@ def test_plan_keeps_something_new_on_screen_every_3_to_5_seconds(tmp_path):
     assert [o for o in off if not o.pulse] == []
 
 
+def test_animated_reactions_stay_until_their_loop_ends(tmp_path):
+    settings = make_settings(tmp_path)
+    add_files(settings.stickers_dir)
+    assert stickers.inspect(settings.stickers_dir / "sub_bell.gif").loop_seconds == pytest.approx(0.3)
+    strip = Image.open(__import__("io").BytesIO(stickers._thumb_png(settings.stickers_dir / "sub_bell.gif")))
+    assert strip.width > strip.height * 2  # Gemini sees frames from start to end, not only the first
+
+    words = words_of("We sat in total silence for a while and nobody said a single word to anyone at all "
+                     "for ages and ages. Follow for more!", 0.4)
+    for loop, expected in ((2.8, 2.8), (6.0, stickers.ANIMATED_MAX_SECONDS), (0.5, stickers.REACTION_SECONDS)):
+        gif = [StickerInfo(filename="what.gif", category="reaction", moods=["awkward"], frames=20, loop_seconds=loop)]
+        overlays, _ = stickers.plan(settings, gif, words, [Reaction(word="silence", mood="awkward")],
+                                    cta="subscribe", seed="g", pace=False)
+        reaction = next(o for o in overlays if not o.pulse)
+        assert reaction.animated and reaction.end - reaction.start == pytest.approx(expected)
+        assert reaction.end <= next(o for o in overlays if o.pulse).start
+
+
 def test_cta_sticker_starts_with_the_cta_sentence_after_the_question(tmp_path):
     settings = make_settings(tmp_path)
     words = words_of("We waited by the door for a long time. He slowly looked back at me. "

@@ -92,6 +92,11 @@ def _scan_stickers() -> None:
 async def _lifespan(_app: FastAPI):
     # Scan (and tag new stickers with Gemini) in the background so startup stays instant.
     threading.Thread(target=_scan_stickers, name="sticker-scan", daemon=True).start()
+    if _settings_ok():
+        from datetime import datetime
+
+        s = get_settings()
+        planner.assign_slots(s, datetime.now(s.tz).date())
     yield
 
 

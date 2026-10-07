@@ -15,6 +15,9 @@ pillow>=10.0  # pop-up stickers
 # upload tab: YouTube upload (OAuth)
 google-auth-oauthlib>=1.2
 
+# Discord bot (./run.sh bot)
+discord.py>=2.7
+
 # web dashboard
 fastapi>=0.110
 uvicorn[standard]>=0.29

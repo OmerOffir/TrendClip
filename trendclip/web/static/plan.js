@@ -27,6 +27,7 @@
     titleField: $("pTitleField"),
     title: $("pTitle"),
     date: $("pDate"),
+    slot: $("pSlot"),
     platforms: $("pPlatforms"),
     notes: $("pNotes"),
     del: $("pDelete"),
@@ -257,6 +258,7 @@
   function itemRow(item) {
     const s = item.short_info;
     const meta = [];
+    if (item.slot) meta.push(`<span class="pill">${esc(item.slot)}</span>`);
     if (item.kind === "long") meta.push('<span class="pill long">LONG</span>');
     if (s) meta.push(shortMeta(s));
     else if (item.short_missing) meta.push('<span class="dim">Short was deleted</span>');
@@ -287,8 +289,13 @@
     let pill;
     if (past) pill = reels.length + longs.length ? `<span class="pill ${reels.concat(longs).every((i) => i.done) ? "done" : "warn"}">${reelsDone}/${reels.length} reels posted</span>` : "";
     else pill = `<span class="pill ${reelsDone >= g.reels_per_day && g.reels_per_day ? "done" : reels.length >= g.reels_per_day ? "" : "warn"}">${reelsDone}/${g.reels_per_day} reels posted</span>`;
-    const slots = Array.from({ length: empty }, (_, i) => `
-      <button type="button" class="plan-slot" data-add="reel" data-day="${day}">+ Reel ${reels.length + i + 1}</button>`).join("");
+    const freeTimes = (state.data.slots || []).filter((t) => !itemsOn(day).some((i) => i.slot === t));
+    const slots = Array.from({ length: empty }, (_, i) => {
+      const t = freeTimes[i];
+      return `
+      <button type="button" class="plan-slot" data-add="reel" data-day="${day}"${t ? ` data-slot="${t}"` : ""}
+        >+ ${t ? `${t} reel` : `Reel ${reels.length + i + 1}`}</button>`;
+    }).join("");
     const cls = ["plan-day"];
     if (day === todayIso()) cls.push("today");
     if (past) cls.push("past");
@@ -385,7 +392,7 @@
     els.platforms.innerHTML = platformChips([...f.platforms], "data-form-platform");
   }
 
-  function openDialog({ id = null, kind = "reel", day = iso(addDays(todayDate(), 1)), short = "" } = {}) {
+  function openDialog({ id = null, kind = "reel", day = iso(addDays(todayDate(), 1)), short = "", slot = "" } = {}) {
     const item = id ? state.data.items.find((i) => i.id === id) : null;
     if (item) {
       kind = item.kind;
@@ -401,6 +408,8 @@
     els.short.innerHTML = shortOptions(short);
     els.title.value = item && !item.short_info ? item.title : "";
     els.date.value = day;
+    const firstFree = (state.data.slots || []).find((t) => !itemsOn(day).some((i) => i.slot === t)) || "";
+    els.slot.value = item ? item.slot || "" : slot || (kind === "reel" ? firstFree : "");
     els.notes.value = item ? item.notes : "";
     els.del.hidden = !item;
     renderForm();
@@ -423,6 +432,7 @@
     const body = {
       kind: f.kind,
       date: els.date.value,
+      slot: els.slot.value, // "" = no fixed time
       notes: els.notes.value,
       platforms: PLATFORMS.map((p) => p.id).filter((p) => f.platforms.has(p)),
     };
@@ -466,7 +476,7 @@
     if (t.dataset.toggle) return toggle(t.dataset.item, t.dataset.toggle);
     if (t.dataset.planShort) return planShort(t.dataset.planShort, t.dataset.day);
     if (t.dataset.pickShort) return openDialog({ short: t.dataset.pickShort });
-    if (t.dataset.add) return openDialog({ kind: t.dataset.add, day: t.dataset.day });
+    if (t.dataset.add) return openDialog({ kind: t.dataset.add, day: t.dataset.day, slot: t.dataset.slot || "" });
     if (t.dataset.edit) return openDialog({ id: t.dataset.edit });
     if (t.dataset.remove) return removeItem(t.dataset.remove);
     if (t.dataset.openUpload) return T.showView("upload", t.dataset.openUpload);

@@ -38,6 +38,13 @@ _ENV_MAP: dict[str, str] = {
     "channel_handle": "CHANNEL_HANDLE",
     "stickers_dir": "STICKERS_DIR",
     "music_library_dir": "MUSIC_LIBRARY_DIR",
+    "timezone": "TIMEZONE",
+    "discord_bot_token": "DISCORD_BOT_TOKEN",
+    "discord_guild_id": "DISCORD_GUILD_ID",
+    "discord_channel_id": "DISCORD_CHANNEL_ID",
+    "discord_allowed_users": "DISCORD_ALLOWED_USERS",
+    "discord_morning_time": "DISCORD_MORNING_TIME",
+    "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
 }
 
 # UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
@@ -97,12 +104,40 @@ class Settings(BaseModel):
     music_channels: list[str] = Field(default_factory=lambda: list(DEFAULT_MUSIC_CHANNELS))
     music_volume: float = Field(0.14, ge=0, le=1)  # 12-15% (about -17 dB) sits well under speech
 
-    @field_validator("ncg_channels", "background_sources", "music_channels", mode="before")
+    # The plan's upload slots (18:00 / 23:00) and the bot's reminders are in this time zone.
+    timezone: str = "Asia/Jerusalem"
+    # Discord bot: commands are registered on one server; reminders go to one channel.
+    discord_bot_token: SecretStr | None = None
+    discord_guild_id: int | None = None
+    discord_channel_id: int | None = None
+    discord_allowed_users: list[int] = Field(default_factory=list)  # empty: everyone on the server
+    discord_morning_time: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
+
+    @field_validator("ncg_channels", "background_sources", "music_channels", "discord_allowed_users",
+                     mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
             return [part.strip() for part in value.split(",") if part.strip()]
         return value
+
+    @field_validator("timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as err:
+            raise ValueError(f"Unknown time zone {value!r} (use an IANA name like Asia/Jerusalem)") from err
+        return value
+
+    @property
+    def tz(self):
+        from zoneinfo import ZoneInfo
+
+        return ZoneInfo(self.timezone)
 
     @field_validator("assets_dir", "stickers_dir", "music_library_dir", mode="after")
     @classmethod
