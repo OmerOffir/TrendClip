@@ -7,21 +7,33 @@
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true"><span></span></div>
-      <div>
-        <h1>TrendClipper</h1>
-        <p>Trending games on YouTube</p>
+  <header class="appbar">
+    <div class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"><span></span></div>
+        <div>
+          <h1>TrendClipper</h1>
+          <p>Trending games on YouTube</p>
+        </div>
       </div>
+      <nav class="workspaces" id="workspaces" role="tablist" aria-label="Channels">
+        <button type="button" role="tab" class="workspace active" data-workspace="sidequestlogic" aria-selected="true">
+          <span class="ws-mark" aria-hidden="true">SQ</span>
+          <span><b>SideQuestLogic</b><small>Gameplay storytime Shorts</small></span>
+        </button>
+        <button type="button" class="workspace ws-new" disabled title="More channels for other kinds of videos are coming">+ New channel</button>
+      </nav>
+      <div class="status" id="status" aria-live="polite"></div>
     </div>
-    <nav class="nav" id="nav" role="tablist" aria-label="Sections">
-      <button type="button" role="tab" data-view="trends" class="active">Trends</button>
-      <button type="button" role="tab" data-view="create">Create</button>
-      <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
-      <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
-    </nav>
-    <div class="status" id="status" aria-live="polite"></div>
+    <div class="subbar" data-workspace-panel="sidequestlogic">
+      <span class="subbar-label">SideQuestLogic</span>
+      <nav class="nav" id="nav" role="tablist" aria-label="Sections">
+        <button type="button" role="tab" data-view="trends" class="active">Trends</button>
+        <button type="button" role="tab" data-view="create">Create</button>
+        <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
+        <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
+      </nav>
+    </div>
   </header>
 
   <main class="container view" id="viewCreate" hidden>

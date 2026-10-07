@@ -799,6 +799,26 @@
     if (btn) showView(btn.dataset.view);
   });
 
+  // Main channel tabs (SideQuestLogic today; other channels for other kinds of videos later), each
+  // with its own section bar (data-workspace-panel).
+  const workspaces = $("workspaces");
+  function showWorkspace(id) {
+    const tabs = [...workspaces.querySelectorAll("[data-workspace]")];
+    if (!tabs.some((b) => b.dataset.workspace === id)) id = tabs[0].dataset.workspace;
+    for (const b of tabs) {
+      b.classList.toggle("active", b.dataset.workspace === id);
+      b.setAttribute("aria-selected", b.dataset.workspace === id ? "true" : "false");
+    }
+    document.querySelectorAll("[data-workspace-panel]").forEach((p) => { p.hidden = p.dataset.workspacePanel !== id; });
+    document.body.dataset.workspace = id;
+    localStorage.setItem("trendclip.workspace", id);
+  }
+  workspaces.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-workspace]:not(:disabled)");
+    if (btn) showWorkspace(btn.dataset.workspace);
+  });
+  showWorkspace(localStorage.getItem("trendclip.workspace"));
+
   window.TrendClip = {
     api,
     esc,
