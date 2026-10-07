@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -124,6 +125,28 @@ def test_settings_validation(monkeypatch, tmp_path):
     with pytest.raises(ConfigError):
         get_settings(str(tmp_path / "missing.env"))
     get_settings.cache_clear()
+
+    from trendclip import config
+
+    root = tmp_path / "shared.env"
+    root.write_text("YOUTUBE_API_KEY=shared\nCHANNEL=othercast\nCHANNEL_HANDLE=@Shared\nTTS_RATE=+0%\n")
+    monkeypatch.setattr(config, "CHANNELS_DIR", tmp_path / "channels")
+    (tmp_path / "channels" / "othercast").mkdir(parents=True)
+    (tmp_path / "channels" / "othercast" / "channel.env").write_text(
+        "CHANNEL_HANDLE=@OtherCast\nSTATS_TIKTOK=https://www.tiktok.com/@othercast\n")
+    for name in ("CHANNEL", "CHANNEL_HANDLE", "TTS_RATE", "STATS_TIKTOK"):
+        monkeypatch.delenv(name, raising=False)
+    s = get_settings(str(root))
+    assert (s.channel, s.channel_handle, s.stats_tiktok, s.tts_rate) == ("othercast", "@OtherCast", "othercast", "+0%")
+    assert s.channel_dir == tmp_path / "channels" / "othercast"
+    assert config.channel_file("token_youtube.json", "othercast") == s.channel_dir / "token_youtube.json"
+    assert config.channel_file("client_secret.json", "othercast", shared=True) == config.PROJECT_ROOT / "client_secret.json"
+    get_settings.cache_clear()
+    monkeypatch.setenv("CHANNEL_HANDLE", "@FromShell")  # a real environment variable wins over channel.env
+    assert get_settings(str(root)).channel_handle == "@FromShell"
+    get_settings.cache_clear()
+    for name in ("YOUTUBE_API_KEY", "CHANNEL", "TTS_RATE"):
+        os.environ.pop(name, None)  # load_dotenv put the shared file's values in the environment
 
     s = Settings(youtube_api_key="k", yt_regions="us, gb")
     assert s.yt_regions == ["US", "GB"]

@@ -15,7 +15,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import assistant, planner, publish, script_writer, shorts, video_downloader
+from . import assistant, channel_stats, planner, publish, script_writer, shorts, video_downloader
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -380,6 +380,18 @@ class TrendClipBot(discord.Client):
             text += "\nSome slots are empty: plan a video with /plan add, or let me make one."
             buttons.append(button("mk", "-", "Create a random video", discord.ButtonStyle.success))
         await channel.send(clip_text(text), view=view_of(*buttons))
+        await self.send_stats(channel)
+
+    async def send_stats(self, channel: discord.abc.Messageable) -> None:
+        """The channel report (YouTube / TikTok / Instagram, last 24 h); a failure here never blocks the plan."""
+        try:
+            report = await asyncio.to_thread(channel_stats.build_report, self.settings)
+        except Exception as err:  # noqa: BLE001 - shown in the channel
+            logger.exception("Channel report failed")
+            await channel.send(clip_text(f"📊 Couldn't build the channel report: {err}"))
+            return
+        for message in channel_stats.format_report(report, self.settings.tz):
+            await channel.send(clip_text(message), suppress_embeds=True)
 
     async def slot_reminder(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
         minutes = self.settings.discord_reminder_minutes
@@ -619,6 +631,12 @@ async def status_cmd(interaction: discord.Interaction) -> None:
     ]))
 
 
+@app_commands.command(name="stats", description="Followers, and views / likes / comments of the last 24 h videos")
+async def stats_cmd(interaction: discord.Interaction) -> None:
+    await reply(interaction, "📊 Reading YouTube, TikTok and Instagram…")
+    await _bot(interaction).send_stats(interaction.channel)
+
+
 plan_group = app_commands.Group(name="plan", description="See and change the upload plan")
 
 
@@ -677,10 +695,11 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
+        "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
     ]), ephemeral=True)
 
 
-COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, plan_group, help_cmd]
+COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, plan_group, help_cmd]
 
 
 def main(argv: list[str] | None = None) -> int:

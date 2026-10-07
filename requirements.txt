@@ -17,6 +17,7 @@ google-auth-oauthlib>=1.2
 
 # Discord bot (./run.sh bot)
 discord.py>=2.7
+curl_cffi>=0.7  # channel stats: TikTok / Instagram only answer browser-like requests
 
 # web dashboard
 fastapi>=0.110

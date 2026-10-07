@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 import os
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from pydantic import BaseModel, Field, SecretStr, ValidationError, field_validator
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+# One folder per channel (channels/sidequestlogic/): its channel.env (handles, its tokens / ids) and its
+# login files (token_youtube.json, token_instagram.json). Keys shared by every channel stay in .env.
+CHANNELS_DIR = PROJECT_ROOT / "channels"
+CHANNEL_ENV = "channel.env"
+DEFAULT_CHANNEL = "sidequestlogic"
 
 # Maps Settings field -> environment variable name.
 _ENV_MAP: dict[str, str] = {
@@ -45,6 +51,10 @@ _ENV_MAP: dict[str, str] = {
     "discord_allowed_users": "DISCORD_ALLOWED_USERS",
     "discord_morning_time": "DISCORD_MORNING_TIME",
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
+    "stats_youtube": "STATS_YOUTUBE",
+    "stats_tiktok": "STATS_TIKTOK",
+    "stats_instagram": "STATS_INSTAGRAM",
+    "instagram_access_token": "INSTAGRAM_ACCESS_TOKEN",
 }
 
 # UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
@@ -114,6 +124,33 @@ class Settings(BaseModel):
     discord_morning_time: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
 
+    # The channel folder under channels/ whose channel.env and login files are used.
+    channel: str = DEFAULT_CHANNEL
+
+    # Your own channels for the morning stats report (empty = skip that platform).
+    stats_youtube: str = "@SideQuestLogic-t6g"
+    stats_tiktok: str = "sidequestlogic"
+    stats_instagram: str = "sidequestlogic"
+    # Instagram API with Instagram Login (professional account); without it, public profile data is tried.
+    instagram_access_token: SecretStr | None = None
+
+    @field_validator("stats_youtube", "stats_tiktok", "stats_instagram", mode="before")
+    @classmethod
+    def _handle_from_link(cls, value: object, info) -> object:  # noqa: ANN001 - pydantic ValidationInfo
+        """Accept a profile link or a handle. YouTube: '@name' or a UC… id; TikTok / Instagram: 'name'."""
+        import re
+
+        if not isinstance(value, str):
+            return value
+        text = value.strip().rstrip("/")
+        if info.field_name == "stats_youtube":
+            if m := re.search(r"youtube\.com/(?:channel/(UC[\w-]{22})|(@[\w.-]+))", text):
+                return m.group(1) or m.group(2)
+            return text if not text or text.startswith(("@", "UC")) else "@" + text
+        if m := re.search(r"(?:tiktok|instagram)\.com/@?([\w.]+)", text):
+            return m.group(1)
+        return text.lstrip("@")
+
     @field_validator("ncg_channels", "background_sources", "music_channels", "discord_allowed_users",
                      mode="before")
     @classmethod
@@ -143,6 +180,10 @@ class Settings(BaseModel):
     @classmethod
     def _resolve_assets_dir(cls, value: Path) -> Path:
         return value if value.is_absolute() else PROJECT_ROOT / value
+
+    @property
+    def channel_dir(self) -> Path:
+        return CHANNELS_DIR / self.channel
 
     @property
     def pexels_enabled(self) -> bool:
@@ -212,12 +253,42 @@ def _read_env() -> dict[str, str]:
     return values
 
 
+def active_channel(env_file: str | Path | None = None) -> str:
+    """The channel this process works for: CHANNEL from the environment or .env (default sidequestlogic)."""
+    raw = os.getenv("CHANNEL") or dotenv_values(env_file or PROJECT_ROOT / ".env").get("CHANNEL") or DEFAULT_CHANNEL
+    name = raw.strip().lower()
+    if not re.fullmatch(r"[a-z0-9_-]{1,40}", name):
+        raise ConfigError(f"CHANNEL must be a folder name under channels/ (letters, digits, - or _), got {raw!r}")
+    return name
+
+
+def channel_dir(channel: str | None = None) -> Path:
+    return CHANNELS_DIR / (channel or active_channel())
+
+
+def channel_file(name: str, channel: str | None = None, shared: bool = False) -> Path:
+    """A channel's own file (login tokens…). `shared`: fall back to the project folder when the channel
+    has none (client_secret.json: one Google OAuth client can connect any channel)."""
+    own = channel_dir(channel) / name
+    return PROJECT_ROOT / name if shared and not own.is_file() else own
+
+
 @lru_cache(maxsize=1)
 def get_settings(env_file: str | None = None) -> Settings:
-    """Load settings once per process. Real environment variables win over .env values."""
-    load_dotenv(env_file or PROJECT_ROOT / ".env", override=False)
+    """Load settings once per process. Real environment variables win over channels/<CHANNEL>/channel.env,
+    which wins over the shared .env."""
+    root_file = env_file or PROJECT_ROOT / ".env"
+    load_dotenv(root_file, override=False)
+    root = dotenv_values(root_file)
+    channel = active_channel(root_file)
+    values = _read_env()
+    for field, env_name in _ENV_MAP.items():
+        own = (dotenv_values(channel_dir(channel) / CHANNEL_ENV).get(env_name) or "").strip()
+        if own and (os.getenv(env_name) is None or os.getenv(env_name) == root.get(env_name)):
+            values[field] = own
+    values["channel"] = channel
     try:
-        return Settings(**_read_env())
+        return Settings(**values)
     except ValidationError as exc:
         problems = "; ".join(
             f"{_ENV_MAP.get(str(err['loc'][0]), err['loc'][0])}: {err['msg']}" for err in exc.errors()

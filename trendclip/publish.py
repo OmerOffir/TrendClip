@@ -4,7 +4,8 @@ Texts come from a template built from the Short (instant, no key) or from Gemini
 tags and platform style). Credits (gameplay, music, pop-up images) are always appended.
 
 YouTube upload uses OAuth with the Desktop client in client_secret.json (git-ignored). The login is
-done in the browser through the dashboard; the token is saved to token_youtube.json (git-ignored).
+done in the browser through the dashboard; the token is saved to channels/<channel>/token_youtube.json
+(git-ignored).
 """
 
 from __future__ import annotations
@@ -22,14 +23,15 @@ from typing import Any, Callable, Literal
 from pydantic import BaseModel, Field, field_validator
 
 from . import script_writer, shorts
-from .config import PROJECT_ROOT, Settings
+from .config import Settings, channel_file
 from .models import utcnow
 
 logger = logging.getLogger(__name__)
 
 ProgressFn = Callable[[float | None, str], None]
-CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS", PROJECT_ROOT / "client_secret.json"))
-TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE", PROJECT_ROOT / "token_youtube.json"))
+# The OAuth client may be shared by every channel; the login token is the channel's own.
+CLIENT_SECRETS = Path(os.getenv("YOUTUBE_CLIENT_SECRETS") or channel_file("client_secret.json", shared=True))
+TOKEN_FILE = Path(os.getenv("YOUTUBE_TOKEN_FILE") or channel_file("token_youtube.json"))
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",  # show which channel is connected
@@ -334,7 +336,8 @@ def youtube_status() -> dict[str, Any]:
 
 def start_login(redirect_uri: str) -> str:
     if not CLIENT_SECRETS.is_file():
-        raise PublishError(f"{CLIENT_SECRETS.name} not found in the project folder")
+        raise PublishError(f"{CLIENT_SECRETS.name} not found: put it in the project folder (shared by every "
+                           "channel) or in the channel's folder under channels/")
     from google_auth_oauthlib.flow import Flow
 
     flow = Flow.from_client_secrets_file(str(CLIENT_SECRETS), scopes=SCOPES, redirect_uri=redirect_uri,
@@ -364,6 +367,7 @@ def finish_login(state: str, code: str) -> None:
 
 
 def _save_token(data: str) -> None:
+    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
     TOKEN_FILE.write_text(data, encoding="utf-8")
     try:
         TOKEN_FILE.chmod(0o600)

@@ -13,6 +13,31 @@ pip install -r requirements.txt
 cp .env.example .env   # add YOUTUBE_API_KEY
 ```
 
+### Channels and secrets
+
+TrendClip is organised per channel, so more channels can be added later. Each one gets its own
+folder under `channels/`. The whole folder is gitignored and never committed.
+
+```
+.env                                # shared by every channel: YOUTUBE_API_KEY, GEMINI_API_KEY,
+                                    # PEXELS_API_KEY, DISCORD_BOT_TOKEN, … and CHANNEL=sidequestlogic
+client_secret.json                  # the shared Google OAuth client (any channel can connect with it)
+channels/
+  channel.env.example               # template (the only tracked file here)
+  sidequestlogic/                   # SideQuestLogic
+    channel.env                     # CHANNEL_HANDLE, STATS_* links, INSTAGRAM_ACCESS_TOKEN, DISCORD_CHANNEL_ID
+    token_youtube.json              # its YouTube login (Upload → Connect YouTube)
+    token_instagram.json            # its refreshed Instagram token
+```
+
+- `CHANNEL` in `.env` picks the active channel (default `sidequestlogic`).
+- Settings in `channel.env` win over `.env`, so any setting (`TTS_VOICE`, `MUSIC_VOLUME`, …) can
+  differ per channel. Real environment variables win over both.
+- A channel may also have its own `client_secret.json` in its folder.
+- New channel: create `channels/<name>/`, copy `channels/channel.env.example` there as
+  `channel.env`, fill it in, set `CHANNEL=<name>` and connect YouTube again for that channel.
+- Videos, the plan and stickers are still shared for now.
+
 ## Run
 
 Quickest: `./run.sh` creates `.venv`, installs dependencies (again only when `requirements.txt`
@@ -266,7 +291,7 @@ too much, it is asked once to tighten the script; failing that, it is cut at a s
   `output/shorts/<StoryName>_Part1.mp4` and `_Part2.mp4`. Both parts use the same voice, music and
   clip, and Part 2 continues the gameplay and the music where Part 1 stopped. The clip loops if it
   is shorter than the voice; for long formats, download longer clips (Trends → length "whole video").
-  Set your handle with `CHANNEL_HANDLE` in `.env` or the **Channel** field.
+  Set your handle with `CHANNEL_HANDLE` in the channel's `channel.env` or the **Channel** field.
 
 Pop-up images are free and need no key: the matching emoji from Microsoft's Fluent Emoji set (MIT)
 on Wikimedia Commons, else Noto Emoji / Twemoji, else a Commons search that keeps only files with a
@@ -365,10 +390,10 @@ YouTube setup (once):
 
 1. In [Google Cloud Console](https://console.cloud.google.com/) enable **YouTube Data API v3**, create
    an OAuth client of type **Desktop app**, and save its JSON as `client_secret.json` in the project
-   folder (git-ignored).
+   folder (git-ignored, shared by all channels), or in `channels/<channel>/` for one channel only.
 2. On the OAuth consent screen, add your Google account as a **test user**.
-3. In the Upload tab press **Connect YouTube** and allow access. The token is saved to
-   `token_youtube.json` (git-ignored); **Disconnect** deletes it.
+3. In the Upload tab press **Connect YouTube** and allow access. The token is saved to the channel's
+   folder as `channels/<channel>/token_youtube.json` (git-ignored). **Disconnect** deletes it.
 
 Notes: an upload costs about 100 of the 10,000 daily API quota units. Projects that haven't passed
 YouTube's API audit can only upload **private** videos; make them public in YouTube Studio.
@@ -426,10 +451,11 @@ with slash commands.
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
 | `/videos` | Videos that are made but not planned or uploaded |
 | `/status` | YouTube connection, Gemini key, next free slot, today's plan |
+| `/stats` | The channel report (below) right now |
 
 On its own the bot posts to `DISCORD_CHANNEL_ID`:
 
-- a morning summary of the day's plan at `DISCORD_MORNING_TIME`;
+- a morning summary of the day's plan at `DISCORD_MORNING_TIME`, followed by the channel report;
 - each slot's video `DISCORD_REMINDER_MINUTES` before 18:00 and 23:00, with an **Upload now**
   button. An empty slot gets a **Create a random video** button instead.
 
@@ -442,18 +468,50 @@ Setup:
    generated link and add the bot to your server.
 3. In Discord, go to **Settings → Advanced** and turn on **Developer Mode**. Right-click your server →
    **Copy Server ID** and put it in `DISCORD_GUILD_ID`. Right-click the reminder channel → **Copy
-   Channel ID** and put it in `DISCORD_CHANNEL_ID`. Optional: `DISCORD_ALLOWED_USERS=<your user id>`
-   lets only you use the bot.
+   Channel ID** and put it in `channels/<channel>/channel.env` as `DISCORD_CHANNEL_ID`. Optional:
+   `DISCORD_ALLOWED_USERS=<your user id>` in `.env` lets only you use the bot.
 4. `./run.sh bot`. The commands show up on the server right away.
 
 Uploading needs YouTube connected once from the dashboard (**Upload → Connect YouTube**). The bot
-uses the same `token_youtube.json`.
+uses the same `channels/<channel>/token_youtube.json`.
 
 Videos bigger than the server's upload limit (10 MB without boosts) are sent as a smaller copy,
 cached in `output/discord/`. Your original file is never changed.
 
 Which reminders have already gone out is stored in `output/discord_state.json`, so restarting the bot
 doesn't send them again.
+
+### Channel report
+
+Every morning, after the plan, and whenever you run `/stats`, the bot posts one message per platform:
+
+- **Followers / subscribers**, plus total views (and TikTok's total likes). From the second day on,
+  each shows its change since yesterday's report.
+- **Every video posted in the last 24 hours**, with its link, posting time, views, likes and comments
+  (TikTok also shares). It also gives the sum for those videos, and a ⭐ on the best one.
+
+The accounts are `STATS_YOUTUBE`, `STATS_TIKTOK` and `STATS_INSTAGRAM` in the channel's
+`channel.env`. Links or handles both work. They default to the SideQuestLogic accounts. Snapshots for the changes are kept in
+`assets/cache/channel_stats.json`.
+
+- **YouTube:** the Data API. When YouTube is connected in the dashboard, private and scheduled
+  videos count too. Otherwise only public ones (the API key).
+- **TikTok:** the public profile and video list. No login is needed.
+- **Instagram** blocks logged-out requests most of the time, so it needs an access token from the
+  official Instagram API:
+  1. Switch the account to **Professional** (Creator or Business): Instagram app → Settings →
+     Account type and tools.
+  2. https://developers.facebook.com/apps → **Create app** → use case *Manage messaging & content on
+     Instagram* (the "Instagram API with Instagram login" product).
+  3. In the app: **Instagram → API setup with Instagram login → Generate access tokens** → **Add
+     account** and log in as `sidequestlogic`. It needs the `instagram_business_basic` and
+     `instagram_business_manage_insights` permissions. Then copy the token.
+  4. Put it in `channels/sidequestlogic/channel.env` as `INSTAGRAM_ACCESS_TOKEN=` and restart the
+     bot. The 60-day token is refreshed every week by itself and kept next to it in
+     `token_instagram.json` (gitignored, never committed).
+
+  Without a token the report still tries Instagram's public profile data. When Instagram refuses,
+  it says so and the other platforms are reported as usual.
 
 ## Video assembly (karaoke Shorts)
 

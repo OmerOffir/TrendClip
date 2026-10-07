@@ -527,7 +527,7 @@
   function renderAccount() {
     const yt = state.yt;
     if (!yt.client_secret) {
-      els.ytAccount.innerHTML = '<div class="banner banner-warn">Put your Google OAuth file <b>client_secret.json</b> (Desktop app) in the project folder to enable uploads.</div>';
+      els.ytAccount.innerHTML = '<div class="banner banner-warn">Put your Google OAuth file <b>client_secret.json</b> (Desktop app) in the project folder (or in this channel\'s folder under <b>channels/</b>) to enable uploads.</div>';
       return;
     }
     if (yt.connected) {

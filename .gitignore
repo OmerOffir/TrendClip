@@ -5,6 +5,9 @@
 client_secret*.json
 !client_secret.example.json
 token*.json
+# Per-channel secrets and logins: channels/<name>/channel.env, token_*.json (only the template is tracked)
+channels/*/
+!channels/channel.env.example
 .venv/
 __pycache__/
 *.pyc
