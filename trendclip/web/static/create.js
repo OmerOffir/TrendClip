@@ -83,7 +83,8 @@
     "highlight", "words", "fit", "music", "musicMood", "musicVol", "handle", "story", "pinned"];
   const PART_FIELDS = ["script", "title", "desc", "tags", "titleCard", "endCard"];
   const LENGTHS = {
-    short: { def: 30, opts: [[15, "15 seconds"], [20, "20 seconds"], [30, "30 seconds"], [45, "45 seconds"], [60, "60 seconds"]] },
+    // Up to 30 s the viral rules apply: 18–22 s, punchy lines, a question or loop ending (script_writer.VIRAL_BRIEF).
+    short: { def: 22, opts: [[22, "18–22 s · viral (60–72 words)"], [15, "15 s · viral"], [45, "45 seconds"], [60, "60 seconds"]] },
     long: { def: 90, opts: [[60, "~60 s · ~200 words"], [75, "~75 s · ~250 words"], [90, "~90 s · ~300 words"]] },
     multi: { def: 45, opts: [[40, "40 s per part"], [45, "45 s per part"], [50, "50 s per part"]] },
   };

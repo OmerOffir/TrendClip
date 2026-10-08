@@ -235,6 +235,16 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
      `POST /api/create/describe`.
    **Script type → Random story** makes Gemini write a self-contained first-person storytime that is
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
+
+   **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock
+   hook already in the middle of the action; 3–12 s the problem gets about twice as bad; 12–18 s is
+   the twist; 18–22 s is an unfinished sentence that flows back into the first line, so the replay
+   feels seamless. Tone is conversational, fast and sensory. The comment question ("Was I wrong?")
+   goes in the pinned comment, not the voiceover, and there is no spoken subscribe line: the subscribe
+   sticker pops up for the last 3 seconds. 45 s and 60 s Shorts keep the spoken question and the
+   "Follow …" ending.
+   **Long videos** use the same four beats stretched across the chosen length (three escalations, a
+   twist, then the replay loop) instead of a spoken question and follow line.
 3. **Voice & style:** (edge-tts needs the internet; a failed request is retried for about 30 s
    before the "Voice generation failed" error, which then says when the voice server can't be
    reached) a free edge-tts voice (47 English voices) with exact word timings, speed,

@@ -94,9 +94,9 @@ def test_write_script_watches_clip_and_cleans_output(tmp_path, monkeypatch):
     assert result.watched_clip and client.files.deleted == ["files/1"] and not preview.exists()
     prompt = client.models.contents[-1]
     assert "Game: Minecraft" in prompt and "Top 10 jumps" in prompt and "funny" in prompt and "20 seconds" in prompt
-    cta = script_writer.follow_cta("@SideQuestLogic", "This jump should be impossible. Watch the timing!")
-    assert result.script == f"This jump should be impossible. Watch the timing! What would you do? {cta}"
-    assert "Follow for more" not in result.script  # Gemini's own CTA is replaced by ours
+    assert "VIRAL SHORT" in prompt and "THE SHOCK HOOK" in prompt and "SEAMLESS LOOP" in prompt
+    assert result.script == "This jump should be impossible. Watch the timing!"
+    assert "Follow for more" not in result.script and result.ending == "loop"
     assert result.question == "What would you do?" and "What would you do?" in result.pinned_comment
     assert result.title == "Impossible Minecraft Jump"
     assert result.hashtags == ["#minecraft", "#parkour", "#shorts"]
@@ -148,11 +148,10 @@ def test_script_never_outlasts_the_clip(tmp_path):
     client = SimpleNamespace(models=Models())
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=75,
                                         format="long", max_seconds=40, client=client)
-    assert "about 40 seconds" in calls[0]  # the target was capped to the clip
-    cta = script_writer.follow_cta("@SideQuestLogic", long_story)
-    budget = 132 - 4 - len(cta.split())  # 40 s * 3.3 words/s, minus the closing question and the CTA
-    assert f"AT MOST {budget} words" in calls[1]
-    assert result.script == f"{short_story} What would you do? {cta}" and result.word_count <= 132
+    assert "LONG STORY" in calls[0] and "about 40 seconds" in calls[0]  # same beats as a Short, at the clip length
+    assert "THE SHOCK HOOK" in calls[0] and "SEAMLESS LOOP" in calls[0]
+    assert "AT MOST 132 words" in calls[1] and "unfinished loop" in calls[1]  # 40 s * 3.3, no spoken question or CTA
+    assert result.script == short_story and result.ending == "loop" and result.word_count <= 132
 
     class Stubborn(Models):
         def generate_content(self, model, contents, config):
@@ -160,9 +159,9 @@ def test_script_never_outlasts_the_clip(tmp_path):
                 raise RuntimeError("busy")
             return super().generate_content(model, contents, config)
 
-    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=30,
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=45,
                                         max_seconds=60, client=SimpleNamespace(models=Stubborn()))
-    assert result.word_count <= script_writer.max_words(30) + 5  # cut at a sentence end
+    assert result.word_count <= script_writer.max_words(45) + 5  # cut at a sentence end
     assert re.search(r"and on\. What would you do\? .+!$", result.script)
     assert result.script.split("? ", 1)[1] in [c.format(name="Side Quest Logic") for c in script_writer.FOLLOW_CTAS]
 
@@ -196,7 +195,7 @@ def test_gemini_question_replaces_its_long_ending(tmp_path):
                 question="Worst boss story?", pinned_comment="My desk is a war zone now. Worst boss you ever had?"),
                 text="")
 
-    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story",
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="story", target_seconds=45,
                                         client=SimpleNamespace(models=Models()))
     cta = script_writer.follow_cta("@SideQuestLogic", "Hi guys. My boss hired my ex. Now we share a desk.")
     assert result.script == f"My boss hired my ex. Now we share a desk. Worst boss story? {cta}"
@@ -204,6 +203,45 @@ def test_gemini_question_replaces_its_long_ending(tmp_path):
     assert {script_writer.follow_cta("@SideQuestLogic", f"seed {i}") for i in range(40)} == {
         c.format(name="Side Quest Logic") for c in script_writer.FOLLOW_CTAS}
     assert result.question == "Worst boss story?" and result.pinned_comment.endswith("Worst boss you ever had?")
+
+
+def test_viral_shorts_stay_under_22_seconds_and_loop_back_into_the_hook(tmp_path):
+    hook = "I ruined my girlfriend's entire family dinner in 10 seconds."
+    beats = " ".join(f"Then beat {i} made it worse." for i in range(20))  # 120 words: far too long
+    calls = []
+
+    def models(ending, script, shortened):
+        class Models:
+            def generate_content(self, model, contents, config):
+                calls.append((config.response_schema, contents[-1]))
+                if config.response_schema is script_writer.Shortened:
+                    return SimpleNamespace(parsed=script_writer.Shortened(script=shortened), text="")
+                return SimpleNamespace(parsed=script_writer.GeminiViralShort(
+                    on_screen="x", hook=hook, script=script, title="t", description="d", hashtags=[],
+                    question="Was I wrong?", ending=ending), text="")
+        return SimpleNamespace(models=Models())
+
+    tight = f"{hook} " + " ".join(f"Beat {i} hit hard." for i in range(13))  # 62 words
+    result = script_writer.write_script(make_settings(tmp_path), "GTA V", mode="story", target_seconds=30,
+                                        client=models("question", f"{hook} {beats} Was I wrong?", tight))
+    schema, prompt = calls[0]
+    assert schema is script_writer.GeminiViralShort
+    for rule in ("18 to 22 seconds", "60 to 72 words", "THE SHOCK HOOK", "RISING STAKES",
+                 "CLIMAX / TWIST", "SEAMLESS LOOP", "Did you know", "twice as bad"):
+        assert rule in prompt
+    assert "AT MOST 72 words" in calls[1][1]  # 22 s * 3.3; the question stays in the pinned comment
+    assert result.script == tight and result.ending == "loop"  # spoken question stripped: it would break the loop
+    assert result.question == "Was I wrong?" and "Was I wrong?" in result.pinned_comment
+    assert result.estimated_seconds <= 22 and not re.search(r"subscribe|follow", result.script, re.I)
+
+    loop = f"{hook} My dad asked one question. I panicked. I told the truth. And that is exactly how"
+    calls.clear()
+    result = script_writer.write_script(make_settings(tmp_path), "GTA V", mode="story",
+                                        client=models("loop", loop, loop))
+    assert result.script == loop and result.ending == "loop"
+    assert result.question == "Was I wrong?" and "Was I wrong?" in result.pinned_comment
+    assert script_writer.is_viral("short", 30) and not script_writer.is_viral("short", 45)
+    assert not script_writer.is_viral("multi", 20)
 
 
 def test_write_script_needs_a_key(tmp_path, monkeypatch):

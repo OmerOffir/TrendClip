@@ -28,13 +28,13 @@ def gemini_part(script, title, card, popups=()):
 
 def test_long_and_multi_prompts():
     long = script_writer.build_prompt("GTA V", 90, [], "", False, "story", "long")
-    assert "LONG-FORM" in long and "289 to 302 words" in long
+    assert "LONG STORY" in long and "285 to 297 words" in long and "SEAMLESS LOOP" in long
     multi = script_writer.build_prompt("GTA V", 45, [], "office", False, "story", "multi")
     words = int(45 * script_writer.WORDS_PER_SECOND) - script_writer.CTA_WORDS
     assert "TWO-PART SERIES" in multi and f"{words - 8} to {words + 5} words in EACH part" in multi
     assert "CLIFFHANGER" in multi and "office" in multi
     short = script_writer.build_prompt("GTA V", 30, [], "", False, "story")
-    assert "LONG-FORM" not in short and "TWO-PART" not in short
+    assert "LONG STORY" not in short and "TWO-PART" not in short
 
 
 def test_spoken_handle_and_ctas():

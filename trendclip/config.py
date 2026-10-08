@@ -107,7 +107,7 @@ class Settings(BaseModel):
     gemini_model: str = DEFAULT_GEMINI_MODEL
     tts_voice: str = DEFAULT_TTS_VOICE
     tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
-    short_target_seconds: int = Field(30, ge=10, le=180)
+    short_target_seconds: int = Field(22, ge=10, le=180)  # up to 30: the viral 18-22 s rules
     # Channel handle used in the multi-part calls to action ("Sub to @handle for Part 2").
     channel_handle: str = Field("@SideQuestLogic", pattern=r"^@[\w.-]{3,30}$")
     # Background music channels (handles / UC ids) and the music level under the voice (0-1).

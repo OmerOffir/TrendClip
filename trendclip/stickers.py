@@ -111,6 +111,7 @@ SLOTS = {  # centres of the reaction sticker positions
 CTA_CENTER = (WIDTH // 2, 1490)
 REACTION_SECONDS = 1.9
 ANIMATED_MAX_SECONDS = 3.2  # an animated reaction stays until its loop ends, at most this long
+SILENT_CTA_SECONDS = 3.0  # without a spoken "subscribe…" line, the CTA sticker covers the last 3 s
 MIN_GAP = 3.0
 PACE = (3.0, 5.0)  # something new pops up every 3-5 s: reaction stickers fill longer gaps between pop-ups
 FILLER_MOODS = ("funny", "suspicious", "shocked", "awkward", "crazy", "innocent")
@@ -547,6 +548,8 @@ def plan(
 
     cta_index = find_cta_start(words) if cta else None
     cta_time = words[cta_index].start - 0.05 if cta_index is not None else None
+    if cta and cta_time is None:  # no spoken CTA (viral Shorts): the sticker still closes the video
+        cta_time = max(words[-1].end - SILENT_CTA_SECONDS, words[0].start + 1.0)
     if cta_time is not None:
         own = [s for s in lib if s.category == "cta" and s.cta in (cta, "subscribe")]
         own.sort(key=lambda s: s.cta != cta)

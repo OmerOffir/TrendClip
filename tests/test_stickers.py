@@ -160,6 +160,14 @@ def test_animated_reactions_stay_until_their_loop_ends(tmp_path):
         assert reaction.end <= next(o for o in overlays if o.pulse).start
 
 
+def test_cta_sticker_closes_a_video_without_a_spoken_cta(tmp_path):
+    words = words_of("I ruined the whole dinner in ten seconds. My dad asked one question. Was I wrong?", 0.4)
+    overlays, _ = stickers.plan(make_settings(tmp_path), lib()[:3], words, [], cta="subscribe", seed="v", pace=False)
+    cta = next(o for o in overlays if o.pulse)
+    assert cta.start == pytest.approx(words[-1].end - stickers.SILENT_CTA_SECONDS)
+    assert cta.end == pytest.approx(words[-1].end + 0.3)
+
+
 def test_cta_sticker_starts_with_the_cta_sentence_after_the_question(tmp_path):
     settings = make_settings(tmp_path)
     words = words_of("We waited by the door for a long time. He slowly looked back at me. "

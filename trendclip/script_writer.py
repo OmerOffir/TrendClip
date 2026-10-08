@@ -76,7 +76,14 @@ class GeminiShort(BaseModel):
     music_mood: str = Field("", description=MUSIC_MOOD_HELP)
 
 
+class GeminiViralShort(GeminiShort):
+    ending: Literal["question", "loop"] = Field("loop", description=(
+        "Always 'loop': the script's last sentence is unfinished and runs straight back into the hook. "
+        "'question' is only for a script that truly cannot loop."))
+
+
 class ShortScript(GeminiShort):
+    ending: str = ""  # viral Shorts: "question" or "loop"; others end with the follow CTA
     game: str
     model: str
     mode: str = "clip"
@@ -141,8 +148,8 @@ Rules:
     about my neighbour."
   - Good: "I accidentally committed a crime at my office." / "My neighbour has been living in my attic." /
     "This one mistake got me banned from every server."
-  - Never open with "So", "Hey guys", "One day", "I once", "Let me tell you", "This is the story of",
-    a greeting, background or scene-setting; context comes after the hook.
+  - Never open with "So", "So today I", "Did you know", "Hey guys", "One day", "I once", "Let me tell you",
+    "This is the story of", a greeting, background or scene-setting; context comes after the hook.
 - Short punchy sentences. Talk to the viewer ("you"). Keep energy high but natural.
 - Only state facts you are confident are true about the game; prefer tips, reactions, questions and
   observations over specific numbers, dates or patch details you are unsure of.
@@ -168,8 +175,8 @@ random, self-contained story that is NOT about the game or the footage.
   a weird coincidence...). Vary it every time; avoid the most obvious clichés.
 - First person, past tense, like a friend telling it. Clear setup, escalating middle, twist or punchline.
 - Fictional and family friendly: no real people, brands' wrongdoing, violence, or anything hateful.
-- The hook is the most dramatic or absurd line of the story, told first: a bold claim that teases the
-  twist without giving it away. Then jump back to how it started.
+- The hook is the most dramatic or absurd moment, told first, already in the middle of the action.
+  Then move forward: the problem gets worse. Don't rewind to a slow "how it started".
 - on_screen: one sentence summarising the story.
 - Title and hashtags describe the story (#storytime is good); you may add one gaming hashtag.
 - The creator's notes win over these defaults: if they ask for a genre (mystery, drama, adventure...) or a
@@ -177,12 +184,34 @@ random, self-contained story that is NOT about the game or the footage.
 
 ScriptFormat = Literal["short", "long", "multi"]
 
-LONG_BRIEF = """Format: LONG-FORM. This one is longer, so it must earn every second:
-- More detail and wit: vivid specific details, funny asides, a running joke or callback that pays off at the end.
-- Two or three escalating beats; each one raises the stakes or the absurdity. No filler, no recap, no padding.
-- Mix short punchy lines with a few longer ones so the rhythm feels like real storytelling.
-- Drop a mini-hook every 15 seconds or so ("and that's when it got worse") so viewers keep watching.
-- Spread the pop-ups across the whole script, one every 3 to 5 seconds."""
+def long_brief(seconds: int) -> str:
+    """The Short's four beats, stretched across a long video, still ending on a replay loop."""
+    loop_s = 4
+    stakes_end = max(12, int(seconds * 0.62))
+    twist_end = max(stakes_end + 6, seconds - loop_s)
+    words = max_words(seconds)
+    return f"""Format: LONG STORY, about {seconds} seconds ({max(40, words - 12)} to {words} words).
+The same shape as a viral Short, stretched across the whole video. No filler, no recap, no padding.
+
+TONE: conversational, fast-paced, highly descriptive and emotional. First person, past tense, like telling
+a friend who can't believe this happened. Short punchy lines, plus one vivid sensory sentence per beat
+(what you saw, heard or felt).
+
+STORY STRUCTURE (hit every beat, in this order, then stop):
+- 0–3s THE SHOCK HOOK: start in the middle of the action with one emotionally charged sentence.
+  No "So", "One day", "Did you know", "Hey guys", "Let me tell you".
+- 3–{stakes_end}s RISING STAKES: three escalations. Each one makes the problem about twice as bad or twice
+  as awkward, fast. A specific detail every sentence. About every 15 seconds, a mini-hook
+  ("and that's when it got worse") so viewers keep watching.
+- {stakes_end}–{twist_end}s THE CLIMAX / TWIST: one surprising, funny or unexpected payoff that resolves
+  the story. Plant the clue during the rising stakes and pay it off here.
+- the last {loop_s}s THE SEAMLESS LOOP: the final sentence is unfinished and flows straight back into the
+  hook when the video replays. Example: the script ends "And that is exactly how" and the hook is
+  "I ruined dinner in ten seconds."
+
+Set `ending` to "loop". Do NOT end on the question and do NOT write a follow / subscribe line.
+Still fill `question`: it goes in the pinned comment only, not in the script.
+These beats win over the ENDING rule. Spread the pop-ups across the whole script."""
 
 SERIES_BRIEF = """Format: TWO-PART SERIES. Write ONE story split into Part 1 and Part 2, released a day apart.
 - Part 1 introduces the situation and the characters, builds tension and humour, and ends on a dramatic or
@@ -198,6 +227,43 @@ SERIES_BRIEF = """Format: TWO-PART SERIES. Write ONE story split into Part 1 and
 
 CTA_WORDS = 16  # room left in each part for the call to action + question appended after Gemini
 POPUP_EVERY_SECONDS = 4
+
+# Shorts of up to 30 s follow the retention rules: 18-22 s in total, a question or loop ending, no spoken
+# subscribe line (the subscribe sticker shows on screen at the end instead).
+VIRAL_UP_TO_SECONDS = 30
+VIRAL_SECONDS = (18, 22)
+VIRAL_BRIEF = """Format: VIRAL SHORT, {low_s} to {high_s} seconds. One story, four beats, no filler.
+LENGTH: {low} to {high} words in total, the loop sentence included. Never more: it must stay under {high_s} seconds.
+
+TONE: conversational, fast-paced, highly descriptive and emotional. First person, like telling a friend
+who can't believe this happened. Short punchy sentences (about 4 to 10 words) and concrete sensory
+detail: what you saw, heard or felt. Not an abstract summary.
+
+STORY STRUCTURE (hit every beat, in this order, then stop):
+- 0–3s THE SHOCK HOOK: start in the middle of the action with one emotionally charged sentence.
+  No setup and no intro ("Did you know", "So today I", "Hey guys", "One day", "Let me tell you").
+  Example: "I ruined my girlfriend's entire family dinner in ten seconds."
+- 3–12s RISING STAKES: escalate immediately. The problem gets about twice as bad, or twice as awkward, and fast.
+- 12–18s THE CLIMAX / TWIST: one surprising, funny or unexpected payoff that resolves the story.
+  It has to be earned by something you already said.
+- 18–{high_s}s THE SEAMLESS LOOP: the last sentence is unfinished and flows straight back into the hook,
+  so the replay sounds like one story. Example: it ends "And that is exactly how" and the hook is
+  "I ruined my girlfriend's entire family dinner in ten seconds."
+
+Set `ending` to "loop". Do NOT end on an open-ended question and do NOT write a follow / subscribe line:
+the channel shows its subscribe sticker on screen. Still fill `question` (it goes in the pinned comment only,
+e.g. "Was I wrong?"). These beats win over the ENDING rule."""
+
+
+def is_viral(format: str, target_seconds: float) -> bool:
+    return format == "short" and target_seconds <= VIRAL_UP_TO_SECONDS
+
+
+def viral_brief(seconds: float) -> str:
+    high_s = min(round(seconds), VIRAL_SECONDS[1])
+    low_s = min(VIRAL_SECONDS[0], high_s)
+    high = max_words(high_s)
+    return VIRAL_BRIEF.format(low_s=low_s, high_s=high_s, low=min(60, high - 8), high=high)
 
 
 def popup_target(seconds: float) -> int:
@@ -219,7 +285,11 @@ def build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes:
         return "\n".join(lines)
 
     length = f"Target length: about {target_seconds} seconds of speech, so {words - 8} to {words + 5} words in total."
-    extra = [LONG_BRIEF] if format == "long" else []
+    extra: list[str] = []
+    if format == "long":
+        extra, length = [long_brief(target_seconds)], "The LONG STORY rules above set the length and the ending."
+    elif is_viral(format, target_seconds):
+        extra, length = [viral_brief(target_seconds)], "The VIRAL SHORT rules above win over the ENDING rule."
     if mode == "story":
         lines = [STORY_BRIEF, *extra, f"Background gameplay: {game}", length, pace]
         if notes.strip():
@@ -331,9 +401,13 @@ OWN_STORY_SHORTEN = """
 This is the creator's own story: keep their sentences and wording wherever possible. Mostly drop whole
 sentences or clauses; only rephrase to join what is left. Keep every clue the ending depends on."""
 
+LOOP_SHORTEN = """
+The last sentence must stay an unfinished loop back into the first sentence. Do not end on a question
+or a subscribe line."""
+
 
 def fit_length(client, model: str, script: str, limit: int, seconds: float, progress: ProgressFn,
-               own: bool = False) -> str:
+               own: bool = False, loop: bool = False) -> str:
     """Gemini often overshoots the target; ask it once to tighten the script, then cut at a sentence end."""
     words = len(script.split())
     if words <= limit:
@@ -346,7 +420,7 @@ def fit_length(client, model: str, script: str, limit: int, seconds: float, prog
                                              temperature=0.4)
         prompt = SHORTEN_PROMPT.format(words=words, seconds=round(seconds), max_words=limit,
                                        low=max(limit - 25, limit * 3 // 4), script=script,
-                                       extra=OWN_STORY_SHORTEN if own else "")
+                                       extra=(OWN_STORY_SHORTEN if own else "") + (LOOP_SHORTEN if loop else ""))
         response, _ = _generate_with_fallback(client, model, [prompt], config, progress, Exception)
         parsed = response.parsed if isinstance(response.parsed, Shortened) else Shortened.model_validate_json(response.text)
         shorter = _clean_script(parsed.script)
@@ -456,7 +530,11 @@ def write_script(
     capped = bool(max_seconds and max_seconds < target)
     if capped:
         target = max(int(max_seconds), 10)
-    limit = max_words(target) + (0 if capped else 5)
+    viral = is_viral(format, target)
+    looped = viral or format == "long"  # both end on a replay loop, not a spoken question
+    if viral:
+        target = min(target, VIRAL_SECONDS[1])
+    limit = max_words(target) + (0 if capped or looped else 5)
     client = client or genai.Client(api_key=api_key)
     watched = bool(mode == "clip" and watch_clip and clip and clip.is_file())
 
@@ -482,10 +560,11 @@ def write_script(
 
         contents.append(build_prompt(game, target, trend_titles or [], notes, watched, mode,
                                      "long" if format == "long" else "short"))
+        schema = GeminiViralShort if looped else GeminiShort
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
-            response_schema=GeminiShort,
+            response_schema=schema,
             temperature=1.1 if mode == "story" else 0.9,
         )
         response, model = _generate_with_fallback(client, model, contents, config, progress, errors.APIError)
@@ -493,7 +572,7 @@ def write_script(
         if not isinstance(result, GeminiShort):
             if not response.text:
                 raise ScriptError("Gemini returned an empty answer (possibly blocked); try different notes")
-            result = GeminiShort.model_validate_json(response.text)
+            result = schema.model_validate_json(response.text)
     except errors.APIError as err:
         raise _explain(err, model) from err
     finally:
@@ -510,6 +589,11 @@ def write_script(
     question = clean_question(result.question) or clean_question(own_question) or DEFAULT_QUESTION
     cta = follow_cta(settings.channel_handle, body)
     body = lead_with_hook(body, result.hook)
+    if looped:
+        # The question stays in the pinned comment. Speaking it would break the replay loop.
+        script = fit_length(client, model, body, limit, target, progress, loop=True)
+        return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched, script=script,
+                       question=question, ending="loop")
     body = fit_length(client, model, body, limit - len(question.split()) - len(cta.split()), target, progress)
     script = f"{body} {question} {cta}"
     return _finish(result, game=game, model=model, mode=mode, format=format, watched=watched, script=script,
