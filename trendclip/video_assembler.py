@@ -272,11 +272,21 @@ def wrap_title(text: str, max_chars: int = 14, max_lines: int = 3) -> list[str]:
     return lines[:max_lines]
 
 
-def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True, max_chars: int = 14) -> str:
-    """Top banner for the first seconds: pops in, fades out."""
+PULSE_MS = 250
+
+
+def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True, max_chars: int = 14,
+                     pulse: bool = False) -> str:
+    """Top banner for the first seconds: pops in, fades out. `pulse`: the box flashes yellow / white
+    and the text throbs every 250 ms (quiz hooks)."""
     lines = [_ass_text(line, uppercase) for line in wrap_title(text, max_chars=max_chars)]
-    anim = r"{\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)}"
-    return f"Dialogue: 1,{_ass_time(0)},{_ass_time(seconds)},Title,,0,0,0,,{anim}" + r"\N".join(lines)
+    anim = r"\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)"
+    if pulse:
+        anim += r"\3c" + HIGHLIGHT_COLORS["yellow"]
+        for k, t in enumerate(range(PULSE_MS, int(seconds * 1000) - 300, PULSE_MS)):
+            box, scale = (WHITE, 100) if k % 2 == 0 else (HIGHLIGHT_COLORS["yellow"], 108)
+            anim += rf"\t({t},{t + 60},\3c{box}\fscx{scale}\fscy{scale})"
+    return f"Dialogue: 1,{_ass_time(0)},{_ass_time(seconds)},Title,,0,0,0,,{{{anim}}}" + r"\N".join(lines)
 
 
 def end_card_event(text: str, start: float, end: float) -> str:
@@ -285,6 +295,13 @@ def end_card_event(text: str, start: float, end: float) -> str:
     lines = [_ass_text(line, False) for line in wrapped[:4]]
     anim = r"{\fad(120,0)\fscx60\fscy60\t(0,160,\fscx108\fscy108)\t(160,260,\fscx100\fscy100)}"
     return f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},EndCard,,0,0,0,,{anim}" + r"\N".join(lines)
+
+
+def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None) -> str:
+    """Quiz step ('+18', 'CLUE 1', '?') that slams in big in the middle of the screen (or at `pos`)."""
+    at = rf"\pos({pos[0]},{pos[1]})" if pos else ""
+    anim = rf"{{{at}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
+    return f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},Flash,,0,0,0,,{anim}{_ass_text(text, True)}"
 
 
 def create_karaoke_ass_file(
@@ -310,6 +327,9 @@ def create_karaoke_ass_file(
     size: tuple[int, int] = (WIDTH, HEIGHT),
     top_margin: int = 200,
     title_chars: int = 14,
+    flashes: list | None = None,
+    flash_y: float | None = None,
+    title_pulse: bool = False,
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -334,15 +354,18 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,2,0,1,{outline},{shadow},2,70,70,{margin_v},1
 Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,{top_margin},1
 Style: EndCard,{font},{round(title_size * 96 / 132)},{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,{top_margin},1
+Style: Flash,{font},{round(font_size * 2.4)},{hl},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,4,0,1,{round(outline * 1.8)},{shadow + 4},5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = [title_card_event(title_card, title_seconds, uppercase, title_chars)] if title_card.strip() else []
+    events = [title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse)] if title_card.strip() else []
     if end_card.strip() and words:
         last = words[-1].end
         start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0)
         events.append(end_card_event(end_card, start, last + 1.0))
+    pos = (size[0] // 2, round(size[1] * flash_y)) if flash_y else None
+    events += [flash_event(f.text, f.start, f.end, pos) for f in flashes or []]
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds
@@ -442,12 +465,16 @@ def video_filter(fit: Literal["crop", "blur"], fps: int, size: tuple[int, int] =
     )
 
 
+# Crisp on phone speakers: rumble cut, then the voice brought up to the loudness Shorts are played at.
+VOICE_LEVEL = "highpass=f=80,loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,aformat=sample_rates=48000:channel_layouts=mono"
+
+
 def music_filter(duration: float, volume: float) -> str:
     """Input 2 (music) under input 1 (voice): fade in/out, duck while the voice speaks → [aout]."""
     fade_out = max(duration - 1.5, 0)
     return (
-        # Mono voice copied to both channels at full level (a plain stereo upmix costs ~3 dB).
-        "[1:a]aformat=sample_rates=48000:channel_layouts=mono,pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
+        # Mono voice levelled to -14 LUFS, copied to both channels (a plain stereo upmix costs ~3 dB).
+        f"[1:a]{VOICE_LEVEL},pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
         # Every track is levelled to the same loudness first, so 12-15% sounds the same for a loud
         # EDM track and a quiet lo-fi one.
         "[2:a]loudnorm=I=-14:TP=-2:LRA=11,"
@@ -654,11 +681,12 @@ def assemble_video(
             cmd += ["-ss", f"{background_start:.2f}"]
         cmd += ["-i", str(background.resolve()), "-i", str(voiceover.resolve())]
         graph = video_filter(fit, fps, size)
-        audio_out = "1:a:0"
+        audio_out = "[aout]"
         if music is not None:
             cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]
             graph += ";" + music_filter(voice_len, music_volume)
-            audio_out = "[aout]"
+        else:
+            graph += f";[1:a]{VOICE_LEVEL},pan=stereo|c0=c0|c1=c0[aout]"
         current = "base"
         first_input = 3 if music is not None else 2
         for i, ov in enumerate(overlays):

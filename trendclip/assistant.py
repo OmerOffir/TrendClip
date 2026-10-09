@@ -156,21 +156,23 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
         return random.choice(same_game or clips)
 
 
-def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop) -> shorts.ShortVideo:
-    """Random gameplay + a random Gemini storytime + voice, music by mood, pop-ups and stickers."""
+def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
+                        mode: Literal["story", "math", "riddle"] = "story") -> shorts.ShortVideo:
+    """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
+    pop-ups and stickers."""
     if script_writer.gemini_api_key(settings) is None:
         raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed to write the story)")
     clip = fresh_clip(settings, game, progress)
     path = Path(clip.path)
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
-    script = script_writer.write_script(settings, clip.game, path, mode="story", watch_clip=False,
+    script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
                                         max_seconds=clip_seconds, progress=progress)
     req = shorts.RenderRequest(
         clip=clip.filename, game=clip.game[:80] or "Gameplay", script=script.script, title=script.title,
         description=script.description, hashtags=script.hashtags, title_card=script.title_card,
         popups=script.popups[:20], reactions=script.reactions[:10], end_card=script.end_card,
         pinned_comment=script.pinned_comment, music_source="mood", music_mood=script.music_mood,
-        channel_handle=settings.channel_handle,
+        channel_handle=settings.channel_handle, flashes=script.flashes[:30], answer=script.answer,
     )
     try:
         return shorts.render_short(settings, req, progress)

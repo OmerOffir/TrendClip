@@ -16,10 +16,11 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import music, popups, script_writer, stickers, video_assembler, video_downloader, voiceover
+from . import music, popups, quiz, script_writer, stickers, video_assembler, video_downloader, voiceover
 from .config import Settings
 from .models import utcnow
 from .popups import Popup
+from .quiz import Flash
 from .stickers import Reaction
 from .video_downloader import LATEST_FILENAME, BackgroundClip
 
@@ -61,6 +62,7 @@ class ShortVideo(BaseModel):
     parts_total: int | None = None
     pinned_comment: str = ""
     channel_handle: str = ""
+    answer: str = ""  # quiz Shorts
     created_at: datetime = Field(default_factory=utcnow)
     edited_at: datetime | None = None
     render_settings: dict[str, Any] = Field(default_factory=dict)  # the RenderRequest, so the Short can be edited
@@ -105,6 +107,8 @@ class RenderRequest(BaseModel):
     parts_total: int | None = Field(None, ge=1, le=9)
     pinned_comment: str = Field("", max_length=1000)
     channel_handle: str = Field("", max_length=32)
+    flashes: list[Flash] = Field(default_factory=list, max_length=30)  # quiz numbers / clues
+    answer: str = Field("", max_length=80)
 
 
 class SeriesPart(BaseModel):
@@ -269,7 +273,8 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         if req.cta_sticker:
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
         return stickers.plan(
-            settings, [s for s in lib if s.category != "off"], words, req.reactions, cta=cta, auto=req.stickers,
+            settings, [s for s in lib if s.category != "off"], words, req.reactions, cta=cta,
+            auto=req.stickers and not req.flashes,
             popups=popup_overlays, title_seconds=3.0 if req.title_card.strip() else 0.0,
             end_seconds=3.5 if req.end_card.strip() else 0.0, seed=req.script,
         )
@@ -291,6 +296,9 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     out_dir.mkdir(parents=True, exist_ok=True)
     base = out_dir / (req.output_name or f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}")
     voice = req.voice or settings.tts_voice
+    rate = req.rate or settings.tts_rate
+    if req.flashes:
+        voice, rate = quiz.english_voice(voice), quiz.quiz_rate(rate)
 
     track = resolve_music(settings, req, progress)
 
@@ -301,7 +309,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         words = _load_words(base.with_suffix(".words.json"))
     else:
         progress(None, f"Recording the voiceover ({voice})")
-        words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, req.rate or settings.tts_rate)
+        words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate)
 
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)
@@ -315,7 +323,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         music_volume=music_volume(settings, req.music_volume),
         music_start=req.music_start,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
-        landscape=req.aspect == "landscape",
+        flashes=quiz.schedule_flashes(req.flashes, words), landscape=req.aspect == "landscape",
+        **(quiz.render_style(req.aspect == "landscape") if req.flashes else {}),
     )
 
     credit = credit_line(meta)
@@ -335,7 +344,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         music_title=track.title if track else "", music_url=track.url if track else "",
         title_card=req.title_card.strip(), popups=shown, stickers=used, end_card=req.end_card.strip(),
         series_id=req.series_id, story_name=req.story_name, part=req.part, parts_total=req.parts_total,
-        pinned_comment=req.pinned_comment.strip(), channel_handle=req.channel_handle,
+        pinned_comment=req.pinned_comment.strip(), channel_handle=req.channel_handle, answer=req.answer.strip(),
         render_settings=req.model_copy(update={
             "voice": voice, "music_track": track.video_id if track else None,
             "music_source": req.music_source if track else "none", "output_name": None,

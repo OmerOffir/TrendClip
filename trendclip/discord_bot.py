@@ -297,15 +297,18 @@ class TrendClipBot(discord.Client):
         await self.send_video(interaction.channel, filename, text, view_of(*video_buttons(self, short)),
                               followup=interaction)
 
-    async def create_random(self, interaction: discord.Interaction, game: str | None) -> None:
+    async def create_random(self, interaction: discord.Interaction, game: str | None, kind: str = "story") -> None:
         if script_writer.gemini_api_key(self.settings) is None:
             return await reply(interaction, "Add GEMINI_API_KEY to .env first (it writes the story).", ephemeral=True)
-        what = f"random {game} video" if game else "random video"
+        noun = {"math": "math challenge", "riddle": "riddle"}.get(kind, "video")
+        what = f"random {game} {noun}" if game else f"random {noun}"
         await reply(interaction, f"On it: creating a {what}. This takes a few minutes; I'll post it here.")
         short = await self.run_job(interaction.channel, f"Creating a {what}",
-                                   lambda p: assistant.create_random_short(self.settings, game, p), self.render_lock)
+                                   lambda p: assistant.create_random_short(self.settings, game, p, kind),
+                                   self.render_lock)
+        answer = f"\nAnswer (spoiler): ||{short.answer}||" if short.answer else ""
         await self.send_video(interaction.channel, short.filename,
-                              f"🎬 New video: **{short.title}**\n{short_meta(short)}\nWhat should I do with it?",
+                              f"🎬 New video: **{short.title}**\n{short_meta(short)}{answer}\nWhat should I do with it?",
                               view_of(*video_buttons(self, short),
                                       button("del", short.filename, "Delete it", discord.ButtonStyle.secondary)))
 
@@ -576,11 +579,16 @@ async def slot_cmd(interaction: discord.Interaction, time: SlotChoice, day: str 
     await bot.show_short(interaction, item.short, f"📅 {day_label(bot.settings, when)} · {time}")
 
 
-@app_commands.command(name="create", description="Create a random video (random gameplay + a random story)")
-@app_commands.describe(game="Optional: the gameplay to use (default: a random game)")
+@app_commands.command(name="create", description="Create a random video (random gameplay + a story or a quiz)")
+@app_commands.describe(game="Optional: the gameplay to use (default: a random game)",
+                       type="Story (default), math challenge or riddle")
+@app_commands.choices(type=[app_commands.Choice(name="📖 Story", value="story"),
+                            app_commands.Choice(name="🧮 Math challenge", value="math"),
+                            app_commands.Choice(name="🧩 Riddle", value="riddle")])
 @app_commands.autocomplete(game=game_choices)
-async def create_cmd(interaction: discord.Interaction, game: str | None = None) -> None:
-    await _bot(interaction).create_random(interaction, (game or "").strip() or None)
+async def create_cmd(interaction: discord.Interaction, game: str | None = None,
+                     type: app_commands.Choice[str] | None = None) -> None:  # noqa: A002 - the option's name in Discord
+    await _bot(interaction).create_random(interaction, (game or "").strip() or None, type.value if type else "story")
 
 
 @app_commands.command(name="upload", description="Publish a video on YouTube now (public)")
@@ -691,7 +699,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "**TrendClip bot**",
         "`/today` today's 18:00 and 23:00 videos (with Show / Upload buttons)",
         "`/slot time:18:00` send me the video for a slot (`day:` for another day)",
-        "`/create` make a random video (`game:` to pick the gameplay)",
+        "`/create` make a random video (`game:` to pick the gameplay, `type:` story, math challenge or riddle)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",

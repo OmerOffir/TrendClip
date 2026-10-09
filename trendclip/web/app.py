@@ -407,7 +407,7 @@ class ScriptRequest(BaseModel):
     notes: str = Field("", max_length=1000)
     target_seconds: int = Field(30, ge=10, le=180)  # per part for multi
     watch_clip: bool = True
-    mode: Literal["clip", "story"] = "clip"
+    mode: script_writer.ScriptMode = "clip"
     format: Literal["short", "long", "multi"] = "short"
     channel_handle: str | None = Field(None, pattern=r"^@[\w.-]{3,30}$")
 

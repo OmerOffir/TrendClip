@@ -44,9 +44,9 @@ Quickest: `./run.sh` creates `.venv`, installs dependencies (again only when `re
 changes), creates `.env` if missing, and starts the dashboard:
 
 ```bash
-./run.sh                    # web dashboard at http://127.0.0.1:8000
-./run.sh web --port 8080
-./run.sh bot                # Discord bot (see "Discord bot" below)
+./run.sh                    # web dashboard at http://127.0.0.1:8000 + the Discord bot (if configured)
+./run.sh web --port 8080    # NO_BOT=1 ./run.sh web skips the bot
+./run.sh bot                # only the Discord bot (see "Discord bot" below)
 ./run.sh cli --category 28  # one terminal run
 ./run.sh test
 ./run.sh setup              # environment only
@@ -235,6 +235,19 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
      `POST /api/create/describe`.
    **Script type → Random story** makes Gemini write a self-contained first-person storytime that is
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
+
+   **Questions → 🧮 Math challenge / 🧩 Riddle** (also under Script type) make a ~20–25 s interactive
+   quiz that viewers answer in the comments. A math challenge opens with a dare ("Only 5% of people
+   finish this without pausing. Don't pause this video."), reads a fast chain ("Start with 24. Add 18.
+   Divide by 2. Times 3…"), and ends with "Got your number? If you got 50, you made a mistake. Comment
+   your answer right now!". TrendClip picks the numbers itself, using whole numbers only, at least one ×
+   and one ÷, and a "wrong answer" bait that comes from skipping a step, so the answer is always right.
+   Gemini only writes the hook, title and hashtags; if Gemini is busy, built-in texts are used. A riddle
+   is written by Gemini: a hook, 2–3 clues and a final question. Each number or clue (`24`, `+18`, `÷2`,
+   `CLUE 1`) flashes big in the middle of the screen while it is spoken, the end shows a big **?** and
+   **COMMENT YOUR ANSWER**, and the pinned comment has the answer with the working
+   ("✅ Answer: 57 · 24 + 18 = 42 → ÷ 2 = 21 → …"). Reaction stickers are skipped so nothing covers
+   the numbers.
 
    **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock
    hook already in the middle of the action; 3–12 s the problem gets about twice as bad; 12–18 s is
@@ -449,14 +462,15 @@ The plan is saved in `output/planner.json`.
 
 ## Discord bot
 
-Run `./run.sh bot` next to the dashboard (or on its own) to control TrendClip from your Discord server
-with slash commands.
+`./run.sh` (the dashboard) starts the bot along with it whenever `DISCORD_BOT_TOKEN` is set; it logs to
+`output/discord_bot.log` and stops with the dashboard. `./run.sh bot` runs only the bot. Only one bot
+runs at a time. Control TrendClip from your Discord server with slash commands.
 
 | Command | What it does |
 |---------|--------------|
 | `/today` | Today's 18:00 and 23:00 videos, with **Show** and **Upload** buttons |
 | `/slot time:18:00` | Sends the video planned for that slot (`day:` for another day) |
-| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. `game:` picks the gameplay. |
+| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. `game:` picks the gameplay; `type:` makes a 🧮 math challenge or 🧩 riddle instead of a story (the answer is shown as a spoiler). |
 | `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
 | `/videos` | Videos that are made but not planned or uploaded |
@@ -480,7 +494,7 @@ Setup:
    **Copy Server ID** and put it in `DISCORD_GUILD_ID`. Right-click the reminder channel → **Copy
    Channel ID** and put it in `channels/<channel>/channel.env` as `DISCORD_CHANNEL_ID`. Optional:
    `DISCORD_ALLOWED_USERS=<your user id>` in `.env` lets only you use the bot.
-4. `./run.sh bot`. The commands show up on the server right away.
+4. Restart `./run.sh` (or run `./run.sh bot`). The commands show up on the server right away.
 
 Uploading needs YouTube connected once from the dashboard (**Upload → Connect YouTube**). The bot
 uses the same `channels/<channel>/token_youtube.json`.

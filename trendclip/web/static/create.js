@@ -104,6 +104,8 @@
     picking: false,
     popups: [], // [{word, emoji, query}]
     reactions: [], // [{word, mood}] reaction-sticker beats from Gemini
+    flashes: [], // quiz: [{word, text}] numbers / clues flashed on screen
+    answer: "", // quiz: the correct answer
     stickerLib: null,
     format: "short", // short | long | multi
     parts: null, // multi: [{script, title, desc, tags, titleCard, endCard, popups}] x2; the form shows parts[part]
@@ -131,6 +133,8 @@
     draft.watch = els.watch.checked;
     draft.popups = state.popups;
     draft.reactions = state.reactions;
+    draft.flashes = state.flashes;
+    draft.answer = state.answer;
     draft.stickers = els.stickers.checked;
     draft.ctaSticker = els.ctaSticker.checked;
     draft.length = els.length.value;
@@ -144,10 +148,11 @@
 
   // ---- formats & parts -------------------------------------------------------------------
 
-  const emptyPart = () => ({ script: "", title: "", desc: "", tags: "", titleCard: "", endCard: "", popups: [], reactions: [] });
+  const emptyPart = () => ({ script: "", title: "", desc: "", tags: "", titleCard: "", endCard: "", popups: [], reactions: [],
+    flashes: [], answer: "" });
 
   function capturePart() {
-    const p = { popups: state.popups, reactions: state.reactions };
+    const p = { popups: state.popups, reactions: state.reactions, flashes: state.flashes, answer: state.answer };
     for (const key of PART_FIELDS) p[key] = els[key].value;
     return p;
   }
@@ -156,6 +161,8 @@
     for (const key of PART_FIELDS) els[key].value = p[key] || "";
     state.popups = Array.isArray(p.popups) ? p.popups : [];
     state.reactions = Array.isArray(p.reactions) ? p.reactions : [];
+    state.flashes = Array.isArray(p.flashes) ? p.flashes : [];
+    state.answer = p.answer || "";
     renderPopups();
     renderReactions();
   }
@@ -255,6 +262,8 @@
       if (draft.watch != null) els.watch.checked = draft.watch;
       if (Array.isArray(draft.popups)) state.popups = draft.popups;
       if (Array.isArray(draft.reactions)) state.reactions = draft.reactions;
+      if (Array.isArray(draft.flashes)) state.flashes = draft.flashes;
+      state.answer = draft.answer || "";
       if (draft.stickers != null) els.stickers.checked = draft.stickers;
       if (draft.ctaSticker != null) els.ctaSticker.checked = draft.ctaSticker;
       state.clip = draft.clip || null;
@@ -376,10 +385,16 @@
       + "mind-blowing than the last. Open with the craziest one as the hook.",
   };
 
+  const QUIZ = ["math", "riddle"];
+  const isQuiz = () => QUIZ.includes(els.mode.value);
+
   function renderIdeas() {
     const notes = els.notes.value.trim();
     for (const b of els.ideas.querySelectorAll("[data-idea]")) {
-      b.classList.toggle("active", notes === IDEAS[b.dataset.idea]);
+      b.classList.toggle("active", !isQuiz() && notes === IDEAS[b.dataset.idea]);
+    }
+    for (const b of els.ideas.querySelectorAll("[data-quiz]")) {
+      b.classList.toggle("active", els.mode.value === b.dataset.quiz);
     }
   }
 
@@ -387,6 +402,16 @@
     if (!IDEAS[key]) return;
     els.notes.value = IDEAS[key];
     els.mode.value = "story"; // these aren't about the footage
+    renderIdeas();
+    saveDraft();
+    updateButtons();
+  }
+
+  function pickQuiz(kind) {
+    if (!QUIZ.includes(kind)) return;
+    if (Object.values(IDEAS).includes(els.notes.value.trim())) els.notes.value = "";
+    els.mode.value = kind;
+    if (state.format === "multi") setFormat("short");
     renderIdeas();
     saveDraft();
     updateButtons();
@@ -448,7 +473,8 @@
     const hasClip = !!selectedClip();
     const gemini = state.status && state.status.gemini_enabled;
     const multi = state.format === "multi";
-    const story = multi || els.mode.value === "story";
+    const story = multi || els.mode.value !== "clip";
+    const quiz = !multi && isQuiz();
     const long = state.format === "long";
     const badHandle = multi && els.handle.value.trim() && !HANDLE_RE.test(els.handle.value.trim());
     els.mode.disabled = multi;
@@ -459,17 +485,19 @@
       : badHandle ? "Channel must look like @YourChannel" : "";
     els.write.textContent = busyScript ? "Writing…"
       : multi ? "Write Part 1 + Part 2 with Gemini"
+      : quiz ? (els.mode.value === "math" ? "Write a math challenge" : "Write a riddle with Gemini")
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);
     els.describe.disabled = busyScript || !els.game.value.trim() || !gemini || badHandle || words < 3;
     els.describe.title = !gemini ? "Add GEMINI_API_KEY to .env first"
-      : words < 3 ? "Paste your own story in the voiceover box first"
+      : words < 3 ? `Paste your own ${quiz ? "quiz" : "story"} in the voiceover box first`
+      : quiz ? "Keeps your words (no subscribe line); the numbers flash on screen, the answer goes in the pinned comment"
       : "Keeps your words; Gemini writes the title, description, hashtags, title card, pop-ups, stickers, question and pinned comment";
-    els.describe.textContent = busyScript ? "Working…" : "✨ Fill the rest for my story";
+    els.describe.textContent = busyScript ? "Working…" : `✨ Fill the rest for my ${quiz ? "quiz" : "story"}`;
     els.watch.disabled = story;
     els.watch.closest(".check").classList.toggle("disabled", story);
-    els.watch.closest(".check").title = story ? "Not needed: the story is not about the clip" : "";
+    els.watch.closest(".check").title = story ? "Not needed: the voiceover is not about the clip" : "";
     const scripts = multi && state.parts
       ? state.parts.map((p, i) => (i === state.part ? els.script.value : p.script))
       : [els.script.value];
@@ -519,6 +547,8 @@
     els.pinned.value = r.pinned_comment || "";
     state.popups = r.popups || [];
     state.reactions = r.reactions || [];
+    state.flashes = r.flashes || [];
+    state.answer = r.answer || "";
     setSelect(els.voice, r.voice);
     setSelect(els.rate, r.rate);
     setSelect(els.highlight, r.highlight);
@@ -852,13 +882,20 @@
         els.pinned.value = r.pinned_comment || "";
         state.popups = r.popups || [];
         state.reactions = r.reactions || [];
+        const wasQuiz = state.flashes.length > 0;
+        state.flashes = r.flashes || [];
+        state.answer = r.answer || "";
+        if (state.flashes.length) els.endCard.value = r.end_card || "";
+        else if (wasQuiz) els.endCard.value = "";
         setMood(r.music_mood);
         renderPopups();
         renderReactions();
         els.onScreen.hidden = !r.on_screen;
-        const label = r.own_story ? "Your story" : r.mode === "story" ? "Story" : r.watched_clip ? "Gemini saw" : "Gemini assumed";
+        const quiz = QUIZ.includes(r.mode);
+        const label = r.own_story ? "Your story" : quiz ? "Quiz (only you see this)" : r.mode === "story" ? "Story"
+          : r.watched_clip ? "Gemini saw" : "Gemini assumed";
         els.onScreen.innerHTML = `<b>${label}:</b> ${esc(r.on_screen)}` +
-          (titles.length && r.mode !== "story" ? ` <span class="hint">· used ${titles.length} trending titles</span>` : "");
+          (titles.length && r.mode === "clip" ? ` <span class="hint">· used ${titles.length} trending titles</span>` : "");
         const by = r.own_story ? `Your words kept · title, tags, stickers and pop-ups by ${esc(r.model)}` : `Written by ${esc(r.model)}`;
         els.scriptJob.innerHTML = `<div class="dl-meta">${by} · ${r.word_count} words ≈ ${Math.round(r.estimated_seconds)}s · edit anything below</div>`;
         scriptStats();
@@ -957,6 +994,8 @@
           pinned_comment: els.pinned.value.trim(),
           popups: state.popups.filter((p) => inScript(p.word)),
           reactions: state.reactions.filter((r) => inScript(r.word)),
+          flashes: state.flashes,
+          answer: state.answer,
         }),
       });
       state.renderJob = body.id;
@@ -1145,7 +1184,7 @@
       els[key].addEventListener("change", () => {
         saveDraft();
         if (["fit", "words", "highlight"].includes(key)) updatePreview();
-        if (key === "mode") updateButtons();
+        if (key === "mode") { updateButtons(); renderIdeas(); }
         if (key === "music") { renderMood(); pickTrack(); }
         if (key === "musicMood") { renderMood(); if (els.music.value === "mood") pickTrack(); }
       });
@@ -1200,6 +1239,8 @@
     els.ideas.addEventListener("click", (e) => {
       const b = e.target.closest("[data-idea]");
       if (b) pickIdea(b.dataset.idea);
+      const q = e.target.closest("[data-quiz]");
+      if (q) pickQuiz(q.dataset.quiz);
     });
     els.cleared.addEventListener("click", (e) => {
       if (e.target.closest("[data-undo-clear]")) undoClear();

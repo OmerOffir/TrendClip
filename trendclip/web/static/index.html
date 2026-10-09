@@ -72,6 +72,8 @@
             <select id="cMode">
               <option value="clip">About the clip (Gemini narrates the gameplay)</option>
               <option value="story">Random story (not about the clip, gameplay is just background)</option>
+              <option value="math">Quiz: math challenge (numbers flash on screen, viewers comment the answer)</option>
+              <option value="riddle">Quiz: riddle (clues flash on screen, viewers comment the answer)</option>
             </select>
           </label>
         </div>
@@ -101,6 +103,9 @@
           <button type="button" class="idea" data-idea="drama">🎭 Drama story</button>
           <button type="button" class="idea" data-idea="adventure">🗺️ Adventure</button>
           <button type="button" class="idea" data-idea="science">🔬 Science facts</button>
+          <span class="hint">Questions:</span>
+          <button type="button" class="idea" data-quiz="math" title="'Only 5% finish without pausing': a fast chain of numbers flashes on screen, viewers comment their answer">🧮 Math challenge</button>
+          <button type="button" class="idea" data-quiz="riddle" title="A riddle told in 2-3 clues, viewers comment their guess; the answer goes in the pinned comment">🧩 Riddle</button>
         </div>
         <div class="cleared-note" id="cCleared" hidden></div>
         <div class="form-row form-actions">

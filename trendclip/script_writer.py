@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 from . import music
 from .config import PROJECT_ROOT, Settings
 from .popups import Popup, _matches, _norm, clean_popups
+from .quiz import QUIZ_MODES, Flash
 from .stickers import Reaction
 
 logger = logging.getLogger(__name__)
@@ -94,6 +95,8 @@ class ShortScript(GeminiShort):
     part: int | None = None
     parts_total: int | None = None
     end_card: str = ""
+    flashes: list[Flash] = Field(default_factory=list)  # quiz: numbers / clues flashed on screen
+    answer: str = ""  # quiz: the correct answer (also in the pinned comment)
 
 
 class GeminiSeries(BaseModel):
@@ -167,7 +170,7 @@ Rules:
 - Never wrap words in backticks, quotes or markdown.
 """
 
-ScriptMode = Literal["clip", "story"]
+ScriptMode = Literal["clip", "story", "math", "riddle"]  # math / riddle: quiz.py
 
 STORY_BRIEF = """Format: STORYTIME. The gameplay is only a background to keep eyes on screen; the voiceover is a
 random, self-contained story that is NOT about the game or the footage.
@@ -519,6 +522,10 @@ def write_script(
     client=None,
 ) -> ShortScript:
     """`max_seconds` (the clip length) is a hard cap: the voiceover never outlasts the gameplay."""
+    if mode in QUIZ_MODES:
+        from .quiz import write_quiz
+
+        return write_quiz(settings, game, mode, notes=notes, format=format, progress=progress, client=client)
     api_key = gemini_api_key(settings)
     if client is None and not api_key:
         raise ScriptError("GEMINI_API_KEY is not set in .env (create one at https://aistudio.google.com/apikey)")
@@ -913,7 +920,12 @@ def describe_script(settings: Settings, game: str, script: str, *, notes: str = 
     """Your own voiceover; Gemini writes the title, description, hashtags, title card, pop-ups, reaction
     beats, music mood, closing question and pinned comment. A story too long for the chosen length is
     tightened first (keeping your wording where possible); otherwise your words are kept as they are.
-    The question and the follow CTA are added at the end (a short question you already end on is kept)."""
+    The question and the follow CTA are added at the end (a short question you already end on is kept).
+    Math / riddle quizzes get no follow CTA: they end on the comment line (quiz.own_quiz)."""
+    if mode in QUIZ_MODES:
+        from .quiz import own_quiz
+
+        return own_quiz(settings, game, script, mode, notes=notes, format=format, progress=progress, client=client)
     story = _strip_cta(clean_own_script(script))
     if len(story.split()) < 3:
         raise ScriptError("Write or paste your story in the voiceover box first")
