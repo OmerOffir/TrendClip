@@ -249,6 +249,18 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    ("✅ Answer: 57 · 24 + 18 = 42 → ÷ 2 = 21 → …"). Reaction stickers are skipped so nothing covers
    the numbers.
 
+   **🌍 Trivia trap** (gamified fact trap, about 15 s) builds a speed quiz on a counter-intuitive but
+   true fact from science, geography, history, animals, space, food or pop culture. The banner is a
+   challenge like "90% GET THIS TRIVIA TRAP WRONG!". The voiceover goes: a dare, then "Which country
+   has the most islands? Is it Indonesia? Is it the Philippines? Or is it Sweden? Think fast! Three.
+   Two. One. If you picked Indonesia, you failed! Comment the real answer right now!". Each option
+   (`A) Sweden`), the countdown and **FAILED!** flash on screen, and a shocked reaction sticker lands on
+   "failed". Gemini picks the trap that most people would choose, a distractor and the surprising
+   answer, and is told to use only documented facts that are easy to check. The pinned comment proves
+   it ("✅ Answer: Sweden. Sweden has over 267,000 islands, Indonesia about 17,500. Did you fall for
+   Indonesia?"). **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
+   keeps your words, removes any subscribe line and ends on the comment line.
+
    **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock
    hook already in the middle of the action; 3–12 s the problem gets about twice as bad; 12–18 s is
    the twist; 18–22 s is an unfinished sentence that flows back into the first line, so the replay
@@ -468,9 +480,9 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 
 | Command | What it does |
 |---------|--------------|
-| `/today` | Today's 18:00 and 23:00 videos, with **Show** and **Upload** buttons |
+| `/today` | Today's 18:00 and 23:00 videos, with **Show** and **Upload** buttons, plus a copy-ready caption (text and hashtags) for YouTube, TikTok and Instagram |
 | `/slot time:18:00` | Sends the video planned for that slot (`day:` for another day) |
-| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. `game:` picks the gameplay; `type:` makes a 🧮 math challenge or 🧩 riddle instead of a story (the answer is shown as a spoiler). |
+| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle** or **🌍 Trivia trap** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
 | `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
 | `/videos` | Videos that are made but not planned or uploaded |

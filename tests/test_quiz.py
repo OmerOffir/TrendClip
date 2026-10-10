@@ -109,6 +109,44 @@ def test_own_quiz_keeps_its_own_comment_line_and_asks_gemini_when_unsolvable(tmp
     assert [f.text for f in result.flashes] == ["?"] and result.pinned_comment.startswith("🧩 Answer: An echo.")
 
 
+def test_trivia_trap(tmp_path):
+    seen = {}
+    trivia = quiz.GeminiTrivia(
+        category="space", question="Which planet in our solar system is the hottest", trap="Mercury.",
+        distractor="Mars", correct="Venus", fact="Venus averages about 465°C; Mercury about 167°C.",
+        title="90% Get This Wrong 🌍", description="Comment the real answer!", hashtags=["#trivia"],
+        title_card="90% get this trivia trap wrong! 🧠")
+    result = script_writer.write_script(make_settings(tmp_path), "GTA V", mode="trivia",
+                                        client=fake_client(trivia, seen))
+    assert seen["schema"] is quiz.GeminiTrivia
+    assert result.script.startswith("Only 5% get this right. Which planet in our solar system is the hottest? Is it ")
+    assert "Or is it " in result.script
+    assert "Think fast! Three. Two. One. If you picked Mercury, you failed! " in result.script
+    assert result.script.endswith("Comment the real answer right now!")
+    assert result.title_card == "90% GET THIS TRIVIA TRAP WRONG!"  # no emoji: the subtitle font can't draw it
+    assert result.answer == "Venus" and result.pinned_comment.startswith("✅ Answer: Venus. Venus averages")
+    assert [r.word for r in result.reactions] == ["failed"] and result.reactions[0].mood == "shocked"
+    labels = [f.text for f in result.flashes]
+    assert labels[0] == "?" and [l[:3] for l in labels[1:4]] == ["A) ", "B) ", "C) "]
+    assert sorted(l[3:] for l in labels[1:4]) == ["Mars", "Mercury", "Venus"]
+    assert labels[4:] == ["THINK FAST!", "3", "2", "1", "FAILED!", "?"]
+
+    words = va.estimate_word_timings(result.script.replace("hottest?", "hottest Venus?"), 18)
+    timed = quiz.schedule_flashes(result.flashes, words)
+    assert [t.text for t in timed] == labels
+    question_end = next(w.end for w in words if w.text.endswith("?"))
+    assert timed[1].start >= question_end - 0.1  # an option named in the question can't trigger option A
+
+
+def test_trivia_says_the_with_country_names(tmp_path):
+    trivia = quiz.GeminiTrivia(category="geography", hook="90% fall for this.", question="Which country has the most islands",
+                               trap="Indonesia", distractor="the Philippines", correct="Sweden", fact="Sweden: 267,570.",
+                               title="t", description="d", hashtags=[], title_card="GEOGRAPHY TRAP")
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", client=fake_client(trivia), rng=random.Random(2))
+    assert "Is it the Philippines?" in result.script or "Or is it the Philippines?" in result.script
+    assert any(f.text.endswith(") Philippines") and f.word == "it the" for f in result.flashes)
+
+
 def test_flashes_follow_the_voice_and_repeated_numbers():
     words = [va.Word(w, i * 0.4, i * 0.4 + 0.35) for i, w in enumerate(
         "Start with 12. Times 2. Plus 2. Divide by 2. Got your number? Comment your answer right now!".split())]

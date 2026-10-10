@@ -8,6 +8,7 @@ buttons keep working after a restart (their custom ids carry the action).
 import asyncio
 import logging
 import sys
+import uuid
 from datetime import date as Day, timedelta
 from typing import Any, Callable, Literal
 
@@ -22,6 +23,9 @@ logger = logging.getLogger(__name__)
 
 MESSAGE_MAX = 2000
 CUSTOM_ID_MAX = 100
+OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
+PENDING_TEXTS = 30
+NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["18:00", "23:00"]
 
@@ -80,6 +84,39 @@ def short_meta(short: shorts.ShortVideo) -> str:
     if short.part:
         bits.append(f"Part {short.part}/{short.parts_total or 2}")
     return " · ".join(bits)
+
+
+def _fence(text: str) -> str:
+    """A copy-paste block. Hashtags inside it don't ping Discord search."""
+    return "```\n" + text.replace("```", "'''").strip() + "\n```"
+
+
+def caption_message(settings: Settings, short: shorts.ShortVideo, heading: str) -> str:
+    """Ready-to-paste caption (text + hashtags) for YouTube, TikTok and Instagram."""
+    stored = publish.texts_for(settings, short.filename)
+    texts = publish.PlatformTexts.model_validate(stored.texts)
+    links = (publish.series_info(settings, stored) or {}).get("links", "")
+    blocks = [
+        ("▶️ YouTube", publish.youtube_description(texts.youtube, texts.credit, links)),
+        ("🎵 TikTok", publish.full_text(texts.tiktok, texts.credit)),
+        ("📸 Instagram", publish.full_text(texts.instagram, texts.credit)),
+    ]
+    lines = [heading, f"**{texts.youtube.title}**"]
+    for label, body in blocks:
+        lines.append(f"{label}\n{_fence(body)}")
+    text = "\n".join(lines)
+    if len(text) <= MESSAGE_MAX:
+        return text
+    # Keep every fence closed: trim the longest caption until the message fits.
+    bodies = [b for _, b in blocks]
+    while len(text) > MESSAGE_MAX:
+        i = max(range(len(bodies)), key=lambda n: len(bodies[n]))
+        bodies[i] = bodies[i][: max(len(bodies[i]) - (len(text) - MESSAGE_MAX) - 2, 40)] + "…"
+        lines = [heading, f"**{texts.youtube.title}**"]
+        for (label, _), body in zip(blocks, bodies):
+            lines.append(f"{label}\n{_fence(body)}")
+        text = "\n".join(lines)
+    return text
 
 
 def item_line(settings: Settings, item: planner.PlanItem, with_day: bool = False) -> str:
@@ -212,6 +249,7 @@ class TrendClipBot(discord.Client):
         self.upload_lock = asyncio.Lock()
         self.sent = assistant.SentLog(settings)
         self._games: list[str] | None = None
+        self.texts: dict[str, tuple[str, str | None]] = {}  # remember_text
 
     async def setup_hook(self) -> None:
         if n := planner.assign_slots(self.settings, assistant.today(self.settings)):
@@ -297,15 +335,32 @@ class TrendClipBot(discord.Client):
         await self.send_video(interaction.channel, filename, text, view_of(*video_buttons(self, short)),
                               followup=interaction)
 
-    async def create_random(self, interaction: discord.Interaction, game: str | None, kind: str = "story") -> None:
+    def remember_text(self, text: str, game: str | None) -> str:
+        """Your own text waits here (custom ids are too short for it) until you pick story / quiz."""
+        key = uuid.uuid4().hex[:10]
+        self.texts[key] = (text, game)
+        while len(self.texts) > PENDING_TEXTS:
+            self.texts.pop(next(iter(self.texts)))
+        return key
+
+    async def create_random(self, interaction: discord.Interaction, game: str | None, kind: str = "story",
+                            text: str | None = None) -> None:
+        """A random video, or (`text`) one with your own words as the voiceover."""
         if script_writer.gemini_api_key(self.settings) is None:
             return await reply(interaction, "Add GEMINI_API_KEY to .env first (it writes the story).", ephemeral=True)
-        noun = {"math": "math challenge", "riddle": "riddle"}.get(kind, "video")
-        what = f"random {game} {noun}" if game else f"random {noun}"
-        await reply(interaction, f"On it: creating a {what}. This takes a few minutes; I'll post it here.")
-        short = await self.run_job(interaction.channel, f"Creating a {what}",
-                                   lambda p: assistant.create_random_short(self.settings, game, p, kind),
-                                   self.render_lock)
+        noun = NOUNS.get(kind, "story" if text else "video")
+        if text:
+            what = f"your {noun}" + (f" on {game} gameplay" if game else "")
+        else:
+            what = f"a random {game} {noun}" if game else f"a random {noun}"
+        await reply(interaction, f"On it: creating {what}. This takes a few minutes; I'll post it here.")
+
+        def job(p: assistant.ProgressFn) -> shorts.ShortVideo:
+            if text:
+                return assistant.create_from_text(self.settings, text, game, p, kind)
+            return assistant.create_random_short(self.settings, game, p, kind)
+
+        short = await self.run_job(interaction.channel, f"Creating {what}", job, self.render_lock)
         answer = f"\nAnswer (spoiler): ||{short.answer}||" if short.answer else ""
         await self.send_video(interaction.channel, short.filename,
                               f"🎬 New video: **{short.title}**\n{short_meta(short)}{answer}\nWhat should I do with it?",
@@ -481,14 +536,73 @@ async def act_delete(bot: TrendClipBot, interaction: discord.Interaction, filena
     await interaction.response.edit_message(content="🗑️ Deleted.", view=None)
 
 
-async def act_make(bot: TrendClipBot, interaction: discord.Interaction, _arg: str) -> None:
-    await bot.create_random(interaction, None)
+KINDS = {"story": ("📖 Story", discord.ButtonStyle.success), "math": ("🧮 Math challenge", discord.ButtonStyle.primary),
+         "riddle": ("🧩 Riddle", discord.ButtonStyle.primary), "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary)}
+
+
+def kind_buttons(game: str | None = None) -> list[ActionButton | None]:
+    """Story / math / riddle choice; `mk` args are 'kind:game' (just 'kind' when the game doesn't fit)."""
+    out = []
+    for kind, (label, style) in KINDS.items():
+        with_game = button("mk", f"{kind}:{game}", label, style) if game else None
+        out.append(with_game or button("mk", kind, label, style))
+    return out
+
+
+async def ask_kind(interaction: discord.Interaction, game: str | None) -> None:
+    what = f" with {game} gameplay" if game else ""
+    own = button("own", game or "-", "✍️ Use my own text") or button("own", "-", "✍️ Use my own text")
+    await reply(interaction, f"What kind of video should I make{what}?", view=view_of(*kind_buttons(game), own))
+
+
+async def act_make(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    kind, _, game = arg.partition(":")
+    if kind not in KINDS:  # the old "Create a random video" buttons
+        return await ask_kind(interaction, None)
+    await bot.create_random(interaction, game.strip() or None, kind)
+
+
+class OwnTextModal(discord.ui.Modal, title="Your own text"):
+    """A multi-line box for a story or quiz you wrote (the slash command's `text:` is one line)."""
+
+    text = discord.ui.TextInput(
+        label="Story or quiz (spoken word for word)", style=discord.TextStyle.paragraph, min_length=20,
+        max_length=OWN_TEXT_MAX,
+        placeholder="I walked into the wrong wedding... / Start with 24. Add 18. Divide by 2... / Which country...")
+
+    def __init__(self, game: str | None):
+        super().__init__(timeout=900)
+        self.game = game
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        await ask_text_kind(interaction, _bot(interaction).remember_text(str(self.text.value), self.game))
+
+
+async def ask_text_kind(interaction: discord.Interaction, key: str) -> None:
+    buttons = [button("mkt", f"{kind}:{key}", label.replace("Math challenge", "Math"), style)
+               for kind, (label, style) in KINDS.items()]
+    await reply(interaction, "Got your text. What is it? I keep your words; Gemini writes the title, hashtags "
+                             "and the rest (quizzes get their numbers / options flashed on screen).",
+                view=view_of(*buttons))
+
+
+async def act_own_text(bot: TrendClipBot, interaction: discord.Interaction, game: str) -> None:
+    await interaction.response.send_modal(OwnTextModal(None if game in ("", "-") else game))
+
+
+async def act_make_from_text(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    kind, _, key = arg.partition(":")
+    if key not in bot.texts or kind not in KINDS:
+        return await reply(interaction, "I don't have that text anymore (I restarted). Send it again with "
+                                        "`/create text:` or the ✍️ button.", ephemeral=True)
+    text, game = bot.texts.pop(key)
+    await bot.create_random(interaction, game, kind, text=text)
 
 
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
-    "mk": act_make,
+    "mk": act_make, "own": act_own_text, "mkt": act_make_from_text,
 }
 
 
@@ -556,12 +670,25 @@ async def game_choices(interaction: discord.Interaction, current: str) -> list[a
 @app_commands.command(name="today", description="Which videos go out today at 18:00 and 23:00")
 async def today_cmd(interaction: discord.Interaction) -> None:
     bot = _bot(interaction)
-    text, buttons, empty = bot.today_text(assistant.today(bot.settings))
+    day = assistant.today(bot.settings)
+    text, buttons, empty = bot.today_text(day)
+    videos = [(e.slot, e.short) for e in assistant.day_slots(bot.settings, day) if e.short]
+    for item in assistant.unslotted(bot.settings, day):
+        try:
+            extra = shorts.get_short(bot.settings, item.short) if item.short else None
+        except (ValueError, FileNotFoundError):
+            extra = None
+        if extra:
+            videos.append((item.slot, extra))
+    if videos:
+        text += "\nCaptions for each one are below, ready to copy."
     if any(b and b.action == "show" for b in buttons):
         text += "\nWant to see them?"
     if empty:
         buttons.append(button("mk", "-", "Create a random video", discord.ButtonStyle.success))
     await reply(interaction, text, view=view_of(*buttons))
+    for slot, short in videos:
+        await interaction.followup.send(caption_message(bot.settings, short, f"📝 `{slot or 'no time'}` **{short.title}**"))
 
 
 @app_commands.command(name="slot", description="Send me the video planned for 18:00 or 23:00")
@@ -579,16 +706,25 @@ async def slot_cmd(interaction: discord.Interaction, time: SlotChoice, day: str 
     await bot.show_short(interaction, item.short, f"📅 {day_label(bot.settings, when)} · {time}")
 
 
-@app_commands.command(name="create", description="Create a random video (random gameplay + a story or a quiz)")
+@app_commands.command(name="create", description="Create a video: a story, a math challenge, a riddle or a trivia trap")
 @app_commands.describe(game="Optional: the gameplay to use (default: a random game)",
-                       type="Story (default), math challenge or riddle")
-@app_commands.choices(type=[app_commands.Choice(name="📖 Story", value="story"),
-                            app_commands.Choice(name="🧮 Math challenge", value="math"),
-                            app_commands.Choice(name="🧩 Riddle", value="riddle")])
+                       type="Story, math challenge, riddle or trivia trap (I ask with buttons when you leave it out)",
+                       text="Optional: your own story / quiz, spoken word for word (like Fill the rest in the dashboard)")
+@app_commands.choices(type=[app_commands.Choice(name=label, value=kind) for kind, (label, _) in KINDS.items()])
 @app_commands.autocomplete(game=game_choices)
 async def create_cmd(interaction: discord.Interaction, game: str | None = None,
-                     type: app_commands.Choice[str] | None = None) -> None:  # noqa: A002 - the option's name in Discord
-    await _bot(interaction).create_random(interaction, (game or "").strip() or None, type.value if type else "story")
+                     type: app_commands.Choice[str] | None = None,  # noqa: A002 - the option's name in Discord
+                     text: app_commands.Range[str, 1, OWN_TEXT_MAX] | None = None) -> None:
+    bot = _bot(interaction)
+    game = (game or "").strip() or None
+    text = (text or "").strip() or None
+    if text and len(text.split()) < 3:
+        return await reply(interaction, "Send at least a few sentences as `text:`.", ephemeral=True)
+    if text and type is None:
+        return await ask_text_kind(interaction, bot.remember_text(text, game))
+    if type is None:
+        return await ask_kind(interaction, game)
+    await bot.create_random(interaction, game, type.value, text=text)
 
 
 @app_commands.command(name="upload", description="Publish a video on YouTube now (public)")
@@ -697,9 +833,10 @@ async def plan_move(interaction: discord.Interaction, item: str, day: str, time:
 async def help_cmd(interaction: discord.Interaction) -> None:
     await reply(interaction, "\n".join([
         "**TrendClip bot**",
-        "`/today` today's 18:00 and 23:00 videos (with Show / Upload buttons)",
+        "`/today` today's 18:00 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
         "`/slot time:18:00` send me the video for a slot (`day:` for another day)",
-        "`/create` make a random video (`game:` to pick the gameplay, `type:` story, math challenge or riddle)",
+        "`/create` make a video: I ask story, math challenge, riddle or trivia trap (`game:` picks the gameplay, "
+        "`text:` or ✍️ uses your own words)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",

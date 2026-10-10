@@ -385,7 +385,7 @@
       + "mind-blowing than the last. Open with the craziest one as the hook.",
   };
 
-  const QUIZ = ["math", "riddle"];
+  const QUIZ = ["math", "riddle", "trivia"];
   const isQuiz = () => QUIZ.includes(els.mode.value);
 
   function renderIdeas() {
@@ -485,7 +485,8 @@
       : badHandle ? "Channel must look like @YourChannel" : "";
     els.write.textContent = busyScript ? "Writing…"
       : multi ? "Write Part 1 + Part 2 with Gemini"
-      : quiz ? (els.mode.value === "math" ? "Write a math challenge" : "Write a riddle with Gemini")
+      : quiz ? { math: "Write a math challenge", riddle: "Write a riddle with Gemini",
+        trivia: "Write a trivia trap with Gemini" }[els.mode.value]
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);

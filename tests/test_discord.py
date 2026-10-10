@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from trendclip import assistant, planner, publish, script_writer, shorts, video_downloader
+from trendclip import assistant, planner, publish, quiz, script_writer, shorts, video_downloader
 from trendclip.config import Settings
 from trendclip.video_downloader import BackgroundClip, DownloadError
 
@@ -248,6 +248,64 @@ def test_create_random_short_writes_a_story_and_renders_it(settings, monkeypatch
     assert rendered[0].music_mood == "funny_quirky" and rendered[0].pinned_comment == "Ever done this?"
 
 
+def test_create_from_text_keeps_your_words(settings, monkeypatch):
+    clip = _clip(settings, "GTA V")
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s=None: "key")
+    monkeypatch.setattr(video_downloader, "download_background", lambda game, s, **k: clip)
+    monkeypatch.setattr(video_downloader, "probe_video", lambda p: {"duration_seconds": 50.0})
+    asked = {}
+
+    def fake_describe(s, game, script, **kw):
+        asked.update(game=game, script=script, **kw)
+        return script_writer.ShortScript(
+            on_screen="", hook="x", script=script, title="Mine", description="d", hashtags=["#shorts"], game=game,
+            model="m", watched_clip=False, word_count=9, estimated_seconds=3, flashes=[quiz.Flash(word="24", text="24")],
+            answer="21")
+
+    rendered = []
+    monkeypatch.setattr(script_writer, "describe_script", fake_describe)
+    monkeypatch.setattr(shorts, "render_short", lambda s, req, p: rendered.append(req) or shorts.ShortVideo(
+        filename="gta_1.mp4", game=req.game, title=req.title, description="", hashtags=[], script=req.script,
+        voice="v", background=req.clip, answer=req.answer))
+    text = "Start with 24. Add 18. Divide by 2. Comment your answer!"
+    short = assistant.create_from_text(settings, text, "GTA V", mode="math")
+    assert asked["script"] == text and asked["mode"] == "math" and asked["max_seconds"] == 50.0
+    assert asked["target_seconds"] >= settings.short_target_seconds
+    assert rendered[0].flashes[0].text == "24" and short.answer == "21"
+    with pytest.raises(ValueError):
+        assistant.create_from_text(settings, "too short", "GTA V")
+
+
+def test_own_text_waits_for_its_kind_then_renders(monkeypatch):
+    import asyncio
+
+    from trendclip import discord_bot
+
+    made, said = [], []
+
+    class Bot:
+        texts = {}
+        remember_text = discord_bot.TrendClipBot.remember_text
+
+        async def create_random(self, interaction, game, kind, text=None):
+            made.append((game, kind, text))
+
+    async def fake_reply(interaction, content, **kw):
+        said.append(content)
+
+    monkeypatch.setattr(discord_bot, "reply", fake_reply)
+    bot = Bot()
+    key = bot.remember_text("I walked into the wrong wedding.", "GTA V")
+    asyncio.run(discord_bot.act_make_from_text(bot, None, f"story:{key}"))
+    assert made == [("GTA V", "story", "I walked into the wrong wedding.")] and not bot.texts
+    asyncio.run(discord_bot.act_make_from_text(bot, None, f"math:{key}"))  # used up / bot restarted
+    assert "don't have that text" in said[-1]
+    for i in range(discord_bot.PENDING_TEXTS + 5):
+        bot.remember_text(f"text {i}", None)
+    assert len(bot.texts) == discord_bot.PENDING_TEXTS
+    assert len(f"tc:mkt:trivia:{key}") <= discord_bot.CUSTOM_ID_MAX
+
+
 # --------------------------------------------------------------------------- bot helpers
 
 
@@ -261,3 +319,41 @@ def test_buttons_carry_their_action_and_skip_too_long_ids():
     with pytest.raises(ValueError):
         discord_bot.code_slot("1900")
     assert set(discord_bot.ACTIONS) >= {"show", "up", "upgo", "pl", "pt", "rm", "mk"}
+
+
+def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
+    import asyncio
+
+    from trendclip import discord_bot
+
+    ids = [b.item.custom_id for b in discord_bot.kind_buttons("GTA V")]
+    assert ids == ["tc:mk:story:GTA V", "tc:mk:math:GTA V", "tc:mk:riddle:GTA V", "tc:mk:trivia:GTA V"]
+    assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
+        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia"]
+
+    made, asked = [], []
+
+    class Bot:
+        async def create_random(self, interaction, game, kind):
+            made.append((game, kind))
+
+    async def fake_ask(interaction, game):
+        asked.append(game)
+
+    monkeypatch.setattr(discord_bot, "ask_kind", fake_ask)
+    asyncio.run(discord_bot.act_make(Bot(), None, "math:GTA V"))
+    asyncio.run(discord_bot.act_make(Bot(), None, "riddle"))
+    asyncio.run(discord_bot.act_make(Bot(), None, "-"))  # old "Create a random video" button
+    assert made == [("GTA V", "math"), (None, "riddle")] and asked == [None]
+
+
+def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings):
+    from trendclip import discord_bot
+
+    short = shorts.get_short(settings, add_short(settings))
+    text = discord_bot.caption_message(settings, short, "📝 `18:00` **The Day**")
+    for label in ("▶️ YouTube", "🎵 TikTok", "📸 Instagram"):
+        assert label in text
+    assert "I searched for three hours" in text  # the description text
+    assert "#storytime" in text and "#fyp" in text and "#shorts" in text
+    assert text.count("```") == 6 and len(text) <= discord_bot.MESSAGE_MAX

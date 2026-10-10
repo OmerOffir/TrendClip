@@ -157,7 +157,7 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
 
 
 def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
-                        mode: Literal["story", "math", "riddle"] = "story") -> shorts.ShortVideo:
+                        mode: Literal["story", "math", "riddle", "trivia"] = "story") -> shorts.ShortVideo:
     """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
     pop-ups and stickers."""
     if script_writer.gemini_api_key(settings) is None:
@@ -167,6 +167,32 @@ def create_random_short(settings: Settings, game: str | None = None, progress: P
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
                                         max_seconds=clip_seconds, progress=progress)
+    return _render_script(settings, clip, script, progress)
+
+
+OWN_TEXT_MAX_SECONDS = 170  # stays a Short (YouTube: up to 3 minutes)
+
+
+def create_from_text(settings: Settings, text: str, game: str | None = None, progress: ProgressFn = _noop,
+                     mode: Literal["story", "math", "riddle", "trivia"] = "story") -> shorts.ShortVideo:
+    """Like the Create tab's "Fill the rest": your words are the voiceover, Gemini writes the rest, on random
+    (or `game`) gameplay. A story too long for the clip is tightened; a quiz is kept word for word."""
+    if script_writer.gemini_api_key(settings) is None:
+        raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed for the title and hashtags)")
+    if len(text.split()) < 3:
+        raise ValueError("Send at least a few sentences")
+    clip = fresh_clip(settings, game, progress)
+    path = Path(clip.path)
+    clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
+    wanted = script_writer.estimate_seconds(text) + 6  # room for the closing question + follow line
+    target = min(max(wanted, settings.short_target_seconds), OWN_TEXT_MAX_SECONDS)
+    script = script_writer.describe_script(settings, clip.game, text, mode=mode, target_seconds=target,
+                                           max_seconds=clip_seconds, progress=progress)
+    return _render_script(settings, clip, script, progress)
+
+
+def _render_script(settings: Settings, clip: video_downloader.BackgroundClip, script: script_writer.ShortScript,
+                   progress: ProgressFn) -> shorts.ShortVideo:
     req = shorts.RenderRequest(
         clip=clip.filename, game=clip.game[:80] or "Gameplay", script=script.script, title=script.title,
         description=script.description, hashtags=script.hashtags, title_card=script.title_card,

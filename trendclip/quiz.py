@@ -27,8 +27,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-QuizKind = Literal["math", "riddle"]
-QUIZ_MODES = ("math", "riddle")
+QuizKind = Literal["math", "riddle", "trivia"]
+QUIZ_MODES = ("math", "riddle", "trivia")
 FLASH_SECONDS = 1.4  # each step stays up 1.2-1.5 s (or until the next one)
 LAST_FLASH_SECONDS = 3.0
 END_CARD = "COMMENT YOUR ANSWER"
@@ -50,7 +50,8 @@ class TimedFlash:
 
 
 def schedule_flashes(flashes: list[Flash], words: list, total: float | None = None) -> list[TimedFlash]:
-    """Each flash starts on the first matching spoken word after the previous flash (numbers repeat)."""
+    """Each flash starts on the first matching spoken word after the previous flash (numbers repeat).
+    A several-word `word` ("it Venus") must be spoken in a row and starts on its first word."""
     if not words:
         return []
     total = total if total is not None else words[-1].end + 0.6
@@ -58,12 +59,13 @@ def schedule_flashes(flashes: list[Flash], words: list, total: float | None = No
     starts: list[tuple[str, float]] = []
     cursor = 0
     for flash in flashes:
-        token = _norm(flash.word.split()[0]) if flash.word.split() else ""
-        hit = next((i for i in range(cursor, len(words)) if token and _matches(spoken[i], token)), None)
+        tokens = [t for t in (_norm(w) for w in flash.word.split()) if t]
+        hit = next((i for i in range(cursor, len(words) - len(tokens) + 1) if tokens
+                    and all(_matches(spoken[i + k], t) for k, t in enumerate(tokens))), None)
         if hit is None:
             continue
         starts.append((flash.text, max(words[hit].start - 0.05, 0.0)))
-        cursor = hit + 1
+        cursor = hit + len(tokens)
     out = []
     for i, (text, start) in enumerate(starts):
         last = i + 1 == len(starts)
@@ -242,6 +244,42 @@ an overused one (no "What has keys but can't open locks", "What gets wetter the 
 types that work: "What am I?", a short who-did-it with a hidden clue, a lateral-thinking situation.
 Double-check that every clue fits the answer. Background gameplay: {game}.{notes}"""
 
+
+class GeminiTrivia(BaseModel):
+    category: str = Field(description="science, geography, history, animals, space, food or pop culture.")
+    hook: str = Field("", description=(
+        "A spoken dare before the question, at most 7 words, e.g. 'Only 5% get this right.' or '90% fall for "
+        "this one.'"))
+    question: str = Field(description=(
+        "The trap question, at most 12 words, 'Which [category item] is [surprising condition]?', e.g. 'Which "
+        "country has the most pyramids?' or 'Which planet is the hottest?'"))
+    trap: str = Field(description=(
+        "The obvious answer about 90% of people pick instinctively, but WRONG, 1 to 3 words, e.g. 'Egypt' or 'Mercury'."))
+    distractor: str = Field(description="A plausible but wrong option, 1 to 3 words, e.g. 'Mexico'.")
+    correct: str = Field(description=(
+        "The mind-bending CORRECT answer, 1 to 3 words, e.g. 'Sudan' or 'Venus'. Must be true, well documented "
+        "and easy to verify on Google."))
+    fact: str = Field(description=(
+        "One or two short sentences proving the correct answer with the real numbers, e.g. 'Sudan has about 255 "
+        "pyramids, Egypt about 120.' For the pinned comment."))
+    title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the answer, e.g. '90% Get This Wrong 🌍'.")
+    description: str = Field(description="One or two short sentences daring viewers to comment the real answer, no hashtags.")
+    hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #trivia #quiz #geography #funfacts.")
+    title_card: str = Field(description=(
+        "3 to 7 word ALL-CAPS challenge banner with a low pass rate, e.g. '90% GET THIS TRIVIA TRAP WRONG!' or "
+        "'ONLY 5% SOLVE THIS GEOGRAPHY TRAP!'. No emoji."))
+
+
+TRIVIA_PROMPT = """Write a GAMIFIED FACT TRAP Short (15-20 seconds): a speed trivia question built on a
+counter-intuitive but TRUE fact (science, geography, history, animals, space, food or pop culture), with
+three options: the trap most people pick instinctively, a plausible distractor, and the surprising correct
+answer. The viewer must feel sure of the trap, then doubt it, Google it and come back to comment.
+Rules: the correct answer must be a well-known, documented fact that is not disputed and not outdated (no
+"it depends", no trick wording). The trap must be clearly wrong once you check. Keep every option short
+and easy to say, written as it is spoken after "Is it ...?" (with "the" where English needs it, e.g.
+"the Philippines", "the Pacific"). Don't reuse the most famous ones (Sudan pyramids, Venus hottest planet, Canada lakes) unless
+the creator's notes ask for them. Background gameplay: {game}.{notes}"""
+
 MATH_HOOKS = ("Only 5% finish this without pausing.", "Only 3% get this right the first time.",
               "Most people fail this by step four.", "Only geniuses get this without pausing.")
 
@@ -283,6 +321,8 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
     rng = rng or random.Random()
     if kind == "math":
         return _write_math(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
+    if kind == "trivia":
+        return _write_trivia(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     client, model = sw._gemini(settings, client)
     result, model = _ask(client, model, GeminiRiddle, RIDDLE_PROMPT.format(game=game, notes=_notes(notes)), progress)
     clues = [_one_line(c, 18) for c in result.clues if c.strip()][:3]
@@ -299,6 +339,41 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
     pinned = f"🧩 Answer: {answer}. {result.explanation.strip()} Did you get it before the end?"
     return _script(settings, game, model, "riddle", format, " ".join(lines), hook, flashes, answer, pinned, result,
                    on_screen=f"Riddle answer: {answer}. {result.explanation.strip()}")
+
+
+def _option(text: str) -> str:
+    return " ".join(re.sub(r"[\"“”`*#?!.,;:]", " ", text or "").split()[:4])
+
+
+def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
+                  rng: random.Random) -> ShortScript:
+    from . import script_writer as sw
+    from .stickers import Reaction
+
+    client, model = sw._gemini(settings, client)
+    result, model = _ask(client, model, GeminiTrivia, TRIVIA_PROMPT.format(game=game, notes=_notes(notes)), progress)
+    trap, distractor, correct = (_option(t) for t in (result.trap, result.distractor, result.correct))
+    if not all((trap, distractor, correct)) or len({trap.lower(), distractor.lower(), correct.lower()}) < 3:
+        raise sw.ScriptError("Gemini wrote a trivia question without three different options; try again")
+    question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
+    options = [trap, distractor, correct]
+    rng.shuffle(options)
+    hook = _one_line(result.hook, 8) or "Only 5% get this right."
+    asks = [f"Is it {options[0]}?", f"Is it {options[1]}?", f"Or is it {options[2]}?"]
+    lines = [hook, question, *asks, "Think fast! Three. Two. One.", f"If you picked {trap}, you failed!",
+             "Comment the real answer right now!"]
+    # The question first, so an option named in the hook or question can't trigger its flash early.
+    flashes = [Flash(word=question.split()[0], text="?")]
+    for letter, option in zip("ABC", options):
+        label = f"{letter}) {re.sub(r'^the ', '', option, flags=re.I)}"
+        flashes.append(Flash(word=f"it {option.split()[0]}", text=label if len(label) <= 16 else letter))
+    flashes += [Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
+                Flash(word="one", text="1"), Flash(word="you failed", text="FAILED!"), Flash(word="real answer", text="?")]
+    fact = result.fact.strip()
+    pinned = f"✅ Answer: {correct}. {fact} Did you fall for {trap}?"
+    script = _script(settings, game, model, "trivia", format, " ".join(lines), hook, flashes, correct, pinned,
+                     result, on_screen=f"Answer: {correct} (trap: {trap}). {fact}")
+    return script.model_copy(update={"reactions": [Reaction(word="failed", mood="shocked")]})
 
 
 def _write_math(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
@@ -323,7 +398,8 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
                               hashtags=["#shorts", "#math", "#brainteaser", "#mathchallenge", "#quiz"],
                               title_card="DON'T PAUSE")
     hook = _one_line(pack.hook, 10)
-    if {str(answer), str(start)} & {_norm(t) for t in hook.split()}:
+    # The start number would fire its flash early ("Only 10%..."); the answer just mustn't be given away.
+    if str(start) in {_norm(t) for t in hook.split()} or str(answer) in {t.strip(".,!?") for t in hook.split()}:
         hook = rng.choice(MATH_HOOKS)
     lines, flashes = math_lines(start, chain, rng)
     flashes.append(Flash(word="number", text="?"))
@@ -427,7 +503,8 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
         flashes.append(Flash(word=question.split()[0], text="?"))
 
     client, model = sw._gemini(settings, client)
-    prompt = "\n".join([f"Package this {'RAPID MATH' if kind == 'math' else 'RIDDLE'} quiz Short the creator wrote.",
+    label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP"}[kind]
+    prompt = "\n".join([f"Package this {label} quiz Short the creator wrote.",
                         f"Background gameplay: {game}.{_notes(notes)}",
                         *([f"The correct answer is {solved[0]} ({solved[1]})."] if solved else []),
                         "VOICEOVER (do not change it):", text])
@@ -435,7 +512,8 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
     answer = str(solved[0]) if solved else _one_line(pack.answer, 8).rstrip(".")
     working = solved[1] if solved else pack.working.strip()
     pinned = (f"✅ Answer: {answer}\n{working}\nDid you beat the clock, or did you have to rewatch?" if kind == "math"
-              else f"🧩 Answer: {answer}. {working} Did you get it before the end?")
+              else f"🧩 Answer: {answer}. {working} Did you get it before the end?" if kind == "riddle"
+              else f"✅ Answer: {answer}. {working} Did you fall for the trap?")
     hook = (sw._sentences(text) or [text])[0]
     return _script(settings, game, model, kind, format, text, hook, flashes, answer, pinned, pack,
                    on_screen=f"Answer: {answer}" + (f" ({working})" if working else ""))
@@ -463,7 +541,7 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         title=pack.title.strip().strip('"')[:100],
         description=pack.description.strip(),
         hashtags=sw._clean_hashtags(pack.hashtags),
-        title_card=re.sub(r"[#*\"]", "", pack.title_card).strip().upper()[:40],
+        title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", pack.title_card).split()).upper()[:48],
         music_mood=MUSIC_MOOD,
         ending="question",
         end_card=END_CARD,
