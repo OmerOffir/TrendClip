@@ -1,0 +1,28 @@
+# User service for the dashboard and the Discord bot (./run.sh web starts both).
+# The site listens on this machine only. From another computer:
+#   ssh -L 8000:127.0.0.1:8000 Bot
+# then open http://127.0.0.1:8000
+#
+# If the repo is not in ~/TrendClip, change both paths below.
+#
+# Install (once), from the Linux machine:
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/trendclip.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now trendclip.service
+#
+#   systemctl --user start|stop|restart|status trendclip.service
+
+[Unit]
+Description=TrendClip dashboard and Discord bot
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/TrendClip
+ExecStart=/bin/bash %h/TrendClip/run.sh web --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
