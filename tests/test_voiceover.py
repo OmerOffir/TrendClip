@@ -1,9 +1,16 @@
-from trendclip import voiceover
+from trendclip import local_voice, voiceover
 from trendclip.video_assembler import Word
 
 
 class Handshake403(Exception):
     pass
+
+
+def test_f5_speed_follows_the_edge_rate():
+    assert local_voice.speed("+5%") == 1.05
+    assert local_voice.speed("+0%") == 1.0
+    assert local_voice.speed("") == 1.0
+    assert local_voice.REF_WAV.is_file() and "three percent" in local_voice.REF_TEXT
 
 
 def test_microsoft_refused_is_only_the_403_handshake():

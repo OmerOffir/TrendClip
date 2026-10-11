@@ -1,0 +1,9 @@
+# Local voice for the Linux GPU when Microsoft refuses Edge (HTTP 403).
+# Install into the project venv after the normal ./run.sh setup:
+#
+#   .venv/bin/pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
+#   .venv/bin/pip install -r requirements-gpu.txt
+#
+# An 8 GB card is enough. The model weights download on the first video.
+
+f5-tts>=1.1

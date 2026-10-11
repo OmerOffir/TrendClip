@@ -10,7 +10,8 @@ imageio-ffmpeg>=0.5  # bundled ffmpeg fallback when ffmpeg isn't installed
 # create tab: script writing + voiceover
 google-genai>=2.0
 edge-tts>=7.0
-piper-tts>=1.2  # local voice when Microsoft refuses the Edge voice (HTTP 403)
+# When Microsoft returns 403, the GPU voice is F5-TTS. It is not installed here:
+# see requirements-gpu.txt on the Linux machine.
 pillow>=10.0  # pop-up stickers
 
 # upload tab: YouTube upload (OAuth)
