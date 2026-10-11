@@ -6,11 +6,17 @@ class Handshake403(Exception):
     pass
 
 
-def test_f5_speed_follows_the_edge_rate():
-    assert local_voice.speed("+5%") == 1.05
-    assert local_voice.speed("+0%") == 1.0
-    assert local_voice.speed("") == 1.0
+def test_f5_reads_slower_and_keeps_the_countdown_pauses():
+    assert local_voice.speed("+5%") < 0.9
+    assert local_voice.speed("+0%") == 0.82
     assert local_voice.REF_WAV.is_file() and "three percent" in local_voice.REF_TEXT
+    pieces = local_voice.paced_pieces(
+        "Is it Sweden? Think fast! Three..... Two....... One....... Hint: over 260,000.")
+    spoken = [text for kind, text in pieces if kind == "text"]
+    assert spoken[:4] == ["Is it Sweden?", "Think fast!", "Three", "Two"]
+    gaps = [pause for kind, pause in pieces if kind == "silence"]
+    assert gaps[0] >= 0.5  # room after the question
+    assert max(gaps) >= 1.0  # the long dots before One become silence
 
 
 def test_microsoft_refused_is_only_the_403_handshake():
