@@ -291,6 +291,67 @@ def _random_start(duration: float | None, clip_seconds: int) -> float:
     return round(random.uniform(low, high), 1)
 
 
+MOTION_SLACK = 12  # extra seconds downloaded so the clip can open on movement, not a still frame
+_MOTION_PX = 16
+
+
+def liveliest_offset(diffs: list[float], step: float, keep: float) -> float:
+    """Start time of the `keep`-second window whose opening second moves the most."""
+    if not diffs or step <= 0:
+        return 0.0
+    window = max(1, int(keep / step) - 1)
+    lead = max(1, int(1.0 / step))
+    best_i, best = 0, -1.0
+    for i in range(max(0, len(diffs) - window) + 1):
+        score = sum(diffs[i:i + window]) + 2 * sum(diffs[i:i + lead])
+        if score > best:
+            best, best_i = score, i
+    return round(best_i * step, 1)
+
+
+def _motion_diffs(path: Path, span: float, step: float = 0.5) -> list[float]:
+    """Mean absolute change between tiny grayscale frames, one step apart. Empty when ffmpeg can't read it."""
+    ffmpeg = ffmpeg_path()
+    if not ffmpeg:
+        return []
+    proc = subprocess.run(
+        [ffmpeg, "-v", "error", "-i", str(path), "-t", f"{span:.1f}",
+         "-vf", f"fps={1 / step:.4f},scale={_MOTION_PX}:{_MOTION_PX},format=gray",
+         "-f", "rawvideo", "-pix_fmt", "gray", "pipe:1"],
+        capture_output=True, timeout=60,
+    )
+    raw, size = proc.stdout, _MOTION_PX * _MOTION_PX
+    if proc.returncode != 0 or len(raw) < size * 2:
+        return []
+    frames = [raw[i:i + size] for i in range(0, len(raw) - size + 1, size)]
+    return [sum(abs(a - b) for a, b in zip(left, right)) / size for left, right in zip(frames, frames[1:])]
+
+
+def _cut(path: Path, start: float, seconds: int) -> None:
+    """Keep `seconds` from `start` (stream copy)."""
+    ffmpeg = ffmpeg_path()
+    if not ffmpeg:
+        raise DownloadError("ffmpeg is required to trim clips (install ffmpeg or imageio-ffmpeg)")
+    tmp = path.with_name(path.stem + ".trim.mp4")
+    proc = subprocess.run(
+        [ffmpeg, "-y", "-loglevel", "error", "-ss", f"{start:.1f}", "-i", str(path), "-t", str(seconds),
+         "-c", "copy", str(tmp)],
+        capture_output=True, text=True, timeout=300,
+    )
+    if proc.returncode != 0 or not tmp.exists():
+        tmp.unlink(missing_ok=True)
+        raise DownloadError(f"ffmpeg trim failed: {proc.stderr.strip()[-200:]}")
+    os.replace(tmp, path)
+
+
+def _open_on_motion(path: Path, keep: int, slack: int) -> float:
+    """Trim a clip that was downloaded `slack` seconds long so second 0 is the busiest moment."""
+    offset = liveliest_offset(_motion_diffs(path, keep + slack), 0.5, keep)
+    offset = min(offset, float(slack))
+    _cut(path, offset, keep)
+    return offset
+
+
 DOWNLOAD_ATTEMPTS = 3
 FFMPEG_RECONNECT = ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_on_network_error", "1",
                     "-reconnect_delay_max", "10"]
@@ -322,8 +383,11 @@ def _download_from_youtube(
     duration = info.get("duration")
     if clip_seconds and duration and duration < clip_seconds:
         raise DownloadError(f"video is only {duration:.0f}s, shorter than the requested {clip_seconds}s")
+    slack = 0
     if clip_seconds and start_seconds is None:
-        start_seconds = _random_start(duration, clip_seconds)
+        start_seconds = _random_start(duration, clip_seconds + MOTION_SLACK)
+        if duration and start_seconds + clip_seconds + MOTION_SLACK <= duration:
+            slack = MOTION_SLACK
 
     def hook(d: dict) -> None:
         if d.get("status") == "downloading":
@@ -354,7 +418,7 @@ def _download_from_youtube(
     if clip_seconds:
         if not ffmpeg:
             raise DownloadError("ffmpeg is required to cut clips (install ffmpeg or imageio-ffmpeg)")
-        end = start_seconds + clip_seconds
+        end = start_seconds + clip_seconds + slack
         opts["download_ranges"] = yt_dlp.utils.download_range_func(None, [(start_seconds, end)])
         opts["force_keyframes_at_cuts"] = True
         # ffmpeg streams the section from YouTube for minutes; reconnect instead of dying ("code 8").
@@ -382,6 +446,9 @@ def _download_from_youtube(
     os.replace(produced[0], output_path)
     for leftover in output_path.parent.glob(tmp_base.name + ".*"):
         leftover.unlink(missing_ok=True)
+    if slack:
+        progress(None, "Picking the busiest opening")
+        start_seconds += _open_on_motion(output_path, clip_seconds, slack)
 
     channel = info.get("channel") or info.get("uploader") or "Unknown"
     return {

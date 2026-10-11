@@ -108,11 +108,60 @@ def quiz_rate(rate: str) -> str:
 
 
 def render_style(landscape: bool) -> dict:
-    """assemble_video options for a quiz: pulsing hook banner, numbers + captions in the middle band."""
-    style: dict = {"title_pulse": True}
+    """assemble_video options for a quiz: a large pulsing dare on frame 0, numbers + captions in the middle."""
+    style: dict = {"title_pulse": True, "title_chars": 16, "title_size": 148}
     if not landscape:
         style |= {"margin_v": CAPTION_MARGIN, "flash_y": FLASH_Y}
     return style
+
+
+def digit_hint(answer: int) -> str:
+    word = {1: "one digit", 2: "two digits", 3: "three digits"}.get(len(str(abs(int(answer)))), f"{len(str(abs(answer)))} digits")
+    return f"it's {word}"
+
+
+def safe_hint(hint: str, *forbidden: str) -> str:
+    """A hint viewers can use, with the answer itself removed."""
+    text = " ".join((hint or "").split()).strip(" .")
+    low = text.lower()
+    if not text or any(len(word) > 2 and word.lower() in low for word in forbidden):
+        return ""
+    return text[:80]
+
+
+def hint_from_fact(fact: str, *banned: str) -> str:
+    text = fact or ""
+    for word in banned:
+        if len(word) > 2:
+            text = re.sub(re.escape(word), "", text, flags=re.I)
+    match = re.search(r"\d[\d,.]*(?:\s*°\s*[CF])?(?:\s+[A-Za-z]+)?", text)
+    return match.group(0).strip(" .,;") if match else "the obvious guess is wrong"
+
+
+def public_pin(ask: str, hint: str) -> str:
+    """The comment to pin on publish: a question, then a hint. Never the answer."""
+    hint = hint.strip().rstrip(".")
+    hint = re.sub(r"(?i)^hint:\s*", "", hint)
+    return f"{ask.strip()} 👇\nHint: {hint}."
+
+
+_DARE = re.compile(r"\d+\s*%|don't pause|do not pause|\bstop\b", re.I)
+
+
+def frame_zero(card: str, hook: str) -> str:
+    """The frame-0 banner: a rarity dare or a hard stop, taken from the card or the spoken hook."""
+    card = " ".join((card or "").split())
+    if _DARE.search(card) and len(card.split()) >= 3:
+        return card
+    words = re.sub(r"[\"']", "", hook or "").split()[:6]
+    return " ".join(words).rstrip(".!?") or "ONLY 3% CAN SOLVE THIS"
+
+
+def with_emoji(title: str, emoji: str = "🧠") -> str:
+    title = title.strip()
+    if any(ord(ch) > 1000 for ch in title):
+        return title
+    return f"{title} {emoji}".strip()
 
 
 def apply(value: int, step: Step) -> int:
@@ -202,8 +251,9 @@ def math_lines(start: int, chain: list[Step], rng: random.Random) -> tuple[list[
 
 QUIZ_INSTRUCTION = """You package interactive "brain workout" quiz Shorts (YouTube Shorts, TikTok, Reels). The
 viewer plays along in their head, then comments their answer: that is the whole point. Style: bold, fast,
-competitive, a little cheeky. Hooks dare the viewer (rarity claims like "Only 5% ...", "Don't pause this
-video"). Never reveal the answer in the title, description, title card or hashtags. Plain English."""
+competitive, a little cheeky. The first sentence is a dare with a rarity claim ("Only 3% ...", "Stop. Do not
+pause.") and is spoken from the first millisecond, with no soft intro. Titles end with one emoji (🧠 or 🛑).
+Never reveal the answer in the title, description, title card, hint or hashtags. Plain English."""
 
 
 class GeminiMathPack(BaseModel):
@@ -214,7 +264,9 @@ class GeminiMathPack(BaseModel):
     title: str = Field(description="YouTube title, at most 60 characters, no hashtags, no answer, e.g. 'Only 5% Get This Right 🧠'.")
     description: str = Field(description="One or two short sentences daring viewers to comment their answer, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #math #brainteaser #mathchallenge #quiz.")
-    title_card: str = Field(description="2 to 4 word ALL-CAPS banner for the first 3 seconds, e.g. 'DON'T PAUSE'.")
+    title_card: str = Field(description=(
+        "3 to 7 word ALL-CAPS banner on the first frame, a rarity dare or a hard stop, e.g. 'ONLY 3% CAN SOLVE THIS' "
+        "or 'STOP DO NOT PAUSE'. No emoji."))
 
 
 class GeminiRiddle(BaseModel):
@@ -229,7 +281,11 @@ class GeminiRiddle(BaseModel):
     title: str = Field(description="YouTube title, at most 60 characters, no hashtags, no answer, e.g. 'Only 5% Solve This Riddle 🧩'.")
     description: str = Field(description="One or two short sentences daring viewers to comment their answer, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #riddle #brainteaser #puzzle #quiz.")
-    title_card: str = Field(description="2 to 4 word ALL-CAPS banner for the first 3 seconds, e.g. 'RIDDLE TIME'.")
+    hint: str = Field("", description=(
+        "One spoiler-free hint that makes people want to comment, with a number or a comparison when you can, "
+        "e.g. 'over 33,000 miles'. Never the answer itself."))
+    title_card: str = Field(description=(
+        "3 to 7 word ALL-CAPS banner on the first frame, a rarity dare, e.g. 'ONLY 5% SOLVE THIS'. No emoji."))
 
 
 MATH_PROMPT = """Package this RAPID MATH CHAIN Short. The voiceover reads the chain fast, one step every
@@ -261,10 +317,13 @@ class GeminiTrivia(BaseModel):
         "and easy to verify on Google."))
     fact: str = Field(description=(
         "One or two short sentences proving the correct answer with the real numbers, e.g. 'Sudan has about 255 "
-        "pyramids, Egypt about 120.' For the pinned comment."))
+        "pyramids, Egypt about 120.' Used to build the hint; the answer itself stays off the video."))
     title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the answer, e.g. '90% Get This Wrong 🌍'.")
     description: str = Field(description="One or two short sentences daring viewers to comment the real answer, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #trivia #quiz #geography #funfacts.")
+    hint: str = Field("", description=(
+        "One spoiler-free hint with the surprising number or comparison, never naming the correct option, "
+        "e.g. 'over 33,000 miles' or 'hotter than 400 degrees'. Shown at the end so people comment."))
     title_card: str = Field(description=(
         "3 to 7 word ALL-CAPS challenge banner with a low pass rate, e.g. '90% GET THIS TRIVIA TRAP WRONG!' or "
         "'ONLY 5% SOLVE THIS GEOGRAPHY TRAP!'. No emoji."))
@@ -330,13 +389,12 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
         raise sw.ScriptError("Gemini wrote a riddle without clues; try again")
     question = (_one_line(result.question, 8).rstrip(".!?") or "What am I") + "?"
     hook = _one_line(result.hook, 12) or "Only 5% solve this riddle."
-    lines = [hook, "Listen carefully."] + clues + [question, "Got it? Comment your answer right now!"]
-    # "carefully" first, so a clue's first word ("I ...") can't match a word in the hook
-    flashes = [Flash(word="carefully", text="RIDDLE")]
-    flashes += [Flash(word=c.split()[0], text=f"CLUE {i}") for i, c in enumerate(clues, 1)]
-    flashes.append(Flash(word=question.split()[0], text="?"))
     answer = _one_line(result.answer, 6).rstrip(".")
-    pinned = f"🧩 Answer: {answer}. {result.explanation.strip()} Did you get it before the end?"
+    hint = safe_hint(result.hint, answer) or "every clue has to fit one answer"
+    lines = [hook, *clues, question, f"Hint: {hint}.", CLOSING]
+    flashes = [Flash(word=" ".join(c.split()[:2]), text=f"CLUE {i}") for i, c in enumerate(clues, 1)]
+    flashes += [Flash(word=question.split()[0], text="?"), Flash(word="Hint", text="HINT")]
+    pinned = public_pin(question, hint)
     return _script(settings, game, model, "riddle", format, " ".join(lines), hook, flashes, answer, pinned, result,
                    on_screen=f"Riddle answer: {answer}. {result.explanation.strip()}")
 
@@ -359,8 +417,9 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     options = [trap, distractor, correct]
     rng.shuffle(options)
     hook = _one_line(result.hook, 8) or "Only 5% get this right."
+    hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
     asks = [f"Is it {options[0]}?", f"Is it {options[1]}?", f"Or is it {options[2]}?"]
-    lines = [hook, question, *asks, "Think fast! Three. Two. One.", f"If you picked {trap}, you failed!",
+    lines = [hook, question, *asks, "Think fast! Three. Two. One.", f"Hint: {hint}.",
              "Comment the real answer right now!"]
     # The question first, so an option named in the hook or question can't trigger its flash early.
     flashes = [Flash(word=question.split()[0], text="?")]
@@ -368,12 +427,12 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
         label = f"{letter}) {re.sub(r'^the ', '', option, flags=re.I)}"
         flashes.append(Flash(word=f"it {option.split()[0]}", text=label if len(label) <= 16 else letter))
     flashes += [Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
-                Flash(word="one", text="1"), Flash(word="you failed", text="FAILED!"), Flash(word="real answer", text="?")]
+                Flash(word="one", text="1"), Flash(word="Hint", text="HINT"), Flash(word="real answer", text="?")]
     fact = result.fact.strip()
-    pinned = f"✅ Answer: {correct}. {fact} Did you fall for {trap}?"
+    pinned = public_pin(question, hint)
     script = _script(settings, game, model, "trivia", format, " ".join(lines), hook, flashes, correct, pinned,
                      result, on_screen=f"Answer: {correct} (trap: {trap}). {fact}")
-    return script.model_copy(update={"reactions": [Reaction(word="failed", mood="shocked")]})
+    return script.model_copy(update={"reactions": [Reaction(word="Hint", mood="suspicious")]})
 
 
 def _write_math(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
@@ -396,16 +455,17 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
         pack = GeminiMathPack(hook=rng.choice(MATH_HOOKS), title="Only 5% Get This Right 🧠",
                               description="Do it in your head, no pausing. Comment your final number!",
                               hashtags=["#shorts", "#math", "#brainteaser", "#mathchallenge", "#quiz"],
-                              title_card="DON'T PAUSE")
+                              title_card="ONLY 3% CAN SOLVE THIS")
     hook = _one_line(pack.hook, 10)
     # The start number would fire its flash early ("Only 10%..."); the answer just mustn't be given away.
     if str(start) in {_norm(t) for t in hook.split()} or str(answer) in {t.strip(".,!?") for t in hook.split()}:
         hook = rng.choice(MATH_HOOKS)
     lines, flashes = math_lines(start, chain, rng)
-    flashes.append(Flash(word="number", text="?"))
-    closing = ["Got your number?", f"If you got {trap}, you made a mistake.", "Comment your answer right now!"]
-    script = " ".join([hook, "Don't pause.", *lines, *closing])
-    pinned = (f"✅ Answer: {answer}\n{steps_text}\nDid you beat the clock, or did you have to rewatch?")
+    flashes += [Flash(word="number", text="?"), Flash(word="Hint", text="HINT")]
+    hint = digit_hint(answer)
+    closing = ["Got your number?", f"Hint: {hint}.", CLOSING]
+    script = " ".join([hook, *lines, *closing])
+    pinned = public_pin("What number did you get?", hint)
     return _script(settings, game, model, "math", format, script, hook, flashes, str(answer), pinned, pack,
                    on_screen=f"Math chain: {steps_text} (answer {answer})")
 
@@ -511,9 +571,11 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
     pack, model = _ask(client, model, GeminiOwnQuiz, prompt, progress)
     answer = str(solved[0]) if solved else _one_line(pack.answer, 8).rstrip(".")
     working = solved[1] if solved else pack.working.strip()
-    pinned = (f"✅ Answer: {answer}\n{working}\nDid you beat the clock, or did you have to rewatch?" if kind == "math"
-              else f"🧩 Answer: {answer}. {working} Did you get it before the end?" if kind == "riddle"
-              else f"✅ Answer: {answer}. {working} Did you fall for the trap?")
+    if kind == "math" and answer.isdigit():
+        hint, ask = digit_hint(int(answer)), "What number did you get?"
+    else:
+        hint, ask = (safe_hint(working, answer) or "the obvious guess is wrong"), "What do you think?"
+    pinned = public_pin(ask, hint)
     hook = (sw._sentences(text) or [text])[0]
     return _script(settings, game, model, kind, format, text, hook, flashes, answer, pinned, pack,
                    on_screen=f"Answer: {answer}" + (f" ({working})" if working else ""))
@@ -538,10 +600,10 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         script=script,
         question="",
         pinned_comment=pinned,
-        title=pack.title.strip().strip('"')[:100],
+        title=with_emoji(pack.title.strip().strip('"')[:100]),
         description=pack.description.strip(),
         hashtags=sw._clean_hashtags(pack.hashtags),
-        title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", pack.title_card).split()).upper()[:48],
+        title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", frame_zero(pack.title_card, hook)).split()).upper()[:48],
         music_mood=MUSIC_MOOD,
         ending="question",
         end_card=END_CARD,

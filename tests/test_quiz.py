@@ -49,13 +49,16 @@ def test_math_quiz_script_flashes_and_answer(tmp_path):
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="math",
                                         client=fake_client(pack, seen))
     assert seen["schema"] is quiz.GeminiMathPack and "answer" in seen["prompt"]
-    assert result.mode == "math" and result.script.startswith("Only 5% of people finish this without pausing. Don't pause")
-    assert "Start with" in result.script and result.script.endswith("Comment your answer right now!")
-    assert result.end_card == quiz.END_CARD and result.title_card == "DON'T PAUSE"
-    assert len(result.flashes) == 9 and result.flashes[-1].text == "?"
+    assert result.mode == "math" and result.script.startswith("Only 5% of people finish this without pausing.")
+    assert "Don't pause" not in result.script and "made a mistake" not in result.script
+    assert "Start with" in result.script and "Hint: it's " in result.script
+    assert result.script.endswith("Comment your answer right now!")
+    assert result.end_card == quiz.END_CARD and result.title_card == "ONLY 5% OF PEOPLE FINISH THIS"
+    assert len(result.flashes) == 10 and result.flashes[-1].text == "HINT"
     assert result.flashes[1].text[0] in "+-×÷"
-    assert result.answer and f"Answer: {result.answer}" in result.pinned_comment
-    assert "→" in result.pinned_comment and "#shorts" in result.hashtags
+    assert result.answer and result.answer not in result.pinned_comment and "→" not in result.pinned_comment
+    assert result.pinned_comment.startswith("What number did you get? 👇") and "Hint:" in result.pinned_comment
+    assert f"answer {result.answer}" in result.on_screen and "#shorts" in result.hashtags
     assert result.music_mood == quiz.MUSIC_MOOD and not result.popups and not result.reactions
 
 
@@ -74,9 +77,12 @@ def test_riddle_quiz(tmp_path):
         question="What am I", answer="A clock.", explanation="A clock has a face and hands.",
         title="Only 5% Solve This 🧩", description="Comment your guess!", hashtags=["#riddle"], title_card="RIDDLE TIME")
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="riddle", client=fake_client(riddle))
-    assert "Listen carefully. I have a face" in result.script and "What am I?" in result.script
-    assert [f.text for f in result.flashes] == ["RIDDLE", "CLUE 1", "CLUE 2", "?"]
-    assert result.answer == "A clock" and result.pinned_comment.startswith("🧩 Answer: A clock.")
+    assert result.script.startswith("Only 5% solve this riddle") and "Listen carefully" not in result.script
+    assert "I have a face" in result.script and "What am I?" in result.script and "Hint:" in result.script
+    assert "clock" not in result.script.lower().split("hint:")[-1]
+    assert [f.text for f in result.flashes] == ["CLUE 1", "CLUE 2", "?", "HINT"]
+    assert result.answer == "A clock" and result.pinned_comment.startswith("What am I? 👇")
+    assert "clock" not in result.pinned_comment.lower()
 
 
 OWN_MATH = ("99% OF PEOPLE FAIL THIS PERCENTAGE TRAP! Start with 100. Take away 50%. Add 50% back. Multiply by 2. "
@@ -95,7 +101,8 @@ def test_fill_the_rest_for_a_math_quiz_keeps_it_a_quiz(tmp_path):
         "What did you get? Comment your answer right now!")
     assert [f.text for f in result.flashes] == ["100", "-50%", "+50%", "×2", "-30", "÷3", "?"]
     assert result.answer == "40" and "The correct answer is 40" in seen["prompt"]
-    assert "100 → − 50% = 50 → + 50% = 75 → × 2 = 150 → − 30 = 120 → ÷ 3 = 40" in result.pinned_comment
+    assert "100 → − 50% = 50 → + 50% = 75 → × 2 = 150 → − 30 = 120 → ÷ 3 = 40" in result.on_screen
+    assert result.pinned_comment.startswith("What number did you get? 👇") and "40" not in result.pinned_comment
     assert result.end_card == quiz.END_CARD and result.mode == "math"
 
 
@@ -106,7 +113,8 @@ def test_own_quiz_keeps_its_own_comment_line_and_asks_gemini_when_unsolvable(tmp
     result = script_writer.describe_script(make_settings(tmp_path), "Minecraft", riddle, mode="riddle",
                                            client=fake_client(pack))
     assert result.script == riddle and result.answer == "An echo"
-    assert [f.text for f in result.flashes] == ["?"] and result.pinned_comment.startswith("🧩 Answer: An echo.")
+    assert [f.text for f in result.flashes] == ["?"]
+    assert result.pinned_comment.startswith("What do you think? 👇") and "echo" not in result.pinned_comment.lower()
 
 
 def test_trivia_trap(tmp_path):
@@ -121,15 +129,17 @@ def test_trivia_trap(tmp_path):
     assert seen["schema"] is quiz.GeminiTrivia
     assert result.script.startswith("Only 5% get this right. Which planet in our solar system is the hottest? Is it ")
     assert "Or is it " in result.script
-    assert "Think fast! Three. Two. One. If you picked Mercury, you failed! " in result.script
+    assert "Think fast! Three. Two. One. Hint:" in result.script and "you failed" not in result.script
+    assert "Venus" not in result.script.split("One.")[-1]  # named as an option, never as the reveal
     assert result.script.endswith("Comment the real answer right now!")
     assert result.title_card == "90% GET THIS TRIVIA TRAP WRONG!"  # no emoji: the subtitle font can't draw it
-    assert result.answer == "Venus" and result.pinned_comment.startswith("✅ Answer: Venus. Venus averages")
-    assert [r.word for r in result.reactions] == ["failed"] and result.reactions[0].mood == "shocked"
+    assert result.answer == "Venus" and result.pinned_comment.startswith("Which planet in our solar system is the hottest? 👇")
+    assert "Venus" not in result.pinned_comment and "Hint:" in result.pinned_comment
+    assert [r.word for r in result.reactions] == ["Hint"] and result.reactions[0].mood == "suspicious"
     labels = [f.text for f in result.flashes]
     assert labels[0] == "?" and [l[:3] for l in labels[1:4]] == ["A) ", "B) ", "C) "]
     assert sorted(l[3:] for l in labels[1:4]) == ["Mars", "Mercury", "Venus"]
-    assert labels[4:] == ["THINK FAST!", "3", "2", "1", "FAILED!", "?"]
+    assert labels[4:] == ["THINK FAST!", "3", "2", "1", "HINT", "?"]
 
     words = va.estimate_word_timings(result.script.replace("hottest?", "hottest Venus?"), 18)
     timed = quiz.schedule_flashes(result.flashes, words)
@@ -174,7 +184,7 @@ def test_quiz_layout_pulses_the_hook_and_keeps_the_middle_band(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert r"\pos(540,826)" in text and text.count(r"\3c") > 4
     assert f",{quiz.CAPTION_MARGIN},1" in text  # karaoke style MarginV
-    assert quiz.render_style(True) == {"title_pulse": True}
+    assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148}
 
 
 def test_flashes_are_drawn_in_the_subtitles(tmp_path):

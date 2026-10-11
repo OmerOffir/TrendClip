@@ -237,28 +237,27 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    *not* about the game (the gameplay is only the background); the clip is not uploaded in that mode.
 
    **Questions → 🧮 Math challenge / 🧩 Riddle** (also under Script type) make a ~20–25 s interactive
-   quiz that viewers answer in the comments. A math challenge opens with a dare ("Only 5% of people
-   finish this without pausing. Don't pause this video."), reads a fast chain ("Start with 24. Add 18.
-   Divide by 2. Times 3…"), and ends with "Got your number? If you got 50, you made a mistake. Comment
-   your answer right now!". TrendClip picks the numbers itself, using whole numbers only, at least one ×
-   and one ÷, and a "wrong answer" bait that comes from skipping a step, so the answer is always right.
-   Gemini only writes the hook, title and hashtags; if Gemini is busy, built-in texts are used. A riddle
-   is written by Gemini: a hook, 2–3 clues and a final question. Each number or clue (`24`, `+18`, `÷2`,
-   `CLUE 1`) flashes big in the middle of the screen while it is spoken, the end shows a big **?** and
-   **COMMENT YOUR ANSWER**, and the pinned comment has the answer with the working
-   ("✅ Answer: 57 · 24 + 18 = 42 → ÷ 2 = 21 → …"). Reaction stickers are skipped so nothing covers
-   the numbers.
+   quiz that viewers answer in the comments. Frame 0 is a large pulsing dare ("ONLY 5% OF PEOPLE FINISH
+   THIS") and the voice starts on that same line, with no soft intro. A math challenge then reads a fast
+   chain ("Start with 24. Add 18. Divide by 2. Times 3…") and ends with "Got your number? Hint: it's two
+   digits. Comment your answer right now!". The answer is never spoken or written on screen. TrendClip
+   picks the numbers itself, using whole numbers only and at least one × and one ÷, so the answer is
+   always right. Gemini writes the hook, title (with an emoji) and hashtags; if Gemini is busy, built-in
+   texts are used. A riddle is a hook, 2–3 clues, the question, then a hint that is not the answer.
+   Each number or clue (`24`, `+18`, `÷2`, `CLUE 1`) flashes big in the middle while it is spoken, and
+   the end shows **HINT** and **COMMENT YOUR ANSWER**. The pinned comment is the question plus that hint
+   ("What number did you get? 👇 / Hint: it's two digits."). The real answer stays in the creator view
+   and in Discord as a spoiler. Reaction stickers are skipped on math so nothing covers the numbers.
 
    **🌍 Trivia trap** (gamified fact trap, about 15 s) builds a speed quiz on a counter-intuitive but
    true fact from science, geography, history, animals, space, food or pop culture. The banner is a
    challenge like "90% GET THIS TRIVIA TRAP WRONG!". The voiceover goes: a dare, then "Which country
    has the most islands? Is it Indonesia? Is it the Philippines? Or is it Sweden? Think fast! Three.
-   Two. One. If you picked Indonesia, you failed! Comment the real answer right now!". Each option
-   (`A) Sweden`), the countdown and **FAILED!** flash on screen, and a shocked reaction sticker lands on
-   "failed". Gemini picks the trap that most people would choose, a distractor and the surprising
-   answer, and is told to use only documented facts that are easy to check. The pinned comment proves
-   it ("✅ Answer: Sweden. Sweden has over 267,000 islands, Indonesia about 17,500. Did you fall for
-   Indonesia?"). **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
+   Two. One. Hint: over 267,000. Comment the real answer right now!". The correct option is never
+   named after the choices. Each option (`A) Sweden`), the countdown and **HINT** flash on screen.
+   Gemini picks the trap most people would choose, a distractor and the surprising answer, and is told
+   to use only documented facts that are easy to check. The pinned comment is the question plus the hint,
+   not the answer. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
    keeps your words, removes any subscribe line and ends on the comment line.
 
    **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock

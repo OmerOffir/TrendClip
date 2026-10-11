@@ -80,6 +80,14 @@ def test_pick_pexels_file_prefers_orientation_and_resolution():
     assert vd._pick_pexels_file({"video_files": [video["video_files"][3]]}, "landscape") is None
 
 
+def test_liveliest_offset_opens_on_the_moving_second():
+    still = [0.0] * 8
+    burst = still + [40.0, 40.0] + [1.0] * 10
+    assert vd.liveliest_offset(burst, 0.5, 4) == 4.0  # the jump starts at sample 8
+    assert vd.liveliest_offset([], 0.5, 4) == 0.0
+    assert vd.liveliest_offset([3.0, 1.0], 0.5, 30) == 0.0
+
+
 def test_random_start_skips_the_first_minute_and_fits_clip():
     starts = [vd._random_start(600, 60) for _ in range(200)]
     assert vd.INTRO_SKIP_SECONDS == 60

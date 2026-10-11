@@ -60,12 +60,14 @@ class GeminiShort(BaseModel):
     pinned_comment: str = Field("", description=(
         f"A friendly comment the creator pins under the video right after upload, at most {PINNED_MAX} characters: "
         "a playful line about the story plus a question that invites viewers to share their own. No links, no hashtags."))
-    title: str = Field(description="YouTube Shorts title, at most 70 characters, no hashtags.")
+    title: str = Field(description=(
+        "YouTube Shorts title, at most 70 characters, no hashtags, high curiosity, ending with one emoji "
+        "(👀 🛑 or 🧠)."))
     description: str = Field(description="Two or three short sentences for the video description, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 relevant hashtags, each starting with #, including #shorts.")
     title_card: str = Field("", description=(
-        "2 to 5 word ALL-CAPS banner shown at the top for the first 3 seconds, e.g. 'CAT LOGIC 101'. "
-        "Punchy and curiosity-building; different from the title."))
+        "3 to 6 word ALL-CAPS banner on the first frame, high contrast, a hard stop or a dare, e.g. "
+        "'STOP READ THIS' or 'DON'T SCROLL'. No emoji. Different from the title."))
     popups: list[Popup] = Field(default_factory=list, description=(
         "Pop-up images, one every 3 to 5 seconds of speech (about one per 12 words): concrete, easy to picture "
         "things the voiceover mentions (animals, objects, food, places), spread evenly from the first sentence "
@@ -835,8 +837,8 @@ DESCRIBE_INSTRUCTION = """You package voiceovers for vertical Shorts (YouTube Sh
 wrote the voiceover themselves: NEVER rewrite, shorten, translate or add to it. Write everything else for it.
 
 Rules:
-- title: a curiosity-building title (at most 70 characters, no hashtags) that makes people click.
-- title_card: a 2 to 5 word ALL-CAPS banner for the first 3 seconds, punchy, different from the title.
+- title: a curiosity-building title (at most 70 characters, no hashtags) that makes people click, ending with one emoji (👀 🛑 or 🧠).
+- title_card: a 3 to 6 word ALL-CAPS dare for the first frame (e.g. "STOP READ THIS"), no emoji, different from the title.
 - description: two or three short sentences, no hashtags, no spoilers of the ending.
 - hashtags: 5 to 8 relevant ones, including #shorts (and #storytime for stories).
 - Pop-ups: each `word` must appear exactly as written in the voiceover; concrete, easy to picture things,
