@@ -271,7 +271,10 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    twist, then the replay loop) instead of a spoken question and follow line.
 3. **Voice & style:** (edge-tts needs the internet; a failed request is retried for about 30 s
    before the "Voice generation failed" error, which then says when the voice server can't be
-   reached) a free edge-tts voice (47 English voices) with exact word timings, speed,
+   reached. A 403 from Microsoft, which is what Europe and Israel get from the old Edge voice
+   call, switches to a local Piper voice instead — no VPN. The first time downloads about 60 MB
+   into `assets/voices/`. Machines Microsoft still accepts keep the Edge voice.) a free edge-tts
+   voice (47 English voices) with exact word timings, speed,
    highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
 4. **Background music (optional):** pick it in the **Background music** menu:
    - **By story mood** (default): automatic, strictly **chill lo-fi / quirky**. Gemini sorts every

@@ -1,15 +1,22 @@
-"""Free voiceover via edge-tts (Microsoft Edge online voices) with exact word timestamps."""
+"""Free voiceover via edge-tts (Microsoft Edge online voices) with exact word timestamps.
+
+When Microsoft refuses that call (HTTP 403), the same script is spoken by a local Piper
+voice instead. Machines Microsoft still accepts keep using Edge.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 import threading
 import time
 from pathlib import Path
 
 from .video_assembler import Word
+
+logger = logging.getLogger(__name__)
 
 VOICE_CACHE_SECONDS = 24 * 3600
 
@@ -69,6 +76,12 @@ async def _synthesize(text: str, voice: str, rate: str) -> tuple[bytes, list[Wor
 RETRY_WAITS = (2, 4, 8, 15)  # edge-tts needs the internet; ride out short Wi-Fi / DNS drops
 
 
+def microsoft_refused(err: BaseException) -> bool:
+    """True when Microsoft rejected the Edge voice handshake (HTTP 403), not a dead network."""
+    text = f"{type(err).__name__} {err}"
+    return "403" in text and ("Handshake" in type(err).__name__ or "Invalid response status" in text)
+
+
 def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
                waits: tuple[float, ...] = RETRY_WAITS) -> list[Word]:
     """Write the MP3 and a <name>.words.json next to it; returns the timed words."""
@@ -76,12 +89,17 @@ def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
     if not text:
         raise VoiceError("The script is empty")
     last_error: Exception | None = None
+    local = False
     for wait in (*waits, None):
         try:
             audio, words = asyncio.run(_synthesize(text, voice, rate))
             break
         except Exception as err:  # noqa: BLE001 - network / service errors from edge-tts
             last_error = err
+            if microsoft_refused(err):
+                audio, words = _local_voice(text, rate, err)
+                local = True
+                break
             if wait is not None:
                 time.sleep(wait)
     else:
@@ -91,7 +109,8 @@ def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
     if not audio or not words:
         raise VoiceError(f"The voice '{voice}' returned no audio; pick another voice")
 
-    words = restore_punctuation(text, words)
+    if not local:
+        words = restore_punctuation(text, words)
     output_mp3.parent.mkdir(parents=True, exist_ok=True)
     output_mp3.write_bytes(audio)
     output_mp3.with_suffix(".words.json").write_text(
@@ -99,6 +118,20 @@ def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
         encoding="utf-8",
     )
     return words
+
+
+def _local_voice(text: str, rate: str, cause: BaseException) -> tuple[bytes, list[Word]]:
+    """Speak on this machine after Microsoft returned 403."""
+    from . import local_voice
+
+    logger.warning("Microsoft refused the Edge voice (403); using the local voice %s", local_voice.VOICE_NAME)
+    try:
+        return local_voice.speak(text, rate)
+    except Exception as err:  # noqa: BLE001 - download, piper, or ffmpeg
+        raise VoiceError(
+            "Microsoft refused the Edge voice (403), and the local voice failed too. "
+            f"({type(err).__name__}: {err}) Caused by {type(cause).__name__}: {cause}"
+        ) from err
 
 
 _voices: tuple[float, list[dict]] | None = None
