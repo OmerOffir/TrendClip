@@ -296,9 +296,10 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     out_dir.mkdir(parents=True, exist_ok=True)
     base = out_dir / (req.output_name or f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}")
     voice = req.voice or settings.tts_voice
-    rate = req.rate or settings.tts_rate
+    chosen_rate = req.rate or settings.tts_rate
+    rate = quiz.quiz_rate(chosen_rate) if req.flashes else chosen_rate
     if req.flashes:
-        voice, rate = quiz.english_voice(voice), quiz.quiz_rate(rate)
+        voice = quiz.english_voice(voice)
 
     track = resolve_music(settings, req, progress)
 
@@ -309,7 +310,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         words = _load_words(base.with_suffix(".words.json"))
     else:
         progress(None, f"Recording the voiceover ({voice})")
-        words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate)
+        words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate, local_rate=chosen_rate)
 
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)

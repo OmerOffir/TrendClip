@@ -28,10 +28,11 @@ _model = None
 
 
 def speed(rate: str) -> float:
-    """F5 speed from an edge-tts rate like '+5%' (over 1 is faster)."""
+    """Map the dashboard Speed menu onto F5. F5 at 1.0 already rushes, so Normal is 0.85
+    and the menu still speeds up or slows down from there."""
     match = re.fullmatch(r"([+-]\d{1,3})%", (rate or "").strip())
     percent = int(match.group(1)) if match else 0
-    return min(max(1 + percent / 100, 0.5), 1.5)
+    return round(min(max(0.85 * (1 + percent / 100), 0.55), 1.2), 3)
 
 
 def _load():

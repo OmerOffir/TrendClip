@@ -83,7 +83,7 @@ def microsoft_refused(err: BaseException) -> bool:
 
 
 def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
-               waits: tuple[float, ...] = RETRY_WAITS) -> list[Word]:
+               waits: tuple[float, ...] = RETRY_WAITS, local_rate: str | None = None) -> list[Word]:
     """Write the MP3 and a <name>.words.json next to it; returns the timed words."""
     text = text.strip()
     if not text:
@@ -97,7 +97,7 @@ def synthesize(text: str, output_mp3: Path, voice: str, rate: str = "+0%",
         except Exception as err:  # noqa: BLE001 - network / service errors from edge-tts
             last_error = err
             if microsoft_refused(err):
-                audio, words = _local_voice(text, rate, err)
+                audio, words = _local_voice(text, local_rate or rate, err)
                 local = True
                 break
             if wait is not None:

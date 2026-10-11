@@ -7,9 +7,10 @@ class Handshake403(Exception):
 
 
 def test_f5_speed_follows_the_edge_rate():
-    assert local_voice.speed("+5%") == 1.05
-    assert local_voice.speed("+0%") == 1.0
-    assert local_voice.speed("") == 1.0
+    assert local_voice.speed("+5%") == 0.892
+    assert local_voice.speed("+0%") == 0.85
+    assert local_voice.speed("-20%") == 0.68
+    assert local_voice.speed("") == 0.85
     assert local_voice.REF_WAV.is_file() and "three percent" in local_voice.REF_TEXT
 
 
