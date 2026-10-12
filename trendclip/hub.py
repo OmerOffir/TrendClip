@@ -7,6 +7,7 @@ time is free, so two videos never take the same slot, and a taken time comes bac
 
 Messages (all written by the bot itself; the hub ignores anyone else's):
     tc-hub ask <nonce>                                           -> tc-hub free <nonce> {"free": [...]}
+    tc-hub plan <nonce>                                          -> tc-hub week <nonce> {} + plan.json
     tc-hub part <nonce> <i>/<n>          + attachment: a piece of the MP4 (Discord caps files at 10 MB)
     tc-hub send <nonce> <date> <slot> <filename> <part ids>  + short.json -> tc-hub done|fail <nonce> {...}
 """
@@ -32,7 +33,8 @@ from .models import utcnow
 logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
-REPLIES = ("free", "done", "fail")
+REQUESTS = ("ask", "send", "plan")
+REPLIES = ("free", "week", "done", "fail")  # never a request word, or the hub would answer itself
 FREE_DAYS = 7
 PART_BYTES = 8 * 1024 * 1024
 ASK_WAIT = 30.0
@@ -122,24 +124,42 @@ def receive(settings: Settings, filename: str, day: Day, slot: str,
         raise HubError(str(err), 409, free_slots(settings)) from err
 
 
+def plan_view(settings: Settings, days: int = FREE_DAYS, now: datetime | None = None) -> dict[str, Any]:
+    """The hub's plan from today on, small enough to send back: what's on each time and what's open."""
+    now = (now or datetime.now(settings.tz)).astimezone(settings.tz)
+    first, last = now.date(), now.date() + timedelta(days=days - 1)
+    items = sorted((i for i in planner.load(settings).items if first <= i.date <= last),
+                   key=lambda i: (i.date, i.slot or "99"))
+    return {
+        "today": first.isoformat(), "days": days, "free": free_slots(settings, days, now),
+        "items": [{"date": i.date.isoformat(), "slot": i.slot, "kind": i.kind, "title": i.title,
+                   "platforms": i.platforms, "posted": sorted(i.posted)} for i in items],
+    }
+
+
 def _reply(op: str, nonce: str, data: dict[str, Any]) -> str:
     return f"{PREFIX} {op} {nonce} {json.dumps(data, ensure_ascii=False)}"
 
 
 def is_request(content: str) -> bool:
     words = content.split(" ", 2)
-    return len(words) == 3 and words[0] == PREFIX and words[1] in ("ask", "send")
+    return len(words) == 3 and words[0] == PREFIX and words[1] in REQUESTS
 
 
-async def handle(settings: Settings, message: Any, channel: Any) -> tuple[str, planner.PlanItem | None]:
-    """Hub side: answer an `ask` or `send` message. Returns the reply text and the planned item.
+async def handle(settings: Settings, message: Any,
+                 channel: Any) -> tuple[str, planner.PlanItem | None, tuple[str, bytes] | None]:
+    """Hub side: answer an `ask`, `plan` or `send` message. Returns the reply text, the planned item and
+    a file to attach (the plan, which can be longer than a Discord message).
 
     `message` needs .content and .attachments (each with an async .read()); `channel` needs an
     async .fetch_message(id), as discord.py's objects have."""
     words = message.content.split(" ")
     op, nonce = words[1], words[2]
     if op == "ask":
-        return _reply("free", nonce, {"free": free_slots(settings)}), None
+        return _reply("free", nonce, {"free": free_slots(settings)}), None, None
+    if op == "plan":
+        plan = json.dumps(plan_view(settings), ensure_ascii=False).encode("utf-8")
+        return _reply("week", nonce, {}), None, ("plan.json", plan)
     partial = settings.shorts_dir / f".incoming-{nonce}.part"
     try:
         if len(words) != 7 or not message.attachments:
@@ -153,14 +173,14 @@ async def handle(settings: Settings, message: Any, channel: Any) -> tuple[str, p
                 out.write(await part.attachments[0].read())
         item = await asyncio.to_thread(receive, settings, filename, day, slot, meta, partial)
     except HubError as err:
-        return _reply("fail", nonce, {"message": str(err), "free": err.free}), None
+        return _reply("fail", nonce, {"message": str(err), "free": err.free}), None, None
     except Exception as err:  # noqa: BLE001 - the sender is told instead of waiting for a reply forever
         return _reply("fail", nonce, {"message": f"The hub couldn't take the video ({type(err).__name__}: {err})",
-                                      "free": free_slots(settings)}), None
+                                      "free": free_slots(settings)}), None, None
     finally:
         partial.unlink(missing_ok=True)
     return _reply("done", nonce, {"date": item.date.isoformat(), "slot": item.slot, "short": item.short,
-                                  "title": item.title}), item
+                                  "title": item.title}), item, None
 
 
 # --------------------------------------------------------------------------- the sending machine
@@ -204,15 +224,29 @@ class Rest:
     def delete(self, message_id: str) -> None:
         self._call("DELETE", f"/channels/{self.channel}/messages/{message_id}")
 
+    def download(self, url: str) -> bytes:
+        import requests
+
+        try:
+            resp = requests.get(url, timeout=60)
+            resp.raise_for_status()
+        except requests.RequestException as err:
+            raise HubError(f"Couldn't download the hub's answer ({type(err).__name__})", 502) from err
+        return resp.content
+
 
 def _await_reply(rest: Rest, nonce: str, after: str, wait: float) -> tuple[str, dict[str, Any]]:
+    """The hub's reply to `nonce`; an attached JSON file comes back as data["file"]."""
     deadline = time.monotonic() + wait
     while time.monotonic() < deadline:
         for msg in rest.after(after):
             words = msg.get("content", "").split(" ", 3)
             if len(words) == 4 and words[0] == PREFIX and words[1] in REPLIES and words[2] == nonce:
+                data = json.loads(words[3])
+                if msg.get("attachments"):
+                    data["file"] = json.loads(rest.download(msg["attachments"][0]["url"]))
                 rest.delete(msg["id"])
-                return words[1], json.loads(words[3])
+                return words[1], data
         time.sleep(POLL_EVERY)
     raise HubError("The Linux bot didn't answer. Is it running there (systemctl --user status trendclip)?", 504)
 
@@ -222,17 +256,29 @@ def _require_sender(settings: Settings) -> None:
         raise HubError("Set HUB_ROLE=sender, DISCORD_BOT_TOKEN and a hub channel in .env to send videos", 400)
 
 
-def remote_free(settings: Settings) -> list[dict[str, str]]:
-    """Sending side: ask the hub for its open upload times."""
+def _ask(settings: Settings, op: str) -> dict[str, Any]:
     _require_sender(settings)
     rest = Rest(settings)
     nonce = secrets.token_hex(4)
-    ask = rest.post(f"{PREFIX} ask {nonce}")
+    ask = rest.post(f"{PREFIX} {op} {nonce}")
     try:
         _, data = _await_reply(rest, nonce, ask, ASK_WAIT)
     finally:
         rest.delete(ask)
-    return data["free"]
+    return data
+
+
+def remote_free(settings: Settings) -> list[dict[str, str]]:
+    """Sending side: ask the hub for its open upload times."""
+    return _ask(settings, "ask")["free"]
+
+
+def remote_plan(settings: Settings) -> dict[str, Any]:
+    """Sending side: the hub's plan for the coming week (see plan_view)."""
+    data = _ask(settings, "plan")
+    if "file" not in data:
+        raise HubError("The Linux bot answered without its plan. Update the code there (git pull) and restart it.", 502)
+    return data["file"]
 
 
 def send(settings: Settings, req: SendRequest) -> dict[str, Any]:

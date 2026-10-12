@@ -14,6 +14,9 @@
     next: $("pNext"),
     sendHub: $("pSendHub"),
     hubResults: $("pHubResults"),
+    hubPlan: $("pHubPlan"),
+    hubRefresh: $("pHubRefresh"),
+    hubWeek: $("pHubWeek"),
     goals: $("pGoals"),
     gReels: $("gReels"),
     gLong: $("gLong"),
@@ -150,6 +153,38 @@
     els.sendHub.textContent = `📤 Send plan to Linux (${n})`;
   }
 
+  function hubDay(day, plan) {
+    const items = plan.items.filter((i) => i.date === day);
+    const slotRow = (slot) => {
+      const item = items.find((i) => i.slot === slot);
+      if (!item) return `<div class="hub-slot open"><b>${slot}</b> open</div>`;
+      const done = item.platforms.length && item.platforms.every((p) => item.posted.includes(p));
+      return `<div class="hub-slot taken"><b>${slot}</b> ${done ? "✅ " : ""}${esc(item.title)}</div>`;
+    };
+    const others = items.filter((i) => !i.slot || !["18:00", "23:00"].includes(i.slot));
+    return `
+      <div class="hub-day">
+        <div class="hub-day-name">${esc(dayName(day))} <span>${esc(shortDate(day))}</span></div>
+        ${slotRow("18:00")}${slotRow("23:00")}
+        ${others.map((i) => `<div class="hub-slot taken"><b>${i.kind === "long" ? "Long" : "—"}</b> ${esc(i.title)}</div>`).join("")}
+      </div>`;
+  }
+
+  async function loadHubPlan() {
+    if (!state.hub || !state.hub.sender) return;
+    els.hubPlan.hidden = false;
+    els.hubRefresh.disabled = true;
+    els.hubWeek.innerHTML = '<div class="empty">Asking the Linux machine…</div>';
+    try {
+      const { body: plan } = await api("/api/hub/remote-plan");
+      const first = parse(plan.today);
+      els.hubWeek.innerHTML = Array.from({ length: plan.days }, (_, n) => hubDay(iso(addDays(first, n)), plan)).join("");
+    } catch (err) {
+      els.hubWeek.innerHTML = `<div class="empty error">Couldn't get the Linux plan: ${esc(err.message)}</div>`;
+    }
+    els.hubRefresh.disabled = false;
+  }
+
   async function sendPlanToHub() {
     const n = hubCandidates().length;
     if (!confirm(`Send ${n} planned video${n === 1 ? "" : "s"} to the Linux plan at the same day and time?\n` +
@@ -170,6 +205,7 @@
     els.sendHub.disabled = false;
     await load();
     document.dispatchEvent(new CustomEvent("trendclip:shorts-changed"));
+    loadHubPlan();
   }
 
   async function mutate(fn) {
@@ -562,6 +598,7 @@
     els.next.addEventListener("click", () => { state.offset += DAYS_SHOWN; renderDays(); });
     els.today.addEventListener("click", () => { state.offset = 0; renderDays(); });
     els.sendHub.addEventListener("click", sendPlanToHub);
+    els.hubRefresh.addEventListener("click", loadHubPlan);
     els.gReels.addEventListener("change", () => {
       const n = Math.min(10, Math.max(0, parseInt(els.gReels.value, 10) || 0));
       saveGoals({ reels_per_day: n });
@@ -593,7 +630,9 @@
     bindDrag();
     for (const ev of ["trendclip:shorts-changed", "trendclip:ready", "trendclip:posted"]) document.addEventListener(ev, load);
     document.addEventListener("trendclip:view", (e) => {
-      if (e.detail.view === "plan") start();
+      if (e.detail.view !== "plan") return;
+      start();
+      loadHubPlan();
     });
     // The day labels ("Today", "Tomorrow") move at midnight.
     let day = todayIso();
@@ -614,6 +653,7 @@
   api("/api/hub/status").then(({ body }) => {
     state.hub = body;
     if (state.data) renderHubButton();
+    if (!els.view.hidden) loadHubPlan();
   }).catch(() => {});
   if (!els.view.hidden) start();
   else load(); // fills the nav counter

@@ -44,15 +44,19 @@ class FakeDiscord:
         self.next_id += 1
         self.messages[mid] = msg = Message(content, [Attachment(file[1])] if file else [])
         if hub.is_request(content):
-            reply, _ = asyncio.run(hub.handle(self.hub_settings, msg, self))
-            self.post(reply)
+            reply, _, attach = asyncio.run(hub.handle(self.hub_settings, msg, self))
+            self.post(reply, attach)
         return mid
 
     async def fetch_message(self, mid):
         return self.messages[str(mid)]
 
     def after(self, mid):
-        return [{"id": k, "content": m.content} for k, m in self.messages.items() if int(k) > int(mid)]
+        return [{"id": k, "content": m.content, "attachments": [{"url": k}] if m.attachments else []}
+                for k, m in self.messages.items() if int(k) > int(mid)]
+
+    def download(self, url):
+        return self.messages[url].attachments[0].data
 
     def delete(self, mid):
         self.messages.pop(mid, None)
@@ -172,8 +176,22 @@ def test_the_mac_plan_goes_to_linux_at_its_planned_times(linux, mac, tomorrow, d
     assert [i.short for i in planner.load(mac).items] == ["b.mp4"]  # the refused one stays to be moved
 
 
+def test_the_mac_sees_the_linux_plan(linux, mac, tomorrow, discord):
+    add_short(linux, name="linux_1.mp4")
+    planner.add_item(linux, planner.ItemRequest(date=tomorrow, slot="23:00", short="linux_1.mp4"))
+
+    plan = hub.remote_plan(mac)
+
+    assert plan["days"] == hub.FREE_DAYS
+    assert [(i["date"], i["slot"], i["title"]) for i in plan["items"]] == [
+        (tomorrow.isoformat(), "23:00", "The Day My Cat Outsmarted the Block")]
+    assert {"date": tomorrow.isoformat(), "slot": "18:00"} in plan["free"]
+    assert {"date": tomorrow.isoformat(), "slot": "23:00"} not in plan["free"]
+    assert discord.messages == {}
+
+
 def test_only_ask_and_send_are_requests():
     assert hub.is_request("tc-hub ask ab12")
-    assert not hub.is_request("tc-hub free ab12 {}")
+    assert not any(hub.is_request(f"tc-hub {op} ab12 {{}}") for op in hub.REPLIES)
     assert not hub.is_request("tc-hub part ab12 1/2")
     assert not hub.is_request("hello")

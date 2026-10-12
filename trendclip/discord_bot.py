@@ -6,6 +6,7 @@ buttons keep working after a restart (their custom ids carry the action).
 """
 
 import asyncio
+import io
 import logging
 import sys
 import uuid
@@ -278,8 +279,11 @@ class TrendClipBot(discord.Client):
         if (not hub.is_hub(self.settings) or message.author != self.user
                 or message.channel.id != hub.channel_id(self.settings) or not hub.is_request(message.content)):
             return
-        reply, item = await hub.handle(self.settings, message, message.channel)
-        await message.channel.send(reply)
+        reply, item, attach = await hub.handle(self.settings, message, message.channel)
+        if attach is None:
+            await message.channel.send(reply)
+        else:
+            await message.channel.send(reply, file=discord.File(io.BytesIO(attach[1]), filename=attach[0]))
         if item is None or not self.settings.discord_channel_id:
             return
         channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(

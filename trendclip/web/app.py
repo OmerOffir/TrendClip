@@ -763,6 +763,15 @@ def hub_remote_free() -> dict[str, Any]:
         raise _hub_http(err) from err
 
 
+@app.get("/api/hub/remote-plan")
+def hub_remote_plan() -> dict[str, Any]:
+    """On the sending machine: the hub's plan for the coming week (the one that counts)."""
+    try:
+        return hub.remote_plan(_base_settings())
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
 @app.post("/api/hub/send-plan")
 def hub_send_plan() -> dict[str, Any]:
     """On the sending machine: every upcoming planned Short goes to the hub at its planned time."""

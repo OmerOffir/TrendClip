@@ -319,6 +319,15 @@ table.videos { width: 100%; border-collapse: collapse; font-variant-numeric: tab
 .dl-meta.error { color: var(--danger, #ff6b6b); }
 .hub-results { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; }
 .hub-results .error { color: var(--danger, #ff6b6b); }
+.hub-week { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.hub-day { border: 1px solid var(--border, #2a2f3a); border-radius: 10px; padding: 8px; display: grid; gap: 4px; }
+.hub-day-name { font-weight: 600; font-size: 13px; }
+.hub-day-name span { color: var(--muted); font-weight: 400; }
+.hub-slot { font-size: 12px; padding: 4px 6px; border-radius: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hub-slot b { margin-right: 4px; }
+.hub-slot.open { color: #5fd38d; border: 1px dashed #5fd38d55; }
+.hub-slot.taken { background: #ffffff0d; }
+.empty.error { color: var(--danger, #ff6b6b); }
 .dl-actions a { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); font-weight: 600; }
 .dl-actions a:hover { text-decoration: none; border-color: var(--muted); }
 .dl-delete {
