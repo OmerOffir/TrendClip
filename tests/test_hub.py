@@ -157,6 +157,21 @@ def test_same_filename_on_the_hub_gets_a_new_name(linux, mac, tomorrow, discord)
     assert shorts.get_short(linux, "gta_1-2.mp4").filename == "gta_1-2.mp4"
 
 
+def test_the_mac_plan_goes_to_linux_at_its_planned_times(linux, mac, tomorrow, discord):
+    for name, slot in (("a.mp4", "18:00"), ("b.mp4", "23:00")):
+        add_short(mac, name=name)
+        planner.add_item(mac, planner.ItemRequest(date=tomorrow, slot=slot, short=name))
+    add_short(linux, name="linux_1.mp4")
+    planner.add_item(linux, planner.ItemRequest(date=tomorrow, slot="23:00", short="linux_1.mp4"))
+
+    results = hub.send_plan(mac)
+
+    assert [r["ok"] for r in results] == [True, False]
+    assert "already taken" in results[1]["message"] and "Next free" in results[1]["message"]
+    assert planner.slot_item(linux, tomorrow, "18:00").short == "a.mp4"
+    assert [i.short for i in planner.load(mac).items] == ["b.mp4"]  # the refused one stays to be moved
+
+
 def test_only_ask_and_send_are_requests():
     assert hub.is_request("tc-hub ask ab12")
     assert not hub.is_request("tc-hub free ab12 {}")

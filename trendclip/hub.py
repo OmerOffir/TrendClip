@@ -236,6 +236,9 @@ def send(settings: Settings, req: SendRequest) -> dict[str, Any]:
     """Sending side: check the time on the hub, then post the Short to it in 8 MB pieces."""
     path = shorts.short_path(settings, req.filename)
     short = shorts.get_short(settings, req.filename)
+    if planner.slot_time(settings, req.date, req.slot) <= datetime.now(settings.tz):
+        raise HubError(f"{req.date.isoformat()} {req.slot} has already passed. Pick a later time.", 409,
+                       remote_free(settings))
     free = remote_free(settings)
     if {"date": req.date.isoformat(), "slot": req.slot} not in free:
         raise HubError(f"{req.date.isoformat()} {req.slot} is already taken on the hub. Pick another time.", 409, free)
@@ -259,3 +262,31 @@ def send(settings: Settings, req: SendRequest) -> dict[str, Any]:
     shorts.update_short(settings, req.filename, lambda s: s.sent.__setitem__(
         "hub", {"date": reply["date"], "slot": reply["slot"], "filename": reply["short"], "at": utcnow().isoformat()}))
     return reply
+
+
+def send_plan(settings: Settings) -> list[dict[str, Any]]:
+    """Sending side: send every upcoming planned Short to the hub at its planned time. Each one the hub
+    takes leaves this machine's plan (the hub's plan is the one that counts); refused ones stay."""
+    _require_sender(settings)
+    today = datetime.now(settings.tz).date()
+    results = []
+    for item in sorted(planner.load(settings).items, key=lambda i: (i.date, i.slot or "")):
+        if item.date < today or not item.short or item.posted:
+            continue
+        line = {"title": item.title, "date": item.date.isoformat(), "slot": item.slot, "ok": False}
+        if item.slot is None:
+            results.append({**line, "message": "No upload time; give it 18:00 or 23:00 first."})
+            continue
+        try:
+            reply = send(settings, SendRequest(filename=item.short, date=item.date, slot=item.slot))
+        except (HubError, ValueError, FileNotFoundError) as err:
+            message = str(err)
+            if isinstance(err, HubError) and err.free:
+                message += f" Next free: {err.free[0]['date']} {err.free[0]['slot']}."
+            results.append({**line, "message": message})
+            if isinstance(err, HubError) and err.status in (502, 504):
+                break  # Discord or the hub is down: the rest would fail the same way
+            continue
+        planner.delete_item(settings, item.id)
+        results.append({**line, "ok": True, "message": f"On the Linux plan as {reply['short']}."})
+    return results

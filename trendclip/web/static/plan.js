@@ -12,6 +12,8 @@
     prev: $("pPrev"),
     today: $("pToday"),
     next: $("pNext"),
+    sendHub: $("pSendHub"),
+    hubResults: $("pHubResults"),
     goals: $("pGoals"),
     gReels: $("gReels"),
     gLong: $("gLong"),
@@ -49,6 +51,7 @@
     offset: 0, // days from today to the first day shown
     showPosted: false,
     form: null, // { id|null, kind, platforms:Set }
+    hub: null, // {sender, hub}: this machine sends its plan to the Linux hub
   };
 
   function showError(message) {
@@ -133,6 +136,42 @@
     return out;
   }
 
+  // ---- send to the hub (the Linux machine whose plan and bot count) ----------------------
+
+  function hubCandidates() {
+    const today = todayIso();
+    return state.data.items.filter((i) => i.date >= today && i.short && !Object.keys(i.posted || {}).length);
+  }
+
+  function renderHubButton() {
+    if (!state.hub || !state.hub.sender || els.sendHub.disabled) return;
+    const n = hubCandidates().length;
+    els.sendHub.hidden = !n;
+    els.sendHub.textContent = `📤 Send plan to Linux (${n})`;
+  }
+
+  async function sendPlanToHub() {
+    const n = hubCandidates().length;
+    if (!confirm(`Send ${n} planned video${n === 1 ? "" : "s"} to the Linux plan at the same day and time?\n` +
+                 "Each one Linux takes leaves this plan.")) return;
+    els.sendHub.disabled = true;
+    els.sendHub.textContent = `Sending ${n} through Discord…`;
+    els.hubResults.hidden = true;
+    try {
+      const { results } = await send("/api/hub/send-plan", "POST");
+      els.hubResults.innerHTML = results.length ? results.map((r) => `
+        <div class="${r.ok ? "ok" : "error"}">${r.ok ? "✅" : "⚠️"} ${esc(shortDate(r.date))} ${esc(r.slot || "")} ·
+          <b>${esc(r.title)}</b>: ${esc(r.message)}</div>`).join("") : "<div>Nothing to send.</div>";
+      els.hubResults.hidden = false;
+      showError("");
+    } catch (err) {
+      showError(`Could not send to Linux: ${err.message}`);
+    }
+    els.sendHub.disabled = false;
+    await load();
+    document.dispatchEvent(new CustomEvent("trendclip:shorts-changed"));
+  }
+
   async function mutate(fn) {
     try {
       await fn();
@@ -148,6 +187,7 @@
 
   function render() {
     if (!state.data) return;
+    renderHubButton();
     renderGoals();
     renderStats();
     renderBacklog();
@@ -521,6 +561,7 @@
     els.prev.addEventListener("click", () => { state.offset -= DAYS_SHOWN; renderDays(); });
     els.next.addEventListener("click", () => { state.offset += DAYS_SHOWN; renderDays(); });
     els.today.addEventListener("click", () => { state.offset = 0; renderDays(); });
+    els.sendHub.addEventListener("click", sendPlanToHub);
     els.gReels.addEventListener("change", () => {
       const n = Math.min(10, Math.max(0, parseInt(els.gReels.value, 10) || 0));
       saveGoals({ reels_per_day: n });
@@ -570,6 +611,10 @@
   }
 
   bind();
+  api("/api/hub/status").then(({ body }) => {
+    state.hub = body;
+    if (state.data) renderHubButton();
+  }).catch(() => {});
   if (!els.view.hidden) start();
   else load(); // fills the nav counter
 })();
