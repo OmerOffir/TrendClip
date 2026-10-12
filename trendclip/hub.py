@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import secrets
 import time
@@ -27,6 +28,8 @@ from pydantic import BaseModel, Field
 from . import planner, shorts
 from .config import Settings
 from .models import utcnow
+
+logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
 REPLIES = ("free", "done", "fail")
@@ -289,4 +292,6 @@ def send_plan(settings: Settings) -> list[dict[str, Any]]:
             continue
         planner.delete_item(settings, item.id)
         results.append({**line, "ok": True, "message": f"On the Linux plan as {reply['short']}."})
+    for r in results:
+        logger.info("Send to hub: %s %s %s: %s", r["date"], r["slot"], r["title"], r["message"])
     return results
