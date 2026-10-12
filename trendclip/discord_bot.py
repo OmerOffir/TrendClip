@@ -270,6 +270,8 @@ class TrendClipBot(discord.Client):
 
     async def on_ready(self) -> None:
         logger.info("Discord bot ready as %s", self.user)
+        if hub.is_hub(self.settings):
+            logger.info("Hub: taking videos from the other machine in channel %s", hub.channel_id(self.settings))
 
     async def on_message(self, message: discord.Message) -> None:
         """The hub: answer the sending machine (it posts with this bot's token; nobody else counts)."""

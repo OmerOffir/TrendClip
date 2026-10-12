@@ -67,8 +67,12 @@ start_bot() {
     return
   fi
   if bot_running; then
-    echo "==> Discord bot already running (pid $(cat "$BOT_PID_FILE"))"
-    return
+    # A bot left from an earlier run has the old code: replace it.
+    local old
+    old="$(cat "$BOT_PID_FILE")"
+    echo "==> Stopping the Discord bot from an earlier run (pid $old)"
+    kill "$old" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$old" 2>/dev/null || break; sleep 0.5; done
   fi
   mkdir -p output
   "$PY" run.py --bot >>"$BOT_LOG" 2>&1 &
