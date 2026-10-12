@@ -16,7 +16,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import assistant, channel_stats, planner, publish, script_writer, shorts, video_downloader
+from . import assistant, channel_stats, hub, planner, publish, script_writer, shorts, video_downloader
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -270,6 +270,19 @@ class TrendClipBot(discord.Client):
 
     async def on_ready(self) -> None:
         logger.info("Discord bot ready as %s", self.user)
+
+    async def on_message(self, message: discord.Message) -> None:
+        """The hub: answer the sending machine (it posts with this bot's token; nobody else counts)."""
+        if (not hub.is_hub(self.settings) or message.author != self.user
+                or message.channel.id != hub.channel_id(self.settings) or not hub.is_request(message.content)):
+            return
+        reply, item = await hub.handle(self.settings, message, message.channel)
+        await message.channel.send(reply)
+        if item is None or not self.settings.discord_channel_id:
+            return
+        channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
+            self.settings.discord_channel_id)
+        await channel.send(f"📥 From the other machine: {item_line(self.settings, item, with_day=True)}")
 
     # ---- shared work ------------------------------------------------------------------
 

@@ -315,6 +315,8 @@ table.videos { width: 100%; border-collapse: collapse; font-variant-numeric: tab
 .dl-meta { color: var(--muted); }
 .dl-meta a { text-decoration: underline; }
 .dl-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+.hub-send { align-items: center; }
+.dl-meta.error { color: var(--danger, #ff6b6b); }
 .dl-actions a { padding: 5px 10px; border-radius: 8px; border: 1px solid var(--border); font-weight: 600; }
 .dl-actions a:hover { text-decoration: none; border-color: var(--muted); }
 .dl-delete {

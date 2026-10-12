@@ -62,6 +62,10 @@ start_bot() {
   if [[ -n "${NO_BOT:-}" ]] || ! grep -qE '^DISCORD_BOT_TOKEN=.+' .env; then
     return
   fi
+  if grep -qiE '^HUB_ROLE=sender' .env; then
+    echo "==> HUB_ROLE=sender: the hub machine runs the Discord bot, not this one"
+    return
+  fi
   if bot_running; then
     echo "==> Discord bot already running (pid $(cat "$BOT_PID_FILE"))"
     return

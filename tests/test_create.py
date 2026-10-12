@@ -264,7 +264,7 @@ def test_edit_rerenders_in_place_and_reuses_the_voice(tmp_path, monkeypatch):
     clip = add_clip(settings)
     synth, assembled = [], []
 
-    def fake_synth(text, mp3, voice, rate):
+    def fake_synth(text, mp3, voice, rate, local_rate=None):
         synth.append(text)
         mp3.write_bytes(text.encode())
         words = [Word("hi", 0, 0.5)]
@@ -328,7 +328,7 @@ def test_render_short_writes_video_metadata_and_final_copy(tmp_path, monkeypatch
     settings = make_settings(tmp_path)
     clip = add_clip(settings)
 
-    def fake_synth(text, mp3, voice, rate):
+    def fake_synth(text, mp3, voice, rate, local_rate=None):
         mp3.write_bytes(b"mp3")
         return [Word("hi", 0, 0.5)]
 

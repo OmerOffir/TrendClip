@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import __version__, music, planner, publish, script_writer, shorts, stickers, video_downloader, voiceover
+from .. import __version__, hub, music, planner, publish, script_writer, shorts, stickers, video_downloader, voiceover
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -739,6 +739,39 @@ def mark_plan_posted(item_id: str, platform: planner.Platform, req: PostedReques
 @app.put("/api/plan/goals")
 def save_plan_goals(goals: planner.Goals) -> dict[str, Any]:
     return planner.set_goals(_base_settings(), goals).model_dump(mode="json")
+
+
+# --------------------------------------------------------------------------- Hub (two machines, one plan)
+
+
+def _hub_http(err: hub.HubError) -> HTTPException:
+    return HTTPException(status_code=err.status, detail={"message": str(err), "free": err.free})
+
+
+@app.get("/api/hub/status")
+def hub_status() -> dict[str, Any]:
+    settings = _base_settings()
+    return {"sender": hub.is_sender(settings), "hub": hub.is_hub(settings)}
+
+
+@app.get("/api/hub/remote-free")
+def hub_remote_free() -> dict[str, Any]:
+    """On the sending machine: the hub's open upload times."""
+    try:
+        return {"free": hub.remote_free(_base_settings())}
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+@app.post("/api/hub/send")
+def hub_send(req: hub.SendRequest) -> dict[str, Any]:
+    """On the sending machine: upload a Short to the hub's plan."""
+    settings = _base_settings()
+    _short_or_http(settings, req.filename)
+    try:
+        return hub.send(settings, req)
+    except hub.HubError as err:
+        raise _hub_http(err) from err
 
 
 @app.post("/api/upload/shorts/{filename}/youtube/comment")

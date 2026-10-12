@@ -72,6 +72,7 @@ class ShortVideo(BaseModel):
     texts: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {...}, "tiktok": {...}, "instagram": {...}}
     uploads: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {"video_id", "url", "privacy", ...}}
     posted: dict[str, bool] = Field(default_factory=dict)  # manual "I posted it" for TikTok / Instagram
+    sent: dict[str, Any] = Field(default_factory=dict)  # {"hub": {"date", "slot", "at"}} once sent to the hub
 
 
 class RenderRequest(BaseModel):

@@ -476,6 +476,26 @@ platforms at the top of the tab.
 
 The plan is saved in `output/planner.json`.
 
+### Two machines, one plan
+
+When Shorts are made on two computers, one of them is the **hub**: the always-on Linux box. It
+keeps the plan and runs the Discord bot. The other machine sends its finished Shorts there
+through Discord, so the two don't need to be on the same network.
+
+- Make a private Discord channel (e.g. `#hub`) the bot can read and write, and copy its id.
+- Both `.env` files: the same `DISCORD_BOT_TOKEN` and `HUB_CHANNEL_ID=<that id>`.
+- The hub: `HUB_ROLE=hub`. The other machine: `HUB_ROLE=sender`.
+
+Each Short on the sender then gets a **📤 Send to Linux** button. It asks the hub (a message in
+the hub channel) for the upload times still open on its plan. Sending posts the video in 8 MB
+pieces (Discord's file limit is 10 MB) plus its details; the hub joins them, refuses a time that
+is already taken (also if it was taken in the meantime) with the free ones, or saves the Short,
+marks it ready, plans it at that time and says so in the reminders channel. The transfer
+messages are deleted afterwards.
+
+The sender only uses Discord's REST API with the bot token, never logs in as the bot, and
+`run.sh` doesn't start the bot there, so NPC_Steve answers from the hub only.
+
 ## Discord bot
 
 `./run.sh` (the dashboard) starts the bot along with it whenever `DISCORD_BOT_TOKEN` is set; it logs to

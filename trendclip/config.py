@@ -55,6 +55,8 @@ _ENV_MAP: dict[str, str] = {
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
     "instagram_access_token": "INSTAGRAM_ACCESS_TOKEN",
+    "hub_role": "HUB_ROLE",
+    "hub_channel_id": "HUB_CHANNEL_ID",
 }
 
 # UCht8qITGkBvXKsR1Byln-wA is the original "Audio Library" channel; @audiolibrarymusicforconten9614 is a
@@ -133,6 +135,17 @@ class Settings(BaseModel):
     stats_instagram: str = "sidequestlogic"
     # Instagram API with Instagram Login (professional account); without it, public profile data is tried.
     instagram_access_token: SecretStr | None = None
+
+    # Two machines, one plan, joined through Discord. HUB_ROLE=hub on the always-on machine (keeps
+    # the plan, runs the bot); HUB_ROLE=sender on the other, which posts its finished Shorts to the
+    # hub channel with the same bot token (default channel: DISCORD_CHANNEL_ID).
+    hub_role: Literal["", "hub", "sender"] = ""
+    hub_channel_id: int | None = None
+
+    @field_validator("hub_role", mode="before")
+    @classmethod
+    def _lower_role(cls, value: object) -> object:
+        return value.strip().lower() if isinstance(value, str) else value
 
     @field_validator("stats_youtube", "stats_tiktok", "stats_instagram", mode="before")
     @classmethod

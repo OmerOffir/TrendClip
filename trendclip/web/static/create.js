@@ -96,6 +96,8 @@
     status: null,
     clip: null, // selected clip filename
     shorts: [],
+    hub: null, // {sender, hub, url}: this machine sends its Shorts to the Linux hub
+    hubSend: null, // the open "Send to Linux" picker: {filename, free, loading, busy, message}
     scriptJob: null,
     renderJob: null,
     started: false,
@@ -1058,11 +1060,97 @@
               <a href="${src}${v}" download="${esc(s.filename)}">Download</a>
               <button type="button" class="dl-copy" data-copy-title="${esc(s.filename)}">Copy title</button>
               <button type="button" class="dl-copy" data-copy-desc="${esc(s.filename)}">Copy description</button>
+              ${hubButton(s)}
               <button type="button" class="dl-delete" data-delete-short="${esc(s.filename)}">Delete</button>
             </div>
+            ${hubPanel(s)}
           </div>
         </div>`;
     }).join("");
+  }
+
+  // ---- send to the hub (the Linux machine that holds the plan and runs the bot) --------
+
+  function slotLabel(f) {
+    const day = new Date(`${f.date}T12:00:00`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+    return `${day} · ${f.slot}`;
+  }
+
+  function hubButton(s) {
+    if (!state.hub || !state.hub.sender) return "";
+    const sent = s.sent && s.sent.hub;
+    const label = sent ? `✅ On Linux plan · ${esc(slotLabel(sent))}` : "📤 Send to Linux";
+    return `<button type="button" class="dl-copy" data-hub-open="${esc(s.filename)}">${label}</button>`;
+  }
+
+  function hubPanel(s) {
+    const h = state.hubSend;
+    if (!h || h.filename !== s.filename) return "";
+    const options = h.free.map((f, i) => `<option value="${i}">${esc(slotLabel(f))}</option>`).join("");
+    const pick = h.free.length
+      ? `<select data-hub-slot>${options}</select>
+         <button type="button" class="dl-ready" data-hub-send="${esc(s.filename)}" ${h.busy ? "disabled" : ""}>${h.busy ? "Sending…" : "Send"}</button>`
+      : (h.busy ? "" : "<span>No free upload time on the Linux plan this week.</span>");
+    return `
+      <div class="dl-actions hub-send">
+        ${h.loading ? "<span>Checking the Linux plan…</span>" : pick}
+        <button type="button" class="dl-copy" data-hub-cancel>Cancel</button>
+      </div>
+      ${h.message ? `<div class="dl-meta ${h.ok ? "" : "error"}">${esc(h.message)}</div>` : ""}`;
+  }
+
+  async function hubCall(path, options) {
+    const resp = await fetch(path, options);
+    const body = await resp.json().catch(() => ({}));
+    if (resp.ok) return body;
+    const d = body.detail;
+    const err = new Error(typeof d === "string" ? d : (d && d.message) || `${resp.status} ${resp.statusText}`);
+    err.free = d && d.free;
+    throw err;
+  }
+
+  async function openHub(filename) {
+    state.hubSend = { filename, free: [], loading: true };
+    renderShorts();
+    try {
+      state.hubSend.free = (await hubCall("/api/hub/remote-free")).free;
+    } catch (err) {
+      state.hubSend.message = err.message;
+    }
+    state.hubSend.loading = false;
+    renderShorts();
+  }
+
+  async function sendToHub(filename) {
+    const h = state.hubSend;
+    const select = els.shorts.querySelector("[data-hub-slot]");
+    const choice = h.free[Number(select ? select.value : 0)];
+    if (!choice) return;
+    Object.assign(h, { busy: true, message: "", ok: false });
+    renderShorts();
+    try {
+      await hubCall("/api/hub/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, date: choice.date, slot: choice.slot }),
+      });
+      state.hubSend = null;
+      await loadShorts();
+      return;
+    } catch (err) {
+      if (err.free) h.free = err.free;
+      h.message = err.message;
+    }
+    h.busy = false;
+    renderShorts();
+  }
+
+  async function loadHub() {
+    try {
+      state.hub = (await api("/api/hub/status")).body;
+    } catch (_) {
+      state.hub = null;
+    }
   }
 
   async function copy(text, button) {
@@ -1262,6 +1350,14 @@
       if (short) return toggleReady(short, btn);
       [btn, short] = s("data-edit-short");
       if (short) return startEdit(short.filename);
+      [btn, short] = s("data-hub-open");
+      if (short) return openHub(short.filename);
+      [btn, short] = s("data-hub-send");
+      if (short) return sendToHub(short.filename);
+      if (e.target.closest("[data-hub-cancel]")) {
+        state.hubSend = null;
+        return renderShorts();
+      }
       [btn, short] = s("data-delete-short");
       if (short) deleteShort(short.filename, btn);
     });
@@ -1298,7 +1394,7 @@
     await loadStatus();
     loadVoices(draft.voice);
     loadMusic(draft.music);
-    loadShorts();
+    loadHub().then(loadShorts);
     scriptStats();
   }
 
