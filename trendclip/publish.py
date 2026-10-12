@@ -88,8 +88,8 @@ class PlatformTexts(GeminiTexts):
 
 def _hashtags(tags: list[str], limit: int) -> list[str]:
     out: list[str] = []
-    for tag in tags:
-        tag = "#" + re.sub(r"[^\w]", "", tag.lstrip("#@"))
+    for tag in script_writer.split_tags(tags):
+        tag = "#" + re.sub(r"[^\w]", "", tag.lstrip("@"))
         if len(tag) > 1 and tag.lower() not in {t.lower() for t in out}:
             out.append(tag)
     return out[:limit]

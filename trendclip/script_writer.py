@@ -436,10 +436,16 @@ def fit_length(client, model: str, script: str, limit: int, seconds: float, prog
     return _cut_to(script, limit)
 
 
+def split_tags(tags: list[str]) -> list[str]:
+    """One tag per word: Gemini sometimes sends them all as one string ("#shorts #riddle #quiz"), or
+    glued with a stray CJK character ("#shorts法quiz")."""
+    return [word for tag in tags for word in re.split(r"[\s,#\u3000-\u9fff\uff00-\uffef]+", tag) if word]
+
+
 def _clean_hashtags(tags: list[str]) -> list[str]:
     out = []
-    for tag in tags:
-        tag = "#" + re.sub(r"[^\w]", "", tag.lstrip("#"))
+    for tag in split_tags(tags):
+        tag = "#" + re.sub(r"[^\w]", "", tag)
         if len(tag) > 1 and tag.lower() not in {t.lower() for t in out}:
             out.append(tag)
     if "#shorts" not in {t.lower() for t in out}:

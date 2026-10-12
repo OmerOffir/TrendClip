@@ -222,3 +222,11 @@ def test_landscape_videos_upload_as_regular_videos():
     assert "#shorts" not in [h.lower() for h in texts.youtube.hashtags] and "shorts" not in texts.youtube.tags
     assert publish.template_texts(vertical).youtube.title.endswith("#shorts")
     assert publish._yt_title("Wrong Uber #shorts", as_short=False) == "Wrong Uber"
+
+
+def test_hashtags_sent_as_one_string_are_split():
+    merged = ["#shorts #comedy #brainteaser, #riddle", "quiz"]
+
+    assert script_writer._clean_hashtags(merged) == ["#shorts", "#comedy", "#brainteaser", "#riddle", "#quiz"]
+    assert publish._hashtags(merged, 3) == ["#shorts", "#comedy", "#brainteaser"]
+    assert script_writer._clean_hashtags(["#shorts法mathchallenge法forza"]) == ["#shorts", "#mathchallenge", "#forza"]
