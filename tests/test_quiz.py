@@ -182,7 +182,7 @@ def test_quiz_layout_pulses_the_hook_and_keeps_the_middle_band(tmp_path):
     path = va.create_karaoke_ass_file(words, tmp_path / "s.ass", title_card="NO PAUSING",
                                       flashes=[quiz.TimedFlash("+18", 0.25, 1.6)], **quiz.render_style(False))
     text = path.read_text(encoding="utf-8")
-    assert r"\pos(540,826)" in text and text.count(r"\3c") > 4
+    assert rf"\pos(540,{round(1920 * quiz.FLASH_Y)})" in text and text.count(r"\3c") > 4
     assert f",{quiz.CAPTION_MARGIN},1" in text  # karaoke style MarginV
     assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148}
 

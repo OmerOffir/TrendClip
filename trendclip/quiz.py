@@ -92,8 +92,8 @@ SAY = {
     "÷": ("Divide by {n}.",),
 }
 QUIZ_RATE = 5  # % faster speech at least: en-US-AndrewNeural at +5% lands a step every ~1.2 s
-CAPTION_MARGIN = 800  # vertical: captions end at 58% of the height...
-FLASH_Y = 0.43  # ...and the big number sits above them, both in the 36-60% band
+CAPTION_MARGIN = 620  # vertical: captions end at 68% of the height...
+FLASH_Y = 0.39  # ...and the big flash sits above them; a 3-line caption still clears it (and the title card)
 
 
 def english_voice(voice: str) -> str:
