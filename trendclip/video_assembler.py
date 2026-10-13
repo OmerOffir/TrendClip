@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 WIDTH, HEIGHT = 1080, 1920
 LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
 LANDSCAPE_OVERLAY_SCALE = 0.72
-TAIL_SECONDS = 1.0  # the video ends at most this long after the last spoken word
+TAIL_SECONDS = 1.5  # the video ends this long after the last spoken word (the voice is padded with silence)
 # Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
 LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
                        "title_chars": 26}
@@ -364,7 +364,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if end_card.strip() and words:
         last = words[-1].end
         start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0)
-        events.append(end_card_event(end_card, start, last + 1.0))
+        events.append(end_card_event(end_card, start, last + TAIL_SECONDS))
     pos = (size[0] // 2, round(size[1] * flash_y)) if flash_y else None
     events += [flash_event(f.text, f.start, f.end, pos) for f in flashes or []]
     for ci, chunk in enumerate(chunks):
@@ -475,7 +475,7 @@ def music_filter(duration: float, volume: float) -> str:
     fade_out = max(duration - 1.5, 0)
     return (
         # Mono voice levelled to -14 LUFS, copied to both channels (a plain stereo upmix costs ~3 dB).
-        f"[1:a]{VOICE_LEVEL},pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
+        f"[1:a]{VOICE_LEVEL},apad,pan=stereo|c0=c0|c1=c0,asplit=2[voice][key];"
         # Every track is levelled to the same loudness first, so 12-15% sounds the same for a loud
         # EDM track and a quiet lo-fi one.
         "[2:a]loudnorm=I=-14:TP=-2:LRA=11,"
@@ -656,7 +656,8 @@ def assemble_video(
             raise AssemblyError(f"{label} not found: {path}")
 
     ffmpeg = ffmpeg_with_libass()
-    voice_len = min(media_duration(voiceover), load_word_timings(timestamps_data)[-1].end + TAIL_SECONDS)
+    # Long silence after the voice is cut; a voice that stops right on its last word gets the tail added.
+    voice_len = load_word_timings(timestamps_data)[-1].end + TAIL_SECONDS
     bg_len = media_duration(background)
     if bg_len > 1:
         background_start %= bg_len  # seeking past the end of a looped input fails, so wrap around
@@ -687,7 +688,7 @@ def assemble_video(
             cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]
             graph += ";" + music_filter(voice_len, music_volume)
         else:
-            graph += f";[1:a]{VOICE_LEVEL},pan=stereo|c0=c0|c1=c0[aout]"
+            graph += f";[1:a]{VOICE_LEVEL},apad,pan=stereo|c0=c0|c1=c0[aout]"
         current = "base"
         first_input = 3 if music is not None else 2
         for i, ov in enumerate(overlays):

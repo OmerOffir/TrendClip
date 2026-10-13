@@ -108,7 +108,7 @@ def test_landscape_render_for_real(tmp_path):
     assert "1920x1080" in probe
 
 
-def test_video_ends_one_second_after_the_last_word(tmp_path):
+def _render_with_voice(tmp_path, voice_seconds):
     import subprocess
 
     import pytest
@@ -119,7 +119,16 @@ def test_video_ends_one_second_after_the_last_word(tmp_path):
         pytest.skip("no ffmpeg with libass")
     gen = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i"]
     subprocess.run(gen + ["testsrc=size=320x240:rate=30:duration=6", "-pix_fmt", "yuv420p", str(tmp_path / "bg.mp4")], check=True)
-    subprocess.run(gen + ["sine=frequency=300:duration=5", "-ac", "1", str(tmp_path / "voice.mp3")], check=True)
-    out = va.assemble_video(tmp_path / "bg.mp4", tmp_path / "voice.mp3", [{"word": "done", "start": 0.5, "end": 1.2}],
-                            tmp_path / "out.mp4", preset="ultrafast")
-    assert abs(va.media_duration(out) - 2.2) < 0.15  # not the 5 s of audio
+    subprocess.run(gen + [f"sine=frequency=300:duration={voice_seconds}", "-ac", "1", str(tmp_path / "voice.mp3")], check=True)
+    return va.assemble_video(tmp_path / "bg.mp4", tmp_path / "voice.mp3", [{"word": "done", "start": 0.5, "end": 1.2}],
+                             tmp_path / "out.mp4", preset="ultrafast")
+
+
+def test_video_ends_a_beat_after_the_last_word(tmp_path):
+    out = _render_with_voice(tmp_path, 5)
+    assert abs(va.media_duration(out) - (1.2 + va.TAIL_SECONDS)) < 0.15  # not the 5 s of audio
+
+
+def test_a_voice_that_stops_on_its_last_word_still_gets_the_tail(tmp_path):
+    out = _render_with_voice(tmp_path, 1.25)
+    assert abs(va.media_duration(out) - (1.2 + va.TAIL_SECONDS)) < 0.15
