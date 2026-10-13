@@ -141,6 +141,45 @@ def test_refresh_stores_scores_and_reports_new(settings):
     assert "20 pts" in lb.person_lines(board, "bob")[0]
 
 
+def test_card_renders_podium_and_list():
+    import io
+
+    from PIL import Image
+
+    from trendclip import leaderboard_card
+
+    people = [{"name": f"@fan{i}", "points": 20 - i} for i in range(15)] + [{"name": "@רונישקד-פ9צ", "points": 1}]
+    img = Image.open(io.BytesIO(leaderboard_card.render(people)))
+    assert img.size == (leaderboard_card.W, leaderboard_card.H)
+    assert Image.open(io.BytesIO(leaderboard_card.render([]))).size == img.size  # empty: "YOU?" spots
+    assert leaderboard_card._pts(1) == "1 PT" and leaderboard_card._pts(3) == "3 PTS"
+
+
+def test_post_caption_tags_everyone_on_the_card():
+    people = [{"name": "@kerrie", "points": 10}, {"name": "Calvin C", "points": 3}] + [
+        {"name": f"@fan{i}", "points": 1} for i in range(20)]
+    text = lb.post_caption(people, 13)
+    assert text.splitlines()[:3] == [
+        "🏆 DAILY LEADERBOARD UPDATE! 🏆", "Current Kings of Logic: @kerrie with 10 pts!",
+        "Next trap drops in 1 hour! Who's taking the #1 spot today? 🧠🔥"]
+    tags = text.splitlines()[-1].split()
+    assert tags[:2] == ["@kerrie", "@CalvinC"] and len(tags) == 13
+    assert lb.post_caption([]) == ""
+
+
+def test_leaderboard_reminder_at_its_time():
+    from datetime import datetime
+
+    from trendclip import assistant
+
+    s = Settings(youtube_api_key="k", discord_leaderboard_time="13:30", discord_reminder_minutes=0)
+    at = datetime(2026, 10, 14, 13, 31, tzinfo=s.tz)
+    assert [r.kind for r in assistant.due_reminders(s, at, set())] == ["morning", "leaderboard"]
+    assert [r.kind for r in assistant.due_reminders(s, at, {"2026-10-14 morning"})] == ["leaderboard"]
+    off = s.model_copy(update={"discord_leaderboard_time": ""})
+    assert [r.kind for r in assistant.due_reminders(off, at, {"2026-10-14 morning"})] == []
+
+
 def test_set_answer_unknown_video(settings):
     with pytest.raises(lb.LeaderboardError):
         lb.set_answer(settings, "nope", "x")

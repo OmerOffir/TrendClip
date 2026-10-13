@@ -405,6 +405,23 @@ def person_lines(board: Board, author_id: str) -> list[str]:
     return lines
 
 
+def _tag(name: str) -> str:
+    return name if name.startswith("@") else "@" + re.sub(r"\s+", "", name)
+
+
+def post_caption(people: list[dict[str, Any]], tags: int = 13) -> str:
+    """The daily YouTube post text, tagging everyone on the picture."""
+    if not people:
+        return ""
+    top = people[0]
+    pts = "pt" if top["points"] == 1 else "pts"
+    lines = ["🏆 DAILY LEADERBOARD UPDATE! 🏆",
+             f"Current Kings of Logic: {_tag(top['name'])} with {top['points']} {pts}!",
+             "Next trap drops in 1 hour! Who's taking the #1 spot today? 🧠🔥"]
+    tagged = " ".join(_tag(p["name"]) for p in people[:tags])
+    return "\n".join(lines) + ("\n\n" + tagged if len(people) > 1 else "")
+
+
 def new_lines(board: Board, new: list[Comment], limit: int = 20) -> list[str]:
     by_video: dict[str, list[Comment]] = defaultdict(list)
     for c in sorted(new, key=lambda c: c.published):

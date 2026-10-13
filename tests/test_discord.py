@@ -15,7 +15,7 @@ DAY = date(2026, 10, 7)
 @pytest.fixture
 def settings(tmp_path):
     return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output",
-                    discord_morning_time="10:00", discord_reminder_minutes=30)
+                    discord_morning_time="10:00", discord_reminder_minutes=30, discord_leaderboard_time="")
 
 
 def at(settings, hour, minute=0, day=DAY):

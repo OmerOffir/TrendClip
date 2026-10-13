@@ -51,6 +51,7 @@ _ENV_MAP: dict[str, str] = {
     "discord_allowed_users": "DISCORD_ALLOWED_USERS",
     "discord_morning_time": "DISCORD_MORNING_TIME",
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
+    "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "stats_youtube": "STATS_YOUTUBE",
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
@@ -125,6 +126,8 @@ class Settings(BaseModel):
     discord_allowed_users: list[int] = Field(default_factory=list)  # empty: everyone on the server
     discord_morning_time: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
+    # The leaderboard picture + a post caption to copy to YouTube; empty = off.
+    discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
 
     # The channel folder under channels/ whose channel.env and login files are used.
     channel: str = DEFAULT_CHANNEL

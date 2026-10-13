@@ -17,7 +17,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import assistant, channel_stats, hub, leaderboard, planner, publish, script_writer, shorts, video_downloader
+from . import assistant, channel_stats, hub, leaderboard, leaderboard_card, planner, publish, script_writer, shorts, video_downloader
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -454,6 +454,9 @@ class TrendClipBot(discord.Client):
                     self.settings.discord_channel_id)
                 if reminder.kind == "morning":
                     await self.morning_summary(channel, reminder.day)
+                elif reminder.kind == "leaderboard":
+                    if publish.TOKEN_FILE.is_file():
+                        await self.leaderboard_post(channel)
                 else:
                     await self.slot_reminder(channel, reminder.day, reminder.slot)
             except discord.HTTPException:
@@ -464,6 +467,27 @@ class TrendClipBot(discord.Client):
     @reminders.before_loop
     async def _before_reminders(self) -> None:
         await self.wait_until_ready()
+
+    async def leaderboard_post(self, channel: discord.abc.Messageable) -> None:
+        """The fresh leaderboard picture and a caption to copy into a YouTube post (the API can't post there)."""
+        settings = self.settings
+        try:
+            board, _ = await asyncio.to_thread(leaderboard.refresh, settings)
+        except Exception as err:  # noqa: BLE001 - fall back to the last read
+            logger.exception("Comments leaderboard failed")
+            board = await asyncio.to_thread(leaderboard.load, settings)
+            if not board.updated_at:
+                await channel.send(clip_text(f"🏆 Couldn't read the YouTube comments for the leaderboard: {err}"))
+                return
+        if not board.people:
+            return
+        handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
+        png = await asyncio.to_thread(leaderboard_card.render, board.people, handle, day=assistant.today(settings),
+                                      logo=settings.channel_dir / "logo.png")
+        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE)
+        await channel.send("🏆 Today's leaderboard post: save the picture, copy the text, and post it on YouTube "
+                           "(Create → Post).\n" + _fence(caption),
+                           file=discord.File(io.BytesIO(png), filename="leaderboard.png"), allowed_mentions=NO_PINGS)
 
     async def morning_summary(self, channel: discord.abc.Messageable, day: Day) -> None:
         text, buttons, empty = self.today_text(day)
@@ -864,10 +888,19 @@ def _updated(settings: Settings, board: leaderboard.Board) -> str:
 
 
 @app_commands.command(name="leaderboard", description="Fans ranked by points from their YouTube comments")
-@app_commands.describe(refresh="Read the comments from YouTube now (default: this morning's)")
-async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False) -> None:
+@app_commands.describe(refresh="Read the comments from YouTube now (default: this morning's)",
+                       image="A podium picture of the top 13 to post on YouTube / Instagram")
+async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False, image: bool = False) -> None:
     board = await _board(interaction, refresh)
     if board is None:
+        return
+    if image:
+        settings = _bot(interaction).settings
+        handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
+        png = await asyncio.to_thread(leaderboard_card.render, board.people, handle,
+                                      day=assistant.today(settings), logo=settings.channel_dir / "logo.png")
+        await interaction.followup.send("🏆 Top fans, ready to post:", file=discord.File(io.BytesIO(png),
+                                        filename="leaderboard.png"))
         return
     lines = [f"🏆 **Leaderboard**: {len(board.people)} people, {len(board.comments)} comments",
              *leaderboard.top_lines(board, 30)]
@@ -999,7 +1032,8 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
-        "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning)",
+        "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
+        "`image:True` a podium picture to post)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
     ]), ephemeral=True)
 

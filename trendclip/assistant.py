@@ -275,21 +275,24 @@ def discord_copy(settings: Settings, filename: str, limit: int = DISCORD_FILE_LI
 
 class Reminder(BaseModel):
     key: str
-    kind: Literal["morning", "slot"]
+    kind: Literal["morning", "slot", "leaderboard"]
     day: Day
     slot: Slot | None = None
 
 
 def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Reminder]:
-    """The morning plan summary, and each slot's video DISCORD_REMINDER_MINUTES before it."""
+    """The morning plan summary, the leaderboard post, and each slot's video DISCORD_REMINDER_MINUTES before it."""
     at = at.astimezone(settings.tz)
     day = at.date()
     out = []
-    hour, minute = map(int, settings.discord_morning_time.split(":"))
-    morning = datetime(day.year, day.month, day.day, hour, minute, tzinfo=settings.tz)
-    key = f"{day.isoformat()} morning"
-    if key not in sent and morning <= at < morning + MORNING_WINDOW:
-        out.append(Reminder(key=key, kind="morning", day=day))
+    for kind, clock in (("morning", settings.discord_morning_time), ("leaderboard", settings.discord_leaderboard_time)):
+        if not clock:
+            continue
+        hour, minute = map(int, clock.split(":"))
+        start = datetime(day.year, day.month, day.day, hour, minute, tzinfo=settings.tz)
+        key = f"{day.isoformat()} {kind}"
+        if key not in sent and start <= at < start + MORNING_WINDOW:
+            out.append(Reminder(key=key, kind=kind, day=day))
     if settings.discord_reminder_minutes:
         lead = timedelta(minutes=settings.discord_reminder_minutes)
         for slot in planner.SLOTS:

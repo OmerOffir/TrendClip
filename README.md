@@ -590,6 +590,11 @@ option doesn't pay): the first correct answer 10, another correct answer or a pa
 comment 1. Subscribers get 10 once. YouTube only shows subscribers who keep their subscriptions public.
 It uses the YouTube login from the Upload tab, so there is nothing else to set up.
 
+Every day at `DISCORD_LEADERBOARD_TIME` (default 13:30, empty = off) the bot sends a podium picture of
+the top 13 (`/leaderboard image:True` makes one any time) and a caption that tags all of them. YouTube's
+API can't create posts, so post it yourself: save the picture, copy the text, YouTube → Create → Post.
+Put the channel logo in `channels/<channel>/logo.png` and it's drawn on the picture.
+
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a
