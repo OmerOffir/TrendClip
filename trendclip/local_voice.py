@@ -66,6 +66,24 @@ def _mp3(pcm: bytes, sample_rate: int) -> bytes:
     return proc.stdout
 
 
+def trim_silence(audio, sample_rate: int, lead: float = 0.1, tail: float = 0.25):
+    """Cut F5's silent or near-silent start and end (it can add seconds of hiss), keeping a
+    short breath. Captions are spread over the audio length, so this also keeps them in sync."""
+    import numpy as np
+
+    window = max(int(sample_rate * 0.02), 1)
+    frames = audio.size // window
+    if frames == 0:
+        return audio
+    rms = np.sqrt(np.mean(audio[: frames * window].reshape(frames, window) ** 2, axis=1))
+    loud = np.flatnonzero(rms > max(0.01, rms.max() * 0.05))
+    if loud.size == 0:
+        return audio
+    start = max(loud[0] * window - int(lead * sample_rate), 0)
+    end = min((loud[-1] + 1) * window + int(tail * sample_rate), audio.size)
+    return audio[start:end]
+
+
 def speak(text: str, rate: str = "+0%") -> tuple[bytes, list[Word]]:
     """MP3 bytes and estimated word timings for `text`."""
     import numpy as np
@@ -78,7 +96,7 @@ def speak(text: str, rate: str = "+0%") -> tuple[bytes, list[Word]]:
         seed=42,
         show_info=lambda message: logger.info("%s", message),
     )
-    audio = np.asarray(wav).squeeze()
+    audio = trim_silence(np.asarray(wav, dtype=np.float32).squeeze(), int(sample_rate))
     if audio.size == 0:
         raise RuntimeError("F5-TTS returned no audio")
     pcm = (np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()

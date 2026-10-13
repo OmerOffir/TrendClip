@@ -106,3 +106,20 @@ def test_landscape_render_for_real(tmp_path):
                                       va.Overlay(tmp_path / "p.png", 0.5, 1.8, center=(540, 1490), box=400)])
     probe = subprocess.run([ffmpeg, "-hide_banner", "-i", str(out)], capture_output=True, text=True).stderr
     assert "1920x1080" in probe
+
+
+def test_video_ends_one_second_after_the_last_word(tmp_path):
+    import subprocess
+
+    import pytest
+
+    try:
+        ffmpeg = va.ffmpeg_with_libass()
+    except va.AssemblyError:
+        pytest.skip("no ffmpeg with libass")
+    gen = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i"]
+    subprocess.run(gen + ["testsrc=size=320x240:rate=30:duration=6", "-pix_fmt", "yuv420p", str(tmp_path / "bg.mp4")], check=True)
+    subprocess.run(gen + ["sine=frequency=300:duration=5", "-ac", "1", str(tmp_path / "voice.mp3")], check=True)
+    out = va.assemble_video(tmp_path / "bg.mp4", tmp_path / "voice.mp3", [{"word": "done", "start": 0.5, "end": 1.2}],
+                            tmp_path / "out.mp4", preset="ultrafast")
+    assert abs(va.media_duration(out) - 2.2) < 0.15  # not the 5 s of audio

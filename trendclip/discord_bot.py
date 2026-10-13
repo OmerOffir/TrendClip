@@ -26,7 +26,7 @@ MESSAGE_MAX = 2000
 CUSTOM_ID_MAX = 100
 OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
 PENDING_TEXTS = 30
-NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap"}
+NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["18:00", "23:00"]
 
@@ -556,7 +556,8 @@ async def act_delete(bot: TrendClipBot, interaction: discord.Interaction, filena
 
 
 KINDS = {"story": ("📖 Story", discord.ButtonStyle.success), "math": ("🧮 Math challenge", discord.ButtonStyle.primary),
-         "riddle": ("🧩 Riddle", discord.ButtonStyle.primary), "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary)}
+         "riddle": ("🧩 Riddle", discord.ButtonStyle.primary), "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary),
+         "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary)}
 
 
 def kind_buttons(game: str | None = None) -> list[ActionButton | None]:
@@ -725,9 +726,9 @@ async def slot_cmd(interaction: discord.Interaction, time: SlotChoice, day: str 
     await bot.show_short(interaction, item.short, f"📅 {day_label(bot.settings, when)} · {time}")
 
 
-@app_commands.command(name="create", description="Create a video: a story, a math challenge, a riddle or a trivia trap")
+@app_commands.command(name="create", description="Create a video: a story, math challenge, riddle, trivia or paradox trap")
 @app_commands.describe(game="Optional: the gameplay to use (default: a random game)",
-                       type="Story, math challenge, riddle or trivia trap (I ask with buttons when you leave it out)",
+                       type="Story, math challenge, riddle, trivia trap or paradox trap (I ask with buttons when you leave it out)",
                        text="Optional: your own story / quiz, spoken word for word (like Fill the rest in the dashboard)")
 @app_commands.choices(type=[app_commands.Choice(name=label, value=kind) for kind, (label, _) in KINDS.items()])
 @app_commands.autocomplete(game=game_choices)
@@ -854,7 +855,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "**TrendClip bot**",
         "`/today` today's 18:00 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
         "`/slot time:18:00` send me the video for a slot (`day:` for another day)",
-        "`/create` make a video: I ask story, math challenge, riddle or trivia trap (`game:` picks the gameplay, "
+        "`/create` make a video: I ask story, math challenge, riddle, trivia trap or paradox trap (`game:` picks the gameplay, "
         "`text:` or ✍️ uses your own words)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today)",

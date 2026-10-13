@@ -43,6 +43,7 @@ logger = logging.getLogger(__name__)
 WIDTH, HEIGHT = 1080, 1920
 LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
 LANDSCAPE_OVERLAY_SCALE = 0.72
+TAIL_SECONDS = 1.0  # the video ends at most this long after the last spoken word
 # Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
 LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
                        "title_chars": 26}
@@ -655,7 +656,7 @@ def assemble_video(
             raise AssemblyError(f"{label} not found: {path}")
 
     ffmpeg = ffmpeg_with_libass()
-    voice_len = media_duration(voiceover)
+    voice_len = min(media_duration(voiceover), load_word_timings(timestamps_data)[-1].end + TAIL_SECONDS)
     bg_len = media_duration(background)
     if bg_len > 1:
         background_start %= bg_len  # seeking past the end of a looped input fails, so wrap around

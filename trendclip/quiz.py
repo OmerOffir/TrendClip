@@ -3,6 +3,9 @@
 - math: a fast mental-math chain. The numbers are picked here, so the answer is always right; Gemini only
   writes the hook, title and captions (with a built-in fallback when Gemini is busy).
 - riddle: Gemini writes a riddle told in 2-3 clues plus a final question.
+- trivia: a 3-option speed question built on a surprising true fact.
+- paradox: a mini story that traps the viewer between two answers that both seem right; viewers pick a
+  side in one word ("Comment KEEP or RETURN"), which starts arguments in the replies.
 
 Each number / clue flashes big in the middle of the screen the moment it is spoken (`Flash`), the video
 ends on a big "?" and "COMMENT YOUR ANSWER", and the answer goes in the pinned comment.
@@ -27,8 +30,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-QuizKind = Literal["math", "riddle", "trivia"]
-QUIZ_MODES = ("math", "riddle", "trivia")
+QuizKind = Literal["math", "riddle", "trivia", "paradox"]
+QUIZ_MODES = ("math", "riddle", "trivia", "paradox")
 FLASH_SECONDS = 1.4  # each step stays up 1.2-1.5 s (or until the next one)
 LAST_FLASH_SECONDS = 3.0
 END_CARD = "COMMENT YOUR ANSWER"
@@ -339,6 +342,96 @@ and easy to say, written as it is spoken after "Is it ...?" (with "the" where En
 "the Philippines", "the Pacific"). Don't reuse the most famous ones (Sudan pyramids, Venus hottest planet, Canada lakes) unless
 the creator's notes ask for them. Background gameplay: {game}.{notes}"""
 
+class GeminiParadox(BaseModel):
+    name: str = Field(description="The paradox or dilemma it is based on, e.g. 'the crocodile dilemma' (for the creator only).")
+    hook: str = Field(description=(
+        "The opening dare, at most 8 words, spoken from the first millisecond, e.g. 'Only 2% can escape this "
+        "paradox.' or 'This breaks 97% of brains.'"))
+    setup: list[str] = Field(description=(
+        "The mini story in 1 or 2 spoken sentences (at most 20 words each), concrete characters and stakes, "
+        "e.g. 'A crocodile steals a child and promises to return him if the father can guess what it will do.'"))
+    twist: str = Field(description=(
+        "The move that springs the trap, one sentence of at most 16 words, e.g. \"The father guesses: 'You will "
+        "NOT return my child!'\""))
+    dilemma: str = Field(description="The question the viewer must decide, at most 10 words, e.g. 'What should the crocodile do?'")
+    side_a: str = Field(description=(
+        "The first branch as one sentence starting with 'If', at most 16 words, showing it fails, e.g. 'If he "
+        "keeps the child, the father was right, so he must return him.'"))
+    side_b: str = Field(description=(
+        "The second branch as one sentence starting with 'But if', at most 14 words, showing it fails too, e.g. "
+        "'But if he returns the child, the father was wrong!'"))
+    vote_a: str = Field(description="One word for picking the first side, e.g. 'KEEP'. Short, plain, easy to type.")
+    vote_b: str = Field(description="One word for picking the second side, e.g. 'RETURN'. Different from vote_a.")
+    debate: str = Field(description=(
+        "The closing either/or question that splits viewers into two camps, at most 16 words, e.g. 'Did the "
+        "father just outsmart the crocodile, or is the child trapped forever?'"))
+    resolution: str = Field(description=(
+        "Two short sentences for the creator: why it is a paradox and how philosophers usually resolve or "
+        "classify it. Never spoken."))
+    title: str = Field(description="YouTube title, at most 60 characters, no hashtags, e.g. 'This Paradox Breaks 98% of Brains 🤯'.")
+    description: str = Field(description="One or two short sentences daring viewers to pick a side in the comments, no hashtags.")
+    hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #paradox #logic #brainteaser #mindblown.")
+    title_card: str = Field(description=(
+        "3 to 7 word ALL-CAPS banner on the first frame with a low pass rate, e.g. 'ONLY 2% CAN SOLVE THIS PARADOX'. No emoji."))
+
+
+PARADOX_PROMPT = """Write a PARADOX TRAP Short (20-25 seconds): a tiny story that traps the viewer between two
+answers that both seem right, so they can't scroll away until they pick a side, then argue about it in the
+comments. Shape: dare hook, the story in 1-2 sentences, the twist that springs the trap, "Think fast!" plus the
+dilemma, both branches failing ("If ... / But if ..."), then an either/or question that splits viewers into
+two camps, and they comment one word for their side.
+Use a real logical paradox or famous dilemma, retold as a fresh, vivid situation with concrete characters
+(it may happen in the game's world when that fits naturally): self-reference (liar, Pinocchio "my nose will
+grow now", the barber, the crocodile dilemma, the lawyer who must win his first case), time travel
+(grandfather, bootstrap), identity (Ship of Theseus, teleporter copy), prediction (unexpected exam,
+Newcomb's box), infinity and choice (Buridan's donkey, the unstoppable force), or a counter-intuitive
+choice where both camps feel sure (Monty Hall, two envelopes). Vary it: don't just retell the crocodile
+unless the creator's notes ask for it. Both sides must sound convincing; keep every sentence short and
+easy to say aloud; no jargon, no names of philosophers in the spoken lines. Background gameplay: {game}.{notes}"""
+
+PARADOX_HOOKS = ("Only 2% can escape this paradox.", "This breaks 97% of brains.", "Nobody has solved this one.")
+
+
+def _vote(word: str, fallback: str) -> str:
+    word = re.sub(r"[^A-Za-z0-9' -]", "", word or "").strip().split(" ")[0].upper()
+    return word[:12] or fallback
+
+
+def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
+                   rng: random.Random) -> ShortScript:
+    from . import script_writer as sw
+    from .stickers import Reaction
+
+    client, model = sw._gemini(settings, client)
+    result, model = _ask(client, model, GeminiParadox, PARADOX_PROMPT.format(game=game, notes=_notes(notes)), progress)
+    setup = [_one_line(s, 22) for s in result.setup if s.strip()][:2]
+    twist, side_a, side_b = _one_line(result.twist, 18), _one_line(result.side_a, 18), _one_line(result.side_b, 16)
+    if not setup or not all((twist, side_a, side_b)):
+        raise sw.ScriptError("Gemini wrote a paradox without its story or both sides; try again")
+    vote_a, vote_b = _vote(result.vote_a, "A"), _vote(result.vote_b, "B")
+    if vote_a == vote_b:
+        vote_a, vote_b = "A", "B"
+    hook = _one_line(result.hook, 9) or rng.choice(PARADOX_HOOKS)
+    dilemma = (_one_line(result.dilemma, 11).rstrip(".!?") or "What should happen") + "?"
+    debate = (_one_line(result.debate, 18).rstrip(".!?") or f"So, {vote_a.lower()} or {vote_b.lower()}") + "?"
+    closing = f"Comment {vote_a.lower()} or {vote_b.lower()} right now!"
+    lines = [hook, *setup, twist, f"Think fast! {dilemma}", side_a, side_b, debate, closing]
+    picks = f"{vote_a} OR {vote_b}?"
+    flashes = [Flash(word=" ".join(setup[0].split()[:2]), text="PARADOX"),
+               Flash(word="Think fast", text="THINK FAST!"),
+               Flash(word=" ".join(side_a.split()[:2]), text=f"A) {vote_a}"),
+               Flash(word=" ".join(side_b.split()[:2]), text=f"B) {vote_b}"),
+               Flash(word=debate.split()[0], text="?"),
+               Flash(word="Comment", text=picks if len(picks) <= 16 else "A OR B?")]
+    pinned = f"{debate} 👇\nTeam {vote_a} or Team {vote_b}? Defend your side!"
+    resolution = " ".join(result.resolution.split())
+    script = _script(settings, game, model, "paradox", format, " ".join(lines), hook, flashes,
+                     f"No single answer: it's {result.name.strip() or 'a paradox'}.", pinned, result,
+                     on_screen=f"Paradox: {result.name.strip()}. {resolution}")
+    twist_word = re.sub(r"[^\w']", "", side_b.split()[-1]) or "wrong"
+    return script.model_copy(update={"reactions": [Reaction(word=twist_word, mood="shocked")]})
+
+
 MATH_HOOKS = ("Only 5% finish this without pausing.", "Only 3% get this right the first time.",
               "Most people fail this by step four.", "Only geniuses get this without pausing.")
 
@@ -366,7 +459,7 @@ def _one_line(text: str, max_words: int) -> str:
     text = re.sub(r"[\"“”`*#]|\s+", " ", text or "").strip()
     words = text.split()
     text = " ".join(words[:max_words])
-    return text if not text or text[-1] in ".!?" else text + "."
+    return text if not text or text.rstrip("'’)")[-1:] in (".", "!", "?") else text + "."
 
 
 def _notes(notes: str) -> str:
@@ -382,6 +475,8 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
         return _write_math(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     if kind == "trivia":
         return _write_trivia(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
+    if kind == "paradox":
+        return _write_paradox(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     client, model = sw._gemini(settings, client)
     result, model = _ask(client, model, GeminiRiddle, RIDDLE_PROMPT.format(game=game, notes=_notes(notes)), progress)
     clues = [_one_line(c, 18) for c in result.clues if c.strip()][:3]
@@ -563,7 +658,7 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
         flashes.append(Flash(word=question.split()[0], text="?"))
 
     client, model = sw._gemini(settings, client)
-    label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP"}[kind]
+    label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP", "paradox": "PARADOX TRAP"}[kind]
     prompt = "\n".join([f"Package this {label} quiz Short the creator wrote.",
                         f"Background gameplay: {game}.{_notes(notes)}",
                         *([f"The correct answer is {solved[0]} ({solved[1]})."] if solved else []),

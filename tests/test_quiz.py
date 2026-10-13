@@ -157,6 +157,46 @@ def test_trivia_says_the_with_country_names(tmp_path):
     assert any(f.text.endswith(") Philippines") and f.word == "it the" for f in result.flashes)
 
 
+CROCODILE = quiz.GeminiParadox(
+    name="the crocodile dilemma", hook="Only 2% can escape this paradox.",
+    setup=["A crocodile steals a child and promises to return him if the father can guess what it will do."],
+    twist="The father guesses: 'You will NOT return my child!'", dilemma="What should the crocodile do",
+    side_a="If he keeps the child, the father was right, so he must return him.",
+    side_b="But if he returns the child, the father was wrong!", vote_a="keep", vote_b="Return!",
+    debate="Did the father just outsmart the crocodile, or is the child trapped forever",
+    resolution="Any choice contradicts the promise. It is a self-reference paradox like the liar.",
+    title="This Paradox Breaks 98% of Brains", description="Pick a side!", hashtags=["#shorts #paradox #logic"],
+    title_card="only 2% can solve this paradox")
+
+
+def test_paradox_trap(tmp_path):
+    seen = {}
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="paradox",
+                                        client=fake_client(CROCODILE, seen))
+    assert seen["schema"] is quiz.GeminiParadox and "PARADOX TRAP" in seen["prompt"]
+    assert result.mode == "paradox" and result.script.startswith("Only 2% can escape this paradox. A crocodile steals")
+    assert "Think fast! What should the crocodile do? If he keeps" in result.script
+    assert "return my child!' Think fast!" in result.script  # no "!'." after the quote
+    assert result.script.endswith("trapped forever? Comment keep or return right now!")
+    assert result.title_card == "ONLY 2% CAN SOLVE THIS PARADOX" and result.title.endswith("🧠")
+    assert result.hashtags[:3] == ["#shorts", "#paradox", "#logic"]
+    assert result.pinned_comment.startswith("Did the father just outsmart the crocodile") and "Team KEEP or Team RETURN" in result.pinned_comment
+    assert "crocodile dilemma" in result.on_screen and "self-reference" in result.on_screen
+    assert [r.word for r in result.reactions] == ["wrong"] and result.reactions[0].mood == "shocked"
+    labels = [f.text for f in result.flashes]
+    assert labels == ["PARADOX", "THINK FAST!", "A) KEEP", "B) RETURN", "?", "KEEP OR RETURN?"]
+
+    timed = quiz.schedule_flashes(result.flashes, va.estimate_word_timings(result.script, 25))
+    assert [t.text for t in timed] == labels
+    assert all(a.start < b.start for a, b in zip(timed, timed[1:]))
+
+
+def test_paradox_with_the_same_word_for_both_sides_falls_back_to_a_and_b(tmp_path):
+    same = CROCODILE.model_copy(update={"vote_a": "yes", "vote_b": "YES"})
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "paradox", client=fake_client(same))
+    assert result.script.endswith("Comment a or b right now!") and result.flashes[-1].text == "A OR B?"
+
+
 def test_flashes_follow_the_voice_and_repeated_numbers():
     words = [va.Word(w, i * 0.4, i * 0.4 + 0.35) for i, w in enumerate(
         "Start with 12. Times 2. Plus 2. Divide by 2. Got your number? Comment your answer right now!".split())]

@@ -14,6 +14,20 @@ def test_f5_speed_follows_the_edge_rate():
     assert local_voice.REF_WAV.is_file() and "three percent" in local_voice.REF_TEXT
 
 
+def test_f5_silence_at_the_end_is_cut():
+    import numpy as np
+
+    rate = 24000
+    rng = np.random.default_rng(0)
+    speech = 0.3 * np.sin(np.linspace(0, 2000, 2 * rate))
+    hiss = 0.002 * rng.standard_normal(3 * rate)
+    audio = np.concatenate([hiss[: rate // 2], speech, hiss]).astype(np.float32)  # 0.5 s + 2 s + 3 s
+    trimmed = local_voice.trim_silence(audio, rate)
+    assert abs(trimmed.size / rate - (2 + 0.1 + 0.25)) < 0.05
+    quiet = np.zeros(rate, dtype=np.float32)
+    assert local_voice.trim_silence(quiet, rate).size == rate
+
+
 def test_microsoft_refused_is_only_the_403_handshake():
     assert voiceover.microsoft_refused(Handshake403("403, message='Invalid response status'"))
     assert not voiceover.microsoft_refused(ConnectionError("nodename nor servname provided"))

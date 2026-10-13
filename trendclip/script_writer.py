@@ -172,7 +172,7 @@ Rules:
 - Never wrap words in backticks, quotes or markdown.
 """
 
-ScriptMode = Literal["clip", "story", "math", "riddle", "trivia"]  # math / riddle / trivia: quiz.py
+ScriptMode = Literal["clip", "story", "math", "riddle", "trivia", "paradox"]  # math / riddle / trivia / paradox: quiz.py
 
 STORY_BRIEF = """Format: STORYTIME. The gameplay is only a background to keep eyes on screen; the voiceover is a
 random, self-contained story that is NOT about the game or the footage.
