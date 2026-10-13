@@ -573,6 +573,23 @@ The accounts are `STATS_YOUTUBE`, `STATS_TIKTOK` and `STATS_INSTAGRAM` in the ch
   Without a token the report still tries Instagram's public profile data. When Instagram refuses,
   it says so and the other platforms are reported as usual.
 
+### Comments leaderboard
+
+Every morning after the report, the bot reads every top-level comment on the channel's videos (the
+channel's own comments are skipped). It posts the new ones since yesterday with their points, and the
+top 10. Everything is kept in `output/comments.json` on the bot's machine. Commands:
+
+- `/leaderboard` everyone ranked (`refresh:True` reads YouTube again right now).
+- `/comments video:` every comment on one video, with its result and points.
+- `/points name:` one fan's total and comments.
+- `/answer video: answer: choices:` the quiz answer for a video this machine didn't make (choices like
+  `A) Rome | B) Paris`; for a paradox, only the two sides). Quizzes made here are known by themselves.
+
+Points per person and video (only their best comment on a video counts, so spamming or guessing every
+option doesn't pay): the first correct answer 10, another correct answer or a paradox vote 2, any other
+comment 1. Subscribers get 10 once. YouTube only shows subscribers who keep their subscriptions public.
+It uses the YouTube login from the Upload tab, so there is nothing else to set up.
+
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a

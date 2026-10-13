@@ -10,14 +10,14 @@ import io
 import logging
 import sys
 import uuid
-from datetime import date as Day, timedelta
+from datetime import date as Day, datetime, timedelta
 from typing import Any, Callable, Literal
 
 import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import assistant, channel_stats, hub, planner, publish, script_writer, shorts, video_downloader
+from . import assistant, channel_stats, hub, leaderboard, planner, publish, script_writer, shorts, video_downloader
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ PENDING_TEXTS = 30
 NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["18:00", "23:00"]
+NO_PINGS = discord.AllowedMentions.none()  # comment text from YouTube is shown as is
 
 
 class JobFailed(Exception):
@@ -50,6 +51,23 @@ def allowed(settings: Settings, interaction: discord.Interaction) -> bool:
 
 def clip_text(text: str, limit: int = MESSAGE_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def chunks(lines: list[str], limit: int = MESSAGE_MAX - 50) -> list[str]:
+    """Lines packed into as few messages as Discord's length limit allows."""
+    out, cur = [], ""
+    for line in lines:
+        line = clip_text(line, limit)
+        if cur and len(cur) + 1 + len(line) > limit:
+            out.append(cur)
+            cur = ""
+        cur = f"{cur}\n{line}" if cur else line
+    return out + [cur] if cur else out
+
+
+async def reply_lines(interaction: discord.Interaction, lines: list[str], ephemeral: bool = False) -> None:
+    for text in chunks(lines) or ["Nothing to show."]:
+        await reply(interaction, text, suppress_embeds=True, allowed_mentions=NO_PINGS, ephemeral=ephemeral)
 
 
 async def reply(interaction: discord.Interaction, content: str, **kwargs: Any) -> None:
@@ -458,6 +476,24 @@ class TrendClipBot(discord.Client):
             buttons.append(button("mk", "-", "Create a random video", discord.ButtonStyle.success))
         await channel.send(clip_text(text), view=view_of(*buttons))
         await self.send_stats(channel)
+        if publish.TOKEN_FILE.is_file():
+            await self.send_comments(channel)
+
+    async def send_comments(self, channel: discord.abc.Messageable) -> None:
+        """Yesterday's new YouTube comments with their points, and the top 10; a failure is only reported."""
+        try:
+            board, new = await asyncio.to_thread(leaderboard.refresh, self.settings)
+        except Exception as err:  # noqa: BLE001 - shown in the channel
+            logger.exception("Comments leaderboard failed")
+            await channel.send(clip_text(f"💬 Couldn't read the YouTube comments: {err}"))
+            return
+        head = f"💬 **{len(new)} new comment{'s' * (len(new) != 1)}** since yesterday"
+        lines = [head + (":" if new else "."), *leaderboard.new_lines(board, new), "",
+                 "🏆 **Leaderboard** (/leaderboard · /comments · /points)", *leaderboard.top_lines(board)]
+        if not board.people:
+            lines.append("Nobody has commented yet.")
+        for text in chunks(lines):
+            await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
 
     async def send_stats(self, channel: discord.abc.Messageable) -> None:
         """The channel report (YouTube / TikTok / Instagram, last 24 h); a failure here never blocks the plan."""
@@ -801,6 +837,108 @@ async def stats_cmd(interaction: discord.Interaction) -> None:
     await _bot(interaction).send_stats(interaction.channel)
 
 
+async def _board(interaction: discord.Interaction, fresh: bool = False) -> leaderboard.Board | None:
+    """The stored comments (read from YouTube when asked, or the first time)."""
+    settings = _bot(interaction).settings
+    await interaction.response.defer(thinking=True)
+    board = await asyncio.to_thread(leaderboard.load, settings)
+    if fresh or not board.updated_at:
+        if not publish.TOKEN_FILE.is_file():
+            await reply(interaction, "YouTube isn't connected. Open the dashboard → Upload → Connect YouTube.")
+            return None
+        try:
+            board, _ = await asyncio.to_thread(leaderboard.refresh, settings)
+        except Exception as err:  # noqa: BLE001 - shown in the channel
+            logger.exception("Comments leaderboard failed")
+            await reply(interaction, f"💬 Couldn't read the YouTube comments: {err}")
+            return None
+    return board
+
+
+def _updated(settings: Settings, board: leaderboard.Board) -> str:
+    try:
+        at = datetime.fromisoformat(board.updated_at).astimezone(settings.tz)
+    except ValueError:
+        return ""
+    return f"_Comments read {at.strftime('%a %d %b %H:%M')} · `/leaderboard refresh:True` reads them again_"
+
+
+@app_commands.command(name="leaderboard", description="Fans ranked by points from their YouTube comments")
+@app_commands.describe(refresh="Read the comments from YouTube now (default: this morning's)")
+async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False) -> None:
+    board = await _board(interaction, refresh)
+    if board is None:
+        return
+    lines = [f"🏆 **Leaderboard**: {len(board.people)} people, {len(board.comments)} comments",
+             *leaderboard.top_lines(board, 30)]
+    if not board.people:
+        lines.append("Nobody has commented yet.")
+    lines += ["", f"Points: first correct answer {leaderboard.FIRST_POINTS}, correct / paradox vote "
+              f"{leaderboard.CORRECT_POINTS}, other comment {leaderboard.COMMENT_POINTS} (best comment per video), "
+              f"subscriber +{leaderboard.SUBSCRIBER_POINTS}", _updated(_bot(interaction).settings, board)]
+    await reply_lines(interaction, lines)
+
+
+async def youtube_video_choices(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    board = leaderboard.load(_bot(interaction).settings)
+    count: dict[str, int] = {}
+    for c in board.comments:
+        count[c.video_id] = count.get(c.video_id, 0) + 1
+    needle = current.lower().strip()
+    out = []
+    for v in sorted(board.videos.values(), key=lambda v: v.published, reverse=True):
+        if needle and needle not in v.name.lower():
+            continue
+        out.append(app_commands.Choice(name=clip_text(f"{v.name} · {count.get(v.id, 0)} comments", 100), value=v.id))
+        if len(out) == 25:
+            break
+    return out
+
+
+async def person_choices(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    needle = current.lower().strip()
+    people = leaderboard.load(_bot(interaction).settings).people
+    return [app_commands.Choice(name=clip_text(f"{p['name']} · {p['points']} pts", 100), value=p["id"])
+            for p in people if not needle or needle in p["name"].lower()][:25]
+
+
+@app_commands.command(name="comments", description="Every comment on one YouTube video, with its points")
+@app_commands.describe(video="The video (newest first)")
+@app_commands.autocomplete(video=youtube_video_choices)
+async def comments_cmd(interaction: discord.Interaction, video: str) -> None:
+    board = await _board(interaction)
+    if board is not None:
+        await reply_lines(interaction, leaderboard.video_lines(board, video))
+
+
+@app_commands.command(name="points", description="One fan's points and comments")
+@app_commands.describe(name="Who (type part of the name)")
+@app_commands.autocomplete(name=person_choices)
+async def points_cmd(interaction: discord.Interaction, name: str) -> None:
+    board = await _board(interaction)
+    if board is not None:
+        await reply_lines(interaction, leaderboard.person_lines(board, name))
+
+
+@app_commands.command(name="answer", description="Set a video's quiz answer (for videos this machine didn't make)")
+@app_commands.describe(video="The video", answer="The correct answer (empty for a paradox)",
+                       choices="Multiple choice or paradox sides, e.g. A) Rome | B) Paris")
+@app_commands.autocomplete(video=youtube_video_choices)
+async def answer_cmd(interaction: discord.Interaction, video: str, answer: str = "", choices: str = "") -> None:
+    settings = _bot(interaction).settings
+    if not answer.strip() and len(leaderboard.parse_choices(choices)) < 2:
+        return await reply(interaction, "Give the answer, or at least two choices like `A) Rome | B) Paris`.",
+                           ephemeral=True)
+    try:
+        v = await asyncio.to_thread(leaderboard.set_answer, settings, video, answer, choices)
+    except leaderboard.LeaderboardError as err:
+        return await reply(interaction, str(err), ephemeral=True)
+    what = f"answer ||{leaderboard.safe(v.answer, 60)}||" if v.answer else "paradox sides"
+    extra = f" · choices {' | '.join(f'{l}) {t}' for l, t in v.choices)}" if v.choices else ""
+    await reply(interaction, f"✅ **{leaderboard.safe(v.name, 80)}**: {what}{extra}. Points are counted again.",
+                allowed_mentions=NO_PINGS)
+
+
 plan_group = app_commands.Group(name="plan", description="See and change the upload plan")
 
 
@@ -861,10 +999,13 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
+        "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning)",
+        "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
     ]), ephemeral=True)
 
 
-COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, plan_group, help_cmd]
+COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, leaderboard_cmd,
+            comments_cmd, points_cmd, answer_cmd, plan_group, help_cmd]
 
 
 def main(argv: list[str] | None = None) -> int:

@@ -327,9 +327,10 @@ def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
     from trendclip import discord_bot
 
     ids = [b.item.custom_id for b in discord_bot.kind_buttons("GTA V")]
-    assert ids == ["tc:mk:story:GTA V", "tc:mk:math:GTA V", "tc:mk:riddle:GTA V", "tc:mk:trivia:GTA V"]
+    assert ids == ["tc:mk:story:GTA V", "tc:mk:math:GTA V", "tc:mk:riddle:GTA V", "tc:mk:trivia:GTA V",
+                   "tc:mk:paradox:GTA V"]
     assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
-        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia"]
+        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia", "tc:mk:paradox"]
 
     made, asked = [], []
 

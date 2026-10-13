@@ -111,8 +111,9 @@ def quiz_rate(rate: str) -> str:
 
 
 def render_style(landscape: bool) -> dict:
-    """assemble_video options for a quiz: a large pulsing dare on frame 0, numbers + captions in the middle."""
-    style: dict = {"title_pulse": True, "title_chars": 16, "title_size": 148}
+    """assemble_video options for a quiz: a large pulsing dare on frame 0, numbers + captions in the middle,
+    music at full level from the first frame (a slow fade-in reads as a slow start and viewers swipe)."""
+    style: dict = {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0}
     if not landscape:
         style |= {"margin_v": CAPTION_MARGIN, "flash_y": FLASH_Y}
     return style
@@ -274,10 +275,13 @@ class GeminiMathPack(BaseModel):
 
 class GeminiRiddle(BaseModel):
     hook: str = Field(description=(
-        "The opening sentence, at most 10 words, a dare, e.g. 'Only 5% solve this riddle on the first try.'"))
+        "The opening line, spoken from the first word: the riddle's most paradoxical idea asked as a question, "
+        "at most 12 words, e.g. 'What weighs nothing, but you can't hold it for ten minutes?' Never a "
+        "percentage or an 'only X% solve this' dare, never the answer."))
     clues: list[str] = Field(description=(
-        "The riddle told in 2 or 3 short spoken clues, one sentence each (at most 14 words), each clue narrowing "
-        "it down, e.g. 'I have keys, but I open no locks.' The clues must point to exactly one fair answer."))
+        "2 or 3 more short spoken clues after the opening question, one sentence each (at most 14 words), each "
+        "adding something new that narrows it down, e.g. 'You can see me on freezing days.' Together with the "
+        "opening they must point to exactly one fair answer."))
     question: str = Field(description="The final question, 2 to 6 words, e.g. 'What am I?' or 'Who is the thief?'")
     answer: str = Field(description="The one correct answer, 1 to 5 words, e.g. 'A piano'.")
     explanation: str = Field(description="One short sentence on why every clue fits the answer.")
@@ -288,7 +292,11 @@ class GeminiRiddle(BaseModel):
         "One spoiler-free hint that makes people want to comment, with a number or a comparison when you can, "
         "e.g. 'over 33,000 miles'. Never the answer itself."))
     title_card: str = Field(description=(
-        "3 to 7 word ALL-CAPS banner on the first frame, a rarity dare, e.g. 'ONLY 5% SOLVE THIS'. No emoji."))
+        "The opening paradox as a 3 to 6 word ALL-CAPS banner on the first frame, ending in '?', at most 36 "
+        "characters, e.g. 'WEIGHS NOTHING. CAN'T HOLD IT?'. No emoji, no percentages."))
+    bonus: str = Field("", description=(
+        "A follow-up challenge for the pinned comment: a different, easier one-line riddle, e.g. 'What can you "
+        "catch but never throw?' Not its answer."))
 
 
 MATH_PROMPT = """Package this RAPID MATH CHAIN Short. The voiceover reads the chain fast, one step every
@@ -296,8 +304,10 @@ MATH_PROMPT = """Package this RAPID MATH CHAIN Short. The voiceover reads the ch
 {chain} (answer {answer}).
 Write the hook, title, description, hashtags and title card. Topic flavour for the game background: {game}.{notes}"""
 
-RIDDLE_PROMPT = """Write a MULTI-PART RIDDLE Short of about 20 seconds: hook, then the riddle in 2-3 clues
-(spoken one at a time, each one making the viewer rethink), then the question. Viewers comment their guess.
+RIDDLE_PROMPT = """Write a MULTI-PART RIDDLE Short of about 20 seconds. It opens, from the very first word, on
+the riddle's most paradoxical idea asked as a question (no "only 3% solve this" stat: viewers swipe past
+those), then 2-3 more clues (spoken one at a time, each one making the viewer rethink), then the question.
+Viewers comment their guess.
 Make it clever but fair: one clear answer that clicks when revealed, not a pun only you would get, and not
 an overused one (no "What has keys but can't open locks", "What gets wetter the more it dries"). Riddle
 types that work: "What am I?", a short who-did-it with a hidden clue, a lateral-thinking situation.
@@ -483,15 +493,45 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
     if len(clues) < 2:
         raise sw.ScriptError("Gemini wrote a riddle without clues; try again")
     question = (_one_line(result.question, 8).rstrip(".!?") or "What am I") + "?"
-    hook = _one_line(result.hook, 12) or "Only 5% solve this riddle."
     answer = _one_line(result.answer, 6).rstrip(".")
+    hook = riddle_hook(result.hook, answer) or clues.pop(0)
     hint = safe_hint(result.hint, answer) or "every clue has to fit one answer"
-    lines = [hook, *clues, question, f"Hint: {hint}.", CLOSING]
+    lines = [hook, *clues, question, COUNTDOWN, f"Hint: {hint}.", CLOSING]
     flashes = [Flash(word=" ".join(c.split()[:2]), text=f"CLUE {i}") for i, c in enumerate(clues, 1)]
-    flashes += [Flash(word=question.split()[0], text="?"), Flash(word="Hint", text="HINT")]
+    flashes += [Flash(word=question.split()[0], text="?"), *COUNTDOWN_FLASHES, Flash(word="Hint", text="HINT")]
     pinned = public_pin(question, hint)
+    bonus = (_one_line(result.bonus, 14).rstrip(".!?") + "?") if result.bonus.strip() else ""
+    if bonus and answer.lower() not in bonus.lower():
+        pinned += f"\n🔥 Bonus round: {bonus} Reply with both answers!"
+    card = riddle_card(result.title_card, hook)
     return _script(settings, game, model, "riddle", format, " ".join(lines), hook, flashes, answer, pinned, result,
-                   on_screen=f"Riddle answer: {answer}. {result.explanation.strip()}")
+                   on_screen=f"Riddle answer: {answer}. {result.explanation.strip()}", card=card)
+
+
+COUNTDOWN = "Three. Two. One."
+COUNTDOWN_FLASHES = [Flash(word="Three", text="3"), Flash(word="Two", text="2"), Flash(word="One", text="1")]
+
+
+def riddle_hook(hook: str, answer: str) -> str:
+    """The opening question, or "" when Gemini still wrote a stat dare or gave the answer away."""
+    hook = _one_line(hook, 13)
+    words = {w for w in re.findall(r"[a-z']+", answer.lower()) if len(w) > 2 and w not in ("the", "and")}
+    if not hook or _DARE.search(hook) or words & set(re.findall(r"[a-z']+", hook.lower())):
+        return ""
+    return hook
+
+
+def riddle_card(card: str, hook: str) -> str:
+    """The frame-0 banner: the paradox itself (up to 3 lines of 16 characters), not a rarity stat."""
+    card = " ".join((card or "").split())
+    if card and not _DARE.search(card) and len(card) <= 40:
+        return card if card.endswith("?") else card.rstrip(".!") + "?"
+    words, out = hook.rstrip(".!?").split(), ""
+    for word in words:
+        if len(f"{out} {word}".strip()) > 36:
+            break
+        out = f"{out} {word}".strip()
+    return out + "?"
 
 
 def _option(text: str) -> str:
@@ -556,9 +596,9 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
     if str(start) in {_norm(t) for t in hook.split()} or str(answer) in {t.strip(".,!?") for t in hook.split()}:
         hook = rng.choice(MATH_HOOKS)
     lines, flashes = math_lines(start, chain, rng)
-    flashes += [Flash(word="number", text="?"), Flash(word="Hint", text="HINT")]
+    flashes += [Flash(word="number", text="?"), *COUNTDOWN_FLASHES, Flash(word="Hint", text="HINT")]
     hint = digit_hint(answer)
-    closing = ["Got your number?", f"Hint: {hint}.", CLOSING]
+    closing = ["Got your number?", COUNTDOWN, f"Hint: {hint}.", CLOSING]
     script = " ".join([hook, *lines, *closing])
     pinned = public_pin("What number did you get?", hint)
     return _script(settings, game, model, "math", format, script, hook, flashes, str(answer), pinned, pack,
@@ -686,9 +726,10 @@ class GeminiOwnQuiz(BaseModel):
 
 
 def _script(settings: Settings, game: str, model: str, mode: str, format: str, script: str, hook: str,
-            flashes: list[Flash], answer: str, pinned: str, pack, *, on_screen: str) -> ShortScript:
+            flashes: list[Flash], answer: str, pinned: str, pack, *, on_screen: str, card: str = "") -> ShortScript:
     from . import script_writer as sw
 
+    card = card or frame_zero(pack.title_card, hook)
     return sw.ShortScript(
         on_screen=on_screen,
         hook=hook,
@@ -698,7 +739,7 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         title=with_emoji(pack.title.strip().strip('"')[:100]),
         description=pack.description.strip(),
         hashtags=sw._clean_hashtags(pack.hashtags),
-        title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", frame_zero(pack.title_card, hook)).split()).upper()[:48],
+        title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", card).split()).upper()[:48],
         music_mood=MUSIC_MOOD,
         ending="question",
         end_card=END_CARD,

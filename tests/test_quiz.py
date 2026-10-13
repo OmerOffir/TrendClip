@@ -54,7 +54,8 @@ def test_math_quiz_script_flashes_and_answer(tmp_path):
     assert "Start with" in result.script and "Hint: it's " in result.script
     assert result.script.endswith("Comment your answer right now!")
     assert result.end_card == quiz.END_CARD and result.title_card == "ONLY 5% OF PEOPLE FINISH THIS"
-    assert len(result.flashes) == 10 and result.flashes[-1].text == "HINT"
+    assert len(result.flashes) == 13 and [f.text for f in result.flashes[-5:]] == ["?", "3", "2", "1", "HINT"]
+    assert "Got your number? Three. Two. One. Hint:" in result.script
     assert result.flashes[1].text[0] in "+-×÷"
     assert result.answer and result.answer not in result.pinned_comment and "→" not in result.pinned_comment
     assert result.pinned_comment.startswith("What number did you get? 👇") and "Hint:" in result.pinned_comment
@@ -70,19 +71,41 @@ def test_math_quiz_works_when_gemini_is_busy(tmp_path):
     assert result.answer and result.flashes
 
 
-def test_riddle_quiz(tmp_path):
+def test_riddle_opens_on_the_paradox_and_counts_down(tmp_path):
+    seen = {}
+    riddle = quiz.GeminiRiddle(
+        hook="What weighs nothing, but you can't hold it for ten minutes?",
+        clues=["A strong man can't keep me in.", "You can see me on freezing days."],
+        question="What am I", answer="Your breath.", explanation="Breath weighs nothing and fogs in the cold.",
+        title="Can You Solve This? 🧩", description="Comment your guess!", hashtags=["#riddle"],
+        title_card="WEIGHS NOTHING. CAN'T HOLD IT?", hint="you do it all day", bonus="What can you catch but never throw?")
+    result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="riddle",
+                                        client=fake_client(riddle, seen))
+    assert "only 3% solve this" in seen["prompt"]  # told not to open on a stat
+    assert result.script.startswith("What weighs nothing, but you can't hold it for ten minutes? A strong man")
+    assert result.script.endswith("What am I? Three. Two. One. Hint: you do it all day. Comment your answer right now!")
+    assert result.title_card == "WEIGHS NOTHING. CAN'T HOLD IT?"
+    assert [f.text for f in result.flashes] == ["CLUE 1", "CLUE 2", "?", "3", "2", "1", "HINT"]
+    assert result.answer == "Your breath" and result.pinned_comment.startswith("What am I? 👇")
+    assert "🔥 Bonus round: What can you catch but never throw? Reply with both answers!" in result.pinned_comment
+    assert "breath" not in result.pinned_comment.lower()
+
+
+def test_a_stat_dare_riddle_hook_is_replaced_by_the_first_clue(tmp_path):
     riddle = quiz.GeminiRiddle(
         hook="Only 5% solve this riddle on the first try.",
         clues=["I have a face, but I never smile.", "I have hands, but I can't hold anything."],
         question="What am I", answer="A clock.", explanation="A clock has a face and hands.",
-        title="Only 5% Solve This 🧩", description="Comment your guess!", hashtags=["#riddle"], title_card="RIDDLE TIME")
+        title="Only 5% Solve This 🧩", description="Comment your guess!", hashtags=["#riddle"],
+        title_card="ONLY 5% SOLVE THIS", bonus="What is a clock's favourite food?")
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="riddle", client=fake_client(riddle))
-    assert result.script.startswith("Only 5% solve this riddle") and "Listen carefully" not in result.script
-    assert "I have a face" in result.script and "What am I?" in result.script and "Hint:" in result.script
+    assert result.script.startswith("I have a face, but I never smile. I have hands") and "5%" not in result.script
+    assert result.title_card == "I HAVE A FACE, BUT I NEVER SMILE?"
+    assert [f.text for f in result.flashes][:2] == ["CLUE 1", "?"]
     assert "clock" not in result.script.lower().split("hint:")[-1]
-    assert [f.text for f in result.flashes] == ["CLUE 1", "CLUE 2", "?", "HINT"]
-    assert result.answer == "A clock" and result.pinned_comment.startswith("What am I? 👇")
-    assert "clock" not in result.pinned_comment.lower()
+    assert "Bonus" not in result.pinned_comment  # it named the answer
+    assert quiz.riddle_hook("What has a face but never smiles?", "A clock") == "What has a face but never smiles?"
+    assert quiz.riddle_hook("What ticks but is not a clock?", "A clock") == ""
 
 
 OWN_MATH = ("99% OF PEOPLE FAIL THIS PERCENTAGE TRAP! Start with 100. Take away 50%. Add 50% back. Multiply by 2. "
@@ -219,12 +242,15 @@ def test_quiz_voice_is_english_only_and_never_says_plus():
 
 def test_quiz_layout_pulses_the_hook_and_keeps_the_middle_band(tmp_path):
     words = [va.Word("Add", 0.0, 0.3), va.Word("18.", 0.3, 0.7)]
+    style = quiz.render_style(False)
+    assert style.pop("music_fade_in") == 0.0  # assemble_video's, not the subtitles'
     path = va.create_karaoke_ass_file(words, tmp_path / "s.ass", title_card="NO PAUSING",
-                                      flashes=[quiz.TimedFlash("+18", 0.25, 1.6)], **quiz.render_style(False))
+                                      flashes=[quiz.TimedFlash("+18", 0.25, 1.6)], **style)
     text = path.read_text(encoding="utf-8")
     assert rf"\pos(540,{round(1920 * quiz.FLASH_Y)})" in text and text.count(r"\3c") > 4
     assert f",{quiz.CAPTION_MARGIN},1" in text  # karaoke style MarginV
-    assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148}
+    assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0}
+    assert "afade=t=in" not in va.music_filter(20, 0.15, 0.0) and "afade=t=in:d=0.80" in va.music_filter(20, 0.15)
 
 
 def test_flashes_are_drawn_in_the_subtitles(tmp_path):
