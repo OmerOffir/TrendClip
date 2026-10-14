@@ -943,12 +943,14 @@ def _updated(settings: Settings, board: leaderboard.Board) -> str:
 
 
 @app_commands.command(name="leaderboard", description="Fans ranked by points from their YouTube comments")
-@app_commands.describe(refresh="Read the comments from YouTube now (default: this morning's)",
+@app_commands.describe(refresh="Read the comments from YouTube now and queue the replies (default: this morning's)",
                        image="A podium picture of the top 13 to post on YouTube / Instagram")
 async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False, image: bool = False) -> None:
     board = await _board(interaction, refresh)
     if board is None:
         return
+    if refresh:
+        await _bot(interaction).queue_replies(interaction.channel, board)
     if image:
         settings = _bot(interaction).settings
         handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
