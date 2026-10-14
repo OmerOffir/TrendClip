@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from datetime import datetime, timedelta, timezone
 
 from trendclip import leaderboard as lb
 from trendclip import shorts
@@ -114,6 +115,15 @@ def settings(tmp_path, monkeypatch):
     local = shorts.ShortVideo(filename="q.mp4", game="gta", title="Quiz", description="", hashtags=[], script="",
                               voice="", background="", answer="63")
     monkeypatch.setattr(shorts, "list_shorts", lambda s: [local])
+    from trendclip import script_writer
+
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: None)  # never the real Gemini
+    from trendclip import script_writer
+
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: None)  # never the real Gemini
+    from trendclip import script_writer
+
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: None)  # never the real Gemini
     return Settings(youtube_api_key="k", output_dir=tmp_path / "output")
 
 
@@ -178,6 +188,144 @@ def test_leaderboard_reminder_at_its_time():
     assert [r.kind for r in assistant.due_reminders(s, at, {"2026-10-14 morning"})] == ["leaderboard"]
     off = s.model_copy(update={"discord_leaderboard_time": ""})
     assert [r.kind for r in assistant.due_reminders(off, at, {"2026-10-14 morning"})] == []
+
+
+class FakeReplies:
+    def __init__(self, existing=()):
+        self.existing, self.inserted = dict(existing), []
+
+    def comments(self):
+        return self
+
+    def list(self, part, parentId, maxResults):  # noqa: N803
+        return _Req({"items": [{"snippet": {"authorChannelId": {"value": a}}} for a in self.existing.get(parentId, [])]})
+
+    def insert(self, part, body):
+        self.inserted.append(body["snippet"])
+        return _Req({"id": "r"})
+
+
+NOW = datetime(2026, 10, 14, 12, 0, tzinfo=timezone.utc)
+DAY = NOW.date()
+
+
+def _quiz_board(video_published: str) -> lb.Board:
+    videos = {"q": Video("q", "Quiz", published=video_published, kind="quiz", answer="63"),
+              "s": Video("s", "Story", published=video_published)}
+    comments = [
+        Comment("a1", "q", "amy", "amy", "51", "2026-10-13T08:00:00Z"),
+        Comment("a2", "q", "amy", "amy", "63!", "2026-10-13T08:05:00Z"),  # amy's scoring comment
+        Comment("b1", "q", "bob", "bob", "63", "2026-10-13T07:00:00Z"),  # first correct
+        Comment("c1", "q", "cat", "cat", "42", "2026-10-13T09:00:00Z"),  # wrong
+        Comment("d1", "q", "dan", "dan", "7", "2026-10-13T09:30:00Z"),  # wrong by the rules, Gemini unsure
+        Comment("e1", "s", "eve", "eve", "love it", "2026-10-13T10:00:00Z"),
+    ]
+    verdicts = {"a1": "wrong", "a2": "correct", "b1": "correct", "c1": "wrong", "d1": "comment", "e1": "comment"}
+    board = lb.Board(videos=videos, comments=comments, channel_id="UCme", verdicts=verdicts)
+    board.people = lb.score(videos, comments, set(), board.verdicts)
+    return board
+
+
+def test_ranks_share_ties():
+    assert lb.ranks([{"id": "a", "points": 5}, {"id": "b", "points": 1}, {"id": "c", "points": 1}]) == \
+        {"a": 1, "b": 2, "c": 2}
+
+
+def test_one_reply_per_person_per_video_with_its_result(settings):
+    board = _quiz_board("2026-10-13T06:00:00Z")  # 30 h old: answers may be revealed
+    queued = lb.plan_replies(settings, board, DAY, NOW)
+    got = {q["comment_id"]: q["result"] for q in queued}
+    assert got == {"b1": "first", "a2": "correct", "c1": "wrong", "d1": "comment", "e1": "comment"}
+    assert "a1" not in got  # amy's earlier wrong guess gets nothing: one reply per video
+    assert [q["result"] for q in queued][:2] == ["first", "correct"]  # the best news goes out first
+    texts = {q["comment_id"]: q["text"] for q in queued}
+    assert "+10" in texts["b1"] and "+2" in texts["a2"] and "+1" in texts["c1"]
+    assert texts["d1"] in [t.format(rank=3, total="1 pt") for t in lb.REPLY_TEXTS["comment"]]
+    assert all("http" not in t for t in texts.values())
+    assert lb.plan_replies(settings, board, DAY, NOW) == []  # never queued twice
+
+
+def test_quiz_replies_wait_24h_but_story_replies_dont(settings):
+    board = _quiz_board("2026-10-14T00:00:00Z")  # 12 h old
+    queued = lb.plan_replies(settings, board, DAY, NOW)
+    assert [q["comment_id"] for q in queued] == ["e1"]
+    later = lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=13))
+    assert {q["comment_id"] for q in later} == {"b1", "a2", "c1", "d1"}
+
+
+def test_send_skips_comments_the_channel_answered(settings):
+    board = _quiz_board("2026-10-13T06:00:00Z")
+    lb.plan_replies(settings, board, DAY, NOW)
+    yt = FakeReplies(existing={"b1": ["UCme"]})  # answered by hand already
+    sent = [lb.send_next_reply(settings, "UCme", DAY, yt) for _ in range(5)]
+    assert sent[0] is None and [s["comment_id"] for s in sent[1:]] == ["a2", "c1", "d1", "e1"]
+    assert [i["parentId"] for i in yt.inserted] == ["a2", "c1", "d1", "e1"]
+    assert lb.send_next_reply(settings, "UCme", DAY, yt) is None
+
+
+def test_daily_max(settings, monkeypatch):
+    monkeypatch.setattr(lb, "REPLY_DAILY_MAX", 2)
+    assert len(lb.plan_replies(settings, _quiz_board("2026-10-13T06:00:00Z"), DAY, NOW)) == 2
+
+
+class FakeGemini:
+    class models:  # noqa: N801
+        @staticmethod
+        def generate_content(model, contents, config):
+            import re as _re
+
+            ids = _re.findall(r"- id (\S+):", contents[0])
+            verdict = {"b1": "correct", "c1": "wrong", "d1": "not_an_answer"}
+
+            class R:
+                parsed = lb._Verdicts(items=[lb._Verdict(id=i, verdict=verdict.get(i, "wrong")) for i in ids])
+                text = ""
+            return R()
+
+
+def test_gemini_verdicts_win_and_are_kept(settings):
+    board = _quiz_board("2026-10-13T06:00:00Z")
+    board.verdicts = {}
+    board.comments.append(Comment("t1", "q", "tom", "tom", "sixty-tree", "2026-10-13T11:00:00Z"))
+    assert lb.verify(settings, board, client=FakeGemini()) == 7
+    assert board.verdicts["d1"] == "comment" and board.verdicts["c1"] == "wrong"
+    assert board.verdicts["e1"] == "comment"  # a story video has no right / wrong
+    assert lb.verify(settings, board, client=FakeGemini()) == 0  # each comment once
+
+
+def test_links_and_flagged_comments_get_no_reply_and_no_points(settings):
+    board = _quiz_board("2026-10-13T06:00:00Z")
+    board.comments += [
+        Comment("x1", "s", "spammer", "spammer", "sub to me 👉 www.mychannel.com", "2026-10-13T10:00:00Z"),
+        Comment("x2", "s", "troll", "troll", "this channel is trash", "2026-10-13T10:00:00Z"),
+        Comment("x3", "s", "new", "new", "cool!", "2026-10-13T10:00:00Z"),  # not checked by Gemini yet
+    ]
+    board.verdicts["x2"] = "skip"
+    board.people = lb.score(board.videos, board.comments, set(), board.verdicts)
+    assert {"spammer", "troll"}.isdisjoint(p["id"] for p in board.people)
+    queued = {q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)}
+    assert {"x1", "x2", "x3"}.isdisjoint(queued) and "e1" in queued
+    assert [c.id for c in lb.new_skips(settings, board)] == ["x1", "x2"]
+    assert lb.new_skips(settings, board) == []  # told once
+
+
+def test_same_titles_never_share_an_answer(settings, monkeypatch):
+    def short(name, title, answer, video_id=None):
+        uploads = {"youtube": {"video_id": video_id}} if video_id else {}
+        return shorts.ShortVideo(filename=name, game="g", title=title, description="", hashtags=[], script="",
+                                 voice="", background="", answer=answer, uploads=uploads)
+
+    monkeypatch.setattr(shorts, "list_shorts", lambda s: [
+        short("a.mp4", "Only 1% Solve This Riddle", "A zipper", video_id="v1"),
+        short("b.mp4", "Only 1% Solve This Riddle", "An echo"),  # same title, not uploaded from here
+        short("c.mp4", "Twin title", "A coin"), short("d.mp4", "Twin title", "A needle"),
+        short("e.mp4", "One of a kind", "63"),
+    ])
+    videos = [Video("v1", "Only 1% Solve This Riddle #shorts"), Video("v2", "Only 1% Solve This Riddle"),
+              Video("v3", "Twin title"), Video("v4", "One of a kind #shorts")]
+    lb._apply_answers(settings, videos, {})
+    assert [v.answer for v in videos] == ["A zipper", "", "", "63"]
+    # v1 by its id; v2 shares its title with v1 on the channel; v3's title fits two Shorts; v4 is unique
 
 
 def test_set_answer_unknown_video(settings):

@@ -29,6 +29,7 @@ PENDING_TEXTS = 30
 NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["18:00", "23:00"]
+REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
 NO_PINGS = discord.AllowedMentions.none()  # comment text from YouTube is shown as is
 
 
@@ -286,6 +287,7 @@ class TrendClipBot(discord.Client):
             synced = await self.tree.sync()
         logger.info("Registered %d slash commands", len(synced))
         self.reminders.start()
+        self.reply_loop.start()
 
     async def on_ready(self) -> None:
         logger.info("Discord bot ready as %s", self.user)
@@ -471,23 +473,30 @@ class TrendClipBot(discord.Client):
     async def leaderboard_post(self, channel: discord.abc.Messageable) -> None:
         """The fresh leaderboard picture and a caption to copy into a YouTube post (the API can't post there)."""
         settings = self.settings
+        fresh = True
         try:
             board, _ = await asyncio.to_thread(leaderboard.refresh, settings)
         except Exception as err:  # noqa: BLE001 - fall back to the last read
             logger.exception("Comments leaderboard failed")
+            fresh = False
             board = await asyncio.to_thread(leaderboard.load, settings)
             if not board.updated_at:
                 await channel.send(clip_text(f"🏆 Couldn't read the YouTube comments for the leaderboard: {err}"))
                 return
         if not board.people:
             return
+        if fresh:
+            await self.queue_replies(channel, board)
         handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
         png = await asyncio.to_thread(leaderboard_card.render, board.people, handle, day=assistant.today(settings),
                                       logo=settings.channel_dir / "logo.png")
         caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE)
-        await channel.send("🏆 Today's leaderboard post: save the picture, copy the text, and post it on YouTube "
-                           "(Create → Post).\n" + _fence(caption),
-                           file=discord.File(io.BytesIO(png), filename="leaderboard.png"), allowed_mentions=NO_PINGS)
+        await channel.send("🏆 Today's leaderboard post: save the picture, copy the next message (long-press → "
+                           "Copy Text), and post both on YouTube (Create → Post). Pick each @name from YouTube's "
+                           "list as you type it, or it may not become a tag.",
+                           file=discord.File(io.BytesIO(png), filename="leaderboard.png"))
+        # Its own plain message: "Copy Text" then gives exactly the caption, with no ``` around it.
+        await channel.send(caption, allowed_mentions=NO_PINGS, suppress_embeds=True)
 
     async def morning_summary(self, channel: discord.abc.Messageable, day: Day) -> None:
         text, buttons, empty = self.today_text(day)
@@ -518,6 +527,52 @@ class TrendClipBot(discord.Client):
             lines.append("Nobody has commented yet.")
         for text in chunks(lines):
             await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
+        await self.queue_replies(channel, board)
+
+    async def queue_replies(self, channel: discord.abc.Messageable, board: leaderboard.Board) -> None:
+        """One YouTube reply per fan per video, sent by reply_loop a few minutes apart; flagged comments
+        are listed so they can be removed."""
+        skipped = await asyncio.to_thread(leaderboard.new_skips, self.settings, board)
+        if skipped:
+            lines = [f"🚫 **{len(skipped)} comment(s) look like spam, links or rude**: no reply, no points. "
+                     "Remove them in YouTube Studio → Comments if you agree:"]
+            lines += [f"• **{leaderboard.safe(c.author, 32)}**: {leaderboard.safe(c.text, 100)} <{c.url}>"
+                      for c in skipped[:15]]
+            for text in chunks(lines):
+                await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
+        if not self.settings.youtube_auto_replies or not publish.can_comment():
+            return
+        queued = await asyncio.to_thread(leaderboard.plan_replies, self.settings, board,
+                                         assistant.today(self.settings))
+        if queued:
+            kinds = {"first": "🥇 first correct", "correct": "✅ correct", "voted": "🗳️ votes",
+                     "wrong": "🪤 trapped", "comment": "💬 comments"}
+            counts = ", ".join(f"{sum(q['result'] == k for q in queued)} {label}" for k, label in kinds.items()
+                               if any(q["result"] == k for q in queued))
+            minutes = len(queued) * REPLY_EVERY_MINUTES
+            await channel.send(clip_text(f"💬 Replying on YouTube to {len(queued)} comment(s) ({counts}), one every "
+                                         f"{REPLY_EVERY_MINUTES} min (~{minutes} min)."), allowed_mentions=NO_PINGS)
+
+    @tasks.loop(minutes=REPLY_EVERY_MINUTES)
+    async def reply_loop(self) -> None:
+        settings = self.settings
+        if not settings.youtube_auto_replies or not publish.TOKEN_FILE.is_file():
+            return
+        board = await asyncio.to_thread(leaderboard.load, settings)
+        if not board.channel_id:
+            return
+        try:
+            item = await asyncio.to_thread(leaderboard.send_next_reply, settings, board.channel_id,
+                                           assistant.today(settings))
+        except Exception:  # noqa: BLE001 - logged; the next round tries the next one
+            logger.exception("YouTube auto reply failed")
+            return
+        if item:
+            logger.info("Replied on YouTube to %s: %s", item["name"], item["text"])
+
+    @reply_loop.before_loop
+    async def _before_reply_loop(self) -> None:
+        await self.wait_until_ready()
 
     async def send_stats(self, channel: discord.abc.Messageable) -> None:
         """The channel report (YouTube / TikTok / Instagram, last 24 h); a failure here never blocks the plan."""

@@ -7,18 +7,24 @@ answer or a paradox vote 2, any other comment 1. A subscriber gets 10 once (YouT
 subscribers who made their subscriptions public). The channel's own comments are skipped.
 
 Quiz answers come from the Shorts on this machine (matched by YouTube id, else by title); /answer sets
-them for videos made elsewhere.
+them for videos made elsewhere. Word rules judge each answer; Gemini double-checks quiz answers (typos,
+synonyms, other languages) when GEMINI_API_KEY is set. Every fan then gets one reply per video.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import random
 import re
+import threading
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
+
+from pydantic import BaseModel
 
 from . import publish, shorts
 from .config import Settings
@@ -29,8 +35,11 @@ logger = logging.getLogger(__name__)
 FIRST_POINTS, CORRECT_POINTS, COMMENT_POINTS, SUBSCRIBER_POINTS = 10, 2, 1, 10
 MAX_COMMENT_PAGES = 200  # 100 threads a page, 1 quota unit each
 RESULT_POINTS = {"first": FIRST_POINTS, "correct": CORRECT_POINTS, "voted": CORRECT_POINTS,
-                 "wrong": COMMENT_POINTS, "comment": COMMENT_POINTS}
-RESULT_ICON = {"first": "🥇", "correct": "✅", "voted": "🗳️", "wrong": "❌", "comment": "💬"}
+                 "wrong": COMMENT_POINTS, "comment": COMMENT_POINTS, "skip": 0}
+RESULT_ICON = {"first": "🥇", "correct": "✅", "voted": "🗳️", "wrong": "❌", "comment": "💬", "skip": "🚫"}
+# Links in a comment: self-promotion / spam. Never replied to, never scored.
+LINK = re.compile(r"https?://|www\.|\bt\.me/|\b[\w-]+\.(?:com|net|org|io|ly|gg|me|tv|xyz|co|link|shop|ru|info)\b",
+                  re.IGNORECASE)
 NO_ANSWER = "No single answer"  # paradox Shorts store this as their answer
 
 
@@ -79,7 +88,9 @@ class Board:
     comments: list[Comment] = field(default_factory=list)
     subscribers: set[str] = field(default_factory=set)
     answers: dict[str, dict[str, Any]] = field(default_factory=dict)  # set with /answer
+    verdicts: dict[str, str] = field(default_factory=dict)  # comment id -> Gemini's correct / wrong / comment
     updated_at: str = ""
+    channel_id: str = ""
     people: list[dict[str, Any]] = field(default_factory=list)  # best first
 
 
@@ -149,11 +160,21 @@ def judge(video: Video, text: str) -> str:
     return "wrong" if numeric and any(w.isdigit() for w in words) else "comment"
 
 
-def score(videos: dict[str, Video], comments: list[Comment], subscribers: set[str]) -> list[dict[str, Any]]:
-    """Fill each comment's result / points and return the people, best first."""
+def score(videos: dict[str, Video], comments: list[Comment], subscribers: set[str],
+          verdicts: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """Fill each comment's result / points and return the people, best first. Gemini's verdicts win over
+    the word rules (quiz answers); links and what Gemini flags (spam, rude) are "skip": no points."""
+    verdicts = verdicts or {}
     for c in comments:
         video = videos.get(c.video_id)
-        c.result = judge(video, c.text) if video else "comment"
+        if LINK.search(c.text) or verdicts.get(c.id) == "skip":
+            c.result = "skip"
+        elif video is None:
+            c.result = "comment"
+        elif video.kind == "quiz" and c.id in verdicts:
+            c.result = verdicts[c.id]
+        else:
+            c.result = judge(video, c.text)
     by_video: dict[str, list[Comment]] = defaultdict(list)
     for c in sorted(comments, key=lambda c: c.published):
         by_video[c.video_id].append(c)
@@ -169,6 +190,8 @@ def score(videos: dict[str, Video], comments: list[Comment], subscribers: set[st
 
     people: dict[str, dict[str, Any]] = {}
     for c in sorted(comments, key=lambda c: c.published):
+        if c.result == "skip":
+            continue
         p = people.setdefault(c.author_id, {"name": c.author, "id": c.author_id, "points": 0, "comments": 0,
                                             "videos": set(), "correct": 0, "first": 0})
         p["name"] = c.author  # the newest display name
@@ -265,21 +288,34 @@ def _from_short(short: shorts.ShortVideo) -> tuple[str, str, list[tuple[str, str
 
 
 def _apply_answers(settings: Settings, videos: list[Video], typed: dict[str, dict[str, Any]]) -> None:
-    """What /answer set wins; else the quiz Short on this machine (by YouTube id, else by title)."""
+    """What /answer set wins; else the quiz Short on this machine with this YouTube id. Only when no Short
+    has the id: the Short with the same title, if exactly one Short and one channel video have that title
+    (same titles never share an answer; /answer fixes those)."""
     local = shorts.list_shorts(settings)
-    by_id = {(s.uploads.get("youtube") or {}).get("video_id"): s for s in local}
-    by_title: dict[str, shorts.ShortVideo] = {}
+    by_id = {vid: s for s in local if (vid := (s.uploads.get("youtube") or {}).get("video_id"))}
+    by_title: dict[str, set[str]] = defaultdict(set)
+    named: dict[str, shorts.ShortVideo] = {}
     for s in local:
-        for title in (s.title, (s.texts.get("youtube") or {}).get("title", ""),
-                      (s.uploads.get("youtube") or {}).get("title", "")):
+        if (s.uploads.get("youtube") or {}).get("video_id"):
+            continue  # already tied to its own YouTube video
+        for title in (s.title, (s.texts.get("youtube") or {}).get("title", "")):
             if title:
-                by_title.setdefault(_norm_title(title), s)
+                by_title[_norm_title(title)].add(s.filename)
+                named[s.filename] = s
+    on_channel = defaultdict(int)
+    for v in videos:
+        on_channel[_norm_title(v.title)] += 1
     for v in videos:
         if v.id in typed:
             v.answer = typed[v.id].get("answer", "").strip()
             v.choices = [tuple(c) for c in typed[v.id].get("choices", [])]
             v.kind = "quiz" if v.answer else "paradox" if len(v.choices) >= 2 else "story"
-        elif short := by_id.get(v.id) or by_title.get(_norm_title(v.title)):
+            continue
+        short = by_id.get(v.id)
+        title = _norm_title(v.title)
+        if short is None and len(by_title.get(title, ())) == 1 and on_channel[title] == 1:
+            short = named[next(iter(by_title[title]))]
+        if short is not None:
             v.kind, v.answer, v.choices = _from_short(short)
 
 
@@ -292,7 +328,7 @@ def _path(settings: Settings) -> Path:
 
 def _rescore(settings: Settings, board: Board) -> Board:
     _apply_answers(settings, list(board.videos.values()), board.answers)
-    board.people = score(board.videos, board.comments, board.subscribers)
+    board.people = score(board.videos, board.comments, board.subscribers, board.verdicts)
     return board
 
 
@@ -305,23 +341,25 @@ def load(settings: Settings) -> Board:
                           for v in data.get("videos", [])},
                   comments=[Comment(**c) for c in data.get("comments", [])],
                   subscribers=set(data.get("subscribers", [])), answers=data.get("answers", {}),
-                  updated_at=data.get("updated_at", ""))
+                  verdicts=data.get("verdicts", {}), updated_at=data.get("updated_at", ""), channel_id=data.get("channel_id", ""))
     return _rescore(settings, board)
 
 
 def _save(settings: Settings, board: Board) -> None:
     path = _path(settings)
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = {"updated_at": board.updated_at, "videos": [asdict(v) for v in board.videos.values()],
+    data = {"updated_at": board.updated_at, "channel_id": board.channel_id,
+            "videos": [asdict(v) for v in board.videos.values()],
             "comments": [asdict(c) for c in board.comments], "subscribers": sorted(board.subscribers),
-            "answers": board.answers}
+            "answers": board.answers, "verdicts": board.verdicts}
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(path)
 
 
-def refresh(settings: Settings, youtube=None) -> tuple[Board, list[Comment]]:
-    """Read every comment again; returns the board and the comments that are new since the last time."""
+def refresh(settings: Settings, youtube=None, gemini=None) -> tuple[Board, list[Comment]]:
+    """Read every comment again (Gemini checks the new quiz answers); returns the board and the comments
+    that are new since the last time."""
     old = load(settings)
     youtube = youtube or publish._youtube()
     channel_id, videos = channel_videos(youtube)
@@ -329,7 +367,10 @@ def refresh(settings: Settings, youtube=None) -> tuple[Board, list[Comment]]:
     subscribers = channel_subscribers(youtube)
     board = Board(videos={v.id: v for v in videos}, comments=comments,
                   subscribers=old.subscribers if subscribers is None else subscribers,
-                  answers=old.answers, updated_at=utcnow().isoformat())
+                  answers=old.answers, verdicts=old.verdicts, updated_at=utcnow().isoformat(),
+                  channel_id=channel_id)
+    _apply_answers(settings, videos, board.answers)
+    verify(settings, board, gemini)
     _rescore(settings, board)
     _save(settings, board)
     seen = {c.id for c in old.comments}
@@ -341,9 +382,264 @@ def set_answer(settings: Settings, video_id: str, answer: str, choices: str = ""
     if video_id not in board.videos:
         raise LeaderboardError("Unknown video: run /leaderboard refresh first")
     board.answers[video_id] = {"answer": answer.strip(), "choices": parse_choices(choices)}
+    for c in board.comments:  # checked against the old answer: check again on the next refresh
+        if c.video_id == video_id:
+            board.verdicts.pop(c.id, None)
     _rescore(settings, board)
     _save(settings, board)
     return board.videos[video_id]
+
+
+# --------------------------------------------------------------------------- replies to every fan
+#
+# A reply is the one thing YouTube always notifies about. One reply per person per video, under the
+# comment that earned their points for it, saying what it earned. Quiz / paradox videos wait until
+# they're REPLY_AFTER_HOURS old so "Correct!" doesn't spoil the answer for the people still guessing.
+# "Wrong" is only said when Gemini agreed (else the plain "+1 pt" text). Never a second reply to a
+# comment, nor one the channel already answered; at most REPLY_DAILY_MAX a day, one at a time (the bot
+# waits between them), with varied wording and no links or tags.
+
+REPLY_DAILY_MAX, REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS = 40, 24, 30
+REPLY_TEXTS = {
+    "first": (
+        "FIRST & CORRECT! ⚡ You secured the +10 pts mega bonus! You're #{rank} on the SideQuest Leaderboard! 👑",
+        "⚡ Fastest brain in the comments! First correct answer = +10 pts. Current rank: #{rank} 🏆",
+        "🥇 You cracked it before anyone else! +10 pts bonus. You're now #{rank} on the leaderboard 🧠",
+        "👑 First to solve it! That's the +10 pts mega bonus. Rank #{rank} with {total} total!",
+    ),
+    "correct": (
+        "BOOM! Correct answer! 🧠 You just earned +2 pts on the SideQuest Leaderboard! [Current Rank: #{rank}] 🏆",
+        "✅ Nailed it! +2 pts for you. You're #{rank} on the SideQuest Leaderboard 🏆",
+        "🧠 Big brain! Correct answer, +2 pts. Current rank: #{rank} with {total} 🔥",
+        "🎯 Spot on! +2 pts added. You're sitting at #{rank} on our leaderboard!",
+    ),
+    "wrong": (
+        "Ouch! You fell for the trap! 🪤 But no worries, you still earned +1 pt for trying! Check the community "
+        "tab for daily rankings! 🧠",
+        "🪤 The trap got you this time! You still get +1 pt for playing. You're #{rank} on the leaderboard, "
+        "so try the next one!",
+        "Not quite! 😅 That one's sneaky. +1 pt for trying, and the next trap is your comeback 🧠",
+        "🪤 So close! This trap fools a lot of people. +1 pt for jumping in! Current rank: #{rank}",
+    ),
+    "voted": (
+        "🗳️ Vote counted! +2 pts on the SideQuest Leaderboard. Current rank: #{rank} 🧠",
+        "🌀 Bold pick! Your vote earned +2 pts. You're #{rank} on our leaderboard!",
+        "🗳️ Side chosen! +2 pts for taking a stand. Rank #{rank}, now defend your answer 👇",
+    ),
+    "comment": (
+        "🙌 Thanks for commenting! +1 pt on the SideQuest Leaderboard. Current rank: #{rank} 🏆",
+        "🧠 +1 pt for joining in! Answer the next trap to climb fast. You're #{rank} right now!",
+        "🔥 Appreciate you! That's +1 pt on our leaderboard. Rank #{rank} so far!",
+    ),
+}
+_replies_lock = threading.Lock()
+
+
+def _replies_path(settings: Settings) -> Path:
+    return settings.output_dir / "comment_replies.json"
+
+
+def _load_replies(settings: Settings) -> dict[str, Any]:
+    try:
+        data = json.loads(_replies_path(settings).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        data = {}
+    data.setdefault("replied", {})  # comment id -> when
+    data.setdefault("done", {})  # "person|video" -> when it was queued
+    data.setdefault("pending", [])
+    data.setdefault("sent", {"date": "", "count": 0})
+    return data
+
+
+def _save_replies(settings: Settings, data: dict[str, Any]) -> None:
+    path = _replies_path(settings)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(path)
+
+
+def ranks(people: list[dict[str, Any]]) -> dict[str, int]:
+    """Tied points share a rank (1 + how many have more)."""
+    return {p["id"]: 1 + sum(q["points"] > p["points"] for q in people) for p in people}
+
+
+def reply_text(result: str, rank: int, total: int, seed: str) -> str:
+    texts = REPLY_TEXTS.get(result, REPLY_TEXTS["comment"])
+    return random.Random(seed).choice(texts).format(rank=rank, total=f"{total} pt" + "s" * (total != 1))
+
+
+def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Queue one reply per person per video (the comment that scored); returns what was queued."""
+    now = now or datetime.now(timezone.utc)
+    ready_before = (now - timedelta(hours=REPLY_AFTER_HOURS)).isoformat()
+    oldest = (now - timedelta(days=REPLY_MAX_AGE_DAYS)).isoformat()
+    rank_of = ranks(board.people)
+    total_of = {p["id"]: p["points"] for p in board.people}
+    order = {"first": 0, "correct": 1, "voted": 2, "wrong": 3, "comment": 4}
+    scored = sorted((c for c in board.comments if c.points > 0),
+                    key=lambda c: (order.get(c.result, 9), c.published))
+    with _replies_lock:
+        data = _load_replies(settings)
+        day = today.isoformat()
+        used = (data["sent"]["count"] if data["sent"]["date"] == day else 0) + len(data["pending"])
+        queued = []
+        for c in scored:
+            v = board.videos.get(c.video_id)
+            key = f"{c.author_id}|{c.video_id}"
+            if used >= REPLY_DAILY_MAX:
+                break
+            if v is None or key in data["done"] or c.id in data["replied"] or c.published < oldest:
+                continue
+            if c.id not in board.verdicts:
+                continue  # Gemini hasn't checked it for spam / rudeness yet: the next read tries again
+            if v.kind in ("quiz", "paradox") and (v.published or now.isoformat()) > ready_before:
+                continue  # too early: the reply would give the answer away
+            result = c.result
+            if result == "wrong" and board.verdicts.get(c.id) != "wrong":
+                result = "comment"  # only Gemini's "wrong" is said out loud
+            item = {"comment_id": c.id, "author_id": c.author_id, "name": c.author, "video_id": c.video_id,
+                    "result": result,
+                    "text": reply_text(result, rank_of.get(c.author_id, 0), total_of.get(c.author_id, 0), c.id)}
+            data["pending"].append(item)
+            data["done"][key] = now.isoformat()
+            queued.append(item)
+            used += 1
+        _save_replies(settings, data)
+    return queued
+
+
+# --------------------------------------------------------------------------- Gemini double-check
+
+
+class _Verdict(BaseModel):
+    id: str
+    verdict: Literal["correct", "wrong", "not_an_answer", "skip"]
+
+
+class _Verdicts(BaseModel):
+    items: list[_Verdict]
+
+
+VERIFY_PROMPT = """You check comments on a gaming YouTube Shorts channel before the channel replies to them.
+For each comment decide:
+- skip: spam, scams, self-promotion ("sub to me", "check my channel"), sexual content, insults, hate or
+  harassment, or anything a family-friendly channel should not thank someone for;
+- correct: (quiz videos only) the commenter's answer means the correct answer (allow typos, synonyms, other
+  languages, number words, the right option letter);
+- wrong: (quiz videos only) they answered something else, listed several options to cover their bets, or
+  said "not X" where X is the answer;
+- not_an_answer: anything else that is fine to thank (praise, a question, a joke, an emoji, off-topic chat,
+  or every fine comment on a video without a quiz).
+Return one item per comment id.
+
+{videos}"""
+
+
+def verify(settings: Settings, board: Board, client=None, batch: int = 80) -> int:
+    """Gemini's verdict for every comment that has none yet (kept, so each comment is checked once):
+    spam / rude ones become "skip"; on quiz videos also correct or wrong."""
+    from . import script_writer as sw
+
+    todo = [c for c in board.comments if c.id not in board.verdicts and c.video_id in board.videos
+            and not LINK.search(c.text)]
+    if not todo or (client is None and not sw.gemini_api_key(settings)):
+        return 0
+    from google.genai import errors, types
+
+    client, model = sw._gemini(settings, client)
+    config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=_Verdicts,
+                                         temperature=0.0)
+    done = 0
+    for start in range(0, len(todo), batch):
+        part = todo[start:start + batch]
+        by_video: dict[str, list[Comment]] = defaultdict(list)
+        for c in part:
+            by_video[c.video_id].append(c)
+        blocks = []
+        for vid, items in by_video.items():
+            v = board.videos[vid]
+            if v.kind == "quiz" and v.answer:
+                choices = " | ".join(f"{l}) {t}" for l, t in v.choices)
+                about = f"Quiz. Correct answer: {v.answer}" + (f"\nChoices: {choices}" if choices else "")
+            else:
+                about = "No quiz on this video: only skip or not_an_answer."
+            blocks.append(f"Video: {v.name}\n{about}\n"
+                          + "\n".join(f"- id {c.id}: {json.dumps(c.text[:300], ensure_ascii=False)}" for c in items))
+        try:
+            response, model = sw._generate_with_fallback(client, model, [VERIFY_PROMPT.format(videos="\n\n".join(blocks))],
+                                                         config, lambda f, m: None, errors.APIError)
+            result = response.parsed if isinstance(response.parsed, _Verdicts) else _Verdicts.model_validate_json(
+                response.text or "{}")
+        except Exception as err:  # noqa: BLE001 - the word rules still score them; no replies until checked
+            logger.warning("Gemini comment check failed: %s", err)
+            break
+        by_id = {c.id: c for c in part}
+        for item in result.items:
+            if c := by_id.get(item.id):
+                quiz = board.videos[c.video_id].kind == "quiz"
+                verdict = item.verdict
+                if verdict == "not_an_answer" or (verdict in ("correct", "wrong") and not quiz):
+                    verdict = "comment"
+                board.verdicts[item.id] = verdict
+                done += 1
+    return done
+
+
+def send_next_reply(settings: Settings, channel_id: str, today: date, youtube=None) -> dict[str, Any] | None:
+    """Post the oldest queued reply (one per call). None when nothing was posted."""
+    from googleapiclient.errors import HttpError
+
+    with _replies_lock:
+        data = _load_replies(settings)
+        day = today.isoformat()
+        if data["sent"]["date"] != day:
+            data["sent"] = {"date": day, "count": 0}
+        if not data["pending"] or data["sent"]["count"] >= REPLY_DAILY_MAX:
+            return None
+        item = data["pending"].pop(0)
+        _save_replies(settings, data)  # off the queue first: a crash can't make it post twice
+    if item["comment_id"] in data["replied"]:
+        return None
+    youtube = youtube or publish._youtube()
+    try:
+        replies = youtube.comments().list(part="snippet", parentId=item["comment_id"], maxResults=100).execute()
+        if any((r["snippet"].get("authorChannelId") or {}).get("value") == channel_id
+               for r in replies.get("items", [])):
+            posted = None  # the channel answered it already (by hand)
+        else:
+            body = {"snippet": {"parentId": item["comment_id"], "textOriginal": item["text"]}}
+            posted = youtube.comments().insert(part="snippet", body=body).execute()
+    except HttpError as err:
+        logger.warning("Reply to %s's comment %s failed: %s", item["name"], item["comment_id"], err)
+        posted = None
+    with _replies_lock:
+        data = _load_replies(settings)
+        data["replied"][item["comment_id"]] = utcnow().isoformat()  # never again, whatever happened
+        if posted is not None:
+            if data["sent"]["date"] != day:
+                data["sent"] = {"date": day, "count": 0}
+            data["sent"]["count"] += 1
+        _save_replies(settings, data)
+    return item if posted is not None else None
+
+
+def new_skips(settings: Settings, board: Board) -> list[Comment]:
+    """Comments flagged as spam / rude / links that Discord hasn't been told about yet (each told once)."""
+    with _replies_lock:
+        data = _load_replies(settings)
+        told = data.setdefault("flagged", {})
+        out = [c for c in board.comments if c.result == "skip" and c.id not in told]
+        for c in out:
+            told[c.id] = utcnow().isoformat()
+        if out:
+            _save_replies(settings, data)
+    return out
+
+
+def pending_replies(settings: Settings) -> int:
+    with _replies_lock:
+        return len(_load_replies(settings)["pending"])
 
 
 # --------------------------------------------------------------------------- Discord text

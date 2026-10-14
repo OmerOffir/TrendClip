@@ -595,6 +595,19 @@ the top 13 (`/leaderboard image:True` makes one any time) and a caption that tag
 API can't create posts, so post it yourself: save the picture, copy the text, YouTube → Create → Post.
 Put the channel logo in `channels/<channel>/logo.png` and it's drawn on the picture.
 
+Every fan gets a YouTube reply, once per video, under the comment that scored (YouTube always notifies
+about replies, unlike tags in posts): "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +2 pts…",
+"Ouch! You fell for the trap! 🪤 +1 pt for trying…", "🗳️ Vote counted!…" or "🙌 Thanks for commenting!…",
+with the current rank. Quiz and paradox videos wait until they're 24 h old, so the replies don't give
+the answer away. Gemini double-checks quiz answers (typos, synonyms, other languages); "wrong" is only
+said when Gemini agrees, otherwise the plain +1 pt text. Never a second reply to a comment, nor to one the
+channel already answered; at most 40 a day, one every 2 minutes, varied wording, no links. Comments with
+links, and those Gemini flags as spam, scams, self-promotion or rude, get no reply and no points; the bot
+lists them in Discord once, with a link, so you can remove them. A comment Gemini hasn't checked yet (key
+missing, Gemini busy) gets no reply until a later read checks it. Replies are
+queued when the bot reads the comments (morning and 13:30) and it says in Discord how many.
+`YOUTUBE_AUTO_REPLIES=false` turns it off; the record is `output/comment_replies.json`.
+
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a

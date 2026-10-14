@@ -52,6 +52,7 @@ _ENV_MAP: dict[str, str] = {
     "discord_morning_time": "DISCORD_MORNING_TIME",
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
+    "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "stats_youtube": "STATS_YOUTUBE",
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
@@ -128,6 +129,8 @@ class Settings(BaseModel):
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
+    # Reply on YouTube to fans who climb the leaderboard (they get a notification); see leaderboard.py.
+    youtube_auto_replies: bool = True
 
     # The channel folder under channels/ whose channel.env and login files are used.
     channel: str = DEFAULT_CHANNEL
