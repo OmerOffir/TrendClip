@@ -300,7 +300,7 @@ def short_status(short: shorts.ShortVideo | None) -> dict[str, dict[str, Any]]:
         out[p] = {"done": False, "auto": False, "url": ""}
         if short is None:
             continue
-        upload = short.uploads.get(p) if p == "youtube" else None
+        upload = short.uploads.get(p) if p in ("youtube", "instagram") else None
         if upload:
             out[p] = {"done": True, "auto": True, "url": upload.get("url", ""),
                       "scheduled_for": upload.get("scheduled_for")}

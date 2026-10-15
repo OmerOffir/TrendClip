@@ -63,6 +63,14 @@
     igCopy: $("igCopy"),
     igDownload: $("igDownload"),
     igPosted: $("igPosted"),
+    igPostedField: $("igPostedField"),
+    igAccount: $("igAccount"),
+    igComment: $("igComment"),
+    igCommentField: $("igCommentField"),
+    igCommentText: $("igCommentText"),
+    igPost: $("igPost"),
+    igJob: $("igJob"),
+    igDone: $("igDone"),
     ttCaption: $("ttCaption"),
     ttHashtags: $("ttHashtags"),
     ttMentions: $("ttMentions"),
@@ -83,8 +91,9 @@
     selected: null,
     platform: "youtube",
     yt: null,
+    ig: null,
     saveTimer: null,
-    busy: { texts: false, upload: false, comment: false },
+    busy: { texts: false, upload: false, comment: false, ig: false },
   };
 
   const current = () => state.shorts.find((s) => s.filename === state.selected) || null;
@@ -178,7 +187,7 @@
       out.push(`<span class="pill done">YouTube · ${esc(label)}</span>`);
     }
     else if (s.posted && s.posted.youtube) out.push('<span class="pill done">YouTube</span>');
-    if (s.posted && s.posted.instagram) out.push('<span class="pill done">Instagram</span>');
+    if ((s.uploads && s.uploads.instagram) || (s.posted && s.posted.instagram)) out.push('<span class="pill done">Instagram</span>');
     if (s.posted && s.posted.tiktok) out.push('<span class="pill done">TikTok</span>');
     return out.join("");
   }
@@ -233,6 +242,7 @@
     els.igPosted.checked = !!(s.posted && s.posted.instagram);
     els.ttPosted.checked = !!(s.posted && s.posted.tiktok);
     renderUploaded();
+    renderInstagram();
     renderSeries();
     renderFinals();
     updateButtons();
@@ -512,6 +522,74 @@
     updateButtons();
   }
 
+  // ---- Instagram -----------------------------------------------------------------------
+
+  function renderInstagram() {
+    const s = current();
+    const up = s && s.uploads && s.uploads.instagram;
+    els.igDone.hidden = !up;
+    els.igPostedField.hidden = !!up;
+    if (up) {
+      els.igDone.innerHTML = `Posted on Instagram: <a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a>` +
+        (up.comment_error ? `<br><span class="hint">The comment failed: ${esc(up.comment_error)}</span>` : "");
+    }
+    const comment = (s && s.pinned_comment) || "";
+    els.igCommentField.hidden = !comment || !!up;
+    els.igCommentText.textContent = comment ? `“${comment.length > 90 ? comment.slice(0, 90) + "…" : comment}”` : "";
+    const ok = state.ig && state.ig.connected;
+    els.igPost.disabled = state.busy.ig || !s || !ok;
+    els.igPost.textContent = state.busy.ig ? "Posting…" : !ok ? "Instagram not connected" : up ? "Post on Instagram again" : "Post on Instagram";
+  }
+
+  async function loadInstagram() {
+    try {
+      state.ig = (await api("/api/upload/instagram/status")).body;
+    } catch (err) {
+      state.ig = { configured: true, connected: false, error: err.message };
+    }
+    const ig = state.ig;
+    if (!ig.configured) {
+      els.igAccount.innerHTML = '<div class="banner banner-warn">To post from here, put <b>INSTAGRAM_ACCESS_TOKEN</b> in this channel\'s <b>channels/&lt;channel&gt;/channel.env</b> and restart (README → Instagram).</div>';
+    } else if (ig.connected) {
+      const u = ig.user || {};
+      els.igAccount.innerHTML = `
+        <div class="account">
+          ${u.profile_image_url ? `<img src="${esc(u.profile_image_url)}" alt="" referrerpolicy="no-referrer" />` : ""}
+          <span>Posting as <b>@${esc(u.username || "")}</b></span>
+        </div>`;
+    } else {
+      els.igAccount.innerHTML = `<div class="banner banner-warn">${esc(ig.error || "Instagram is not connected.")}</div>`;
+    }
+    renderInstagram();
+  }
+
+  async function postInstagram() {
+    const s = current();
+    if (s.uploads && s.uploads.instagram && !confirm("This Short is already on Instagram. Post it again?")) return;
+    if (!confirm("Post this video on Instagram now as a Reel?")) return;
+    state.busy.ig = true;
+    renderInstagram();
+    showError("");
+    try {
+      const { body } = await api(`/api/upload/shorts/${encodeURIComponent(s.filename)}/instagram`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          caption: els.igFinal.textContent,
+          first_comment: !els.igCommentField.hidden && els.igComment.checked ? s.pinned_comment || "" : "",
+        }),
+      });
+      await poll(body.id, els.igJob);
+      await load();
+      document.dispatchEvent(new CustomEvent("trendclip:shorts-changed"));
+    } catch (err) {
+      showError(err.message);
+    } finally {
+      state.busy.ig = false;
+      renderInstagram();
+    }
+  }
+
   // ---- YouTube -------------------------------------------------------------------------
 
   async function loadYouTube() {
@@ -706,6 +784,7 @@
     els.ytCommentPost.addEventListener("click", postComment);
     els.ytPosted.addEventListener("change", () => setPosted("youtube", els.ytPosted.checked));
     els.igPosted.addEventListener("change", () => setPosted("instagram", els.igPosted.checked));
+    els.igPost.addEventListener("click", postInstagram);
     els.ttPosted.addEventListener("change", () => setPosted("tiktok", els.ttPosted.checked));
     els.unready.addEventListener("click", unready);
     window.addEventListener("message", (e) => {
@@ -732,6 +811,7 @@
     if (!state.started) {
       state.started = true;
       loadYouTube();
+      loadInstagram();
     }
     load();
   }

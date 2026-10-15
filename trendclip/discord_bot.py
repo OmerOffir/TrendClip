@@ -17,7 +17,8 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import assistant, channel_stats, hub, leaderboard, leaderboard_card, planner, publish, script_writer, shorts, video_downloader
+from . import (assistant, channel_stats, hub, instagram, leaderboard, leaderboard_card, planner, publish, script_writer,
+               shorts, video_downloader)
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -225,6 +226,8 @@ def video_buttons(bot: "TrendClipBot", short: shorts.ShortVideo) -> list[ActionB
         out.append(button("up", short.filename, "Upload to YouTube now", discord.ButtonStyle.danger))
     elif assistant.pinned_comment(settings, short.filename):
         out.append(button("cm", short.filename, "Post the pinned comment"))
+    if instagram.configured(settings) and not short.uploads.get("instagram"):
+        out.append(button("ig", short.filename, "Post on Instagram"))
     planned = [i for i in planner.load(settings).items if i.short == short.filename]
     if planned:
         for item in planned[:2]:
@@ -418,8 +421,21 @@ class TrendClipBot(discord.Client):
             text += (f"\nYouTube set it to **{record.get('privacy')}** (unverified API projects can only upload "
                      f"private videos). Make it public in Studio: <{record['studio_url']}>")
         comment = assistant.pinned_comment(self.settings, filename)
-        view = view_of(button("cm", filename, "Post the pinned comment")) if comment else None
+        ig_too = instagram.configured(self.settings) and not short.uploads.get("instagram")
+        view = view_of(button("cm", filename, "Post the pinned comment") if comment else None,
+                       button("ig", filename, "Post on Instagram too") if ig_too else None)
         await channel.send(clip_text(text), view=view)
+
+    async def post_instagram(self, channel: discord.abc.Messageable, filename: str) -> None:
+        short = shorts.get_short(self.settings, filename)
+        record = await self.run_job(channel, f"Posting \"{short.title}\" on Instagram",
+                                    lambda p: instagram.post_reel(self.settings, filename,
+                                                                  first_comment=short.pinned_comment, progress=p),
+                                    self.upload_lock)
+        text = f"✅ **{short.title}** is on Instagram: {record['url']}"
+        if record.get("comment_error"):
+            text += f"\nThe comment didn't go through: {record['comment_error']}"
+        await channel.send(clip_text(text))
 
 
     def today_text(self, day: Day) -> tuple[str, list[ActionButton | None], bool]:
@@ -633,6 +649,22 @@ async def act_upload(bot: TrendClipBot, interaction: discord.Interaction, filena
     await bot.upload(interaction.channel, filename)
 
 
+async def act_instagram_confirm(bot: TrendClipBot, interaction: discord.Interaction, filename: str) -> None:
+    short = shorts.get_short(bot.settings, filename)
+    up = short.uploads.get("instagram")
+    text = (f"**{short.title}** is already on Instagram (<{up.get('url')}>). Post it again?" if up
+            else f"Post **{short.title}** on Instagram now as a Reel (with the Upload tab's caption"
+                 f"{' and the pinned comment' if short.pinned_comment else ''})?")
+    await reply(interaction, text, view=view_of(
+        button("iggo", filename, "Yes, post on Instagram", discord.ButtonStyle.danger),
+        button("no", "-", "Cancel")))
+
+
+async def act_instagram(bot: TrendClipBot, interaction: discord.Interaction, filename: str) -> None:
+    await interaction.response.edit_message(content="Posting on Instagram…", view=None)
+    await bot.post_instagram(interaction.channel, filename)
+
+
 async def act_cancel(bot: TrendClipBot, interaction: discord.Interaction, _arg: str) -> None:
     await interaction.response.edit_message(content="Cancelled.", view=None)
 
@@ -744,7 +776,8 @@ async def act_make_from_text(bot: TrendClipBot, interaction: discord.Interaction
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
-    "mk": act_make, "own": act_own_text, "mkt": act_make_from_text,
+    "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
+    "iggo": act_instagram,
 }
 
 
@@ -1100,7 +1133,8 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/create` make a video: I ask story, math challenge, riddle, trivia trap or paradox trap (`game:` picks the gameplay, "
         "`text:` or ✍️ uses your own words)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
-        "`/upload` publish on YouTube now (default: the next video planned today)",
+        "`/upload` publish on YouTube now (default: the next video planned today) · **Post on Instagram** "
+        "button under a video posts it as a Reel",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "

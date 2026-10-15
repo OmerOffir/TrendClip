@@ -407,9 +407,19 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
   progress) and shows the Shorts and Studio links. **Visibility → Schedule…** picks a date and time
   (your local time zone, quick picks like "Tomorrow 14:30"): the video uploads now as private and
   YouTube publishes it at that time (at least 15 minutes ahead).
-- **Instagram** and **TikTok** (no upload API here): caption, hashtags (Instagram: at most 5) and
-  @mentions in each platform's style, a ready-to-paste text with the credits, **Copy caption**,
-  **Download video**, a link to the upload page and a **Posted** checkbox to keep track.
+- **Instagram**: caption, hashtags (at most 5) and @mentions, and the ready-to-paste text with the
+  credits. **Post on Instagram** posts the Short as a Reel (also shown in the feed) with that text,
+  and can post the pinned comment under it as the first comment (Instagram's API can't pin it:
+  pin it in the app). The Reel link is saved on the Short and the Plan tab counts it as posted. In
+  Discord, a video's buttons include **Post on Instagram** (it asks you to confirm first), and after a
+  YouTube upload there is a **Post on Instagram too** button.
+  It uses the same `INSTAGRAM_ACCESS_TOKEN` as the channel report (see *Channel report* below). The
+  token needs the `instagram_business_content_publish` permission, plus
+  `instagram_business_manage_comments` for the first comment. Limits: Reels from 3 s to 15 min,
+  up to 300 MB, and 100 API posts a day. Copy caption / Download video still work for posting by hand.
+- **TikTok** (no upload API here): caption, hashtags and @mentions in TikTok's style, a
+  ready-to-paste text with the credits, **Copy caption**, **Download video**, a link to the upload
+  page and a **Posted** checkbox to keep track.
   The YouTube sub-tab has the same kind of box (**Already on YouTube**) for Shorts you uploaded in
   YouTube Studio.
 
@@ -565,7 +575,8 @@ The accounts are `STATS_YOUTUBE`, `STATS_TIKTOK` and `STATS_INSTAGRAM` in the ch
      Instagram* (the "Instagram API with Instagram login" product).
   3. In the app: **Instagram → API setup with Instagram login → Generate access tokens** → **Add
      account** and log in as `sidequestlogic`. It needs the `instagram_business_basic` and
-     `instagram_business_manage_insights` permissions. Then copy the token.
+     `instagram_business_manage_insights` permissions (and `instagram_business_content_publish` +
+     `instagram_business_manage_comments` to post Reels from the Upload tab). Then copy the token.
   4. Put it in `channels/sidequestlogic/channel.env` as `INSTAGRAM_ACCESS_TOKEN=` and restart the
      bot. The 60-day token is refreshed every week by itself and kept next to it in
      `token_instagram.json` (gitignored, never committed).
