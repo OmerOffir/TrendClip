@@ -24,8 +24,13 @@ Platform = Literal["youtube", "instagram", "tiktok"]
 Kind = Literal["reel", "long"]
 PLATFORMS: tuple[Platform, ...] = ("youtube", "instagram", "tiktok")
 # Daily upload times (in Settings.timezone); each slot of a day holds at most one item.
-Slot = Literal["18:00", "23:00"]
-SLOTS: tuple[Slot, ...] = ("18:00", "23:00")
+Slot = Literal["14:30", "23:00"]
+SLOTS: tuple[Slot, ...] = ("14:30", "23:00")
+OLD_SLOTS = {"18:00": "14:30"}  # saved plans and hubs not updated yet still say 18:00
+
+
+def _new_slot(value):
+    return OLD_SLOTS.get(value, value) if isinstance(value, str) else value
 
 
 class Goals(BaseModel):
@@ -52,6 +57,8 @@ class PlanItem(BaseModel):
     posted: dict[str, datetime] = Field(default_factory=dict)  # platform -> when it was marked
     created_at: datetime = Field(default_factory=utcnow)
 
+    _slot = field_validator("slot", mode="before")(staticmethod(_new_slot))
+
 
 class Plan(BaseModel):
     goals: Goals = Field(default_factory=Goals)
@@ -68,6 +75,8 @@ class ItemRequest(BaseModel):
     notes: str = Field("", max_length=500)
     platforms: list[Platform] | None = None  # default: the goal's platforms for this kind
 
+    _slot = field_validator("slot", mode="before")(staticmethod(_new_slot))
+
 
 class ItemUpdate(BaseModel):
     kind: Kind | None = None
@@ -78,6 +87,8 @@ class ItemUpdate(BaseModel):
     unlink: bool = False  # drop the linked Short (the item becomes a plain title)
     notes: str | None = Field(None, max_length=500)
     platforms: list[Platform] | None = None
+
+    _slot = field_validator("slot", mode="before")(staticmethod(_new_slot))
 
 
 _lock = threading.Lock()

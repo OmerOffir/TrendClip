@@ -126,7 +126,7 @@ def digit_hint(answer: int) -> str:
 
 def safe_hint(hint: str, *forbidden: str) -> str:
     """A hint viewers can use, with the answer itself removed."""
-    text = " ".join((hint or "").split()).strip(" .")
+    text = " ".join((hint or "").split()).strip(" .!")
     low = text.lower()
     if not text or any(len(word) > 2 and word.lower() in low for word in forbidden):
         return ""
@@ -144,7 +144,7 @@ def hint_from_fact(fact: str, *banned: str) -> str:
 
 def public_pin(ask: str, hint: str) -> str:
     """The comment to pin on publish: a question, then a hint. Never the answer."""
-    hint = hint.strip().rstrip(".")
+    hint = hint.strip().rstrip(".!")
     hint = re.sub(r"(?i)^hint:\s*", "", hint)
     return f"{ask.strip()} 👇\nHint: {hint}."
 
@@ -315,7 +315,7 @@ Double-check that every clue fits the answer. Background gameplay: {game}.{notes
 
 
 class GeminiTrivia(BaseModel):
-    category: str = Field(description="science, geography, history, animals, space, food or pop culture.")
+    category: str = Field(description="video games, science, geography, history, animals, space, food or the human body.")
     hook: str = Field("", description=(
         "A spoken dare before the question, at most 7 words, e.g. 'Only 5% get this right.' or '90% fall for "
         "this one.'"))
@@ -323,11 +323,12 @@ class GeminiTrivia(BaseModel):
         "The trap question, at most 12 words, 'Which [category item] is [surprising condition]?', e.g. 'Which "
         "country has the most pyramids?' or 'Which planet is the hottest?'"))
     trap: str = Field(description=(
-        "The obvious answer about 90% of people pick instinctively, but WRONG, 1 to 3 words, e.g. 'Egypt' or 'Mercury'."))
-    distractor: str = Field(description="A plausible but wrong option, 1 to 3 words, e.g. 'Mexico'.")
+        "The obvious answer about 90% of people pick instinctively, but WRONG, 1 to 4 words, as spoken after "
+        "'Is it', with 'the'/'a' where English needs it, e.g. 'Egypt', 'Mercury', 'the heart', 'the Six-Day War'."))
+    distractor: str = Field(description="A plausible but wrong option, 1 to 4 words, same style, e.g. 'Mexico' or 'the brain'.")
     correct: str = Field(description=(
-        "The mind-bending CORRECT answer, 1 to 3 words, e.g. 'Sudan' or 'Venus'. Must be true, well documented "
-        "and easy to verify on Google."))
+        "The mind-bending CORRECT answer, 1 to 4 words, same style, e.g. 'Sudan', 'Venus' or 'the liver'. Must be "
+        "true, well documented and easy to verify on Google."))
     fact: str = Field(description=(
         "One or two short sentences proving the correct answer with the real numbers, e.g. 'Sudan has about 255 "
         "pyramids, Egypt about 120.' Used to build the hint; the answer itself stays off the video."))
@@ -342,15 +343,48 @@ class GeminiTrivia(BaseModel):
         "'ONLY 5% SOLVE THIS GEOGRAPHY TRAP!'. No emoji."))
 
 
-TRIVIA_PROMPT = """Write a GAMIFIED FACT TRAP Short (15-20 seconds): a speed trivia question built on a
-counter-intuitive but TRUE fact (science, geography, history, animals, space, food or pop culture), with
-three options: the trap most people pick instinctively, a plausible distractor, and the surprising correct
-answer. The viewer must feel sure of the trap, then doubt it, Google it and come back to comment.
-Rules: the correct answer must be a well-known, documented fact that is not disputed and not outdated (no
-"it depends", no trick wording). The trap must be clearly wrong once you check. Keep every option short
-and easy to say, written as it is spoken after "Is it ...?" (with "the" where English needs it, e.g.
-"the Philippines", "the Pacific"). Don't reuse the most famous ones (Sudan pyramids, Venus hottest planet, Canada lakes) unless
-the creator's notes ask for them. Background gameplay: {game}.{notes}"""
+TRIVIA_PROMPT = """Write {count} different GAMIFIED FACT TRAP candidates for a Short (15-20 seconds), one per
+category, in this order: {categories}. Each is a speed trivia question built on a counter-intuitive but
+TRUE fact, with three options: the trap most people pick instinctively, a plausible distractor, and the
+surprising correct answer. The viewer must feel sure of the trap, then doubt it, and comment to argue.
+
+What makes a candidate good:
+- ONE answer is right under the exact wording, by every reputable source, with no "it depends": no
+  "deadliest" (by toxicity or by deaths?), "biggest" (by area, mass or height?), "most" of things counted in
+  different ways, unless the question says how it's measured ("by land area", "by venom toxicity").
+- SURPRISING: most adults would confidently pick the trap. The trap is the popular belief (the famous
+  one, the bigger-sounding one), clearly wrong once checked; the distractor is believable. If the correct
+  answer is common knowledge (Ganymede biggest moon, the liver regrows), it's not a trap: pick another fact.
+- Video games: a well-documented fact about one famous game or character, told by its makers (origins,
+  original names, what inspired a design, cut content), e.g. "What was Mario first called? Jumpman".
+  Never "the first game ever to..." (historians argue), current sales, player counts or "most popular".
+- Not outdated, not a myth, not a trick question. A 12-year-old understands it at once.
+- Every option short and easy to say, written as spoken after "Is it ...?" ("the Philippines", "the
+  Pacific", "a dolphin").
+- Not one of these, already used on the channel: {used}. And not the overused ones (Sudan pyramids,
+  Venus hottest planet, Canada lakes, Alaska coastline) unless the creator's notes ask for them.
+Background gameplay: {game}.{notes}"""
+
+TRIVIA_CATEGORIES = ("geography", "animals", "space", "science", "history", "food", "the human body")
+TRIVIA_HOOKS = ("90% fall for this one.", "Your gut will lie to you here.", "Almost everyone picks wrong.",
+                "Bet you pick the trap.", "Gamers always miss this one.", "Trust your gut? Big mistake.",
+                "This one fools almost everyone.", "Only 5% get this right.")
+
+FACT_CHECK = """Fact-check these trivia questions with Google Search. For each candidate, PASS only if ALL hold:
+1. The claimed correct answer is true today, by reputable sources.
+2. Under the exact wording, it is the ONLY right option: the other two are clearly wrong, and no common
+   reading of the question (other measure, other definition) makes another option right.
+3. The fact is not disputed, outdated or a popular myth.
+4. It's a real trap: most adults would pick the wrong "trap" option, and the correct answer isn't common
+   knowledge.
+Reply with exactly one line per candidate, for every candidate, and nothing else:
+"<number>: PASS" or "<number>: FAIL: <reason in one sentence>".
+
+{candidates}"""
+
+
+class GeminiTriviaSet(BaseModel):
+    candidates: list[GeminiTrivia] = Field(description="The trivia traps, one per requested category, in order.")
 
 class GeminiParadox(BaseModel):
     name: str = Field(description="The paradox or dilemma it is based on, e.g. 'the crocodile dilemma' (for the creator only).")
@@ -538,20 +572,89 @@ def _option(text: str) -> str:
     return " ".join(re.sub(r"[\"“”`*#?!.,;:]", " ", text or "").split()[:4])
 
 
+TRIVIA_CANDIDATES = 4
+TRIVIA_ROUNDS = 3
+
+
+def _trivia_options(trivia: GeminiTrivia) -> tuple[str, str, str] | None:
+    """(trap, distractor, correct), or None unless all three are there and different."""
+    options = tuple(_option(t) for t in (trivia.trap, trivia.distractor, trivia.correct))
+    return options if all(options) and len({o.lower() for o in options}) == 3 else None
+
+
+def used_trivia(settings: Settings) -> list[str]:
+    """Correct answers of the trivia Shorts already made, oldest first."""
+    from . import shorts
+
+    out = []
+    for short in sorted(shorts.list_shorts(settings), key=lambda s: s.created_at):
+        flashes = [f.get("text", "") for f in (short.render_settings.get("flashes") or []) if isinstance(f, dict)]
+        if short.answer and "Is it " in short.script and any(t.startswith("A) ") for t in flashes):
+            out.append(short.answer)
+    return out
+
+
+_VERDICT = re.compile(r"^\W*(\d+)\W*(PASS|FAIL)\b\W*(.*)$", re.I)
+
+
+def fact_check(client, model: str, candidates: list[GeminiTrivia],
+               progress: ProgressFn) -> list[tuple[bool, str]]:
+    """(passed, reason) per candidate, checked by Gemini with Google Search. Unanswered ones fail."""
+    from google.genai import errors, types
+
+    from . import script_writer as sw
+
+    listing = "\n\n".join(
+        f"{i}. Q: {c.question.strip().rstrip('?')}?\n   Claimed correct: {c.correct}\n   Wrong options: {c.trap}; "
+        f"{c.distractor}\n   Claimed proof: {c.fact}" for i, c in enumerate(candidates, 1))
+    config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], temperature=0)
+    try:
+        response, _ = sw._generate_with_fallback(client, model, [FACT_CHECK.format(candidates=listing)], config,
+                                                 progress, errors.APIError)
+    except errors.APIError as err:
+        raise sw._explain(err, model) from err
+    found: dict[int, tuple[bool, str]] = {}
+    for line in (response.text or "").splitlines():
+        if (m := _VERDICT.match(line.strip())) and int(m.group(1)) not in found:
+            found[int(m.group(1))] = (m.group(2).upper() == "PASS", m.group(3).strip(" :-"))
+    return [found.get(i, (False, "not checked")) for i in range(1, len(candidates) + 1)]
+
+
 def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
                   rng: random.Random) -> ShortScript:
     from . import script_writer as sw
     from .stickers import Reaction
 
     client, model = sw._gemini(settings, client)
-    result, model = _ask(client, model, GeminiTrivia, TRIVIA_PROMPT.format(game=game, notes=_notes(notes)), progress)
-    trap, distractor, correct = (_option(t) for t in (result.trap, result.distractor, result.correct))
-    if not all((trap, distractor, correct)) or len({trap.lower(), distractor.lower(), correct.lower()}) < 3:
-        raise sw.ScriptError("Gemini wrote a trivia question without three different options; try again")
+    used = used_trivia(settings)
+    result = None
+    for _ in range(TRIVIA_ROUNDS):
+        categories = ["video games", *rng.sample(TRIVIA_CATEGORIES, TRIVIA_CANDIDATES - 1)]
+        prompt = TRIVIA_PROMPT.format(count=len(categories), categories=", ".join(categories),
+                                      used=", ".join(used[-40:]) or "none yet", game=game, notes=_notes(notes))
+        batch, model = _ask(client, model, GeminiTriviaSet, prompt, progress)
+        usable = [c for c in batch.candidates if _trivia_options(c) and _option(c.correct).lower() not in
+                  {u.lower() for u in used}]
+        if not usable:
+            continue
+        progress(None, "Fact-checking the trivia on Google")
+        verdicts = fact_check(client, model, usable, progress)
+        passed = [c for c, (ok, _) in zip(usable, verdicts) if ok]
+        for c, (ok, why) in zip(usable, verdicts):
+            if not ok:
+                logger.info("Trivia rejected: %s -> %s (%s)", c.question, c.correct, why)
+        if passed:
+            result = rng.choice(passed)
+            break
+        used += [_option(c.correct) for c in usable]
+    if result is None:
+        raise sw.ScriptError("No trivia question passed the Google fact-check; try again")
+    trap, distractor, correct = _trivia_options(result)
     question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
     options = [trap, distractor, correct]
     rng.shuffle(options)
-    hook = _one_line(result.hook, 8) or "Only 5% get this right."
+    hooks = [h for h in TRIVIA_HOOKS if "game" in result.category.lower() or "Gamers" not in h] or TRIVIA_HOOKS
+    hook = _one_line(result.hook, 8) if result.hook.strip() and rng.random() < 0.4 else rng.choice(hooks)
     hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
     asks = [f"Is it {options[0]}?", f"Is it {options[1]}?", f"Or is it {options[2]}?"]
     lines = [hook, question, *asks, "Think fast! Three. Two. One.", f"Hint: {hint}.",
@@ -559,7 +662,8 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     # The question first, so an option named in the hook or question can't trigger its flash early.
     flashes = [Flash(word=question.split()[0], text="?")]
     for letter, option in zip("ABC", options):
-        label = f"{letter}) {re.sub(r'^the ', '', option, flags=re.I)}"
+        name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
+        label = f"{letter}) {name[:1].upper()}{name[1:]}"
         flashes.append(Flash(word=f"it {option.split()[0]}", text=label if len(label) <= 16 else letter))
     flashes += [Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
                 Flash(word="one", text="1"), Flash(word="Hint", text="HINT"), Flash(word="real answer", text="?")]

@@ -96,7 +96,7 @@ def test_roles(tmp_path):
 def test_free_slots_skip_passed_and_taken_times(linux):
     now = datetime(2026, 10, 12, 20, 0, tzinfo=linux.tz)
     add_short(linux)
-    planner.add_item(linux, planner.ItemRequest(date=now.date() + timedelta(days=1), slot="18:00", short="gta_1.mp4"))
+    planner.add_item(linux, planner.ItemRequest(date=now.date() + timedelta(days=1), slot="14:30", short="gta_1.mp4"))
 
     free = hub.free_slots(linux, days=2, now=now)
 
@@ -106,25 +106,25 @@ def test_free_slots_skip_passed_and_taken_times(linux):
 def test_mac_sends_a_short_onto_the_linux_plan_through_discord(linux, mac, tomorrow, discord):
     name = add_short(mac, pinned_comment="Which number did you get? 👇")
 
-    reply = hub.send(mac, hub.SendRequest(filename=name, date=tomorrow, slot="18:00"))
+    reply = hub.send(mac, hub.SendRequest(filename=name, date=tomorrow, slot="14:30"))
 
-    assert reply["date"] == tomorrow.isoformat() and reply["slot"] == "18:00" and reply["short"] == name
+    assert reply["date"] == tomorrow.isoformat() and reply["slot"] == "14:30" and reply["short"] == name
     got = shorts.get_short(linux, name)
     assert got.ready and got.pinned_comment == "Which number did you get? 👇"
     assert (linux.shorts_dir / name).read_bytes() == b"\x00" * 2048  # joined from 3 pieces
-    assert planner.slot_item(linux, tomorrow, "18:00").short == name
-    assert shorts.get_short(mac, name).sent["hub"]["slot"] == "18:00"
+    assert planner.slot_item(linux, tomorrow, "14:30").short == name
+    assert shorts.get_short(mac, name).sent["hub"]["slot"] == "14:30"
     assert discord.messages == {}  # the transfer messages are cleaned up
     assert not list(linux.shorts_dir.glob(".incoming-*"))
 
 
 def test_a_taken_time_is_refused_with_the_free_ones(linux, mac, tomorrow, discord):
     add_short(linux, name="linux_1.mp4")
-    planner.add_item(linux, planner.ItemRequest(date=tomorrow, slot="18:00", short="linux_1.mp4"))
+    planner.add_item(linux, planner.ItemRequest(date=tomorrow, slot="14:30", short="linux_1.mp4"))
     name = add_short(mac)
 
     with pytest.raises(hub.HubError) as err:
-        hub.send(mac, hub.SendRequest(filename=name, date=tomorrow, slot="18:00"))
+        hub.send(mac, hub.SendRequest(filename=name, date=tomorrow, slot="14:30"))
 
     assert err.value.status == 409 and "taken" in str(err.value)
     assert {"date": tomorrow.isoformat(), "slot": "23:00"} in err.value.free
@@ -162,7 +162,7 @@ def test_same_filename_on_the_hub_gets_a_new_name(linux, mac, tomorrow, discord)
 
 
 def test_the_mac_plan_goes_to_linux_at_its_planned_times(linux, mac, tomorrow, discord):
-    for name, slot in (("a.mp4", "18:00"), ("b.mp4", "23:00")):
+    for name, slot in (("a.mp4", "14:30"), ("b.mp4", "23:00")):
         add_short(mac, name=name)
         planner.add_item(mac, planner.ItemRequest(date=tomorrow, slot=slot, short=name))
     add_short(linux, name="linux_1.mp4")
@@ -172,7 +172,7 @@ def test_the_mac_plan_goes_to_linux_at_its_planned_times(linux, mac, tomorrow, d
 
     assert [r["ok"] for r in results] == [True, False]
     assert "already taken" in results[1]["message"] and "Next free" in results[1]["message"]
-    assert planner.slot_item(linux, tomorrow, "18:00").short == "a.mp4"
+    assert planner.slot_item(linux, tomorrow, "14:30").short == "a.mp4"
     assert [i.short for i in planner.load(mac).items] == ["b.mp4"]  # the refused one stays to be moved
 
 
@@ -185,7 +185,7 @@ def test_the_mac_sees_the_linux_plan(linux, mac, tomorrow, discord):
     assert plan["days"] == hub.FREE_DAYS
     assert [(i["date"], i["slot"], i["title"]) for i in plan["items"]] == [
         (tomorrow.isoformat(), "23:00", "The Day My Cat Outsmarted the Block")]
-    assert {"date": tomorrow.isoformat(), "slot": "18:00"} in plan["free"]
+    assert {"date": tomorrow.isoformat(), "slot": "14:30"} in plan["free"]
     assert {"date": tomorrow.isoformat(), "slot": "23:00"} not in plan["free"]
     assert discord.messages == {}
 

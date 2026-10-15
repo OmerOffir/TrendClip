@@ -36,25 +36,25 @@ def clock(settings, monkeypatch):
 
 def test_a_slot_holds_one_item_and_moves_take_a_free_slot(settings):
     a, b, c = (add_short(settings, f"{n}.mp4") for n in "abc")
-    first = planner.add_item(settings, planner.ItemRequest(date=DAY, slot="18:00", short=a))
+    first = planner.add_item(settings, planner.ItemRequest(date=DAY, slot="14:30", short=a))
     with pytest.raises(ValueError, match="already has"):
-        planner.add_item(settings, planner.ItemRequest(date=DAY, slot="18:00", short=b))
-    second = planner.add_item(settings, planner.ItemRequest(date=DAY + timedelta(days=1), slot="18:00", short=b))
+        planner.add_item(settings, planner.ItemRequest(date=DAY, slot="14:30", short=b))
+    second = planner.add_item(settings, planner.ItemRequest(date=DAY + timedelta(days=1), slot="14:30", short=b))
 
     moved = planner.update_item(settings, second.id, planner.ItemUpdate(date=DAY))  # dragged onto a taken slot
     assert moved.date == DAY and moved.slot == "23:00"
-    third = planner.add_item(settings, planner.ItemRequest(date=DAY + timedelta(days=1), slot="18:00", short=c))
+    third = planner.add_item(settings, planner.ItemRequest(date=DAY + timedelta(days=1), slot="14:30", short=c))
     assert planner.update_item(settings, third.id, planner.ItemUpdate(date=DAY)).slot is None  # day is full
     with pytest.raises(ValueError):
-        planner.update_item(settings, third.id, planner.ItemUpdate(slot="18:00"))
+        planner.update_item(settings, third.id, planner.ItemUpdate(slot="14:30"))
     assert planner.update_item(settings, first.id, planner.ItemUpdate(slot="")).slot is None
-    assert planner.free_slots(settings, DAY) == ["18:00"]
+    assert planner.free_slots(settings, DAY) == ["14:30"]
     assert [i["slot"] for i in planner.view(settings)["items"]] == ["23:00", None, None]
 
 
 def test_new_reels_take_the_first_free_slot_unless_told_otherwise(settings):
     a, b, c = (add_short(settings, f"{n}.mp4") for n in "abc")
-    assert planner.add_item(settings, planner.ItemRequest(date=DAY, short=a)).slot == "18:00"
+    assert planner.add_item(settings, planner.ItemRequest(date=DAY, short=a)).slot == "14:30"
     assert planner.add_item(settings, planner.ItemRequest(date=DAY, short=b, slot="")).slot is None
     assert planner.add_item(settings, planner.ItemRequest(date=DAY, short=c)).slot == "23:00"
     assert planner.add_item(settings, planner.ItemRequest(kind="long", date=DAY, title="Long")).slot is None
@@ -68,7 +68,7 @@ def test_old_plans_get_their_times_once(settings):
                                       (DAY, names[3])])
     ]))
     assert planner.assign_slots(settings, DAY) == 2
-    assert [i.slot for i in planner.load(settings).items] == [None, "18:00", "23:00", None]  # past day untouched
+    assert [i.slot for i in planner.load(settings).items] == [None, "14:30", "23:00", None]  # past day untouched
     planner.update_item(settings, "1", planner.ItemUpdate(slot=""))
     assert planner.assign_slots(settings, DAY) == 0  # only once: later "no fixed time" choices are kept
     assert planner.load(settings).items[1].slot is None
@@ -77,8 +77,8 @@ def test_old_plans_get_their_times_once(settings):
 def test_next_free_slot_skips_passed_and_taken_slots(settings):
     add_short(settings, "a.mp4")
     planner.add_item(settings, planner.ItemRequest(date=DAY, slot="23:00", short="a.mp4"))
-    assert planner.next_free_slot(settings, at(settings, 12)) == (DAY, "18:00")
-    assert planner.next_free_slot(settings, at(settings, 18, 30)) == (DAY + timedelta(days=1), "18:00")
+    assert planner.next_free_slot(settings, at(settings, 12)) == (DAY, "14:30")
+    assert planner.next_free_slot(settings, at(settings, 18, 30)) == (DAY + timedelta(days=1), "14:30")
     assert planner.slot_time(settings, DAY, "23:00").utcoffset() == timedelta(hours=3)  # Israel summer time
 
 
@@ -96,7 +96,7 @@ def test_slots_through_the_api(settings, monkeypatch):
     assert client.post("/api/plan/items", json={"date": "2026-10-07", "slot": "19:00", "title": "x"}).status_code == 422
     r = client.patch(f"/api/plan/items/{r.json()['id']}", json={"slot": ""})
     assert r.json()["slot"] is None
-    assert client.get("/api/plan").json()["slots"] == ["18:00", "23:00"]
+    assert client.get("/api/plan").json()["slots"] == ["14:30", "23:00"]
 
 
 # --------------------------------------------------------------------------- plan helpers
@@ -113,7 +113,7 @@ def test_parse_day(settings, clock):
 
 def test_plan_short_fills_the_next_free_slot(settings, clock):
     a, b, c = (add_short(settings, f"{n}.mp4") for n in "abc")
-    assert (assistant.plan_short(settings, a).date, planner.load(settings).items[0].slot) == (DAY, "18:00")
+    assert (assistant.plan_short(settings, a).date, planner.load(settings).items[0].slot) == (DAY, "14:30")
     item = assistant.plan_short(settings, b, DAY)
     assert item.slot == "23:00"
     with pytest.raises(ValueError, match="full"):
@@ -121,7 +121,7 @@ def test_plan_short_fills_the_next_free_slot(settings, clock):
     assert assistant.plan_short(settings, c).date == DAY + timedelta(days=1)
 
     entries = assistant.day_slots(settings, DAY)
-    assert [(e.slot, e.short.filename) for e in entries] == [("18:00", a), ("23:00", b)]
+    assert [(e.slot, e.short.filename) for e in entries] == [("14:30", a), ("23:00", b)]
     assert assistant.backlog(settings) == []
     removed = assistant.unplan(settings, item.id)
     assert removed.short == b and [s.filename for s in assistant.backlog(settings)] == [b]
@@ -143,9 +143,9 @@ def test_reminders_fire_once_in_their_window(settings):
     morning = assistant.due_reminders(settings, at(settings, 10), set())
     assert [r.key for r in morning] == ["2026-10-07 morning"]
     assert assistant.due_reminders(settings, at(settings, 16, 30), set()) == []  # summary missed by > 6 h
-    slot = assistant.due_reminders(settings, at(settings, 17, 30), {"2026-10-07 morning"})
-    assert [(r.kind, r.slot) for r in slot] == [("slot", "18:00")]
-    assert assistant.due_reminders(settings, at(settings, 18), {"2026-10-07 morning"}) == []
+    slot = assistant.due_reminders(settings, at(settings, 14), {"2026-10-07 morning"})
+    assert [(r.kind, r.slot) for r in slot] == [("slot", "14:30")]
+    assert assistant.due_reminders(settings, at(settings, 14, 30), {"2026-10-07 morning"}) == []
     late = assistant.due_reminders(settings, at(settings, 22, 45), {"2026-10-07 morning"})
     assert [r.key for r in late] == ["2026-10-07 23:00"]
     quiet = settings.with_overrides(discord_reminder_minutes=0)
@@ -155,8 +155,8 @@ def test_reminders_fire_once_in_their_window(settings):
 def test_sent_log_survives_restarts_and_forgets_old_days(settings):
     log = assistant.SentLog(settings)
     log.add("2026-09-01 morning", date(2026, 9, 1))
-    log.add("2026-10-07 18:00", DAY)
-    assert assistant.SentLog(settings).load() == {"2026-10-07 18:00"}
+    log.add("2026-10-07 14:30", DAY)
+    assert assistant.SentLog(settings).load() == {"2026-10-07 14:30"}
 
 
 # --------------------------------------------------------------------------- videos
@@ -312,8 +312,8 @@ def test_own_text_waits_for_its_kind_then_renders(monkeypatch):
 def test_buttons_carry_their_action_and_skip_too_long_ids():
     from trendclip import discord_bot
 
-    b = discord_bot.button("pt", "1800:gta_1.mp4", "Plan today 18:00")
-    assert b.item.custom_id == "tc:pt:1800:gta_1.mp4"
+    b = discord_bot.button("pt", "1430:gta_1.mp4", "Plan today 14:30")
+    assert b.item.custom_id == "tc:pt:1430:gta_1.mp4"
     assert discord_bot.button("show", "x" * 120, "Show") is None
     assert discord_bot.code_slot("2300") == "23:00"
     with pytest.raises(ValueError):
@@ -352,7 +352,7 @@ def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings
     from trendclip import discord_bot
 
     short = shorts.get_short(settings, add_short(settings))
-    text = discord_bot.caption_message(settings, short, "📝 `18:00` **The Day**")
+    text = discord_bot.caption_message(settings, short, "📝 `14:30` **The Day**")
     for label in ("▶️ YouTube", "🎵 TikTok", "📸 Instagram"):
         assert label in text
     assert "I searched for three hours" in text  # the description text

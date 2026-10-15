@@ -473,16 +473,17 @@
     return Number.isNaN(d.getTime()) ? null : d;
   }
 
-  function at(dayOffset, hour, weekday) {
+  function at(dayOffset, hour, weekday, minute = 0) {
     const d = new Date();
     d.setDate(d.getDate() + dayOffset);
     if (weekday != null) d.setDate(d.getDate() + ((weekday - d.getDay() + 7) % 7 || 7));
-    d.setHours(hour, 0, 0, 0);
+    d.setHours(hour, minute, 0, 0);
     return d;
   }
 
   function quickTime(key) {
-    const map = { "today-18": at(0, 18), "tomorrow-12": at(1, 12), "tomorrow-18": at(1, 18), "weekend-11": at(0, 11, 6) };
+    const map = { "today-1430": at(0, 14, null, 30), "tomorrow-12": at(1, 12), "tomorrow-1430": at(1, 14, null, 30),
+                  "weekend-11": at(0, 11, 6) };
     const prev = prevPartTime();
     if (prev) map["after-prev"] = new Date(prev.getTime() + 24 * 3600000);
     let d = map[key];

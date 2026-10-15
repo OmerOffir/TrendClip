@@ -16,6 +16,15 @@ def settings(tmp_path):
     return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output")
 
 
+def test_plans_saved_with_the_old_18_00_slot_move_to_14_30(settings):
+    planner.plan_path(settings).parent.mkdir(parents=True, exist_ok=True)
+    planner.plan_path(settings).write_text(
+        '{"items": [{"id": "a", "kind": "reel", "date": "2026-10-06", "slot": "18:00", "title": "Old"},'
+        ' {"id": "b", "kind": "reel", "date": "2026-10-06", "slot": "23:00", "title": "Night"}]}', encoding="utf-8")
+    assert [i.slot for i in planner.load(settings).items] == ["14:30", "23:00"]
+    assert planner.ItemUpdate(slot="18:00").slot == "14:30"
+
+
 def test_planning_a_short_copies_its_title_and_marks_it_ready(settings):
     name = add_short(settings)
     item = planner.add_item(settings, planner.ItemRequest(date=DAY, short=name))

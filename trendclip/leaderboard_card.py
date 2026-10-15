@@ -20,6 +20,7 @@ NAVY, DEEP = (8, 14, 40), (3, 6, 20)
 CYAN, BLUE, YELLOW, WHITE = (25, 205, 255), (40, 110, 255), (255, 214, 10), (255, 255, 255)
 GOLD, SILVER, BRONZE = (255, 214, 10), (205, 220, 235), (235, 150, 80)
 LIST_SIZE = 10
+TITLE = "KINGS OF LOGIC"
 _UNICODE_FONTS = ["Arial Unicode.ttf", "Arial Bold.ttf", "DejaVuSans-Bold.ttf", "NotoSans-Bold.ttf",
                   "NotoSansHebrew-Bold.ttf"]
 _UNICODE_DIRS = [*_FONT_DIRS, Path("/usr/share/fonts/truetype/dejavu"), Path("/usr/share/fonts/truetype/noto"),
@@ -158,7 +159,10 @@ def render(people: list[dict[str, Any]], handle: str = "@SideQuestLogic", *, day
     _logo(img, logo)
 
     d.text((W / 2, 62), "S I D E Q U E S T   L O G I C", font=_font(30), fill=CYAN, anchor="mm")
-    _glow_text(img, (W / 2, 160), "TOP FANS", _font(150), YELLOW, (255, 170, 0), radius=18)
+    size = 150
+    while size > 60 and d.textlength(TITLE, font=_font(size)) > W - 100:
+        size -= 4
+    _glow_text(img, (W / 2, 160), TITLE, _font(size), YELLOW, (255, 170, 0), radius=18)
     sub = f"COMMENT LEADERBOARD · {(day or date.today()).strftime('%d %b %Y').upper()}"
     d.text((W / 2, 262), sub, font=_font(30), fill=WHITE, anchor="mm")
 

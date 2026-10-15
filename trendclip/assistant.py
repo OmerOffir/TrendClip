@@ -114,7 +114,7 @@ def plan_short(settings: Settings, filename: str, day: Day | None = None, slot: 
     if slot is None:
         free = planner.free_slots(settings, day)
         if not free:
-            raise ValueError(f"{day.isoformat()} is full (18:00 and 23:00 are taken)")
+            raise ValueError(f"{day.isoformat()} is full (14:30 and 23:00 are taken)")
         slot = free[0]
     return planner.add_item(settings, planner.ItemRequest(kind="reel", date=day, slot=slot, short=filename))
 

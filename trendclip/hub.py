@@ -101,6 +101,7 @@ def _target(settings: Settings, filename: str) -> Path:
 def receive(settings: Settings, filename: str, day: Day, slot: str,
             meta: dict[str, Any], video: Path) -> planner.PlanItem:
     """Hub side: keep the sent Short and put it on the plan at `slot`, or refuse a taken time."""
+    slot = planner.OLD_SLOTS.get(slot, slot)
     if slot not in planner.SLOTS:
         raise HubError(f"Unknown upload time {slot}")
     if slot not in planner.free_slots(settings, day):
@@ -324,7 +325,7 @@ def send_plan(settings: Settings) -> list[dict[str, Any]]:
             continue
         line = {"title": item.title, "date": item.date.isoformat(), "slot": item.slot, "ok": False}
         if item.slot is None:
-            results.append({**line, "message": "No upload time; give it 18:00 or 23:00 first."})
+            results.append({**line, "message": "No upload time; give it 14:30 or 23:00 first."})
             continue
         try:
             reply = send(settings, SendRequest(filename=item.short, date=item.date, slot=item.slot))

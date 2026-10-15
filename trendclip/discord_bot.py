@@ -28,7 +28,7 @@ OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
 PENDING_TEXTS = 30
 NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
-SlotChoice = Literal["18:00", "23:00"]
+SlotChoice = Literal["14:30", "23:00"]
 REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
 NO_PINGS = discord.AllowedMentions.none()  # comment text from YouTube is shown as is
 
@@ -273,7 +273,7 @@ class TrendClipBot(discord.Client):
 
     async def setup_hook(self) -> None:
         if n := planner.assign_slots(self.settings, assistant.today(self.settings)):
-            logger.info("Gave %d planned reels an upload time (18:00 / 23:00)", n)
+            logger.info("Gave %d planned reels an upload time (14:30 / 23:00)", n)
         self.add_dynamic_items(ActionButton)
         for command in COMMANDS:
             self.tree.add_command(command)
@@ -421,6 +421,7 @@ class TrendClipBot(discord.Client):
         view = view_of(button("cm", filename, "Post the pinned comment")) if comment else None
         await channel.send(clip_text(text), view=view)
 
+
     def today_text(self, day: Day) -> tuple[str, list[ActionButton | None], bool]:
         """The day's slots as text, Show / Upload buttons, and whether a slot is still empty."""
         settings = self.settings
@@ -487,16 +488,22 @@ class TrendClipBot(discord.Client):
             return
         if fresh:
             await self.queue_replies(channel, board)
+        await self.send_post(channel.send, board)
+
+    async def send_post(self, send, board: leaderboard.Board) -> None:
+        """The podium picture, then the YouTube post text as its own message."""
+        settings = self.settings
         handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
         png = await asyncio.to_thread(leaderboard_card.render, board.people, handle, day=assistant.today(settings),
                                       logo=settings.channel_dir / "logo.png")
-        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE)
-        await channel.send("🏆 Today's leaderboard post: save the picture, copy the next message (long-press → "
-                           "Copy Text), and post both on YouTube (Create → Post). Pick each @name from YouTube's "
-                           "list as you type it, or it may not become a tag.",
-                           file=discord.File(io.BytesIO(png), filename="leaderboard.png"))
+        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE,
+                                         leaderboard.next_drop(settings))
+        await send("🏆 Today's leaderboard post: save the picture, copy the next message (long-press → "
+                   "Copy Text), and post both on YouTube (Create → Post). Pick each @name from YouTube's "
+                   "list as you type it, or it may not become a tag.",
+                   file=discord.File(io.BytesIO(png), filename="leaderboard.png"))
         # Its own plain message: "Copy Text" then gives exactly the caption, with no ``` around it.
-        await channel.send(caption, allowed_mentions=NO_PINGS, suppress_embeds=True)
+        await send(caption, allowed_mentions=NO_PINGS, suppress_embeds=True)
 
     async def morning_summary(self, channel: discord.abc.Messageable, day: Day) -> None:
         text, buttons, empty = self.today_text(day)
@@ -802,7 +809,7 @@ async def game_choices(interaction: discord.Interaction, current: str) -> list[a
 # --------------------------------------------------------------------------- slash commands
 
 
-@app_commands.command(name="today", description="Which videos go out today at 18:00 and 23:00")
+@app_commands.command(name="today", description="Which videos go out today at 14:30 and 23:00")
 async def today_cmd(interaction: discord.Interaction) -> None:
     bot = _bot(interaction)
     day = assistant.today(bot.settings)
@@ -826,7 +833,7 @@ async def today_cmd(interaction: discord.Interaction) -> None:
         await interaction.followup.send(caption_message(bot.settings, short, f"📝 `{slot or 'no time'}` **{short.title}**"))
 
 
-@app_commands.command(name="slot", description="Send me the video planned for 18:00 or 23:00")
+@app_commands.command(name="slot", description="Send me the video planned for 14:30 or 23:00")
 @app_commands.describe(time="Upload time", day="Which day (default: today)")
 @app_commands.autocomplete(day=day_choices)
 async def slot_cmd(interaction: discord.Interaction, time: SlotChoice, day: str | None = None) -> None:
@@ -944,20 +951,27 @@ def _updated(settings: Settings, board: leaderboard.Board) -> str:
 
 @app_commands.command(name="leaderboard", description="Fans ranked by points from their YouTube comments")
 @app_commands.describe(refresh="Read the comments from YouTube now and queue the replies (default: this morning's)",
-                       image="A podium picture of the top 13 to post on YouTube / Instagram")
-async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False, image: bool = False) -> None:
+                       image="The podium picture of the top 13 plus the text for your YouTube post",
+                       post="Just the text for your YouTube post (tags the top 13)")
+async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False, image: bool = False,
+                          post: bool = False) -> None:
     board = await _board(interaction, refresh)
     if board is None:
         return
     if refresh:
         await _bot(interaction).queue_replies(interaction.channel, board)
+    if (image or post) and not board.people:
+        await reply(interaction, "Nobody has commented yet, so there's no leaderboard to post.")
+        return
     if image:
-        settings = _bot(interaction).settings
-        handle = settings.stats_youtube if settings.stats_youtube.startswith("@") else settings.channel_handle
-        png = await asyncio.to_thread(leaderboard_card.render, board.people, handle,
-                                      day=assistant.today(settings), logo=settings.channel_dir / "logo.png")
-        await interaction.followup.send("🏆 Top fans, ready to post:", file=discord.File(io.BytesIO(png),
-                                        filename="leaderboard.png"))
+        await _bot(interaction).send_post(interaction.followup.send, board)
+        return
+    if post:
+        await reply(interaction, "📝 Your YouTube post text is the next message: long-press → Copy Text, then "
+                                 "YouTube → Create → Post. Pick each @name from YouTube's list as you type it.")
+        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE,
+                                         leaderboard.next_drop(_bot(interaction).settings))
+        await interaction.followup.send(caption, allowed_mentions=NO_PINGS, suppress_embeds=True)
         return
     lines = [f"🏆 **Leaderboard**: {len(board.people)} people, {len(board.comments)} comments",
              *leaderboard.top_lines(board, 30)]
@@ -1081,8 +1095,8 @@ async def plan_move(interaction: discord.Interaction, item: str, day: str, time:
 async def help_cmd(interaction: discord.Interaction) -> None:
     await reply(interaction, "\n".join([
         "**TrendClip bot**",
-        "`/today` today's 18:00 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
-        "`/slot time:18:00` send me the video for a slot (`day:` for another day)",
+        "`/today` today's 14:30 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
+        "`/slot time:14:30` send me the video for a slot (`day:` for another day)",
         "`/create` make a video: I ask story, math challenge, riddle, trivia trap or paradox trap (`game:` picks the gameplay, "
         "`text:` or ✍️ uses your own words)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
@@ -1090,7 +1104,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
-        "`image:True` a podium picture to post)",
+        "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
     ]), ephemeral=True)
 

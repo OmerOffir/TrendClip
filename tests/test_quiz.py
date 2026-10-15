@@ -140,16 +140,37 @@ def test_own_quiz_keeps_its_own_comment_line_and_asks_gemini_when_unsolvable(tmp
     assert result.pinned_comment.startswith("What do you think? 👇") and "echo" not in result.pinned_comment.lower()
 
 
-def test_trivia_trap(tmp_path):
+def trivia_client(rounds, checks, seen=None):
+    """Gemini that writes `rounds` (lists of candidates) and answers fact-checks with `checks` (texts)."""
+    rounds, checks = list(rounds), list(checks)
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            if seen is not None:
+                seen.setdefault("prompts", []).append(contents[0])
+            if config.response_schema is None:
+                assert config.tools  # the fact-check searches Google
+                return SimpleNamespace(parsed=None, text=checks.pop(0))
+            assert config.response_schema is quiz.GeminiTriviaSet
+            return SimpleNamespace(parsed=quiz.GeminiTriviaSet(candidates=rounds.pop(0)), text="")
+    return SimpleNamespace(models=Models())
+
+
+def trivia(question="Which planet in our solar system is the hottest", trap="Mercury.", distractor="Mars",
+           correct="Venus", **kw):
+    return quiz.GeminiTrivia(
+        category="space", question=question, trap=trap, distractor=distractor, correct=correct,
+        fact=kw.pop("fact", "Venus averages about 465°C; Mercury about 167°C."), title="90% Get This Wrong 🌍",
+        description="Comment the real answer!", hashtags=["#trivia"], title_card="90% get this trivia trap wrong! 🧠",
+        **kw)
+
+
+def test_trivia_trap(tmp_path, monkeypatch):
     seen = {}
-    trivia = quiz.GeminiTrivia(
-        category="space", question="Which planet in our solar system is the hottest", trap="Mercury.",
-        distractor="Mars", correct="Venus", fact="Venus averages about 465°C; Mercury about 167°C.",
-        title="90% Get This Wrong 🌍", description="Comment the real answer!", hashtags=["#trivia"],
-        title_card="90% get this trivia trap wrong! 🧠")
+    monkeypatch.setattr(quiz, "TRIVIA_HOOKS", ("Only 5% get this right.",))
     result = script_writer.write_script(make_settings(tmp_path), "GTA V", mode="trivia",
-                                        client=fake_client(trivia, seen))
-    assert seen["schema"] is quiz.GeminiTrivia
+                                        client=trivia_client([[trivia()]], ["1: PASS"], seen))
+    assert "video games" in seen["prompts"][0] and "Venus" in seen["prompts"][1]
     assert result.script.startswith("Only 5% get this right. Which planet in our solar system is the hottest? Is it ")
     assert "Or is it " in result.script
     assert "Think fast! Three. Two. One. Hint:" in result.script and "you failed" not in result.script
@@ -172,12 +193,48 @@ def test_trivia_trap(tmp_path):
 
 
 def test_trivia_says_the_with_country_names(tmp_path):
-    trivia = quiz.GeminiTrivia(category="geography", hook="90% fall for this.", question="Which country has the most islands",
-                               trap="Indonesia", distractor="the Philippines", correct="Sweden", fact="Sweden: 267,570.",
-                               title="t", description="d", hashtags=[], title_card="GEOGRAPHY TRAP")
-    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", client=fake_client(trivia), rng=random.Random(2))
+    islands = trivia("Which country has the most islands", "Indonesia", "the Philippines", "Sweden",
+                     fact="Sweden: 267,570.", hook="90% fall for this.")
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", client=trivia_client([[islands]], ["1: PASS"]),
+                             rng=random.Random(2))
     assert "Is it the Philippines?" in result.script or "Or is it the Philippines?" in result.script
     assert any(f.text.endswith(") Philippines") and f.word == "it the" for f in result.flashes)
+
+
+def test_trivia_flash_labels_drop_the_article(tmp_path):
+    organ = trivia("Which organ can regrow", "the brain", "the heart", "the liver")
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia",
+                             client=trivia_client([[organ]], ["1: PASS"]), rng=random.Random(3))
+    assert sorted(f.text[3:] for f in result.flashes[1:4]) == ["Brain", "Heart", "Liver"]
+    assert "Is it the liver?" in result.script or "Or is it the liver?" in result.script
+
+
+def test_trivia_uses_only_a_fact_checked_question(tmp_path):
+    venom = trivia("Which creature has the deadliest venom", "Inland taipan", "Black mamba", "Box jellyfish",
+                   fact="Box jellyfish kill fast.", hint="It can kill in minutes!")
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", rng=random.Random(1),
+                             client=trivia_client([[venom, trivia()]],
+                                                  ["**1: FAIL**: 'deadliest' is ambiguous\n2: PASS: Venus is hottest"]))
+    assert result.answer == "Venus"
+
+
+def test_trivia_writes_again_when_every_candidate_fails(tmp_path):
+    seen = {}
+    good = trivia("Which country has the most islands", "Indonesia", "the Philippines", "Sweden",
+                  hint="over 220,000 of them!")
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", rng=random.Random(1),
+                             client=trivia_client([[trivia()], [good]], ["1: FAIL: myth", "1: PASS"], seen))
+    assert result.answer == "Sweden" and "Venus" in seen["prompts"][2]  # the rejected answer isn't asked for again
+    assert "Hint: over 220,000 of them." in result.script and "!." not in result.pinned_comment
+
+
+def test_trivia_gives_up_after_three_failed_rounds(tmp_path):
+    import pytest
+
+    client = trivia_client([[trivia()], [trivia(correct="Pluto")], [trivia(correct="Earth")]],
+                           ["1: FAIL: x", "nothing useful", "1: FAIL: y"])
+    with pytest.raises(script_writer.ScriptError, match="fact-check"):
+        quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", client=client, rng=random.Random(1))
 
 
 CROCODILE = quiz.GeminiParadox(

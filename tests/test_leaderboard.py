@@ -175,6 +175,18 @@ def test_post_caption_tags_everyone_on_the_card():
     tags = text.splitlines()[-1].split()
     assert tags[:2] == ["@kerrie", "@CalvinC"] and len(tags) == 13
     assert lb.post_caption([]) == ""
+    assert "Next trap drops at 23:00!" in lb.post_caption(people, 13, "at 23:00")
+
+
+def test_next_drop_follows_the_upload_times(tmp_path):
+    from trendclip.config import Settings
+
+    s = Settings(youtube_api_key="k", output_dir=tmp_path)
+    at = lambda h, m=0: datetime(2026, 10, 15, h, m, tzinfo=s.tz)  # noqa: E731
+    assert lb.next_drop(s, at(13, 30)) == "in 1 hour"
+    assert lb.next_drop(s, at(9)) == "at 14:30"
+    assert lb.next_drop(s, at(16)) == "at 23:00"
+    assert lb.next_drop(s, at(23, 30)) == "tomorrow at 14:30"
 
 
 def test_leaderboard_reminder_at_its_time():

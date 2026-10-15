@@ -705,7 +705,21 @@ def _tag(name: str) -> str:
     return name if name.startswith("@") else "@" + re.sub(r"\s+", "", name)
 
 
-def post_caption(people: list[dict[str, Any]], tags: int = 13) -> str:
+def next_drop(settings: Settings, now: datetime | None = None) -> str:
+    """When the next video goes up, as the post says it: "in 1 hour", "at 23:00" or "tomorrow at 14:30"."""
+    from . import planner
+
+    now = (now or datetime.now(settings.tz)).astimezone(settings.tz)
+    for days, word in ((0, "at"), (1, "tomorrow at")):
+        day = now.date() + timedelta(days=days)
+        for slot in planner.SLOTS:
+            minutes = (planner.slot_time(settings, day, slot) - now).total_seconds() / 60
+            if minutes > 0:
+                return "in 1 hour" if 40 <= minutes <= 80 else f"{word} {slot}"
+    return "soon"
+
+
+def post_caption(people: list[dict[str, Any]], tags: int = 13, drop: str = "in 1 hour") -> str:
     """The daily YouTube post text, tagging everyone on the picture."""
     if not people:
         return ""
@@ -713,7 +727,7 @@ def post_caption(people: list[dict[str, Any]], tags: int = 13) -> str:
     pts = "pt" if top["points"] == 1 else "pts"
     lines = ["🏆 DAILY LEADERBOARD UPDATE! 🏆",
              f"Current Kings of Logic: {_tag(top['name'])} with {top['points']} {pts}!",
-             "Next trap drops in 1 hour! Who's taking the #1 spot today? 🧠🔥"]
+             f"Next trap drops {drop}! Who's taking the #1 spot today? 🧠🔥"]
     tagged = " ".join(_tag(p["name"]) for p in people[:tags])
     return "\n".join(lines) + ("\n\n" + tagged if len(people) > 1 else "")
 

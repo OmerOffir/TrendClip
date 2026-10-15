@@ -405,7 +405,7 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
   (YouTube still decides by shape, so it may show it as a Short). Texts written for a landscape video
   (template or Gemini) leave `#shorts` out. **Upload to YouTube as a Short / as a video** uploads it (resumable, with
   progress) and shows the Shorts and Studio links. **Visibility → Schedule…** picks a date and time
-  (your local time zone, quick picks like "Tomorrow 18:00"): the video uploads now as private and
+  (your local time zone, quick picks like "Tomorrow 14:30"): the video uploads now as private and
   YouTube publishes it at that time (at least 15 minutes ahead).
 - **Instagram** and **TikTok** (no upload API here): caption, hashtags (Instagram: at most 5) and
   @mentions in each platform's style, a ready-to-paste text with the credits, **Copy caption**,
@@ -459,8 +459,8 @@ platforms at the top of the tab.
   is done. For a Short, the tick is the same as the **Posted** box in the Upload tab, so ticking
   either one updates both. A YouTube upload made from the Upload tab ticks YouTube by itself; that
   button then opens the video.
-- **Upload times:** a day has two upload slots, **18:00** and **23:00** (in `TIMEZONE`, default
-  Asia/Jerusalem). The empty slots of a day are labelled **+ 18:00 reel** / **+ 23:00 reel**, and the
+- **Upload times:** a day has two upload slots, **14:30** and **23:00** (in `TIMEZONE`, default
+  Asia/Jerusalem). The empty slots of a day are labelled **+ 14:30 reel** / **+ 23:00 reel**, and the
   dialog has an **Upload time** field. Each slot holds one item; an item can also have no fixed time.
 - **Moving and editing:** drag an item to another day, or use **Edit** to change the day, time,
   platforms or notes, or to remove it. If you drag an item onto a day where its time is already taken,
@@ -504,9 +504,9 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 
 | Command | What it does |
 |---------|--------------|
-| `/today` | Today's 18:00 and 23:00 videos, with **Show** and **Upload** buttons, plus a copy-ready caption (text and hashtags) for YouTube, TikTok and Instagram |
-| `/slot time:18:00` | Sends the video planned for that slot (`day:` for another day) |
-| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 18:00 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle** or **🌍 Trivia trap** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
+| `/today` | Today's 14:30 and 23:00 videos, with **Show** and **Upload** buttons, plus a copy-ready caption (text and hashtags) for YouTube, TikTok and Instagram |
+| `/slot time:14:30` | Sends the video planned for that slot (`day:` for another day) |
+| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 14:30 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle** or **🌍 Trivia trap** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
 | `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
 | `/videos` | Videos that are made but not planned or uploaded |
@@ -516,7 +516,7 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 On its own the bot posts to `DISCORD_CHANNEL_ID`:
 
 - a morning summary of the day's plan at `DISCORD_MORNING_TIME`, followed by the channel report;
-- each slot's video `DISCORD_REMINDER_MINUTES` before 18:00 and 23:00, with an **Upload now**
+- each slot's video `DISCORD_REMINDER_MINUTES` before 14:30 and 23:00, with an **Upload now**
   button. An empty slot gets a **Create a random video** button instead.
 
 Setup:
@@ -591,7 +591,8 @@ comment 1. Subscribers get 10 once. YouTube only shows subscribers who keep thei
 It uses the YouTube login from the Upload tab, so there is nothing else to set up.
 
 Every day at `DISCORD_LEADERBOARD_TIME` (default 13:30, empty = off) the bot sends a podium picture of
-the top 13 (`/leaderboard image:True` makes one any time) and a caption that tags all of them. YouTube's
+the top 13 and a caption that tags all of them. Any time, `/leaderboard image:True` sends both and
+`/leaderboard post:True` just the caption; its "Next trap drops…" line follows the next upload time. YouTube's
 API can't create posts, so post it yourself: save the picture, copy the text, YouTube → Create → Post.
 Put the channel logo in `channels/<channel>/logo.png` and it's drawn on the picture.
 

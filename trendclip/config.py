@@ -118,7 +118,7 @@ class Settings(BaseModel):
     music_channels: list[str] = Field(default_factory=lambda: list(DEFAULT_MUSIC_CHANNELS))
     music_volume: float = Field(0.14, ge=0, le=1)  # 12-15% (about -17 dB) sits well under speech
 
-    # The plan's upload slots (18:00 / 23:00) and the bot's reminders are in this time zone.
+    # The plan's upload slots (14:30 / 23:00) and the bot's reminders are in this time zone.
     timezone: str = "Asia/Jerusalem"
     # Discord bot: commands are registered on one server; reminders go to one channel.
     discord_bot_token: SecretStr | None = None

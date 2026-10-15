@@ -161,11 +161,11 @@
       const done = item.platforms.length && item.platforms.every((p) => item.posted.includes(p));
       return `<div class="hub-slot taken"><b>${slot}</b> ${done ? "✅ " : ""}${esc(item.title)}</div>`;
     };
-    const others = items.filter((i) => !i.slot || !["18:00", "23:00"].includes(i.slot));
+    const others = items.filter((i) => !i.slot || !["14:30", "23:00"].includes(i.slot));
     return `
       <div class="hub-day">
         <div class="hub-day-name">${esc(dayName(day))} <span>${esc(shortDate(day))}</span></div>
-        ${slotRow("18:00")}${slotRow("23:00")}
+        ${slotRow("14:30")}${slotRow("23:00")}
         ${others.map((i) => `<div class="hub-slot taken"><b>${i.kind === "long" ? "Long" : "—"}</b> ${esc(i.title)}</div>`).join("")}
       </div>`;
   }
