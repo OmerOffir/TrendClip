@@ -91,6 +91,57 @@ def test_riddle_opens_on_the_paradox_and_counts_down(tmp_path):
     assert "breath" not in result.pinned_comment.lower()
 
 
+def test_riddles_get_a_topic_and_avoid_used_answers(tmp_path):
+    settings = make_settings(tmp_path)
+    anchor = quiz.GeminiRiddle(
+        hook="What do you throw away only when you need it?", clues=["Ships carry me.", "I sink on purpose."],
+        question="What am I", answer="An anchor.", explanation="Thrown overboard to stop.", title="Riddle 🧩",
+        description="Guess!", hashtags=["#riddle"], title_card="THROWN AWAY WHEN NEEDED?")
+    prompts = []
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            prompts.append(contents[0])
+            return SimpleNamespace(parsed=anchor, text="")
+
+    client = SimpleNamespace(models=Models())
+    quiz.write_quiz(settings, "Minecraft", "riddle", client=client, rng=random.Random(1))
+    assert len(prompts) == 1 and "none yet" in prompts[0] and "This one's answer or setting: " in prompts[0]
+    assert "throw away only when you need it" in prompts[0]  # named as an overused classic
+
+    quiz.write_quiz(settings, "Minecraft", "riddle", client=client, rng=random.Random(2))
+    assert len(prompts) == 3  # "the anchor" again: asked once more, then accepted
+    assert "don't reuse these answers: An anchor." in prompts[1]
+    assert quiz.used_riddles(settings) == ["An anchor."]
+    topics = [d["topic"] for d in quiz.history(settings, "riddle")]
+    assert len(topics) == 2 and topics[0] != topics[1] and all(t in quiz.RIDDLE_TOPICS for t in topics)
+
+
+def test_used_quizzes_are_told_apart_and_titles_are_shown(tmp_path, monkeypatch):
+    from trendclip import shorts
+
+    def short(name, answer, script, flashes):
+        return shorts.ShortVideo(filename=name, game="gta", title=f"Only 3% {name} 🧠", description="", hashtags=[],
+                                 script=script, voice="", background="", answer=answer,
+                                 render_settings={"flashes": [{"word": "x", "text": t} for t in flashes]})
+
+    made = [short("math", "27", "Only 3% keep up. Start with 9. Got your number? Three. Two. One.", ["9", "?", "3"]),
+            short("riddle", "A zipper", "I have teeth. What am I? Three. Two. One.", ["CLUE 1", "CLUE 2", "?"]),
+            short("trivia", "a carpenter", "Gamers always miss this one. Was he a carpenter?", ["?", "A) Carpenter"]),
+            short("paradox", "No single answer: it's the liar.", "Think fast!", ["PARADOX", "A) KEEP", "B) GO"])]
+    monkeypatch.setattr(shorts, "list_shorts", lambda s: made)
+    settings = make_settings(tmp_path)
+    assert quiz.used_riddles(settings) == ["A zipper"]
+    assert quiz.used_trivia(settings) == ["a carpenter"]
+    assert quiz.used_paradoxes(settings) == ["the liar"]
+
+    seen = {}
+    quiz.write_quiz(settings, "GTA V", "math", client=fake_client(quiz.GeminiMathPack(
+        hook="Bet you can't keep up.", title="Bet You Can't 🧠", description="d", hashtags=["#math"],
+        title_card="BET YOU CAN'T"), seen))
+    assert '"Only 3% math 🧠" / "Only 3% keep up."' in seen["prompt"] and "another kind of dare" in seen["prompt"]
+
+
 def test_a_stat_dare_riddle_hook_is_replaced_by_the_first_clue(tmp_path):
     riddle = quiz.GeminiRiddle(
         hook="Only 5% solve this riddle on the first try.",
@@ -269,6 +320,20 @@ def test_paradox_trap(tmp_path):
     timed = quiz.schedule_flashes(result.flashes, va.estimate_word_timings(result.script, 25))
     assert [t.text for t in timed] == labels
     assert all(a.start < b.start for a, b in zip(timed, timed[1:]))
+
+
+def test_paradoxes_dont_repeat(tmp_path):
+    settings = make_settings(tmp_path)
+    prompts = []
+    for _ in range(len(quiz.PARADOX_IDEAS) - 15):
+        seen = {}
+        quiz.write_quiz(settings, "Minecraft", "paradox", client=fake_client(CROCODILE, seen))
+        prompts.append(seen["prompt"])
+    ideas = [d["idea"] for d in quiz.paradox_history(settings)]
+    assert len(set(ideas)) == len(ideas) == len(quiz.PARADOX_IDEAS) - 15  # no repeats in a long run
+    assert all(f"on this paradox or dilemma: {i}." in p for i, p in zip(ideas, prompts))
+    assert "none yet" in prompts[0] and "don't retell these: the crocodile dilemma." in prompts[1]
+    assert quiz.used_paradoxes(settings) == ["the crocodile dilemma"]  # names are listed once
 
 
 def test_paradox_with_the_same_word_for_both_sides_falls_back_to_a_and_b(tmp_path):
