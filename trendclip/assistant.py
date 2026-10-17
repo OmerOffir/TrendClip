@@ -158,7 +158,7 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
 
 
 def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
-                        mode: Literal["story", "math", "riddle", "trivia", "paradox"] = "story") -> shorts.ShortVideo:
+                        mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> shorts.ShortVideo:
     """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
     pop-ups and stickers."""
     if script_writer.gemini_api_key(settings) is None:
@@ -175,7 +175,7 @@ OWN_TEXT_MAX_SECONDS = 170  # stays a Short (YouTube: up to 3 minutes)
 
 
 def create_from_text(settings: Settings, text: str, game: str | None = None, progress: ProgressFn = _noop,
-                     mode: Literal["story", "math", "riddle", "trivia", "paradox"] = "story") -> shorts.ShortVideo:
+                     mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> shorts.ShortVideo:
     """Like the Create tab's "Fill the rest": your words are the voiceover, Gemini writes the rest, on random
     (or `game`) gameplay. A story too long for the clip is tightened; a quiz is kept word for word."""
     if script_writer.gemini_api_key(settings) is None:
@@ -200,6 +200,7 @@ def _render_script(settings: Settings, clip: video_downloader.BackgroundClip, sc
         popups=script.popups[:20], reactions=script.reactions[:10], end_card=script.end_card,
         pinned_comment=script.pinned_comment, music_source="mood", music_mood=script.music_mood,
         channel_handle=settings.channel_handle, flashes=script.flashes[:30], answer=script.answer,
+        choices=script.choices[:6],
     )
     try:
         return shorts.render_short(settings, req, progress)

@@ -380,3 +380,136 @@ def test_flashes_are_drawn_in_the_subtitles(tmp_path):
     path = va.create_karaoke_ass_file(words, tmp_path / "s.ass", flashes=[quiz.TimedFlash("+18", 0.25, 1.6)])
     text = path.read_text(encoding="utf-8")
     assert "Style: Flash," in text and ",Flash,," in text and text.count("+18") == 1
+
+
+# --------------------------------------------------------------------------- movie quizzes
+
+
+VADER = quiz.GeminiMovieQuote(
+    movie="The Empire Strikes Back (1980)", hook="Almost everyone misquotes this.",
+    question="What did Darth Vader actually say to Luke in Star Wars", trap="'Luke, I am your father.'",
+    distractor="I am your father, Luke.", correct="No, I am your father.",
+    fact='Vader says "No, I am your father"; he never says "Luke".', title="90% Misquote This Line 🎬",
+    description="Comment A, B or C!", hashtags=["#shorts", "#movies", "#starwars"], title_card="you've been saying it wrong")
+
+UP = quiz.GeminiMovieEmoji(
+    movie="Up", year="2009",
+    emojis=[quiz.GeminiMovieEmoji.Pic(emoji="🎈", line="Balloons, hundreds of colorful balloons.", word="Balloons"),
+            quiz.GeminiMovieEmoji.Pic(emoji="🏠", line="A little wooden house floating away.", word="house"),
+            quiz.GeminiMovieEmoji.Pic(emoji="👴", line="A grumpy old man with a cane.", word="man")],
+    hint="It starts with a flying house!", title="Guess The Movie From 3 Emojis", description="Comment the movie!",
+    hashtags=["#shorts", "#guessthemovie"], title_card="guess the movie in 5 seconds")
+
+MARTY = CROCODILE.model_copy(update={
+    "name": "Back to the Future (1985)", "hook": "Movie fans, this one breaks brains.",
+    "setup": ["Marty McFly goes back to 1955 and stops his parents from meeting."],
+    "twist": "His photo starts to fade.", "dilemma": "Does he vanish right away",
+    "side_a": "If he vanishes at once, nobody is left to fix it.",
+    "side_b": "But if he has time, the past isn't really changed yet!", "vote_a": "vanish", "vote_b": "time",
+    "debate": "Does Marty disappear instantly, or does he get time to fix it"})
+
+
+def movie_client(rounds=(), checks=(), emoji=None, logic=None, seen=None):
+    rounds, checks = list(rounds), list(checks)
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            if seen is not None:
+                seen.setdefault("prompts", []).append(contents[0])
+            if config.response_schema is None:
+                assert config.tools  # the line is checked on Google
+                return SimpleNamespace(parsed=None, text=checks.pop(0))
+            schema = config.response_schema
+            parsed = {quiz.GeminiMovieQuoteSet: lambda: quiz.GeminiMovieQuoteSet(candidates=rounds.pop(0)),
+                      quiz.GeminiMovieEmoji: lambda: emoji, quiz.GeminiParadox: lambda: logic}[schema]()
+            return SimpleNamespace(parsed=parsed, text="")
+    return SimpleNamespace(models=Models())
+
+
+def test_movie_misquote_trap_hides_the_answer_and_keeps_the_full_options(tmp_path):
+    seen = {}
+    result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "movie", notes="a quote one", rng=random.Random(4),
+                             client=movie_client([[VADER]], ["1: PASS"], seen=seen))
+    assert result.mode == "movie" and "MISQUOTE" in seen["prompts"][0] and "No, I am your father" in seen["prompts"][1]
+    assert "What did Darth Vader actually say to Luke in Star Wars? Option A:" in result.script
+    assert result.script.endswith("Only one is the real line. Comment A, B or C right now!")
+    assert "real answer is" not in result.script.lower()
+    assert sorted(c[3:] for c in result.choices) == ["I am your father, Luke.", "Luke, I am your father.",
+                                                     "No, I am your father."]
+    letter = result.answer[0]
+    assert result.answer == f"{letter}) No, I am your father." and f"{letter}) No, I am your father." in result.choices
+    assert "father" not in result.pinned_comment
+    assert [f.text for f in result.flashes] == ["?", "A", "B", "C", "THINK FAST!", "3", "2", "1", "A, B OR C?"]
+    assert quiz.used_movies(make_settings(tmp_path)) == ["The Empire Strikes Back (1980)"]
+
+
+def test_movie_lines_that_fail_the_google_check_are_not_used(tmp_path):
+    import pytest
+
+    client = movie_client([[VADER], [VADER], [VADER]], ["1: FAIL: x", "1: FAIL: y", "1: FAIL: z"])
+    with pytest.raises(script_writer.ScriptError, match="Google"):
+        quiz.write_quiz(make_settings(tmp_path), "GTA V", "movie", notes="quote", client=client, rng=random.Random(1))
+
+
+def test_guess_the_movie_from_emojis_pops_them_up_and_hides_the_title(tmp_path):
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="emoji please",
+                             client=movie_client(emoji=UP), rng=random.Random(1))
+    assert result.script.split("!")[0] + "!" in quiz.EMOJI_HOOKS
+    assert "Three emojis, one famous movie. Emoji one: Balloons" in result.script
+    assert "Hint: It starts with a flying house! Three. Two. One. Comment the movie right now!" in result.script
+    assert [(p.word, p.emoji) for p in result.popups] == [("Balloons", "🎈"), ("house", "🏠"), ("man", "👴")]
+    assert result.answer == "Up" and result.title_card == "GUESS THE MOVIE IN 5 SECONDS"
+    assert "Up" not in result.pinned_comment.split()
+
+    words = va.estimate_word_timings(result.script, 20)
+    from trendclip import popups
+    assert len(popups.schedule(result.popups, words)) == 3  # far enough apart that all three pop up
+
+
+def test_an_emoji_line_that_names_the_movie_is_refused(tmp_path):
+    import pytest
+
+    bad = UP.model_copy(update={"movie": "Toy Story", "emojis": [
+        quiz.GeminiMovieEmoji.Pic(emoji="🤠", line="A toy cowboy named Woody.", word="cowboy"), *UP.emojis[1:]]})
+    with pytest.raises(script_writer.ScriptError, match="gave the movie away"):
+        quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="emoji",
+                        client=movie_client(emoji=bad), rng=random.Random(1))
+
+
+def test_movie_logic_debate_is_a_two_sided_vote(tmp_path):
+    seen = {}
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="movie logic",
+                             client=movie_client(logic=MARTY, seen=seen), rng=random.Random(1))
+    assert "MOVIE LOGIC DEBATE" in seen["prompts"][0] and result.mode == "movie"
+    assert result.answer == "No single answer: it's movie logic in Back to the Future (1985)."
+    assert result.flashes[0].text == "MOVIE LOGIC" and result.script.endswith("Comment vanish or time right now!")
+    assert quiz.paradox_history(make_settings(tmp_path)) == []  # a movie, not a paradox
+
+    long = MARTY.model_copy(update={"name": "Batman Begins (2005) - The Doing vs. Allowing Harm Dilemma"})
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="movie logic",
+                             client=movie_client(logic=long), rng=random.Random(1))
+    assert result.answer == "No single answer: it's movie logic in Batman Begins (2005)."
+
+
+def test_movie_shapes_take_turns(tmp_path):
+    settings = make_settings(tmp_path)
+    quiz._remember(settings, "movie", shape="quote", movie="A")
+    quiz._remember(settings, "movie", shape="emoji", movie="B")
+    assert quiz.pick_movie_shape(settings, random.Random(1)) == "logic"
+    assert quiz.pick_movie_shape(settings, random.Random(1), "do an EMOJI one") == "emoji"
+
+
+def test_the_leaderboard_reads_the_full_options_of_a_movie_quiz():
+    from trendclip import leaderboard, shorts
+
+    short = shorts.ShortVideo(filename="m.mp4", game="g", title="t", description="", hashtags=[], script="", voice="",
+                              background="", answer="B) No, I am your father.",
+                              render_settings={"flashes": [{"word": "Option A", "text": "A"}],
+                                               "choices": ["A) Luke, I am your father.", "B) No, I am your father.",
+                                                           "C) I am your father, Luke."]})
+    kind, answer, choices = leaderboard._from_short(short)
+    video = leaderboard.Video("v", "t", kind=kind, answer=answer, choices=choices)
+    assert kind == "quiz" and len(choices) == 3
+    assert leaderboard.judge(video, "B") == "correct"
+    assert leaderboard.judge(video, "it's 'No, I am your father'") == "correct"
+    assert leaderboard.judge(video, "A for sure") == "wrong"

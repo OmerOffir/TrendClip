@@ -99,6 +99,7 @@ class ShortScript(GeminiShort):
     end_card: str = ""
     flashes: list[Flash] = Field(default_factory=list)  # quiz: numbers / clues flashed on screen
     answer: str = ""  # quiz: the correct answer (also in the pinned comment)
+    choices: list[str] = Field(default_factory=list)  # quiz: the options in full, e.g. "B) No, I am your father."
 
 
 class GeminiSeries(BaseModel):
@@ -172,7 +173,7 @@ Rules:
 - Never wrap words in backticks, quotes or markdown.
 """
 
-ScriptMode = Literal["clip", "story", "math", "riddle", "trivia", "paradox"]  # math / riddle / trivia / paradox: quiz.py
+ScriptMode = Literal["clip", "story", "math", "riddle", "trivia", "paradox", "movie"]  # the quizzes: quiz.py
 
 STORY_BRIEF = """Format: STORYTIME. The gameplay is only a background to keep eyes on screen; the voiceover is a
 random, self-contained story that is NOT about the game or the footage.

@@ -6,6 +6,9 @@
 - trivia: a 3-option speed question built on a surprising true fact.
 - paradox: a mini story that traps the viewer between two answers that both seem right; viewers pick a
   side in one word ("Comment KEEP or RETURN"), which starts arguments in the replies.
+- movie: a famous movie, in one of three shapes picked in turn: a misquote trap (what did the character
+  ACTUALLY say? A / B / C, fact-checked on Google), guess the movie from 3 emojis (pop-up stickers), or a
+  movie-logic debate (two sides, like a paradox).
 
 Each number / clue flashes big in the middle of the screen the moment it is spoken (`Flash`), the video
 ends on a big "?" and "COMMENT YOUR ANSWER", and the answer goes in the pinned comment.
@@ -33,8 +36,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-QuizKind = Literal["math", "riddle", "trivia", "paradox"]
-QUIZ_MODES = ("math", "riddle", "trivia", "paradox")
+QuizKind = Literal["math", "riddle", "trivia", "paradox", "movie"]
+QUIZ_MODES = ("math", "riddle", "trivia", "paradox", "movie")
 FLASH_SECONDS = 1.4  # each step stays up 1.2-1.5 s (or until the next one)
 LAST_FLASH_SECONDS = 3.0
 END_CARD = "COMMENT YOUR ANSWER"
@@ -603,15 +606,20 @@ def _vote(word: str, fallback: str) -> str:
 
 
 def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
-                   rng: random.Random) -> ShortScript:
+                   rng: random.Random, movie: dict[str, str] | None = None) -> ShortScript:
+    """A paradox trap; with `movie` ({"prompt", "seed"}) a movie-logic debate in the same shape."""
     from . import script_writer as sw
     from .stickers import Reaction
 
     client, model = sw._gemini(settings, client)
-    idea = pick_paradox(settings, rng)
-    used = used_paradoxes(settings)[-40:]
-    prompt = PARADOX_PROMPT.format(idea=idea, used="; ".join(used) or "none yet", game=game,
-                                   notes=_notes(notes) + _variety(settings))
+    if movie:
+        idea = movie["seed"]
+        prompt = movie["prompt"]
+    else:
+        idea = pick_paradox(settings, rng)
+        used = used_paradoxes(settings)[-40:]
+        prompt = PARADOX_PROMPT.format(idea=idea, used="; ".join(used) or "none yet", game=game,
+                                       notes=_notes(notes) + _variety(settings))
     result, model = _ask(client, model, GeminiParadox, prompt, progress)
     setup = [_one_line(s, 22) for s in result.setup if s.strip()][:2]
     twist, side_a, side_b = _one_line(result.twist, 18), _one_line(result.side_a, 18), _one_line(result.side_b, 16)
@@ -626,7 +634,7 @@ def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, pr
     closing = f"Comment {vote_a.lower()} or {vote_b.lower()} right now!"
     lines = [hook, *setup, twist, f"Think fast! {dilemma}", side_a, side_b, debate, closing]
     picks = f"{vote_a} OR {vote_b}?"
-    flashes = [Flash(word=" ".join(setup[0].split()[:2]), text="PARADOX"),
+    flashes = [Flash(word=" ".join(setup[0].split()[:2]), text="MOVIE LOGIC" if movie else "PARADOX"),
                Flash(word="Think fast", text="THINK FAST!"),
                Flash(word=" ".join(side_a.split()[:2]), text=f"A) {vote_a}"),
                Flash(word=" ".join(side_b.split()[:2]), text=f"B) {vote_b}"),
@@ -634,10 +642,17 @@ def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, pr
                Flash(word="Comment", text=picks if len(picks) <= 16 else "A OR B?")]
     pinned = f"{debate} 👇\nTeam {vote_a} or Team {vote_b}? Defend your side!"
     resolution = " ".join(result.resolution.split())
-    _remember(settings, "paradox", idea=idea, name=result.name.strip() or idea)
-    script = _script(settings, game, model, "paradox", format, " ".join(lines), hook, flashes,
-                     f"No single answer: it's {result.name.strip() or 'a paradox'}.", pinned, result,
-                     on_screen=f"Paradox: {result.name.strip()}. {resolution}")
+    if movie:
+        title = re.split(r"\s+[-–—:]\s+", result.name.strip())[0][:40] or "a movie"  # "Batman Begins (2005)"
+        _remember(settings, "movie", shape="logic", movie=title, seed=idea)
+        answer = f"No single answer: it's movie logic in {title}."
+        on_screen = f"Movie logic: {result.name.strip()}. {resolution}"
+    else:
+        _remember(settings, "paradox", idea=idea, name=result.name.strip() or idea)
+        answer = f"No single answer: it's {result.name.strip() or 'a paradox'}."
+        on_screen = f"Paradox: {result.name.strip()}. {resolution}"
+    script = _script(settings, game, model, "movie" if movie else "paradox", format, " ".join(lines), hook,
+                     flashes, answer, pinned, result, on_screen=on_screen)
     twist_word = re.sub(r"[^\w']", "", side_b.split()[-1]) or "wrong"
     return script.model_copy(update={"reactions": [Reaction(word=twist_word, mood="shocked")]})
 
@@ -708,6 +723,8 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
         return _write_trivia(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     if kind == "paradox":
         return _write_paradox(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
+    if kind == "movie":
+        return _write_movie(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     client, model = sw._gemini(settings, client)
     used = used_riddles(settings)
     recent = {d.get("topic") for d in history(settings, "riddle")[-(len(RIDDLE_TOPICS) // 2):]}
@@ -1012,7 +1029,8 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
         flashes.append(Flash(word=question.split()[0], text="?"))
 
     client, model = sw._gemini(settings, client)
-    label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP", "paradox": "PARADOX TRAP"}[kind]
+    label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP", "paradox": "PARADOX TRAP",
+             "movie": "MOVIE QUIZ"}[kind]
     prompt = "\n".join([f"Package this {label} quiz Short the creator wrote.",
                         f"Background gameplay: {game}.{_notes(notes)}",
                         *([f"The correct answer is {solved[0]} ({solved[1]})."] if solved else []),
@@ -1040,7 +1058,8 @@ class GeminiOwnQuiz(BaseModel):
 
 
 def _script(settings: Settings, game: str, model: str, mode: str, format: str, script: str, hook: str,
-            flashes: list[Flash], answer: str, pinned: str, pack, *, on_screen: str, card: str = "") -> ShortScript:
+            flashes: list[Flash], answer: str, pinned: str, pack, *, on_screen: str, card: str = "",
+            choices: list[str] | None = None, popups: list | None = None) -> ShortScript:
     from . import script_writer as sw
 
     card = card or frame_zero(pack.title_card, hook)
@@ -1058,7 +1077,9 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         ending="question",
         end_card=END_CARD,
         flashes=flashes,
-        answer=answer,
+        answer=answer[:80],
+        choices=[c[:100] for c in choices or []],
+        popups=popups or [],
         game=game,
         model=model,
         mode=mode,
@@ -1067,3 +1088,218 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         word_count=len(script.split()),
         estimated_seconds=sw.estimate_seconds(script),
     )
+
+
+# --------------------------------------------------------------------------- movie quizzes
+
+
+MOVIE_SHAPES = ("quote", "emoji", "logic")
+MOVIE_GENRES = ("animated", "sci-fi", "action", "comedy", "superhero", "fantasy", "horror", "family adventure",
+                "thriller", "romance", "crime", "space", "video game adaptation", "musical", "war", "sports")
+MOVIE_ERAS = ("the 1970s or 1980s", "the 1990s", "the 1990s", "the 2000s", "the 2000s", "the 2010s", "the 2010s",
+              "the 2020s")
+MOVIE_CANDIDATES = 3
+MOVIE_HOOKS = ("Bet you get this one wrong.", "Movie fans, prove it.", "Think you know movies? Prove it.",
+               "Your memory is lying to you.", "Almost everyone misquotes this.")
+EMOJI_HOOKS = ("Guess the movie in five seconds!", "Name this movie in five seconds!", "Five seconds. One movie. Go!")
+
+
+def movie_history(settings: Settings) -> list[dict[str, str]]:
+    return history(settings, "movie")
+
+
+def used_movies(settings: Settings) -> list[str]:
+    return _unique([d.get("movie", "") for d in movie_history(settings)])
+
+
+def pick_movie_shape(settings: Settings, rng: random.Random, notes: str = "") -> str:
+    """The shape the notes ask for, else one not used in the last two movie quizzes."""
+    low = notes.lower()
+    for shape, words in (("emoji", ("emoji",)), ("quote", ("quote", "line", "said", "say")),
+                         ("logic", ("logic", "debate", "paradox", "what if"))):
+        if any(w in low for w in words):
+            return shape
+    recent = [d.get("shape") for d in movie_history(settings)[-2:]]
+    return rng.choice([s for s in MOVIE_SHAPES if s not in recent] or list(MOVIE_SHAPES))
+
+
+def _movie_seed(rng: random.Random) -> str:
+    return f"a famous {rng.choice(MOVIE_GENRES)} movie from {rng.choice(MOVIE_ERAS)}"
+
+
+class GeminiMovieQuote(BaseModel):
+    movie: str = Field(description="The movie and year, e.g. 'The Empire Strikes Back (1980)'.")
+    hook: str = Field("", description="A spoken dare, at most 7 words, e.g. 'Almost everyone misquotes this.'")
+    question: str = Field(description=(
+        "At most 14 words: 'What did [character] ACTUALLY say ...?' or 'What is the REAL line ...?', e.g. 'What "
+        "did Darth Vader actually say to Luke in Star Wars?'"))
+    trap: str = Field(description=(
+        "The famous MISQUOTE most people remember, WRONG, at most 9 words, e.g. 'Luke, I am your father.'"))
+    distractor: str = Field(description="A believable wrong version, at most 9 words, e.g. 'I am your father, Luke.'")
+    correct: str = Field(description=(
+        "The line as actually said in the movie, word for word, at most 9 words, e.g. 'No, I am your father.' "
+        "Must be easy to verify on Google."))
+    fact: str = Field(description="One short sentence proving it, e.g. 'In the film Vader says \"No, I am your father\"; he never says \"Luke\".'")
+    title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the answer, e.g. '90% Misquote This Movie Line 🎬'.")
+    description: str = Field(description="One or two short sentences daring viewers to comment A, B or C, no hashtags.")
+    hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #movies #moviequiz #starwars #quiz.")
+    title_card: str = Field(description="3 to 7 word ALL-CAPS banner, e.g. 'YOU'VE BEEN SAYING IT WRONG'. No emoji.")
+
+
+class GeminiMovieQuoteSet(BaseModel):
+    candidates: list[GeminiMovieQuote] = Field(description="The misquote traps, each from a different movie.")
+
+
+class GeminiMovieEmoji(BaseModel):
+    class Pic(BaseModel):
+        emoji: str = Field(description="One emoji, e.g. 🎈.")
+        line: str = Field(description=(
+            "A spoken description of the emoji, 5 to 8 words, starting with the thing, e.g. 'Balloons, "
+            "hundreds of colorful balloons.' Never the movie's title or a character's name."))
+        word: str = Field(description="The thing's word as written in the line, e.g. 'Balloons'.")
+
+    movie: str = Field(description="The movie's title as people would type it, e.g. 'Up'. No year.")
+    year: str = Field(description="Its release year, e.g. '2009'.")
+    emojis: list[Pic] = Field(description="Exactly 3 emojis that together point to this movie and no other.")
+    hint: str = Field(description=(
+        "One spoken hint, at most 10 words, never a word of the title, e.g. 'It starts with a flying house!'"))
+    title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the movie, e.g. 'Guess The Movie From 3 Emojis 🎬'.")
+    description: str = Field(description="One or two short sentences daring viewers to comment the movie, no hashtags.")
+    hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #guessthemovie #emojichallenge #movies #quiz.")
+    title_card: str = Field(description="3 to 7 word ALL-CAPS banner, e.g. 'GUESS THE MOVIE IN 5 SECONDS'. No emoji.")
+
+
+MOVIE_QUOTE_PROMPT = """Write {count} different MOVIE MISQUOTE TRAP candidates for a Short (15-20 seconds), each
+from a different famous movie, one per idea in this order: {seeds}. Each is a line almost everyone quotes
+wrong (the "Mandela effect"), with three options: the famous misquote (the trap), a believable wrong
+version, and the line as actually said in the movie, word for word.
+What makes a candidate good: the movie is famous worldwide, the misquote is how most people really say it,
+and the real line is documented (the film's script, reputable sources). No lines that differ only by "Oh"
+or a comma: the difference must be clear when read aloud. Each option at most 9 words, easy to say.
+Movies already used on the channel, pick others: {used}.
+Background gameplay: {game}.{notes}"""
+
+MOVIE_EMOJI_PROMPT = """Write a GUESS THE MOVIE FROM 3 EMOJIS Short (about 15 seconds). The movie: {seed}, famous
+enough that most people have seen it or know it. Pick 3 emojis that together point to this movie and no
+other (its most iconic image, character or moment), in the order that makes it click at the last one,
+plus one spoken hint that helps without giving the title away. Never say or write the title, a word of
+it, or a character's name anywhere except "movie".
+Movies already used on the channel, pick another: {used}.
+Background gameplay: {game}.{notes}"""
+
+MOVIE_LOGIC_PROMPT = """Write a MOVIE LOGIC DEBATE Short (20-25 seconds) in the shape of a paradox trap: a famous
+movie's plot or rules, pushed to a question with two answers that both seem right, so viewers pick a side
+and argue in the comments, e.g. "If Marty McFly stops his parents from meeting, does he vanish at once or
+does he have time to fix it?" The movie: {seed}. Say the movie or character in the story so viewers know it.
+Shape: dare hook, the situation in 1-2 sentences, the twist that springs the trap, "Think fast!" plus the
+dilemma, both branches ("If ... / But if ..."), then an either/or question that splits viewers into two
+camps, and they comment one word for their side. Put the movie's title and year in `name`.
+Movies already used on the channel, pick another: {used}.
+Background gameplay: {game}.{notes}"""
+
+
+def _write_movie(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
+                 rng: random.Random) -> ShortScript:
+    shape = pick_movie_shape(settings, rng, notes)
+    used = "; ".join(used_movies(settings)[-50:]) or "none yet"
+    extra = _notes(notes) + _variety(settings)
+    if shape == "logic":
+        seed = _movie_seed(rng)
+        prompt = MOVIE_LOGIC_PROMPT.format(seed=seed, used=used, game=game, notes=extra)
+        return _write_paradox(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng,
+                              movie={"prompt": prompt, "seed": seed})
+    if shape == "emoji":
+        return _write_movie_emoji(settings, game, used=used, extra=extra, format=format, progress=progress,
+                                  client=client, rng=rng)
+    return _write_movie_quote(settings, game, used=used, extra=extra, format=format, progress=progress,
+                              client=client, rng=rng)
+
+
+def _quote(text: str) -> str:
+    return " ".join(re.sub(r"[\"“”`*#]", "", text or "").split()[:10]).strip(" '‘’")
+
+
+def _write_movie_quote(settings: Settings, game: str, *, used: str, extra: str, format: str, progress: ProgressFn,
+                       client, rng: random.Random) -> ShortScript:
+    from . import script_writer as sw
+    from .stickers import Reaction
+
+    client, model = sw._gemini(settings, client)
+    result = None
+    for _ in range(TRIVIA_ROUNDS):
+        seeds = [_movie_seed(rng) for _ in range(MOVIE_CANDIDATES)]
+        prompt = MOVIE_QUOTE_PROMPT.format(count=len(seeds), seeds="; ".join(seeds), used=used, game=game, notes=extra)
+        batch, model = _ask(client, model, GeminiMovieQuoteSet, prompt, progress)
+        usable = [c for c in batch.candidates
+                  if all(map(_quote, (c.trap, c.distractor, c.correct)))
+                  and len({_quote(o).lower() for o in (c.trap, c.distractor, c.correct)}) == 3]
+        if not usable:
+            continue
+        progress(None, "Checking the movie lines on Google")
+        verdicts = fact_check(client, model, usable, progress)
+        passed = [c for c, (ok, _) in zip(usable, verdicts) if ok]
+        for c, (ok, why) in zip(usable, verdicts):
+            if not ok:
+                logger.info("Movie quote rejected: %s -> %s (%s)", c.question, c.correct, why)
+        if passed:
+            result = rng.choice(passed)
+            break
+        used += "; " + "; ".join(c.movie for c in usable)
+    if result is None:
+        raise sw.ScriptError("No movie line passed the Google check; try again")
+    options = [_quote(result.trap), _quote(result.distractor), _quote(result.correct)]
+    correct = options[2]
+    order = options[:]
+    rng.shuffle(order)
+    letter = "ABC"[order.index(correct)]
+    question = (_one_line(result.question, 15).rstrip(".!?") or "What is the real line") + "?"
+    hook = _one_line(result.hook, 8) if result.hook.strip() and rng.random() < 0.5 else rng.choice(MOVIE_HOOKS)
+    asks = [f"Option {l}: {o.rstrip('.!?')}." for l, o in zip("ABC", order)]
+    lines = [hook, question, *asks, "Think fast! Three. Two. One.", "Only one is the real line.",
+             "Comment A, B or C right now!"]
+    flashes = [Flash(word=question.split()[0], text="?"), *[Flash(word=f"Option {l}", text=l) for l in "ABC"],
+               Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
+               Flash(word="one", text="1"), Flash(word="Comment", text="A, B OR C?")]
+    choices = [f"{l}) {o}" for l, o in zip("ABC", order)]
+    _remember(settings, "movie", shape="quote", movie=result.movie.strip(), answer=correct)
+    pinned = public_pin(question, "only one of them is word for word")
+    script = _script(settings, game, model, "movie", format, " ".join(lines), hook, flashes, f"{letter}) {correct}",
+                     pinned, result, choices=choices,
+                     on_screen=f"Answer: {letter}) {correct} ({result.movie.strip()}). {result.fact.strip()}")
+    return script.model_copy(update={"reactions": [Reaction(word="real", mood="suspicious")]})
+
+
+def _write_movie_emoji(settings: Settings, game: str, *, used: str, extra: str, format: str, progress: ProgressFn,
+                       client, rng: random.Random) -> ShortScript:
+    from . import script_writer as sw
+    from .popups import Popup
+
+    client, model = sw._gemini(settings, client)
+    seed = _movie_seed(rng)
+    result, model = _ask(client, model, GeminiMovieEmoji,
+                         MOVIE_EMOJI_PROMPT.format(seed=seed, used=used, game=game, notes=extra), progress)
+    movie = _one_line(result.movie, 8).rstrip(".")
+    title_words = {w for w in re.findall(r"[a-z0-9']+", movie.lower()) if w not in ("the", "a", "an", "of")}
+    pics = [p for p in result.emojis if p.emoji.strip() and p.line.strip()][:3]
+    if len(pics) < 3 or not movie:
+        raise sw.ScriptError("Gemini wrote an emoji quiz without 3 emojis; try again")
+    names = ("one", "two", "three")
+    lines, popups = [], []
+    for name, pic in zip(names, pics):
+        line = _one_line(pic.line, 9)
+        if title_words & set(re.findall(r"[a-z0-9']+", line.lower())):
+            raise sw.ScriptError("Gemini gave the movie away in an emoji line; try again")
+        lines.append(f"Emoji {name}: {line}")
+        word = pic.word.strip() or line.split()[0]
+        popups.append(Popup(word=word[:40], emoji=pic.emoji.strip()[:16], query=word[:60]))
+    hint = safe_hint(result.hint, movie, *title_words) or "it's a famous one"
+    hook = rng.choice([h for h in EMOJI_HOOKS if h.lower() not in {o.lower() for o in recent_openings(settings)}]
+                      or EMOJI_HOOKS)
+    script = " ".join([hook, "Three emojis, one famous movie.", *lines, f"Hint: {hint.rstrip('.!')}!",
+                       "Three. Two. One.", "Comment the movie right now!"])
+    flashes = [Flash(word="Hint", text="HINT"), *COUNTDOWN_FLASHES, Flash(word="Comment", text="WHICH MOVIE?")]
+    _remember(settings, "movie", shape="emoji", movie=f"{movie} ({result.year.strip()})", answer=movie)
+    pinned = public_pin("Which movie is it?", hint)
+    return _script(settings, game, model, "movie", format, script, hook, flashes, movie, pinned, result,
+                   popups=popups, card=result.title_card or "GUESS THE MOVIE IN 5 SECONDS",
+                   on_screen=f"Answer: {movie} ({result.year.strip()}). Emojis: {' '.join(p.emoji for p in pics)}")

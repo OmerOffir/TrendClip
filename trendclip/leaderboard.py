@@ -150,7 +150,9 @@ def judge(video: Video, text: str) -> str:
     if not video.answer:
         return "comment"
     if video.choices:
-        right = next((l for l, c in video.choices if _words(c) == _words(video.answer)), "")
+        lettered = _CHOICE.match(video.answer)  # "B) No, I am your father."
+        right = lettered.group(1) if lettered else next(
+            (l for l, c in video.choices if _words(c) == _words(video.answer)), "")
         if not picks:
             return "comment"
         return "correct" if picks == {right} else "wrong"
@@ -281,7 +283,8 @@ def _norm_title(title: str) -> str:
 
 def _from_short(short: shorts.ShortVideo) -> tuple[str, str, list[tuple[str, str]]]:
     flashes = [f.get("text", "") for f in (short.render_settings.get("flashes") or []) if isinstance(f, dict)]
-    choices = [(m.group(1), m.group(2)) for t in flashes if (m := _CHOICE.match(t))]
+    full = [t for t in short.render_settings.get("choices") or [] if isinstance(t, str)]
+    choices = [(m.group(1), m.group(2)) for t in (full or flashes) if (m := _CHOICE.match(t))]
     if short.answer.startswith(NO_ANSWER):
         return "paradox", "", choices
     return ("quiz" if short.answer else "story"), short.answer, choices if short.answer else []
@@ -527,8 +530,10 @@ def _reply_state(settings: Settings, board: Board, data: dict[str, Any], now: da
     return out
 
 
-def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None) -> list[dict[str, Any]]:
-    """Queue one reply per fan per video (the comment that scored, scoring ones first); returns what was queued."""
+def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None,
+                 wait: bool = True) -> list[dict[str, Any]]:
+    """Queue one reply per fan per video (the comment that scored, scoring ones first); returns what was queued.
+    wait=False: quiz / paradox videos too, without the REPLY_AFTER_HOURS spoiler wait."""
     now = now or datetime.now(timezone.utc)
     rank_of = ranks(board.people)
     total_of = {p["id"]: p["points"] for p in board.people}
@@ -537,7 +542,8 @@ def plan_replies(settings: Settings, board: Board, today: date, now: datetime | 
         data = _load_replies(settings)
         day = today.isoformat()
         used = (data["sent"]["count"] if data["sent"]["date"] == day else 0) + len(data["pending"])
-        ready = [c for state, c in _reply_state(settings, board, data, now).values() if state == "ready"]
+        ready = [c for state, c in _reply_state(settings, board, data, now).values()
+                 if state == "ready" or (state == "quiz_wait" and not wait)]
         queued = []
         for c in sorted(ready, key=lambda c: (c.points == 0, order.get(c.result, 9), c.published)):
             if used >= settings.youtube_reply_daily_max:

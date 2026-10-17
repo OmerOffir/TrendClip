@@ -260,6 +260,22 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    not the answer. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
    keeps your words, removes any subscribe line and ends on the comment line.
 
+   **🎬 Movie quiz** (15–25 s) is built on a famous movie from any year. It takes turns between three
+   shapes; notes like "emoji", "quote" or "movie logic" pick one.
+   - **Misquote trap:** "What did Darth Vader ACTUALLY say to Luke? Option A: Luke, I am your father.
+     Option B: No, I am your father. Option C: I am your father, Luke. Think fast! Three. Two. One. Only
+     one is the real line. Comment A, B or C right now!" Gemini writes 3 candidates and checks each line
+     on Google, and only a line that passes is used. **A**, **B** and **C** flash on screen.
+   - **Guess the movie from 3 emojis:** "Guess the movie in five seconds! Three emojis, one famous movie.
+     Emoji one: balloons… Hint: it starts with a flying house!" Each emoji pops up as a sticker when it's
+     said, and the title is never spoken.
+   - **Movie logic debate**, shaped like the paradox trap: "If Marty McFly stops his parents from
+     meeting, does he vanish at once or get time to fix it?" Viewers comment one word for their side.
+
+   As with the other quizzes, the answer stays off the video and goes into the pinned comment and Discord
+   (as a spoiler), so comments score on the leaderboard. Movies already used are listed in
+   `output/movie_history.json` and are not picked again.
+
    **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock
    hook already in the middle of the action; 3–12 s the problem gets about twice as bad; 12–18 s is
    the twist; 18–22 s is an unfinished sentence that flows back into the first line, so the replay
@@ -523,7 +539,7 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 |---------|--------------|
 | `/today` | Today's 14:30 and 23:00 videos, with **Show** and **Upload** buttons, plus a copy-ready caption (text and hashtags) for YouTube, TikTok and Instagram |
 | `/slot time:14:30` | Sends the video planned for that slot (`day:` for another day) |
-| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 14:30 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle** or **🌍 Trivia trap** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
+| `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 14:30 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle**, **🌍 Trivia trap**, **🌀 Paradox trap** or **🎬 Movie quiz** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
 | `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
 | `/videos` | Videos that are made but not planned or uploaded |
@@ -642,7 +658,9 @@ The bot reads the comments in the morning, at 13:30, and every `YOUTUBE_REPLY_CH
 turns it off), and says in Discord how many replies it queued. **`/replies`** does it now: it reads the
 comments, queues a reply to every unanswered one, and sends the first right away. Then it shows the
 counts: replied, in the queue, waiting for the quiz 24 h (and when the next one opens), not checked yet,
-spam, refused, and sent today. `YOUTUBE_AUTO_REPLIES=false` turns replies off; the record is
+spam, refused, and sent today. **`/replies now:True`** also replies on quiz and paradox videos younger
+than 24 h, on YouTube and Instagram (those replies say who was right, so they show the answer).
+`YOUTUBE_AUTO_REPLIES=false` turns replies off; the record is
 `output/comment_replies.json`.
 
 ### Instagram replies

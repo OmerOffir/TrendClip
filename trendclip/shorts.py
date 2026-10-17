@@ -110,6 +110,7 @@ class RenderRequest(BaseModel):
     channel_handle: str = Field("", max_length=32)
     flashes: list[Flash] = Field(default_factory=list, max_length=30)  # quiz numbers / clues
     answer: str = Field("", max_length=80)
+    choices: list[str] = Field(default_factory=list, max_length=6)  # quiz options in full: "A) ...", for the leaderboard
 
 
 class SeriesPart(BaseModel):

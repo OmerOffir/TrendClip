@@ -27,7 +27,8 @@ MESSAGE_MAX = 2000
 CUSTOM_ID_MAX = 100
 OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
 PENDING_TEXTS = 30
-NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap"}
+NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap",
+         "movie": "movie quiz"}
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["14:30", "23:00"]
 REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
@@ -56,6 +57,11 @@ def allowed(settings: Settings, interaction: discord.Interaction) -> bool:
 
 def clip_text(text: str, limit: int = MESSAGE_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def already_on(item: planner.PlanItem, short: shorts.ShortVideo, platform: str) -> bool:
+    """Uploaded by TrendClip, or marked posted by hand (Upload tab or plan) after posting it in the app."""
+    return bool(short.uploads.get(platform) or short.posted.get(platform) or platform in item.posted)
 
 
 def chunks(lines: list[str], limit: int = MESSAGE_MAX - 50) -> list[str]:
@@ -575,9 +581,10 @@ class TrendClipBot(discord.Client):
             await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
         await self.queue_replies(channel, board)
 
-    async def queue_replies(self, channel: discord.abc.Messageable, board: leaderboard.Board) -> None:
+    async def queue_replies(self, channel: discord.abc.Messageable, board: leaderboard.Board,
+                            wait: bool = True) -> None:
         """A YouTube reply to every comment, sent by reply_loop a few minutes apart; flagged comments are
-        listed so they can be removed."""
+        listed so they can be removed. wait=False skips the spoiler wait on quiz videos."""
         skipped = await asyncio.to_thread(leaderboard.new_skips, self.settings, board)
         if skipped:
             lines = [f"🚫 **{len(skipped)} comment(s) look like spam, links or rude**: no reply, no points. "
@@ -589,7 +596,7 @@ class TrendClipBot(discord.Client):
         if not self.settings.youtube_auto_replies or not publish.can_comment():
             return
         queued = await asyncio.to_thread(leaderboard.plan_replies, self.settings, board,
-                                         assistant.today(self.settings))
+                                         assistant.today(self.settings), None, wait)
         if queued:
             kinds = {"first": "🥇 first correct", "correct": "✅ correct", "voted": "🗳️ votes",
                      "wrong": "🪤 trapped", "comment": "💬 comments", "again": "🔁 extra comments"}
@@ -635,14 +642,14 @@ class TrendClipBot(discord.Client):
             return "Reconnect YouTube once (dashboard → Upload → Disconnect → Connect YouTube) to allow replies."
         return ""
 
-    async def check_comments(self, channel: discord.abc.Messageable) -> leaderboard.Board:
+    async def check_comments(self, channel: discord.abc.Messageable, wait: bool = True) -> leaderboard.Board:
         """Read the comments now and queue a reply to every new one."""
         async with self.comments_lock:
             board, _ = await asyncio.to_thread(leaderboard.refresh, self.settings)
-        await self.queue_replies(channel, board)
+        await self.queue_replies(channel, board, wait)
         return board
 
-    async def check_instagram(self, channel: discord.abc.Messageable) -> leaderboard.Board:
+    async def check_instagram(self, channel: discord.abc.Messageable, wait: bool = True) -> leaderboard.Board:
         """Read the Instagram comments now, list the flagged ones and queue a reply to every new fan."""
         settings = self.settings
         async with self.ig_lock:
@@ -656,7 +663,8 @@ class TrendClipBot(discord.Client):
                       + (f" <{reels[c.video_id]}>" if reels.get(c.video_id) else "") for c in skipped[:15]]
             for text in chunks(lines):
                 await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
-        queued = await asyncio.to_thread(ig_replies.plan_replies, settings, board, assistant.today(settings))
+        queued = await asyncio.to_thread(ig_replies.plan_replies, settings, board, assistant.today(settings), None,
+                                         wait)
         if queued:
             invites = sum(settings.instagram_youtube_name in q["text"] for q in queued)
             await channel.send(clip_text(
@@ -718,12 +726,12 @@ class TrendClipBot(discord.Client):
     def auto_targets(self, item: planner.PlanItem, short: shorts.ShortVideo) -> tuple[list[str], list[str]]:
         """The platforms the slot's Short goes to by itself, and notes on the ones it can't."""
         go, notes = [], []
-        if "youtube" in item.platforms and not short.uploads.get("youtube"):
+        if "youtube" in item.platforms and not already_on(item, short, "youtube"):
             if publish.TOKEN_FILE.is_file():
                 go.append("youtube")
             else:
                 notes.append("YouTube isn't connected (dashboard → Upload → Connect YouTube), so it wasn't posted there.")
-        if "instagram" in item.platforms and not short.uploads.get("instagram"):
+        if "instagram" in item.platforms and not already_on(item, short, "instagram"):
             if instagram.configured(self.settings):
                 go.append("instagram")
             else:
@@ -751,7 +759,7 @@ class TrendClipBot(discord.Client):
             return
         go, notes = self.auto_targets(item, short)
         if not go:
-            done = [p for p in ("youtube", "instagram") if short.uploads.get(p)]
+            done = [p for p in ("youtube", "instagram") if already_on(item, short, p)]
             if done:
                 notes.insert(0, f"**{short.title}** is already on {' and '.join(PLATFORM_NAMES[p] for p in done)}.")
             if notes:
@@ -898,7 +906,8 @@ async def act_delete(bot: TrendClipBot, interaction: discord.Interaction, filena
 
 KINDS = {"story": ("📖 Story", discord.ButtonStyle.success), "math": ("🧮 Math challenge", discord.ButtonStyle.primary),
          "riddle": ("🧩 Riddle", discord.ButtonStyle.primary), "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary),
-         "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary)}
+         "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary),
+         "movie": ("🎬 Movie quiz", discord.ButtonStyle.primary)}
 
 
 def kind_buttons(game: str | None = None) -> list[ActionButton | None]:
@@ -1068,9 +1077,9 @@ async def slot_cmd(interaction: discord.Interaction, time: SlotChoice, day: str 
     await bot.show_short(interaction, item.short, f"📅 {day_label(bot.settings, when)} · {time}")
 
 
-@app_commands.command(name="create", description="Create a video: a story, math challenge, riddle, trivia or paradox trap")
+@app_commands.command(name="create", description="Create a video: a story, math, riddle, trivia, paradox or movie quiz")
 @app_commands.describe(game="Optional: the gameplay to use (default: a random game)",
-                       type="Story, math challenge, riddle, trivia trap or paradox trap (I ask with buttons when you leave it out)",
+                       type="Story, math challenge, riddle, trivia trap, paradox trap or movie quiz (I ask with buttons when you leave it out)",
                        text="Optional: your own story / quiz, spoken word for word (like Fill the rest in the dashboard)")
 @app_commands.choices(type=[app_commands.Choice(name=label, value=kind) for kind, (label, _) in KINDS.items()])
 @app_commands.autocomplete(game=game_choices)
@@ -1261,7 +1270,8 @@ def reply_overview_lines(settings: Settings, platform: str, o: dict[str, Any], s
 
 
 @app_commands.command(name="replies", description="Read the YouTube and Instagram comments now and reply to new fans")
-async def replies_cmd(interaction: discord.Interaction) -> None:
+@app_commands.describe(now="True: reply on quiz videos too, without the 24 h wait (the replies show the answer)")
+async def replies_cmd(interaction: discord.Interaction, now: bool = False) -> None:
     bot = _bot(interaction)
     settings = bot.settings
     youtube_off, ig_on = bot.replies_on(), ig_replies.enabled(settings)
@@ -1275,7 +1285,7 @@ async def replies_cmd(interaction: discord.Interaction) -> None:
     else:
         lines.append(f"▶️ **YouTube replies** (comments from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)")
         try:
-            board = await bot.check_comments(interaction.channel)
+            board = await bot.check_comments(interaction.channel, wait=not now)
             sent = await asyncio.to_thread(leaderboard.send_next_reply, settings, board.channel_id, today)
             o = await asyncio.to_thread(leaderboard.reply_overview, settings, board, today)
             lines += reply_overview_lines(settings, "YouTube", o, sent, "YOUTUBE_REPLY_DAILY_MAX")
@@ -1286,7 +1296,7 @@ async def replies_cmd(interaction: discord.Interaction) -> None:
         lines.append("")
         lines.append(f"📸 **Instagram replies** (Reels from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)")
         try:
-            board = await bot.check_instagram(interaction.channel)
+            board = await bot.check_instagram(interaction.channel, wait=not now)
             sent = await asyncio.to_thread(ig_replies.send_next_reply, settings, today)
             o = await asyncio.to_thread(ig_replies.reply_overview, settings, board, today)
             if not board.comments:
@@ -1383,7 +1393,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "**TrendClip bot**",
         "`/today` today's 14:30 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
         "`/slot time:14:30` send me the video for a slot (`day:` for another day)",
-        "`/create` make a video: I ask story, math challenge, riddle, trivia trap or paradox trap (`game:` picks the gameplay, "
+        "`/create` make a video: I ask story, math challenge, riddle, trivia trap, paradox trap or movie quiz (`game:` picks the gameplay, "
         "`text:` or ✍️ uses your own words)",
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today) · **Post on Instagram** "
@@ -1393,7 +1403,8 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
         "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
-        "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours)",
+        "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours); "
+        "`now:True` replies on quiz videos too, without the 24 h spoiler wait",
     ]), ephemeral=True)
 
 

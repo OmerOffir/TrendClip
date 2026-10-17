@@ -334,9 +334,9 @@ def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
 
     ids = [b.item.custom_id for b in discord_bot.kind_buttons("GTA V")]
     assert ids == ["tc:mk:story:GTA V", "tc:mk:math:GTA V", "tc:mk:riddle:GTA V", "tc:mk:trivia:GTA V",
-                   "tc:mk:paradox:GTA V"]
+                   "tc:mk:paradox:GTA V", "tc:mk:movie:GTA V"]
     assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
-        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia", "tc:mk:paradox"]
+        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia", "tc:mk:paradox", "tc:mk:movie"]
 
     made, asked = [], []
 
@@ -385,12 +385,12 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
         def replies_on(self):
             return self.why
 
-        async def check_comments(self, channel):
-            steps.append("read")
+        async def check_comments(self, channel, wait=True):
+            steps.append("read" if wait else "read now")
             return leaderboard.Board(channel_id="UCme")
 
-        async def check_instagram(self, channel):
-            steps.append("ig read")
+        async def check_instagram(self, channel, wait=True):
+            steps.append("ig read" if wait else "ig read now")
             return leaderboard.Board()
 
     async def fake_reply(interaction, content, **kw):
@@ -409,6 +409,10 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
     assert said == ["YouTube isn't connected."] and steps == []
 
     interaction.client = Bot()
+    asyncio.run(discord_bot.replies_cmd.callback(interaction, now=True))
+    assert steps == ["defer", "read now", "send"]
+    steps.clear()
+    interaction.response = Response()
     asyncio.run(discord_bot.replies_cmd.callback(interaction))
     assert steps == ["defer", "read", "send"]
     text = "\n".join(said[1:])
@@ -501,6 +505,13 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
     short.uploads = {"youtube": {"url": "u"}, "instagram": {"url": "i"}}
     ran.clear()
     item.platforms = ["youtube", "instagram"]
+    channel = Channel()
+    asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
+    assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]
+
+    # posted by hand in the YouTube / Instagram app, then ticked "posted" in the Upload tab or the plan
+    short.uploads, short.posted = {}, {"youtube": True}
+    item.posted = {"instagram": item.date}
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
     assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]

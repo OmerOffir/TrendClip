@@ -108,6 +108,7 @@
     reactions: [], // [{word, mood}] reaction-sticker beats from Gemini
     flashes: [], // quiz: [{word, text}] numbers / clues flashed on screen
     answer: "", // quiz: the correct answer
+    choices: [], // quiz: the options in full, for the leaderboard
     stickerLib: null,
     format: "short", // short | long | multi
     parts: null, // multi: [{script, title, desc, tags, titleCard, endCard, popups}] x2; the form shows parts[part]
@@ -137,6 +138,7 @@
     draft.reactions = state.reactions;
     draft.flashes = state.flashes;
     draft.answer = state.answer;
+    draft.choices = state.choices;
     draft.stickers = els.stickers.checked;
     draft.ctaSticker = els.ctaSticker.checked;
     draft.length = els.length.value;
@@ -151,10 +153,11 @@
   // ---- formats & parts -------------------------------------------------------------------
 
   const emptyPart = () => ({ script: "", title: "", desc: "", tags: "", titleCard: "", endCard: "", popups: [], reactions: [],
-    flashes: [], answer: "" });
+    flashes: [], answer: "", choices: [] });
 
   function capturePart() {
-    const p = { popups: state.popups, reactions: state.reactions, flashes: state.flashes, answer: state.answer };
+    const p = { popups: state.popups, reactions: state.reactions, flashes: state.flashes, answer: state.answer,
+      choices: state.choices };
     for (const key of PART_FIELDS) p[key] = els[key].value;
     return p;
   }
@@ -165,6 +168,7 @@
     state.reactions = Array.isArray(p.reactions) ? p.reactions : [];
     state.flashes = Array.isArray(p.flashes) ? p.flashes : [];
     state.answer = p.answer || "";
+    state.choices = p.choices || [];
     renderPopups();
     renderReactions();
   }
@@ -266,6 +270,7 @@
       if (Array.isArray(draft.reactions)) state.reactions = draft.reactions;
       if (Array.isArray(draft.flashes)) state.flashes = draft.flashes;
       state.answer = draft.answer || "";
+      state.choices = draft.choices || [];
       if (draft.stickers != null) els.stickers.checked = draft.stickers;
       if (draft.ctaSticker != null) els.ctaSticker.checked = draft.ctaSticker;
       state.clip = draft.clip || null;
@@ -387,7 +392,7 @@
       + "mind-blowing than the last. Open with the craziest one as the hook.",
   };
 
-  const QUIZ = ["math", "riddle", "trivia", "paradox"];
+  const QUIZ = ["math", "riddle", "trivia", "paradox", "movie"];
   const isQuiz = () => QUIZ.includes(els.mode.value);
 
   function renderIdeas() {
@@ -488,7 +493,8 @@
     els.write.textContent = busyScript ? "Writing…"
       : multi ? "Write Part 1 + Part 2 with Gemini"
       : quiz ? { math: "Write a math challenge", riddle: "Write a riddle with Gemini",
-        trivia: "Write a trivia trap with Gemini", paradox: "Write a paradox trap with Gemini" }[els.mode.value]
+        trivia: "Write a trivia trap with Gemini", paradox: "Write a paradox trap with Gemini",
+        movie: "Write a movie quiz with Gemini" }[els.mode.value]
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);
@@ -552,6 +558,7 @@
     state.reactions = r.reactions || [];
     state.flashes = r.flashes || [];
     state.answer = r.answer || "";
+    state.choices = r.choices || [];
     setSelect(els.voice, r.voice);
     setSelect(els.rate, r.rate);
     setSelect(els.highlight, r.highlight);
@@ -888,6 +895,7 @@
         const wasQuiz = state.flashes.length > 0;
         state.flashes = r.flashes || [];
         state.answer = r.answer || "";
+        state.choices = r.choices || [];
         if (state.flashes.length) els.endCard.value = r.end_card || "";
         else if (wasQuiz) els.endCard.value = "";
         setMood(r.music_mood);
@@ -999,6 +1007,7 @@
           reactions: state.reactions.filter((r) => inScript(r.word)),
           flashes: state.flashes,
           answer: state.answer,
+          choices: state.choices,
         }),
       });
       state.renderJob = body.id;

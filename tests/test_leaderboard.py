@@ -285,6 +285,13 @@ def test_quiz_replies_wait_24h_but_story_replies_dont(settings):
     assert {q["comment_id"] for q in later} == {"b1", "a2", "c1", "d1"}
 
 
+def test_replies_now_skips_the_quiz_wait(settings):
+    board = _quiz_board("2026-10-14T00:00:00Z")  # 12 h old
+    queued = lb.plan_replies(settings, board, DAY, NOW, wait=False)
+    assert {q["comment_id"] for q in queued} == {"b1", "a2", "c1", "d1", "e1"}
+    assert lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=13)) == []  # still one reply each
+
+
 def test_send_skips_comments_the_channel_answered(settings):
     board = _quiz_board("2026-10-13T06:00:00Z")
     lb.plan_replies(settings, board, DAY, NOW)

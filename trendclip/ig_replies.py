@@ -226,15 +226,18 @@ def reply_text(settings: Settings, result: str, seed: str) -> str:
     return rng.choice(TEXTS[kind])
 
 
-def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None) -> list[dict[str, Any]]:
-    """Queue one reply per fan per Reel (their best comment first); returns what was queued."""
+def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None,
+                 wait: bool = True) -> list[dict[str, Any]]:
+    """Queue one reply per fan per Reel (their best comment first); returns what was queued.
+    wait=False: quiz / paradox Reels too, without the spoiler wait."""
     now = now or datetime.now(timezone.utc)
     order = {"first": 0, "correct": 1, "voted": 2, "wrong": 3, "comment": 4}
     with _lock:
         data = _load_replies(settings)
         day = today.isoformat()
         used = (data["sent"]["count"] if data["sent"]["date"] == day else 0) + len(data["pending"])
-        ready = [c for state, c in leaderboard._reply_state(settings, board, data, now).values() if state == "ready"]
+        ready = [c for state, c in leaderboard._reply_state(settings, board, data, now).values()
+                 if state == "ready" or (state == "quiz_wait" and not wait)]
         queued = []
         for c in sorted(ready, key=lambda c: (c.points == 0, order.get(c.result, 9), c.published)):
             if used >= settings.instagram_reply_daily_max:
