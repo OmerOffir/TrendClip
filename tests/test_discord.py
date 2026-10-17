@@ -142,14 +142,20 @@ def test_reminders_fire_once_in_their_window(settings):
     assert assistant.due_reminders(settings, at(settings, 9, 59), set()) == []
     morning = assistant.due_reminders(settings, at(settings, 10), set())
     assert [r.key for r in morning] == ["2026-10-07 morning"]
-    assert assistant.due_reminders(settings, at(settings, 16, 30), set()) == []  # summary missed by > 6 h
+    assert assistant.due_reminders(settings, at(settings, 16, 31), set()) == []  # summary missed by > 6 h
     slot = assistant.due_reminders(settings, at(settings, 14), {"2026-10-07 morning"})
     assert [(r.kind, r.slot) for r in slot] == [("slot", "14:30")]
-    assert assistant.due_reminders(settings, at(settings, 14, 30), {"2026-10-07 morning"}) == []
+    post = assistant.due_reminders(settings, at(settings, 14, 30), {"2026-10-07 morning"})
+    assert [(r.kind, r.slot, r.key) for r in post] == [("post", "14:30", "2026-10-07 14:30 post")]
+    sent = {"2026-10-07 morning", "2026-10-07 14:30 post"}
+    assert assistant.due_reminders(settings, at(settings, 14, 31), sent) == []  # posted once
+    assert [r.kind for r in assistant.due_reminders(settings, at(settings, 16, 29), {"2026-10-07 morning"})] == \
+        ["post"]  # the bot was off at 14:30: it still posts within 2 h
     late = assistant.due_reminders(settings, at(settings, 22, 45), {"2026-10-07 morning"})
     assert [r.key for r in late] == ["2026-10-07 23:00"]
-    quiet = settings.with_overrides(discord_reminder_minutes=0)
+    quiet = settings.with_overrides(discord_reminder_minutes=0, auto_post=False)
     assert assistant.due_reminders(quiet, at(settings, 22, 45), {"2026-10-07 morning"}) == []
+    assert assistant.due_reminders(quiet, at(settings, 23, 0), {"2026-10-07 morning"}) == []
 
 
 def test_sent_log_survives_restarts_and_forgets_old_days(settings):
@@ -364,7 +370,7 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
     import asyncio
     from types import SimpleNamespace
 
-    from trendclip import discord_bot, leaderboard
+    from trendclip import discord_bot, ig_replies, leaderboard
 
     said, steps = [], []
 
@@ -383,6 +389,10 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
             steps.append("read")
             return leaderboard.Board(channel_id="UCme")
 
+        async def check_instagram(self, channel):
+            steps.append("ig read")
+            return leaderboard.Board()
+
     async def fake_reply(interaction, content, **kw):
         said.append(content)
 
@@ -393,6 +403,7 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
         "replied": 7, "queued": 3, "quiz_wait": 2, "next_quiz": "2026-10-15T00:00:00+00:00", "unchecked": 0,
         "skipped": 1, "failed": 0, "sent_today": 8, "daily_max": 100})
 
+    monkeypatch.setattr(ig_replies, "enabled", lambda s: False)
     interaction = SimpleNamespace(client=Bot("YouTube isn't connected."), response=Response(), channel=None)
     asyncio.run(discord_bot.replies_cmd.callback(interaction))
     assert said == ["YouTube isn't connected."] and steps == []
@@ -403,5 +414,93 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
     text = "\n".join(said[1:])
     assert "Replied: 7" in text and "In the queue: 3" in text and "just sent one to amy" in text
     assert "quiz / paradox videos" in text and "No reply (spam" in text and "8 of 100" in text
-    assert "Not checked" not in text and "refused" not in text
+    assert "Not checked" not in text and "refused" not in text and "Instagram" not in text
     assert discord_bot.replies_cmd in discord_bot.COMMANDS
+
+    monkeypatch.setattr(ig_replies, "enabled", lambda s: True)
+    monkeypatch.setattr(ig_replies, "send_next_reply", lambda s, day: steps.append("ig send"))
+    monkeypatch.setattr(ig_replies, "reply_overview", lambda s, board, day: {
+        "replied": 0, "queued": 0, "quiz_wait": 0, "next_quiz": "", "unchecked": 0, "skipped": 0, "failed": 0,
+        "sent_today": 0, "daily_max": 50, "paused_until": ""})
+    said.clear(), steps.clear()
+    interaction.client = Bot("YouTube isn't connected.")
+    asyncio.run(discord_bot.replies_cmd.callback(interaction))
+    assert steps == ["defer", "ig read", "ig send"]
+    text = "\n".join(said)
+    assert "YouTube isn't connected" in text and "Instagram replies" in text and "Development mode" in text
+
+
+def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypatch, tmp_path):
+    import asyncio
+    from types import SimpleNamespace
+
+    from trendclip import discord_bot, instagram, planner, publish
+
+    video = tmp_path / "q.mp4"
+    video.write_bytes(b"\x00")
+    short = SimpleNamespace(title="Only 3% get this", uploads={}, posted={}, pinned_comment="Answer below 👇")
+    item = planner.PlanItem(id="i1", kind="reel", date=assistant.today(settings), slot="14:30", title=short.title,
+                            short="q.mp4", platforms=["youtube", "instagram", "tiktok"])
+    token = tmp_path / "token.json"
+    token.write_text("{}")
+    monkeypatch.setattr(planner, "slot_item", lambda s, day, slot: item)
+    monkeypatch.setattr(discord_bot.shorts, "get_short", lambda s, f: short)
+    monkeypatch.setattr(discord_bot.shorts, "short_path", lambda s, f: video)
+    monkeypatch.setattr(publish, "TOKEN_FILE", token)
+    monkeypatch.setattr(publish, "can_comment", lambda: True)
+    monkeypatch.setattr(instagram, "configured", lambda s: True)
+    monkeypatch.setattr(assistant, "pinned_comment", lambda s, f: "Answer below 👇")
+    commented, ran = [], []
+    monkeypatch.setattr(publish, "post_comment", lambda s, f, text: commented.append(text))
+    monkeypatch.setattr(assistant, "upload_now", lambda s, f, p: {"url": "https://youtu.be/v1", "privacy": "public"})
+    monkeypatch.setattr(instagram, "post_reel", lambda s, f, first_comment, progress: {
+        "url": "https://instagram.com/reel/r1"})
+
+    class Channel:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, content="", **kw):
+            self.sent.append((content, kw.get("view")))
+
+    class Bot:
+        settings_ = settings
+        upload_lock = asyncio.Lock()
+        auto_targets = discord_bot.TrendClipBot.auto_targets
+        auto_post = discord_bot.TrendClipBot.auto_post
+
+        @property
+        def settings(self):
+            return self.settings_
+
+        async def run_job(self, channel, title, fn, lock):
+            ran.append(title)
+            try:
+                return fn(lambda f, m: None)
+            except Exception as err:
+                raise discord_bot.JobFailed(str(err)) from err
+
+    channel = Channel()
+    asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
+    assert ran == ["YouTube upload", "Instagram post"]
+    assert "posting \"Only 3% get this\" on YouTube and Instagram" in channel.sent[0][0]
+    report = channel.sent[-1][0]
+    assert report.startswith("✅") and "https://youtu.be/v1" in report and "https://instagram.com/reel/r1" in report
+    assert "TikTok has no upload API" in report and commented == ["Answer below 👇"]
+
+    def broken(*a, **kw):
+        raise instagram.InstagramError("Instagram: token expired")
+
+    monkeypatch.setattr(instagram, "post_reel", broken)
+    channel = Channel()
+    asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
+    report, view = channel.sent[-1]
+    assert report.startswith("⚠️") and "Instagram failed: Instagram: token expired" in report
+    assert [b.custom_id for b in view.children] == ["tc:ig:q.mp4"]
+
+    short.uploads = {"youtube": {"url": "u"}, "instagram": {"url": "i"}}
+    ran.clear()
+    item.platforms = ["youtube", "instagram"]
+    channel = Channel()
+    asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
+    assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]

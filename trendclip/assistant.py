@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 ProgressFn = Callable[[float | None, str], None]
 DISCORD_FILE_LIMIT = 10 * 1024 * 1024  # servers without boosts
 MORNING_WINDOW = timedelta(hours=6)  # a summary missed by more than this (bot was off) is skipped
+POST_WINDOW = timedelta(hours=2)  # a slot's automatic post missed by more than this (bot was off) is skipped
 
 
 def _noop(_frac: float | None, _msg: str) -> None:
@@ -275,13 +276,14 @@ def discord_copy(settings: Settings, filename: str, limit: int = DISCORD_FILE_LI
 
 class Reminder(BaseModel):
     key: str
-    kind: Literal["morning", "slot", "leaderboard"]
+    kind: Literal["morning", "slot", "leaderboard", "post"]
     day: Day
     slot: Slot | None = None
 
 
 def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Reminder]:
-    """The morning plan summary, the leaderboard post, and each slot's video DISCORD_REMINDER_MINUTES before it."""
+    """The morning plan summary, the leaderboard post, each slot's video DISCORD_REMINDER_MINUTES before it,
+    and (AUTO_POST) each slot's automatic post at its time."""
     at = at.astimezone(settings.tz)
     day = at.date()
     out = []
@@ -300,6 +302,12 @@ def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Remi
             key = f"{day.isoformat()} {slot}"
             if key not in sent and when - lead <= at < when:
                 out.append(Reminder(key=key, kind="slot", day=day, slot=slot))
+    if settings.auto_post:
+        for slot in planner.SLOTS:
+            when = planner.slot_time(settings, day, slot)
+            key = f"{day.isoformat()} {slot} post"
+            if key not in sent and when <= at < when + POST_WINDOW:
+                out.append(Reminder(key=key, kind="post", day=day, slot=slot))
     return out
 
 

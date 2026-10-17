@@ -534,7 +534,14 @@ On its own the bot posts to `DISCORD_CHANNEL_ID`:
 
 - a morning summary of the day's plan at `DISCORD_MORNING_TIME`, followed by the channel report;
 - each slot's video `DISCORD_REMINDER_MINUTES` before 14:30 and 23:00, with an **Upload now**
-  button. An empty slot gets a **Create a random video** button instead.
+  button. An empty slot gets a **Create a random video** button instead;
+- **at 14:30 and 23:00, the planned Short goes out by itself** (`AUTO_POST=true`) on the platforms
+  of its plan item: YouTube (public, with the pinned comment posted; pin it yourself, the API can't)
+  and Instagram (as a Reel, with its first comment). The channel gets a "posting now" message, live
+  progress, then the links. If a platform fails, you get the error and a **Retry** button. A
+  platform it's already on is skipped. TikTok has no upload API, so the message reminds you to post
+  it there. If the bot was off at the slot time, it still posts when it's back, up to 2 h late.
+  Items made outside TrendClip, and videos no longer on the machine, are only reported.
 
 Setup:
 
@@ -637,6 +644,41 @@ comments, queues a reply to every unanswered one, and sends the first right away
 counts: replied, in the queue, waiting for the quiz 24 h (and when the next one opens), not checked yet,
 spam, refused, and sent today. `YOUTUBE_AUTO_REPLIES=false` turns replies off; the record is
 `output/comment_replies.json`.
+
+### Instagram replies
+
+The bot replies to fans on your Instagram Reels too (`ig_replies.py`), with the same rules as on
+YouTube:
+- one reply per fan per Reel, under their best comment;
+- no reply to spam, links or rude comments (listed in Discord with the Reel's link);
+- quiz and paradox Reels wait 24 h;
+- never a second reply, and nothing for a comment you already answered by hand.
+
+Instagram and YouTube accounts can't be linked, so the replies claim no points. About half of them invite
+the fan to the leaderboard by the channel's name: "Correct! 🧠 On YouTube that's points on the SideQuest
+Leaderboard. Come claim your spot: SideQuest Logic 👑". The others just thank them: "Nailed it! ✅ You saw
+through the trap."
+
+There are no links or @ in the replies, because Instagram flags those as spam. Put the YouTube link in
+your Instagram bio instead.
+
+The comments on the Reels of the last 30 days are read with the YouTube ones (every
+`YOUTUBE_REPLY_CHECK_HOURS`, and `/replies`). Replies go out one every 2 minutes, up to
+`INSTAGRAM_REPLY_DAILY_MAX` a day (default 50). If Instagram's rate limit is hit, replies pause for 30
+minutes. Quiz answers are known for the Reels this machine posted; other Reels get thank-you replies.
+Settings: `INSTAGRAM_AUTO_REPLIES`, `INSTAGRAM_REPLY_DAILY_MAX` and `INSTAGRAM_YOUTUBE_NAME` (how the
+replies name the channel). The record is `output/instagram_replies.json`.
+
+**The Meta app must be Live.** In Development mode, Instagram hides your fans' comments from the API: the
+call succeeds but the list is empty, and `/replies` says "No fan comments visible". Your own account
+already has the permission, so no App Review is needed. To switch:
+1. Go to [developers.facebook.com/apps](https://developers.facebook.com/apps) → your app → **App settings
+   → Basic**.
+2. Fill in **Privacy Policy URL** with a page that really opens (a 404 doesn't work; a public Google Doc
+   or Notion page is enough). Also pick a **Category**, then click **Save changes**.
+3. At the top of the dashboard, switch **App Mode** from Development to **Live**.
+
+The token stays the same; the next read sees the comments.
 
 ## Video assembly (karaoke Shorts)
 

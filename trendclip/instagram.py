@@ -34,12 +34,15 @@ MAX_BYTES = 300 * 1024 * 1024
 MAX_BITRATE = 5_000_000  # bits/s served through the tunnel; above it a lighter copy is sent
 PROCESS_TIMEOUT = 15 * 60
 TIMEOUT = 120
+LIMIT_CODES = (4, 9, 17, 32, 613)  # Instagram's "too many calls" errors
 
 _accounts: dict[str, dict[str, Any]] = {}  # token -> account, so the dashboard doesn't re-read it
 
 
 class InstagramError(RuntimeError):
-    pass
+    def __init__(self, message: str, status: int = 0, code: int = 0) -> None:
+        super().__init__(message)
+        self.status, self.code = status, code  # HTTP status and Instagram's error code (0 when unknown)
 
 
 def token(settings: Settings) -> str:
@@ -61,8 +64,10 @@ def _error(resp: requests.Response) -> str:
     text = err.get("error_user_msg") or err.get("message") or f"HTTP {resp.status_code}"
     if err.get("code") == 190:
         text += " (the token expired or was revoked: put a new INSTAGRAM_ACCESS_TOKEN in channel.env)"
-    elif err.get("code") in (9, 4, 17, 32, 613) or err.get("error_subcode") == 2207042:
+    elif err.get("error_subcode") == 2207042:
         text += " (Instagram's limit: at most 100 API posts a day)"
+    elif err.get("code") in LIMIT_CODES:
+        text += " (Instagram's rate limit: try again later)"
     return f"Instagram: {text}"
 
 
@@ -73,7 +78,11 @@ def _call(method: str, url: str, access_token: str, **kwargs: Any) -> dict[str, 
     except requests.RequestException as err:
         raise InstagramError(f"Could not reach Instagram: {err}") from err
     if resp.status_code >= 400:
-        raise InstagramError(_error(resp))
+        try:
+            code = int((resp.json().get("error") or {}).get("code") or 0)
+        except (ValueError, TypeError, AttributeError):
+            code = 0
+        raise InstagramError(_error(resp), status=resp.status_code, code=code)
     return resp.json()
 
 

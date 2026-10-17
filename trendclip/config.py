@@ -51,10 +51,14 @@ _ENV_MAP: dict[str, str] = {
     "discord_allowed_users": "DISCORD_ALLOWED_USERS",
     "discord_morning_time": "DISCORD_MORNING_TIME",
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
+    "auto_post": "AUTO_POST",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
     "youtube_reply_check_hours": "YOUTUBE_REPLY_CHECK_HOURS",
+    "instagram_auto_replies": "INSTAGRAM_AUTO_REPLIES",
+    "instagram_reply_daily_max": "INSTAGRAM_REPLY_DAILY_MAX",
+    "instagram_youtube_name": "INSTAGRAM_YOUTUBE_NAME",
     "stats_youtube": "STATS_YOUTUBE",
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
@@ -129,6 +133,8 @@ class Settings(BaseModel):
     discord_allowed_users: list[int] = Field(default_factory=list)  # empty: everyone on the server
     discord_morning_time: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
+    # At 14:30 / 23:00 the bot posts the planned Short on YouTube and Instagram itself (its plan platforms).
+    auto_post: bool = True
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
     # Reply on YouTube to every fan's comment (they get a notification); see leaderboard.py.
@@ -137,6 +143,11 @@ class Settings(BaseModel):
     youtube_reply_daily_max: int = Field(100, ge=1, le=180)
     # Read the comments this often to reply to new ones (0 = only the morning read and /replies).
     youtube_reply_check_hours: float = Field(3, ge=0, le=24)
+    # Reply on Instagram too (one per fan per Reel; about half invite them to the YouTube leaderboard).
+    instagram_auto_replies: bool = True
+    instagram_reply_daily_max: int = Field(50, ge=1, le=200)
+    # How Instagram replies name the YouTube channel ("… SideQuest Logic on YouTube"); no links or @.
+    instagram_youtube_name: str = Field("SideQuest Logic", min_length=1, max_length=40)
 
     # The channel folder under channels/ whose channel.env and login files are used.
     channel: str = DEFAULT_CHANNEL
