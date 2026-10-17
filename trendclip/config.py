@@ -53,6 +53,8 @@ _ENV_MAP: dict[str, str] = {
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
+    "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
+    "youtube_reply_check_hours": "YOUTUBE_REPLY_CHECK_HOURS",
     "stats_youtube": "STATS_YOUTUBE",
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
@@ -129,8 +131,12 @@ class Settings(BaseModel):
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
-    # Reply on YouTube to fans who climb the leaderboard (they get a notification); see leaderboard.py.
+    # Reply on YouTube to every fan's comment (they get a notification); see leaderboard.py.
     youtube_auto_replies: bool = True
+    # A reply costs 50 of the 10,000 daily API units (an upload ~1,600): 100 replies use half.
+    youtube_reply_daily_max: int = Field(100, ge=1, le=180)
+    # Read the comments this often to reply to new ones (0 = only the morning read and /replies).
+    youtube_reply_check_hours: float = Field(3, ge=0, le=24)
 
     # The channel folder under channels/ whose channel.env and login files are used.
     channel: str = DEFAULT_CHANNEL

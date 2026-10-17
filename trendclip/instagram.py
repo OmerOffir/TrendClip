@@ -4,20 +4,23 @@ Needs a Professional (Creator or Business) account and INSTAGRAM_ACCESS_TOKEN in
 channel.env (README -> Instagram). The token lasts 60 days; channel_stats.instagram_token refreshes
 it weekly into token_instagram.json, so it never runs out while TrendClip is used.
 
-A Reel goes out in three steps: create a container, send the file to rupload.facebook.com straight
-from this machine (no public URL needed), and publish once Instagram has processed it. Instagram
-allows 100 API posts a day; the caption is the Instagram text from the Upload tab.
+This API only takes videos by URL, so the Short is served for a few minutes from this machine at a
+secret temporary link (tunnel.py, a Cloudflare quick tunnel). A Reel goes out in three steps: create a
+container with that link, wait while Instagram downloads and processes it (then the link closes), and
+publish. Instagram allows 100 API posts a day; the caption is the Instagram text from the Upload tab.
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
 import time
+from pathlib import Path
 from typing import Any, Callable
 
 import requests
 
-from . import channel_stats, publish, shorts
+from . import channel_stats, publish, shorts, tunnel, video_assembler, video_downloader
 from .config import Settings
 from .models import utcnow
 
@@ -26,9 +29,9 @@ logger = logging.getLogger(__name__)
 ProgressFn = Callable[[float | None, str], None]
 VERSION = "v23.0"
 GRAPH = f"https://graph.instagram.com/{VERSION}"
-RUPLOAD = f"https://rupload.facebook.com/ig-api-upload/{VERSION}"
 MIN_SECONDS, MAX_SECONDS = 3, 15 * 60
 MAX_BYTES = 300 * 1024 * 1024
+MAX_BITRATE = 5_000_000  # bits/s served through the tunnel; above it a lighter copy is sent
 PROCESS_TIMEOUT = 15 * 60
 TIMEOUT = 120
 
@@ -119,6 +122,31 @@ def _wait(container: str, access_token: str, progress: ProgressFn) -> None:
         delay = min(delay + 2, 15)
 
 
+def upload_copy(settings: Settings, path: Path, seconds: float) -> Path:
+    """The file Instagram downloads: the Short itself when it's light enough, else a ~3.5 Mbit/s copy
+    (cached in output/instagram). Instagram's downloader gives up on big files served from a home line."""
+    seconds = seconds or video_assembler.media_duration(path) or 1.0
+    if path.stat().st_size * 8 / seconds <= MAX_BITRATE:
+        return path
+    out = settings.output_dir / "instagram" / path.name
+    if out.is_file() and out.stat().st_mtime >= path.stat().st_mtime:
+        return out
+    ffmpeg = video_downloader.ffmpeg_path()
+    if not ffmpeg:
+        raise InstagramError("ffmpeg is needed to make the Instagram copy of the video")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out.with_suffix(".tmp.mp4")
+    result = subprocess.run([ffmpeg, "-v", "error", "-y", "-i", str(path), "-c:v", "libx264", "-preset", "veryfast",
+                             "-b:v", "3500k", "-maxrate", "4000k", "-bufsize", "8000k", "-pix_fmt", "yuv420p",
+                             "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", str(tmp)],
+                            capture_output=True, text=True)
+    if result.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        raise InstagramError(f"Couldn't make the Instagram copy: {result.stderr.strip()[-300:]}")
+    tmp.replace(out)
+    return out
+
+
 def post_reel(settings: Settings, filename: str, text: str = "", first_comment: str = "",
               progress: ProgressFn = lambda f, m: None) -> dict[str, Any]:
     """Post the Short as a Reel (also shown in the feed); recorded on the Short as uploads["instagram"].
@@ -136,21 +164,17 @@ def post_reel(settings: Settings, filename: str, text: str = "", first_comment: 
     progress(0.0, "Connecting to Instagram")
     access_token = token(settings)
     user = account(settings)
-    container = _call("POST", f"{GRAPH}/{user['user_id']}/media", access_token, data={
-        "media_type": "REELS", "upload_type": "resumable", "caption": text, "share_to_feed": "true"})["id"]
-
-    progress(0.05, "Uploading to Instagram")
-    with path.open("rb") as f:
-        try:
-            resp = requests.post(f"{RUPLOAD}/{container}", data=f, timeout=max(TIMEOUT, size / 200_000), headers={
-                "Authorization": f"OAuth {access_token}", "offset": "0", "file_size": str(size)})
-        except requests.RequestException as err:
-            raise InstagramError(f"Uploading to Instagram failed: {err}") from err
-    if resp.status_code >= 400:
-        raise InstagramError(_error(resp))
-
-    progress(0.6, "Instagram is processing the video")
-    _wait(container, access_token, progress)
+    progress(0.02, "Making the Instagram copy of the video")
+    upload = upload_copy(settings, path, seconds)
+    progress(0.05, "Opening a temporary link to the video")
+    try:
+        with tunnel.public_file(upload) as video_url:
+            progress(0.15, "Instagram is downloading the video")
+            container = _call("POST", f"{GRAPH}/{user['user_id']}/media", access_token, data={
+                "media_type": "REELS", "video_url": video_url, "caption": text, "share_to_feed": "true"})["id"]
+            _wait(container, access_token, progress)
+    except tunnel.TunnelError as err:
+        raise InstagramError(str(err)) from err
     progress(0.9, "Publishing the Reel")
     media_id = _call("POST", f"{GRAPH}/{user['user_id']}/media_publish", access_token,
                      data={"creation_id": container})["id"]

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import pathlib
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
@@ -18,6 +20,14 @@ def settings(tmp_path, monkeypatch):
     monkeypatch.setattr(channel_stats, "instagram_token", lambda s, session=None: "tok")
     monkeypatch.setattr(instagram, "_accounts", {})
     monkeypatch.setattr(instagram.time, "sleep", lambda s: None)
+
+    @contextmanager
+    def fake_tunnel(path, mime="video/mp4"):
+        served.append(path)
+        yield "https://abc.trycloudflare.com/secret/q.mp4"
+
+    served = []
+    monkeypatch.setattr(instagram.tunnel, "public_file", fake_tunnel)
     return Settings(youtube_api_key="k", output_dir=tmp_path / "output", assets_dir=tmp_path / "assets",
                     instagram_access_token="tok")
 
@@ -69,29 +79,22 @@ class FakeInstagram:
             return Resp(200, {"id": "k1"})
         raise AssertionError(path)
 
-    def post(self, url, data=None, headers=None, timeout=None):
-        assert url.endswith("/ig-api-upload/v23.0/c1")
-        assert headers["Authorization"] == "OAuth tok" and headers["file_size"] == "2048"
-        self.calls.append(("UPLOAD", "c1", len(data.read())))
-        return Resp(200, {"success": True})
 
 
-def test_post_reel_creates_uploads_waits_and_publishes(settings, monkeypatch):
+def test_post_reel_creates_waits_and_publishes(settings, monkeypatch):
     fake = FakeInstagram()
     monkeypatch.setattr(instagram.requests, "request", fake.request)
-    monkeypatch.setattr(instagram.requests, "post", fake.post)
     name = add_short(settings)
 
     record = instagram.post_reel(settings, name, first_comment="Comment your answer 👇")
     assert record["url"] == "https://www.instagram.com/reel/ABC/" and record["media_id"] == "m1"
     assert record["comment"]["comment_id"] == "k1"
     steps = [(c[0], c[1]) for c in fake.calls]
-    assert steps == [("GET", "/me"), ("POST", "/17841/media"), ("UPLOAD", "c1"), ("GET", "/c1"), ("GET", "/c1"),
+    assert steps == [("GET", "/me"), ("POST", "/17841/media"), ("GET", "/c1"), ("GET", "/c1"),
                      ("POST", "/17841/media_publish"), ("GET", "/m1"), ("POST", "/m1/comments")]
     container = fake.calls[1][2]
-    assert container["media_type"] == "REELS" and container["upload_type"] == "resumable"
+    assert container["media_type"] == "REELS" and container["video_url"].startswith("https://abc.trycloudflare")
     assert "#riddle" in container["caption"] and "Orbital" in container["caption"]  # the Instagram text
-    assert fake.calls[2][2] == 2048
 
     short = shorts.get_short(settings, name)
     assert short.uploads["instagram"]["media_id"] == "m1"
@@ -102,7 +105,6 @@ def test_post_reel_creates_uploads_waits_and_publishes(settings, monkeypatch):
 def test_a_failed_comment_keeps_the_reel(settings, monkeypatch):
     fake = FakeInstagram(fail_comment=True)
     monkeypatch.setattr(instagram.requests, "request", fake.request)
-    monkeypatch.setattr(instagram.requests, "post", fake.post)
     name = add_short(settings)
     record = instagram.post_reel(settings, name, "My own caption", first_comment="hi")
     assert "Comments are off" in record["comment_error"] and fake.calls[1][2]["caption"] == "My own caption"
@@ -146,3 +148,58 @@ def test_instagram_routes(settings, monkeypatch):
 
     monkeypatch.setattr(web, "_base_settings", lambda: settings.model_copy(update={"instagram_access_token": None}))
     assert client.post(f"/api/upload/shorts/{name}/instagram", json={}).status_code == 400
+
+
+def test_heavy_videos_get_a_lighter_copy(settings, monkeypatch):
+    name = add_short(settings)
+    path = shorts.short_path(settings, name)
+    assert instagram.upload_copy(settings, path, 30) == path  # 2 KB: light enough
+
+    runs = []
+
+    def fake_run(cmd, **kw):
+        runs.append(cmd)
+        pathlib.Path(cmd[-1]).write_bytes(b"small")
+        return SimpleNamespace(returncode=0, stderr="")
+
+    monkeypatch.setattr(instagram.subprocess, "run", fake_run)
+    monkeypatch.setattr(instagram.video_downloader, "ffmpeg_path", lambda: "ffmpeg")
+    path.write_bytes(b"\x00" * 30_000_000)  # 8 Mbit/s over 30 s
+    copy = instagram.upload_copy(settings, path, 30)
+    assert copy == settings.output_dir / "instagram" / name and copy.read_bytes() == b"small"
+    assert "3500k" in runs[0] and instagram.upload_copy(settings, path, 30) == copy and len(runs) == 1  # cached
+
+
+def test_the_tunnel_server_serves_only_the_secret_path(tmp_path):
+    import threading
+    from http.server import ThreadingHTTPServer
+
+    import requests
+
+    from trendclip import tunnel
+
+    video = tmp_path / "v.mp4"
+    video.write_bytes(bytes(range(256)) * 4)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), tunnel._handler(video, "/s3cret/v.mp4", "video/mp4"))
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        r = requests.get(base + "/s3cret/v.mp4", timeout=5)
+        assert r.status_code == 200 and r.content == video.read_bytes() and r.headers["Content-Type"] == "video/mp4"
+        r = requests.get(base + "/s3cret/v.mp4", headers={"Range": "bytes=10-19"}, timeout=5)
+        assert r.status_code == 206 and r.content == bytes(range(10, 20))
+        assert r.headers["Content-Range"] == "bytes 10-19/1024"
+        assert requests.get(base + "/v.mp4", timeout=5).status_code == 404
+        assert requests.get(base + "/", timeout=5).status_code == 404
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_missing_cloudflared_is_explained(tmp_path, monkeypatch):
+    from trendclip import tunnel
+
+    monkeypatch.setattr(tunnel, "cloudflared_path", lambda: None)
+    with pytest.raises(tunnel.TunnelError, match="brew install cloudflared"):
+        with tunnel.public_file(tmp_path / "v.mp4"):
+            pass

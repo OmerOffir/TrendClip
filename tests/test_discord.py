@@ -358,3 +358,50 @@ def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings
     assert "I searched for three hours" in text  # the description text
     assert "#storytime" in text and "#fyp" in text and "#shorts" in text
     assert text.count("```") == 6 and len(text) <= discord_bot.MESSAGE_MAX
+
+
+def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
+    import asyncio
+    from types import SimpleNamespace
+
+    from trendclip import discord_bot, leaderboard
+
+    said, steps = [], []
+
+    class Response:
+        async def defer(self, **kw):
+            steps.append("defer")
+
+    class Bot:
+        def __init__(self, why=""):
+            self.settings, self.why = settings, why
+
+        def replies_on(self):
+            return self.why
+
+        async def check_comments(self, channel):
+            steps.append("read")
+            return leaderboard.Board(channel_id="UCme")
+
+    async def fake_reply(interaction, content, **kw):
+        said.append(content)
+
+    monkeypatch.setattr(discord_bot, "reply", fake_reply)
+    monkeypatch.setattr(leaderboard, "send_next_reply",
+                        lambda s, ch, day: steps.append("send") or {"name": "amy"})
+    monkeypatch.setattr(leaderboard, "reply_overview", lambda s, board, day: {
+        "replied": 7, "queued": 3, "quiz_wait": 2, "next_quiz": "2026-10-15T00:00:00+00:00", "unchecked": 0,
+        "skipped": 1, "failed": 0, "sent_today": 8, "daily_max": 100})
+
+    interaction = SimpleNamespace(client=Bot("YouTube isn't connected."), response=Response(), channel=None)
+    asyncio.run(discord_bot.replies_cmd.callback(interaction))
+    assert said == ["YouTube isn't connected."] and steps == []
+
+    interaction.client = Bot()
+    asyncio.run(discord_bot.replies_cmd.callback(interaction))
+    assert steps == ["defer", "read", "send"]
+    text = "\n".join(said[1:])
+    assert "Replied: 7" in text and "In the queue: 3" in text and "just sent one to amy" in text
+    assert "quiz / paradox videos" in text and "No reply (spam" in text and "8 of 100" in text
+    assert "Not checked" not in text and "refused" not in text
+    assert discord_bot.replies_cmd in discord_bot.COMMANDS

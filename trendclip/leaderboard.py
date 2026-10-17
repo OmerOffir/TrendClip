@@ -392,14 +392,16 @@ def set_answer(settings: Settings, video_id: str, answer: str, choices: str = ""
 
 # --------------------------------------------------------------------------- replies to every fan
 #
-# A reply is the one thing YouTube always notifies about. One reply per person per video, under the
-# comment that earned their points for it, saying what it earned. Quiz / paradox videos wait until
-# they're REPLY_AFTER_HOURS old so "Correct!" doesn't spoil the answer for the people still guessing.
-# "Wrong" is only said when Gemini agreed (else the plain "+1 pt" text). Never a second reply to a
-# comment, nor one the channel already answered; at most REPLY_DAILY_MAX a day, one at a time (the bot
-# waits between them), with varied wording and no links or tags.
+# A reply is the one thing YouTube always notifies about. Every fan gets exactly one per video, under
+# the comment that earned their points for it, saying what it earned (spam, links and rude ones excepted).
+# Quiz / paradox videos wait until they're REPLY_AFTER_HOURS old so "Correct!" doesn't spoil the answer
+# for the people still guessing. "Wrong" is only said when Gemini agreed (else the plain "+1 pt" text).
+# Never a second reply to a fan on a video, nor one the channel already answered; at most
+# settings.youtube_reply_daily_max a day, one at a time (the bot waits between them), with varied wording
+# and no links or tags. A reply YouTube refuses for a moment is tried REPLY_TRIES times; when it can't be
+# posted at all (comment deleted), the fan's other comment on that video gets the one reply instead.
 
-REPLY_DAILY_MAX, REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS = 40, 24, 30
+REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS, REPLY_TRIES = 24, 30, 3
 REPLY_TEXTS = {
     "first": (
         "FIRST & CORRECT! ⚡ You secured the +10 pts mega bonus! You're #{rank} on the SideQuest Leaderboard! 👑",
@@ -430,6 +432,11 @@ REPLY_TEXTS = {
         "🙌 Thanks for commenting! +1 pt on the SideQuest Leaderboard. Current rank: #{rank} 🏆",
         "🧠 +1 pt for joining in! Answer the next trap to climb fast. You're #{rank} right now!",
         "🔥 Appreciate you! That's +1 pt on our leaderboard. Rank #{rank} so far!",
+    ),
+    "again": (  # their scoring comment is gone: no points claimed here
+        "🙌 Thanks for commenting! Your points for this video are in. You're #{rank} with {total} 🏆",
+        "🔥 Love the energy! You're #{rank} on the SideQuest Leaderboard. The next trap = more points 🧠",
+        "🧠 Appreciate you! You're #{rank} right now, so catch the next video for more points!",
     ),
 }
 _replies_lock = threading.Lock()
@@ -469,40 +476,80 @@ def reply_text(result: str, rank: int, total: int, seed: str) -> str:
     return random.Random(seed).choice(texts).format(rank=rank, total=f"{total} pt" + "s" * (total != 1))
 
 
-def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None) -> list[dict[str, Any]]:
-    """Queue one reply per person per video (the comment that scored); returns what was queued."""
-    now = now or datetime.now(timezone.utc)
+def _replyable(settings: Settings, board: Board, c: Comment) -> bool:
+    """Fine to thank: not spam / links / rude, and checked by Gemini (when there is a Gemini key)."""
+    from . import script_writer as sw
+
+    if c.result == "skip" or c.video_id not in board.videos:
+        return False
+    return c.id in board.verdicts or not sw.gemini_api_key(settings)
+
+
+def _fan_key(c: Comment) -> str:
+    return f"{c.author_id}|{c.video_id}"
+
+
+def _reply_state(settings: Settings, board: Board, data: dict[str, Any], now: datetime) -> dict[str, Any]:
+    """Each fan on each video (last REPLY_MAX_AGE_DAYS): the comment to reply to, or why not yet.
+    key -> (state, comment); state is replied / queued / ready / quiz_wait / unchecked / skipped / gone
+    (YouTube refused every comment of theirs)."""
     ready_before = (now - timedelta(hours=REPLY_AFTER_HOURS)).isoformat()
     oldest = (now - timedelta(days=REPLY_MAX_AGE_DAYS)).isoformat()
+    waiting = {p["comment_id"] for p in data["pending"]}
+    order = {"first": 0, "correct": 1, "voted": 2, "wrong": 3, "comment": 4}
+    by_fan: dict[str, list[Comment]] = defaultdict(list)
+    for c in sorted(board.comments, key=lambda c: (c.points == 0, order.get(c.result, 9), c.published)):
+        if c.video_id in board.videos and c.published >= oldest:
+            by_fan[_fan_key(c)].append(c)
+    out: dict[str, Any] = {}
+    for key, items in by_fan.items():
+        if any(c.id in waiting for c in items):
+            out[key] = ("queued", None)
+            continue
+        if key in data["done"]:
+            out[key] = ("replied", None)
+            continue
+        # The scoring comment first; the others only once it can't get a reply (spam, deleted).
+        left = [c for c in items if c.id not in data["replied"] and c.result != "skip"]
+        if not left:
+            failed = data.get("failed", {})
+            gone = all(c.id in failed or c.result == "skip" for c in items) and any(c.id in failed for c in items)
+            out[key] = ("gone" if gone else "skipped" if all(c.result == "skip" for c in items) else "replied",
+                        None)
+            continue
+        c, v = left[0], board.videos[left[0].video_id]
+        if not _replyable(settings, board, c):
+            out[key] = ("unchecked", c)
+        elif v.kind in ("quiz", "paradox") and (v.published or "") > ready_before:
+            out[key] = ("quiz_wait", c)
+        else:
+            out[key] = ("ready", c)
+    return out
+
+
+def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None) -> list[dict[str, Any]]:
+    """Queue one reply per fan per video (the comment that scored, scoring ones first); returns what was queued."""
+    now = now or datetime.now(timezone.utc)
     rank_of = ranks(board.people)
     total_of = {p["id"]: p["points"] for p in board.people}
     order = {"first": 0, "correct": 1, "voted": 2, "wrong": 3, "comment": 4}
-    scored = sorted((c for c in board.comments if c.points > 0),
-                    key=lambda c: (order.get(c.result, 9), c.published))
     with _replies_lock:
         data = _load_replies(settings)
         day = today.isoformat()
         used = (data["sent"]["count"] if data["sent"]["date"] == day else 0) + len(data["pending"])
+        ready = [c for state, c in _reply_state(settings, board, data, now).values() if state == "ready"]
         queued = []
-        for c in scored:
-            v = board.videos.get(c.video_id)
-            key = f"{c.author_id}|{c.video_id}"
-            if used >= REPLY_DAILY_MAX:
+        for c in sorted(ready, key=lambda c: (c.points == 0, order.get(c.result, 9), c.published)):
+            if used >= settings.youtube_reply_daily_max:
                 break
-            if v is None or key in data["done"] or c.id in data["replied"] or c.published < oldest:
-                continue
-            if c.id not in board.verdicts:
-                continue  # Gemini hasn't checked it for spam / rudeness yet: the next read tries again
-            if v.kind in ("quiz", "paradox") and (v.published or now.isoformat()) > ready_before:
-                continue  # too early: the reply would give the answer away
-            result = c.result
+            result = c.result if c.points > 0 else "again"
             if result == "wrong" and board.verdicts.get(c.id) != "wrong":
                 result = "comment"  # only Gemini's "wrong" is said out loud
             item = {"comment_id": c.id, "author_id": c.author_id, "name": c.author, "video_id": c.video_id,
                     "result": result,
                     "text": reply_text(result, rank_of.get(c.author_id, 0), total_of.get(c.author_id, 0), c.id)}
             data["pending"].append(item)
-            data["done"][key] = now.isoformat()
+            data["done"][_fan_key(c)] = now.isoformat()
             queued.append(item)
             used += 1
         _save_replies(settings, data)
@@ -595,7 +642,7 @@ def send_next_reply(settings: Settings, channel_id: str, today: date, youtube=No
         day = today.isoformat()
         if data["sent"]["date"] != day:
             data["sent"] = {"date": day, "count": 0}
-        if not data["pending"] or data["sent"]["count"] >= REPLY_DAILY_MAX:
+        if not data["pending"] or data["sent"]["count"] >= settings.youtube_reply_daily_max:
             return None
         item = data["pending"].pop(0)
         _save_replies(settings, data)  # off the queue first: a crash can't make it post twice
@@ -611,8 +658,21 @@ def send_next_reply(settings: Settings, channel_id: str, today: date, youtube=No
             body = {"snippet": {"parentId": item["comment_id"], "textOriginal": item["text"]}}
             posted = youtube.comments().insert(part="snippet", body=body).execute()
     except HttpError as err:
-        logger.warning("Reply to %s's comment %s failed: %s", item["name"], item["comment_id"], err)
+        status = getattr(err.resp, "status", 0)
+        tries = item.get("tries", 0) + 1
+        logger.warning("Reply to %s's comment %s failed (try %d): %s", item["name"], item["comment_id"], tries, err)
+        if status not in (400, 403, 404) and tries < REPLY_TRIES:  # deleted / comments off: no point retrying
+            with _replies_lock:
+                data = _load_replies(settings)
+                data["pending"].append({**item, "tries": tries})
+                _save_replies(settings, data)
+            return None
         posted = None
+        with _replies_lock:
+            data = _load_replies(settings)
+            data.setdefault("failed", {})[item["comment_id"]] = f"HTTP {status}: {str(err)[:200]}"
+            data["done"].pop(f"{item['author_id']}|{item['video_id']}", None)  # their other comment, if any
+            _save_replies(settings, data)
     with _replies_lock:
         data = _load_replies(settings)
         data["replied"][item["comment_id"]] = utcnow().isoformat()  # never again, whatever happened
@@ -640,6 +700,24 @@ def new_skips(settings: Settings, board: Board) -> list[Comment]:
 def pending_replies(settings: Settings) -> int:
     with _replies_lock:
         return len(_load_replies(settings)["pending"])
+
+
+def reply_overview(settings: Settings, board: Board, today: date, now: datetime | None = None) -> dict[str, Any]:
+    """Where every fan on every video of the last REPLY_MAX_AGE_DAYS stands, for /replies."""
+    now = now or datetime.now(timezone.utc)
+    with _replies_lock:
+        data = _load_replies(settings)
+    out = {"replied": 0, "queued": len(data["pending"]), "ready": 0, "quiz_wait": 0, "unchecked": 0, "skipped": 0,
+           "failed": len(data.get("failed", {})), "next_quiz": "",
+           "sent_today": data["sent"]["count"] if data["sent"]["date"] == today.isoformat() else 0,
+           "daily_max": settings.youtube_reply_daily_max}
+    for state, c in _reply_state(settings, board, data, now).values():
+        if state not in ("queued", "gone"):
+            out[state] += 1
+        if state == "quiz_wait" and (v := board.videos[c.video_id]).published:
+            ready = datetime.fromisoformat(v.published.replace("Z", "+00:00")) + timedelta(hours=REPLY_AFTER_HOURS)
+            out["next_quiz"] = min(out["next_quiz"] or ready.isoformat(), ready.isoformat())
+    return out
 
 
 # --------------------------------------------------------------------------- Discord text

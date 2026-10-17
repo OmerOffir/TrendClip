@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 
 from trendclip import leaderboard as lb
-from trendclip import shorts
+from trendclip import script_writer, shorts
 from trendclip.config import Settings
 from trendclip.leaderboard import Comment, Video
 
@@ -243,24 +243,44 @@ def test_ranks_share_ties():
         {"a": 1, "b": 2, "c": 2}
 
 
-def test_one_reply_per_person_per_video_with_its_result(settings):
+def test_one_reply_per_fan_per_video_with_its_result(settings):
     board = _quiz_board("2026-10-13T06:00:00Z")  # 30 h old: answers may be revealed
     queued = lb.plan_replies(settings, board, DAY, NOW)
     got = {q["comment_id"]: q["result"] for q in queued}
     assert got == {"b1": "first", "a2": "correct", "c1": "wrong", "d1": "comment", "e1": "comment"}
-    assert "a1" not in got  # amy's earlier wrong guess gets nothing: one reply per video
+    assert "a1" not in got  # amy's earlier wrong guess gets nothing: one reply per fan per video
     assert [q["result"] for q in queued][:2] == ["first", "correct"]  # the best news goes out first
     texts = {q["comment_id"]: q["text"] for q in queued}
     assert "+10" in texts["b1"] and "+2" in texts["a2"] and "+1" in texts["c1"]
     assert texts["d1"] in [t.format(rank=3, total="1 pt") for t in lb.REPLY_TEXTS["comment"]]
     assert all("http" not in t for t in texts.values())
     assert lb.plan_replies(settings, board, DAY, NOW) == []  # never queued twice
+    for _ in range(5):
+        lb.send_next_reply(settings, "UCme", DAY, FakeReplies())
+    board.comments.append(Comment("a3", "q", "amy", "amy", "me again!", "2026-10-14T11:00:00Z"))
+    lb.score(board.videos, board.comments, set(), board.verdicts | {"a3": "comment"})
+    board.verdicts["a3"] = "comment"
+    assert lb.plan_replies(settings, board, DAY, NOW) == []  # amy already has her reply on this video
+    o = lb.reply_overview(settings, board, DAY, NOW)
+    assert (o["replied"], o["queued"], o["ready"], o["sent_today"]) == (5, 0, 0, 5)
+
+
+def test_a_fan_whose_scoring_comment_isnt_checked_yet_waits_for_it(settings, monkeypatch):
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
+    board = _quiz_board("2026-10-13T06:00:00Z")
+    del board.verdicts["a2"]  # amy's correct answer: Gemini busy
+    assert "a1" not in {q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)}  # not her wrong guess
+    assert lb.reply_overview(settings, board, DAY, NOW)["unchecked"] == 1
+    board.verdicts["a2"] = "correct"
+    assert [q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)] == ["a2"]
 
 
 def test_quiz_replies_wait_24h_but_story_replies_dont(settings):
     board = _quiz_board("2026-10-14T00:00:00Z")  # 12 h old
     queued = lb.plan_replies(settings, board, DAY, NOW)
     assert [q["comment_id"] for q in queued] == ["e1"]
+    o = lb.reply_overview(settings, board, DAY, NOW)
+    assert o["queued"] == 1 and o["quiz_wait"] == 4 and o["next_quiz"].startswith("2026-10-15T00:00")
     later = lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=13))
     assert {q["comment_id"] for q in later} == {"b1", "a2", "c1", "d1"}
 
@@ -273,11 +293,47 @@ def test_send_skips_comments_the_channel_answered(settings):
     assert sent[0] is None and [s["comment_id"] for s in sent[1:]] == ["a2", "c1", "d1", "e1"]
     assert [i["parentId"] for i in yt.inserted] == ["a2", "c1", "d1", "e1"]
     assert lb.send_next_reply(settings, "UCme", DAY, yt) is None
+    assert lb.plan_replies(settings, board, DAY, NOW) == []  # bob was answered: nothing more for him
 
 
-def test_daily_max(settings, monkeypatch):
-    monkeypatch.setattr(lb, "REPLY_DAILY_MAX", 2)
-    assert len(lb.plan_replies(settings, _quiz_board("2026-10-13T06:00:00Z"), DAY, NOW)) == 2
+def test_daily_max(settings):
+    capped = settings.model_copy(update={"youtube_reply_daily_max": 2})
+    assert len(lb.plan_replies(capped, _quiz_board("2026-10-13T06:00:00Z"), DAY, NOW)) == 2
+    assert len(lb.plan_replies(capped, _quiz_board("2026-10-13T06:00:00Z"), DAY, NOW)) == 0  # 2 already waiting
+    assert len(lb.plan_replies(settings, _quiz_board("2026-10-13T06:00:00Z"), DAY, NOW)) == 3  # the rest later
+
+
+class _Failing(FakeReplies):
+    def __init__(self, status):
+        super().__init__()
+        self.status = status
+
+    def insert(self, part, body):
+        from googleapiclient.errors import HttpError
+
+        class Resp(dict):
+            reason = "nope"
+        resp = Resp()
+        resp.status = self.status
+        raise HttpError(resp, b"{}")
+
+
+def test_a_failed_reply_is_retried_then_goes_to_the_fans_other_comment(settings):
+    board = _quiz_board("2026-10-13T06:00:00Z")
+    board.comments = [c for c in board.comments if c.author_id == "amy"]
+    assert [q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)] == ["a2"]
+    for _ in range(lb.REPLY_TRIES - 1):  # a hiccup: back in the queue
+        assert lb.send_next_reply(settings, "UCme", DAY, _Failing(500)) is None
+        assert lb.reply_overview(settings, board, DAY, NOW)["queued"] == 1
+    lb.send_next_reply(settings, "UCme", DAY, _Failing(500))  # out of tries
+    assert lb.reply_overview(settings, board, DAY, NOW)["failed"] == 1
+    again = lb.plan_replies(settings, board, DAY, NOW)  # her other comment gets the one reply
+    assert [(q["comment_id"], q["result"]) for q in again] == [("a1", "again")]
+    assert "pt for" not in again[0]["text"]
+    lb.send_next_reply(settings, "UCme", DAY, _Failing(404))  # deleted too: no retry, nothing left
+    o = lb.reply_overview(settings, board, DAY, NOW)
+    assert (o["failed"], o["replied"], o["ready"], o["queued"]) == (2, 0, 0, 0)
+    assert lb.plan_replies(settings, board, DAY, NOW) == []
 
 
 class FakeGemini:
@@ -305,7 +361,7 @@ def test_gemini_verdicts_win_and_are_kept(settings):
     assert lb.verify(settings, board, client=FakeGemini()) == 0  # each comment once
 
 
-def test_links_and_flagged_comments_get_no_reply_and_no_points(settings):
+def test_links_and_flagged_comments_get_no_reply_and_no_points(settings, monkeypatch):
     board = _quiz_board("2026-10-13T06:00:00Z")
     board.comments += [
         Comment("x1", "s", "spammer", "spammer", "sub to me 👉 www.mychannel.com", "2026-10-13T10:00:00Z"),
@@ -315,10 +371,15 @@ def test_links_and_flagged_comments_get_no_reply_and_no_points(settings):
     board.verdicts["x2"] = "skip"
     board.people = lb.score(board.videos, board.comments, set(), board.verdicts)
     assert {"spammer", "troll"}.isdisjoint(p["id"] for p in board.people)
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
     queued = {q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)}
     assert {"x1", "x2", "x3"}.isdisjoint(queued) and "e1" in queued
+    o = lb.reply_overview(settings, board, DAY, NOW)
+    assert (o["skipped"], o["unchecked"]) == (2, 1)
     assert [c.id for c in lb.new_skips(settings, board)] == ["x1", "x2"]
     assert lb.new_skips(settings, board) == []  # told once
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "")  # no Gemini: reply without the check
+    assert [q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)] == ["x3"]
 
 
 def test_same_titles_never_share_an_answer(settings, monkeypatch):

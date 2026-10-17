@@ -417,6 +417,13 @@ the **Upload** tab (the counter on the tab shows how many). Pick one and switch 
   token needs the `instagram_business_content_publish` permission, plus
   `instagram_business_manage_comments` for the first comment. Limits: Reels from 3 s to 15 min,
   up to 300 MB, and 100 API posts a day. Copy caption / Download video still work for posting by hand.
+  This API only takes videos from a web link, so while posting, TrendClip serves a lighter copy of the
+  video (about 3.5 Mbit/s, in `output/instagram/`) from your machine at a secret temporary link through
+  a free Cloudflare quick tunnel, and closes it as soon as Instagram has the video (about 2 minutes in
+  all). Nothing else on the machine is reachable through it. Install `cloudflared` once on each
+  machine that posts: macOS `brew install cloudflared`; Debian/Ubuntu:
+  `curl -LO https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb && sudo dpkg -i cloudflared-linux-amd64.deb`
+  (`-arm64.deb` on ARM).
 - **TikTok** (no upload API here): caption, hashtags and @mentions in TikTok's style, a
   ready-to-paste text with the credits, **Copy caption**, **Download video**, a link to the upload
   page and a **Posted** checkbox to keep track.
@@ -607,18 +614,29 @@ the top 13 and a caption that tags all of them. Any time, `/leaderboard image:Tr
 API can't create posts, so post it yourself: save the picture, copy the text, YouTube → Create → Post.
 Put the channel logo in `channels/<channel>/logo.png` and it's drawn on the picture.
 
-Every fan gets a YouTube reply, once per video, under the comment that scored (YouTube always notifies
-about replies, unlike tags in posts): "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +2 pts…",
+Every fan gets exactly one YouTube reply per video (YouTube always notifies about replies, unlike tags
+in posts), under the comment that scored: "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +2 pts…",
 "Ouch! You fell for the trap! 🪤 +1 pt for trying…", "🗳️ Vote counted!…" or "🙌 Thanks for commenting!…",
-with the current rank. Quiz and paradox videos wait until they're 24 h old, so the replies don't give
-the answer away. Gemini double-checks quiz answers (typos, synonyms, other languages); "wrong" is only
-said when Gemini agrees, otherwise the plain +1 pt text. Never a second reply to a comment, nor to one the
-channel already answered; at most 40 a day, one every 2 minutes, varied wording, no links. Comments with
-links, and those Gemini flags as spam, scams, self-promotion or rude, get no reply and no points; the bot
-lists them in Discord once, with a link, so you can remove them. A comment Gemini hasn't checked yet (key
-missing, Gemini busy) gets no reply until a later read checks it. Replies are
-queued when the bot reads the comments (morning and 13:30) and it says in Discord how many.
-`YOUTUBE_AUTO_REPLIES=false` turns it off; the record is `output/comment_replies.json`.
+with the current rank. Their other comments on that video get nothing more, unless the scoring one
+can't be replied to (deleted): then another of theirs gets the one reply. Scoring comments go out first. Quiz and paradox videos wait until they're 24 h old, so the replies don't
+give the answer away. Gemini double-checks quiz answers (typos, synonyms, other languages); "wrong" is only
+said when Gemini agrees, otherwise the plain +1 pt text. Never a second reply to a fan on a video, nor to a comment the
+channel already answered. Replies go out one every 2 minutes, with varied wording and no links, up to
+`YOUTUBE_REPLY_DAILY_MAX` a day (default 100). Each costs 50 of the 10,000 daily YouTube API units, and an
+upload ~1,600; the rest wait for the next day. A reply YouTube refuses for a moment is tried 3 times. If
+the comment was deleted or comments are off, it's dropped. Comments older than 30 days are left alone.
+
+Comments with links, and those Gemini flags as spam, scams, self-promotion or rude, get no reply and no
+points; the bot lists them in Discord once, with a link, so you can remove them. With a Gemini key, a
+comment Gemini hasn't checked yet (Gemini busy) waits for the next read. Without a key, everything except
+links is replied to.
+
+The bot reads the comments in the morning, at 13:30, and every `YOUTUBE_REPLY_CHECK_HOURS` (default 3; 0
+turns it off), and says in Discord how many replies it queued. **`/replies`** does it now: it reads the
+comments, queues a reply to every unanswered one, and sends the first right away. Then it shows the
+counts: replied, in the queue, waiting for the quiz 24 h (and when the next one opens), not checked yet,
+spam, refused, and sent today. `YOUTUBE_AUTO_REPLIES=false` turns replies off; the record is
+`output/comment_replies.json`.
 
 ## Video assembly (karaoke Shorts)
 

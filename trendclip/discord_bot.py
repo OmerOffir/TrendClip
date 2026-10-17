@@ -10,7 +10,7 @@ import io
 import logging
 import sys
 import uuid
-from datetime import date as Day, datetime, timedelta
+from datetime import date as Day, datetime, timedelta, timezone
 from typing import Any, Callable, Literal
 
 import discord
@@ -270,6 +270,7 @@ class TrendClipBot(discord.Client):
         self.tree = Tree(self)
         self.render_lock = asyncio.Lock()  # renders are CPU heavy: one at a time
         self.upload_lock = asyncio.Lock()
+        self.comments_lock = asyncio.Lock()  # one YouTube comments read at a time
         self.sent = assistant.SentLog(settings)
         self._games: list[str] | None = None
         self.texts: dict[str, tuple[str, str | None]] = {}  # remember_text
@@ -291,6 +292,7 @@ class TrendClipBot(discord.Client):
         logger.info("Registered %d slash commands", len(synced))
         self.reminders.start()
         self.reply_loop.start()
+        self.comment_check.start()
 
     async def on_ready(self) -> None:
         logger.info("Discord bot ready as %s", self.user)
@@ -538,11 +540,15 @@ class TrendClipBot(discord.Client):
     async def send_comments(self, channel: discord.abc.Messageable) -> None:
         """Yesterday's new YouTube comments with their points, and the top 10; a failure is only reported."""
         try:
-            board, new = await asyncio.to_thread(leaderboard.refresh, self.settings)
+            async with self.comments_lock:
+                board, _ = await asyncio.to_thread(leaderboard.refresh, self.settings)
         except Exception as err:  # noqa: BLE001 - shown in the channel
             logger.exception("Comments leaderboard failed")
             await channel.send(clip_text(f"💬 Couldn't read the YouTube comments: {err}"))
             return
+        # By time, not "since the last read": comment_check reads them every few hours too.
+        since = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S")
+        new = [c for c in board.comments if c.published >= since]
         head = f"💬 **{len(new)} new comment{'s' * (len(new) != 1)}** since yesterday"
         lines = [head + (":" if new else "."), *leaderboard.new_lines(board, new), "",
                  "🏆 **Leaderboard** (/leaderboard · /comments · /points)", *leaderboard.top_lines(board)]
@@ -553,8 +559,8 @@ class TrendClipBot(discord.Client):
         await self.queue_replies(channel, board)
 
     async def queue_replies(self, channel: discord.abc.Messageable, board: leaderboard.Board) -> None:
-        """One YouTube reply per fan per video, sent by reply_loop a few minutes apart; flagged comments
-        are listed so they can be removed."""
+        """A YouTube reply to every comment, sent by reply_loop a few minutes apart; flagged comments are
+        listed so they can be removed."""
         skipped = await asyncio.to_thread(leaderboard.new_skips, self.settings, board)
         if skipped:
             lines = [f"🚫 **{len(skipped)} comment(s) look like spam, links or rude**: no reply, no points. "
@@ -569,7 +575,7 @@ class TrendClipBot(discord.Client):
                                          assistant.today(self.settings))
         if queued:
             kinds = {"first": "🥇 first correct", "correct": "✅ correct", "voted": "🗳️ votes",
-                     "wrong": "🪤 trapped", "comment": "💬 comments"}
+                     "wrong": "🪤 trapped", "comment": "💬 comments", "again": "🔁 extra comments"}
             counts = ", ".join(f"{sum(q['result'] == k for q in queued)} {label}" for k, label in kinds.items()
                                if any(q["result"] == k for q in queued))
             minutes = len(queued) * REPLY_EVERY_MINUTES
@@ -595,6 +601,46 @@ class TrendClipBot(discord.Client):
 
     @reply_loop.before_loop
     async def _before_reply_loop(self) -> None:
+        await self.wait_until_ready()
+
+    def replies_on(self) -> str:
+        """Why YouTube replies can't go out right now ("" when they can)."""
+        if not self.settings.youtube_auto_replies:
+            return "Auto replies are off: set YOUTUBE_AUTO_REPLIES=true in .env and restart."
+        if not publish.TOKEN_FILE.is_file():
+            return "YouTube isn't connected. Open the dashboard → Upload → Connect YouTube."
+        if not publish.can_comment():
+            return "Reconnect YouTube once (dashboard → Upload → Disconnect → Connect YouTube) to allow replies."
+        return ""
+
+    async def check_comments(self, channel: discord.abc.Messageable) -> leaderboard.Board:
+        """Read the comments now and queue a reply to every new one."""
+        async with self.comments_lock:
+            board, _ = await asyncio.to_thread(leaderboard.refresh, self.settings)
+        await self.queue_replies(channel, board)
+        return board
+
+    @tasks.loop(minutes=30)
+    async def comment_check(self) -> None:
+        hours = self.settings.youtube_reply_check_hours
+        if not hours or self.replies_on() or not self.settings.discord_channel_id or self.comments_lock.locked():
+            return
+        board = await asyncio.to_thread(leaderboard.load, self.settings)
+        try:
+            last = datetime.fromisoformat(board.updated_at)
+        except ValueError:
+            return  # never read yet: the morning read or /replies starts it
+        if datetime.now(timezone.utc) - last < timedelta(hours=hours):
+            return
+        try:
+            channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
+                self.settings.discord_channel_id)
+            await self.check_comments(channel)
+        except Exception:  # noqa: BLE001 - logged; the next round tries again
+            logger.exception("Reading the YouTube comments for replies failed")
+
+    @comment_check.before_loop
+    async def _before_comment_check(self) -> None:
         await self.wait_until_ready()
 
     async def send_stats(self, channel: discord.abc.Messageable) -> None:
@@ -1048,6 +1094,42 @@ async def comments_cmd(interaction: discord.Interaction, video: str) -> None:
         await reply_lines(interaction, leaderboard.video_lines(board, video))
 
 
+@app_commands.command(name="replies", description="Read the YouTube comments now and reply to every new one")
+async def replies_cmd(interaction: discord.Interaction) -> None:
+    bot = _bot(interaction)
+    if why := bot.replies_on():
+        return await reply(interaction, why)
+    await interaction.response.defer(thinking=True)
+    try:
+        board = await bot.check_comments(interaction.channel)
+    except Exception as err:  # noqa: BLE001 - shown in the channel
+        logger.exception("Reading the YouTube comments for replies failed")
+        return await reply(interaction, clip_text(f"💬 Couldn't read the YouTube comments: {err}"))
+    settings = bot.settings
+    sent = await asyncio.to_thread(leaderboard.send_next_reply, settings, board.channel_id, assistant.today(settings))
+    o = await asyncio.to_thread(leaderboard.reply_overview, settings, board, assistant.today(settings))
+    lines = [f"💬 **YouTube replies** (comments from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)",
+             f"✅ Replied: {o['replied']}",
+             f"⏳ In the queue: {o['queued']} (one every {REPLY_EVERY_MINUTES} min, "
+             f"~{o['queued'] * REPLY_EVERY_MINUTES} min)" + (f" · just sent one to {leaderboard.safe(sent['name'], 32)}"
+                                                           if sent else "")]
+    if o["quiz_wait"]:
+        when = datetime.fromisoformat(o["next_quiz"]).astimezone(settings.tz).strftime("%a %H:%M")
+        lines.append(f"🤫 Waiting so they don't spoil the answer: {o['quiz_wait']} on quiz / paradox videos "
+                     f"(replies start {leaderboard.REPLY_AFTER_HOURS} h after the video; next at {when})")
+    if o["unchecked"]:
+        lines.append(f"🔎 Not checked for spam yet: {o['unchecked']} (Gemini was busy; the next read tries again)")
+    if o["skipped"]:
+        lines.append(f"🚫 No reply (spam, links or rude): {o['skipped']}")
+    if o["failed"]:
+        lines.append(f"⚠️ YouTube refused: {o['failed']} (comment deleted, or comments turned off on the video)")
+    lines.append(f"📅 Sent today: {o['sent_today']} of {o['daily_max']} (YOUTUBE_REPLY_DAILY_MAX)"
+                 + (" · the rest go out tomorrow" if o["sent_today"] >= o["daily_max"] else ""))
+    if settings.youtube_reply_check_hours:
+        lines.append(f"_New comments are read every {settings.youtube_reply_check_hours:g} h by themselves._")
+    await reply_lines(interaction, lines)
+
+
 @app_commands.command(name="points", description="One fan's points and comments")
 @app_commands.describe(name="Who (type part of the name)")
 @app_commands.autocomplete(name=person_choices)
@@ -1140,11 +1222,12 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
         "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
+        "`/replies` read the YouTube comments now and reply to every new one (also runs every few hours)",
     ]), ephemeral=True)
 
 
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, leaderboard_cmd,
-            comments_cmd, points_cmd, answer_cmd, plan_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, help_cmd]
 
 
 def main(argv: list[str] | None = None) -> int:
