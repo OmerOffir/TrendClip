@@ -836,6 +836,7 @@ def youtube_callback(state: str = "", code: str = "", error: str = "") -> HTMLRe
     color = "#3ddc97" if ok else "#ff4d5e"
     return HTMLResponse(
         f"""<!doctype html><meta charset="utf-8"><title>TrendClipper · YouTube</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
 <body style="background:#0b0d12;color:#e8ebf2;font:16px system-ui;display:grid;place-items:center;height:90vh">
 <div style="text-align:center"><h2 style="color:{color}">{'Connected' if ok else 'Not connected'}</h2>
 <p>{html_escape(message)}</p><p><a style="color:#8b93a7" href="/#upload">Back to TrendClipper</a></p></div>

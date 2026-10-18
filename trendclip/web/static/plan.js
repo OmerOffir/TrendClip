@@ -312,6 +312,7 @@
             <button type="button" class="dl-copy" data-plan-short="${esc(s.filename)}" data-day="${tomorrow}">Tomorrow</button>
             <button type="button" class="dl-copy" data-plan-short="${esc(s.filename)}" data-day="${after}">Day after</button>
             <button type="button" class="dl-copy" data-pick-short="${esc(s.filename)}">Pick a day…</button>
+            <button type="button" class="dl-delete" data-delete-short="${esc(s.filename)}" title="Delete this video for good">Delete</button>
           </div>
         </div>
       </div>`).join("");
@@ -532,6 +533,13 @@
     return mutate(() => send(`/api/plan/items/${encodeURIComponent(id)}`, "DELETE"));
   }
 
+  async function deleteShort(filename) {
+    const s = state.data.shorts.find((x) => x.filename === filename);
+    if (!confirm(`Delete "${s ? s.title : filename}" for good? The video file is removed and can't be brought back.`)) return;
+    await mutate(() => send(`/api/shorts/${encodeURIComponent(filename)}`, "DELETE"));
+    document.dispatchEvent(new CustomEvent("trendclip:shorts-changed"));
+  }
+
   async function deleteFromForm() {
     const id = state.form && state.form.id;
     if (!id) return;
@@ -552,6 +560,7 @@
     if (t.dataset.toggle) return toggle(t.dataset.item, t.dataset.toggle);
     if (t.dataset.planShort) return planShort(t.dataset.planShort, t.dataset.day);
     if (t.dataset.pickShort) return openDialog({ short: t.dataset.pickShort });
+    if (t.dataset.deleteShort) return deleteShort(t.dataset.deleteShort);
     if (t.dataset.add) return openDialog({ kind: t.dataset.add, day: t.dataset.day, slot: t.dataset.slot || "" });
     if (t.dataset.edit) return openDialog({ id: t.dataset.edit });
     if (t.dataset.remove) return removeItem(t.dataset.remove);
