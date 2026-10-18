@@ -261,10 +261,12 @@ def math_lines(start: int, chain: list[Step], rng: random.Random) -> tuple[list[
 
 QUIZ_INSTRUCTION = """You package interactive "brain workout" quiz Shorts (YouTube Shorts, TikTok, Reels). The
 viewer plays along in their head, then comments their answer: that is the whole point. Style: bold, fast,
-competitive, a little cheeky. The first sentence is a dare spoken from the first millisecond, with no soft
-intro; vary its kind from video to video: a rarity claim ("Only 3% ..."), a hard stop ("Stop. Do not
-pause."), a bet ("Bet you can't ..."), a callout ("Gamers, this one's for you."), a time limit ("You have
-five seconds."). Titles end with one emoji (🧠 or 🛑).
+competitive, a little cheeky. The voiceover starts straight on the puzzle (the question, the first number,
+the story), because viewers decide in the first second; the dare lives on the frame-0 banner and in the
+title. Vary the dare's kind from video to video: a rarity claim ("Only 3% ..."), a hard stop ("Stop. Do
+not pause."), a bet ("Bet you can't ..."), a callout ("Gamers, this one's for you."), a time limit ("You
+have five seconds."). Every quiz is at most 20 seconds: short sentences, no filler. Titles end with one
+emoji (🧠 or 🛑).
 Never reveal the answer in the title, description, title card, hint or hashtags. Plain English."""
 
 
@@ -312,7 +314,8 @@ MATH_PROMPT = """Package this RAPID MATH CHAIN Short. The voiceover reads the ch
 {chain} (answer {answer}).
 Write the hook, title, description, hashtags and title card. Topic flavour for the game background: {game}.{notes}"""
 
-RIDDLE_PROMPT = """Write a MULTI-PART RIDDLE Short of about 20 seconds. It opens, from the very first word, on
+RIDDLE_PROMPT = """Write a MULTI-PART RIDDLE Short of at most 18 seconds (about 45 spoken words in all, clues of
+at most 12 words). It opens, from the very first word, on
 the riddle's most paradoxical idea asked as a question (no "only 3% solve this" stat: viewers swipe past
 those), then 2-3 more clues (spoken one at a time, each one making the viewer rethink), then the question.
 Viewers comment their guess.
@@ -421,17 +424,17 @@ class GeminiParadox(BaseModel):
         "The opening dare, at most 8 words, spoken from the first millisecond, e.g. 'Only 2% can escape this "
         "paradox.' or 'This breaks 97% of brains.'"))
     setup: list[str] = Field(description=(
-        "The mini story in 1 or 2 spoken sentences (at most 20 words each), concrete characters and stakes, "
+        "The mini story in 1 spoken sentence (2 only if it can't work otherwise; at most 18 words each), concrete characters and stakes, "
         "e.g. 'A crocodile steals a child and promises to return him if the father can guess what it will do.'"))
     twist: str = Field(description=(
-        "The move that springs the trap, one sentence of at most 16 words, e.g. \"The father guesses: 'You will "
+        "The move that springs the trap, one sentence of at most 12 words, e.g. \"The father guesses: 'You will "
         "NOT return my child!'\""))
     dilemma: str = Field(description="The question the viewer must decide, at most 10 words, e.g. 'What should the crocodile do?'")
     side_a: str = Field(description=(
-        "The first branch as one sentence starting with 'If', at most 16 words, showing it fails, e.g. 'If he "
+        "The first branch as one sentence starting with 'If', at most 14 words, showing it fails, e.g. 'If he "
         "keeps the child, the father was right, so he must return him.'"))
     side_b: str = Field(description=(
-        "The second branch as one sentence starting with 'But if', at most 14 words, showing it fails too, e.g. "
+        "The second branch as one sentence starting with 'But if', at most 12 words, showing it fails too, e.g. "
         "'But if he returns the child, the father was wrong!'"))
     vote_a: str = Field(description="One word for picking the first side, e.g. 'KEEP'. Short, plain, easy to type.")
     vote_b: str = Field(description="One word for picking the second side, e.g. 'RETURN'. Different from vote_a.")
@@ -448,9 +451,10 @@ class GeminiParadox(BaseModel):
         "3 to 7 word ALL-CAPS banner on the first frame with a low pass rate, e.g. 'ONLY 2% CAN SOLVE THIS PARADOX'. No emoji."))
 
 
-PARADOX_PROMPT = """Write a PARADOX TRAP Short (20-25 seconds): a tiny story that traps the viewer between two
-answers that both seem right, so they can't scroll away until they pick a side, then argue about it in the
-comments. Shape: dare hook, the story in 1-2 sentences, the twist that springs the trap, "Think fast!" plus the
+PARADOX_PROMPT = """Write a PARADOX TRAP Short (at most 20 seconds, about 45 spoken words): a tiny story that
+traps the viewer between two answers that both seem right, so they can't scroll away until they pick a side,
+then argue about it in the comments. Shape: the story in ONE short sentence, spoken first (the dare hook is
+only shown on the banner), the twist that springs the trap, "Think fast!" plus the
 dilemma, both branches failing ("If ... / But if ..."), then an either/or question that splits viewers into
 two camps, and they comment one word for their side.
 Build it on this paradox or dilemma: {idea}.
@@ -623,22 +627,26 @@ def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, pr
     result, model = _ask(client, model, GeminiParadox, prompt, progress)
     setup = [_one_line(s, 22) for s in result.setup if s.strip()][:2]
     twist, side_a, side_b = _one_line(result.twist, 18), _one_line(result.side_a, 18), _one_line(result.side_b, 16)
+    twist = re.sub(r"(?i)\s*think fast\W*$", "", twist) or twist
     if not setup or not all((twist, side_a, side_b)):
         raise sw.ScriptError("Gemini wrote a paradox without its story or both sides; try again")
     vote_a, vote_b = _vote(result.vote_a, "A"), _vote(result.vote_b, "B")
     if vote_a == vote_b:
         vote_a, vote_b = "A", "B"
     hook = _one_line(result.hook, 9) or rng.choice(PARADOX_HOOKS)
-    dilemma = (_one_line(result.dilemma, 11).rstrip(".!?") or "What should happen") + "?"
+    dilemma = re.sub(r"(?i)^think fast\W*", "", _one_line(result.dilemma, 13))
+    dilemma = (dilemma.rstrip(".!?") or "What should happen") + "?"
     debate = (_one_line(result.debate, 18).rstrip(".!?") or f"So, {vote_a.lower()} or {vote_b.lower()}") + "?"
     closing = f"Comment {vote_a.lower()} or {vote_b.lower()} right now!"
-    lines = [hook, *setup, twist, f"Think fast! {dilemma}", side_a, side_b, debate, closing]
+    # The story is the first thing spoken; the dare is the banner. The debate stays in the pinned comment.
+    lines = fit_quiz([*setup, twist, f"Think fast! {dilemma}", side_a, side_b, debate, closing], *setup[1:], debate)
+    setup = [s for s in setup if s in lines]
     picks = f"{vote_a} OR {vote_b}?"
     flashes = [Flash(word=" ".join(setup[0].split()[:2]), text="MOVIE LOGIC" if movie else "PARADOX"),
                Flash(word="Think fast", text="THINK FAST!"),
                Flash(word=" ".join(side_a.split()[:2]), text=f"A) {vote_a}"),
                Flash(word=" ".join(side_b.split()[:2]), text=f"B) {vote_b}"),
-               Flash(word=debate.split()[0], text="?"),
+               *([Flash(word=debate.split()[0], text="?")] if debate in lines else []),
                Flash(word="Comment", text=picks if len(picks) <= 16 else "A OR B?")]
     pinned = f"{debate} 👇\nTeam {vote_a} or Team {vote_b}? Defend your side!"
     resolution = " ".join(result.resolution.split())
@@ -678,6 +686,26 @@ def _ask(client, model: str, schema: type[BaseModel], prompt: str, progress: Pro
             raise sw.ScriptError("Gemini returned an empty answer (possibly blocked); try again")
         result = schema.model_validate_json(response.text)
     return result, model
+
+
+# Spoken words in a quiz: about 18 s of voice (quizzes run ~2.6 words/s with the countdown pauses), so the
+# Short with its ending stays at about 20 s. Shorts over ~21 s were swiped away.
+QUIZ_MAX_WORDS = 46
+
+
+def _words(lines: list[str]) -> int:
+    return sum(len(line.split()) for line in lines)
+
+
+def fit_quiz(lines: list[str], *optional: str) -> list[str]:
+    """`lines` without the `optional` ones (dropped in that order) until it fits QUIZ_MAX_WORDS."""
+    lines = list(lines)
+    for line in optional:
+        if _words(lines) <= QUIZ_MAX_WORDS:
+            break
+        if line in lines:
+            lines.remove(line)
+    return lines
 
 
 def _one_line(text: str, max_words: int) -> str:
@@ -746,9 +774,14 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
     answer = _one_line(result.answer, 6).rstrip(".")
     hook = riddle_hook(result.hook, answer) or clues.pop(0)
     hint = safe_hint(result.hint, answer) or "every clue has to fit one answer"
-    lines = [hook, *clues, question, COUNTDOWN, f"Hint: {hint}.", CLOSING]
-    flashes = [Flash(word=" ".join(c.split()[:2]), text=f"CLUE {i}") for i, c in enumerate(clues, 1)]
-    flashes += [Flash(word=question.split()[0], text="?"), *COUNTDOWN_FLASHES, Flash(word="Hint", text="HINT")]
+    hint_line = f"Hint: {hint}."
+    # Clues are never dropped (a whodunit needs all of them); the hint is also in the pinned comment.
+    lines = fit_quiz([hook, *clues, question, COUNTDOWN, hint_line, CLOSING], hint_line)
+    flashes = [Flash(word=" ".join(hook.split()[:2]), text="RIDDLE")]  # moves on the first word
+    flashes += [Flash(word=" ".join(c.split()[:2]), text=f"CLUE {i}") for i, c in enumerate(clues, 1)]
+    flashes += [Flash(word=question.split()[0], text="?"), *COUNTDOWN_FLASHES]
+    if hint_line in lines:
+        flashes.append(Flash(word="Hint", text="HINT"))
     pinned = public_pin(question, hint)
     bonus = (_one_line(result.bonus, 14).rstrip(".!?") + "?") if result.bonus.strip() else ""
     if bonus and answer.lower() not in bonus.lower():
@@ -884,16 +917,21 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     _remember(settings, "trivia", answer=correct, question=question)
     hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
     asks = [f"Is it {options[0]}?", f"Is it {options[1]}?", f"Or is it {options[2]}?"]
-    lines = [hook, question, *asks, "Think fast! Three. Two. One.", f"Hint: {hint}.",
-             "Comment the real answer right now!"]
-    # The question first, so an option named in the hook or question can't trigger its flash early.
+    hint_line = f"Hint: {hint}."
+    # The question is the first word spoken; the dare is only on the banner.
+    lines = fit_quiz([question, *asks, "Think fast! Three. Two. One.", hint_line,
+                      "Comment the real answer right now!"], hint_line)
+    # The question first, so an option named in the question can't trigger its flash early.
     flashes = [Flash(word=question.split()[0], text="?")]
     for letter, option in zip("ABC", options):
         name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
         label = f"{letter}) {name[:1].upper()}{name[1:]}"
         flashes.append(Flash(word=f"it {option.split()[0]}", text=label if len(label) <= 16 else letter))
     flashes += [Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
-                Flash(word="one", text="1"), Flash(word="Hint", text="HINT"), Flash(word="real answer", text="?")]
+                Flash(word="one", text="1")]
+    if hint_line in lines:
+        flashes.append(Flash(word="Hint", text="HINT"))
+    flashes.append(Flash(word="real answer", text="?"))
     fact = result.fact.strip()
     pinned = public_pin(question, hint)
     script = _script(settings, game, model, "trivia", format, " ".join(lines), hook, flashes, correct, pinned,
@@ -923,17 +961,19 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
                               hashtags=["#shorts", "#math", "#brainteaser", "#mathchallenge", "#quiz"],
                               title_card="ONLY 3% CAN SOLVE THIS")
     hook = _one_line(pack.hook, 10)
-    # The start number would fire its flash early ("Only 10%..."); the answer just mustn't be given away.
-    if str(start) in {_norm(t) for t in hook.split()} or str(answer) in {t.strip(".,!?") for t in hook.split()}:
+    if str(answer) in {t.strip(".,!?") for t in hook.split()}:
         hook = rng.choice(MATH_HOOKS)
     lines, flashes = math_lines(start, chain, rng)
-    flashes += [Flash(word="number", text="?"), *COUNTDOWN_FLASHES, Flash(word="Hint", text="HINT")]
     hint = digit_hint(answer)
-    closing = ["Got your number?", COUNTDOWN, f"Hint: {hint}.", CLOSING]
-    script = " ".join([hook, *lines, *closing])
+    hint_line = f"Hint: {hint}."
+    # "Start with 24." is the first thing spoken (its number slams in at once); the dare is the banner.
+    spoken = fit_quiz([*lines, "Got your number?", COUNTDOWN, hint_line, CLOSING], hint_line)
+    flashes += [Flash(word="number", text="?"), *COUNTDOWN_FLASHES]
+    if hint_line in spoken:
+        flashes.append(Flash(word="Hint", text="HINT"))
     pinned = public_pin("What number did you get?", hint)
-    return _script(settings, game, model, "math", format, script, hook, flashes, str(answer), pinned, pack,
-                   on_screen=f"Math chain: {steps_text} (answer {answer})")
+    return _script(settings, game, model, "math", format, " ".join(spoken), hook, flashes, str(answer), pinned,
+                   pack, on_screen=f"Math chain: {steps_text} (answer {answer})")
 
 
 # --------------------------------------------------------------------------- your own quiz text
@@ -1134,10 +1174,10 @@ class GeminiMovieQuote(BaseModel):
         "At most 14 words: 'What did [character] ACTUALLY say ...?' or 'What is the REAL line ...?', e.g. 'What "
         "did Darth Vader actually say to Luke in Star Wars?'"))
     trap: str = Field(description=(
-        "The famous MISQUOTE most people remember, WRONG, at most 9 words, e.g. 'Luke, I am your father.'"))
-    distractor: str = Field(description="A believable wrong version, at most 9 words, e.g. 'I am your father, Luke.'")
+        "The famous MISQUOTE most people remember, WRONG, at most 7 words, e.g. 'Luke, I am your father.'"))
+    distractor: str = Field(description="A believable wrong version, at most 7 words, e.g. 'I am your father, Luke.'")
     correct: str = Field(description=(
-        "The line as actually said in the movie, word for word, at most 9 words, e.g. 'No, I am your father.' "
+        "The line as actually said in the movie, word for word, at most 7 words, e.g. 'No, I am your father.' "
         "Must be easy to verify on Google."))
     fact: str = Field(description="One short sentence proving it, e.g. 'In the film Vader says \"No, I am your father\"; he never says \"Luke\".'")
     title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the answer, e.g. '90% Misquote This Movie Line 🎬'.")
@@ -1154,7 +1194,7 @@ class GeminiMovieEmoji(BaseModel):
     class Pic(BaseModel):
         emoji: str = Field(description="One emoji, e.g. 🎈.")
         line: str = Field(description=(
-            "A spoken description of the emoji, 5 to 8 words, starting with the thing, e.g. 'Balloons, "
+            "A spoken description of the emoji, 4 to 6 words, starting with the thing, e.g. 'Balloons, "
             "hundreds of colorful balloons.' Never the movie's title or a character's name."))
         word: str = Field(description="The thing's word as written in the line, e.g. 'Balloons'.")
 
@@ -1175,7 +1215,7 @@ wrong (the "Mandela effect"), with three options: the famous misquote (the trap)
 version, and the line as actually said in the movie, word for word.
 What makes a candidate good: the movie is famous worldwide, the misquote is how most people really say it,
 and the real line is documented (the film's script, reputable sources). No lines that differ only by "Oh"
-or a comma: the difference must be clear when read aloud. Each option at most 9 words, easy to say.
+or a comma: the difference must be clear when read aloud. Each option at most 7 words, easy to say.
 Movies already used on the channel, pick others: {used}.
 Background gameplay: {game}.{notes}"""
 
@@ -1187,11 +1227,11 @@ it, or a character's name anywhere except "movie".
 Movies already used on the channel, pick another: {used}.
 Background gameplay: {game}.{notes}"""
 
-MOVIE_LOGIC_PROMPT = """Write a MOVIE LOGIC DEBATE Short (20-25 seconds) in the shape of a paradox trap: a famous
+MOVIE_LOGIC_PROMPT = """Write a MOVIE LOGIC DEBATE Short (at most 20 seconds, about 45 spoken words) in the shape of a paradox trap: a famous
 movie's plot or rules, pushed to a question with two answers that both seem right, so viewers pick a side
 and argue in the comments, e.g. "If Marty McFly stops his parents from meeting, does he vanish at once or
 does he have time to fix it?" The movie: {seed}. Say the movie or character in the story so viewers know it.
-Shape: dare hook, the situation in 1-2 sentences, the twist that springs the trap, "Think fast!" plus the
+Shape: the situation in ONE short sentence, spoken first (the dare hook is only shown on the banner), the twist that springs the trap, "Think fast!" plus the
 dilemma, both branches ("If ... / But if ..."), then an either/or question that splits viewers into two
 camps, and they comment one word for their side. Put the movie's title and year in `name`.
 Movies already used on the channel, pick another: {used}.
@@ -1255,8 +1295,9 @@ def _write_movie_quote(settings: Settings, game: str, *, used: str, extra: str, 
     question = (_one_line(result.question, 15).rstrip(".!?") or "What is the real line") + "?"
     hook = _one_line(result.hook, 8) if result.hook.strip() and rng.random() < 0.5 else rng.choice(MOVIE_HOOKS)
     asks = [f"Option {l}: {o.rstrip('.!?')}." for l, o in zip("ABC", order)]
-    lines = [hook, question, *asks, "Think fast! Three. Two. One.", "Only one is the real line.",
-             "Comment A, B or C right now!"]
+    only = "Only one is the real line."
+    # The question is the first word spoken; the dare is only on the banner.
+    lines = fit_quiz([question, *asks, "Think fast! Three. Two. One.", only, "Comment A, B or C right now!"], only)
     flashes = [Flash(word=question.split()[0], text="?"), *[Flash(word=f"Option {l}", text=l) for l in "ABC"],
                Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
                Flash(word="one", text="1"), Flash(word="Comment", text="A, B OR C?")]
@@ -1295,9 +1336,14 @@ def _write_movie_emoji(settings: Settings, game: str, *, used: str, extra: str, 
     hint = safe_hint(result.hint, movie, *title_words) or "it's a famous one"
     hook = rng.choice([h for h in EMOJI_HOOKS if h.lower() not in {o.lower() for o in recent_openings(settings)}]
                       or EMOJI_HOOKS)
-    script = " ".join([hook, "Three emojis, one famous movie.", *lines, f"Hint: {hint.rstrip('.!')}!",
-                       "Three. Two. One.", "Comment the movie right now!"])
-    flashes = [Flash(word="Hint", text="HINT"), *COUNTDOWN_FLASHES, Flash(word="Comment", text="WHICH MOVIE?")]
+    intro, hint_line = "Three emojis, one famous movie.", f"Hint: {hint.rstrip('.!')}!"
+    spoken = fit_quiz([hook, intro, *lines, hint_line, "Three. Two. One.", "Comment the movie right now!"],
+                      intro, hint_line)
+    script = " ".join(spoken)
+    flashes = [Flash(word="five", text="5 SECONDS!")]  # moves on the first words
+    if hint_line in spoken:
+        flashes.append(Flash(word="Hint", text="HINT"))
+    flashes += [*COUNTDOWN_FLASHES, Flash(word="Comment", text="WHICH MOVIE?")]
     _remember(settings, "movie", shape="emoji", movie=f"{movie} ({result.year.strip()})", answer=movie)
     pinned = public_pin("Which movie is it?", hint)
     return _script(settings, game, model, "movie", format, script, hook, flashes, movie, pinned, result,

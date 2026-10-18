@@ -107,7 +107,8 @@ def test_assemble_mixes_music_for_real(tmp_path):
 
     probe = subprocess.run([ffmpeg, "-hide_banner", "-i", str(out)], capture_output=True, text=True).stderr
     assert "1080x1920" in probe and "stereo" in probe
-    assert abs(video_assembler.media_duration(out) - 2.0) < 0.2  # short music is looped, voice sets the length
+    # short music is looped; the last word (1.5 s) + the tail sets the length
+    assert abs(video_assembler.media_duration(out) - (1.5 + video_assembler.TAIL_SECONDS)) < 0.2
 
 
 def test_music_filter_keeps_voice_level():

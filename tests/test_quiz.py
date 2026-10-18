@@ -49,7 +49,8 @@ def test_math_quiz_script_flashes_and_answer(tmp_path):
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="math",
                                         client=fake_client(pack, seen))
     assert seen["schema"] is quiz.GeminiMathPack and "answer" in seen["prompt"]
-    assert result.mode == "math" and result.script.startswith("Only 5% of people finish this without pausing.")
+    assert result.mode == "math" and result.script.startswith("Start with ")  # the puzzle from the first word
+    assert "5%" not in result.script and result.hook == "Only 5% of people finish this without pausing."
     assert "Don't pause" not in result.script and "made a mistake" not in result.script
     assert "Start with" in result.script and "Hint: it's " in result.script
     assert result.script.endswith("Comment your answer right now!")
@@ -85,7 +86,7 @@ def test_riddle_opens_on_the_paradox_and_counts_down(tmp_path):
     assert result.script.startswith("What weighs nothing, but you can't hold it for ten minutes? A strong man")
     assert result.script.endswith("What am I? Three. Two. One. Hint: you do it all day. Comment your answer right now!")
     assert result.title_card == "WEIGHS NOTHING. CAN'T HOLD IT?"
-    assert [f.text for f in result.flashes] == ["CLUE 1", "CLUE 2", "?", "3", "2", "1", "HINT"]
+    assert [f.text for f in result.flashes] == ["RIDDLE", "CLUE 1", "CLUE 2", "?", "3", "2", "1", "HINT"]
     assert result.answer == "Your breath" and result.pinned_comment.startswith("What am I? 👇")
     assert "🔥 Bonus round: What can you catch but never throw? Reply with both answers!" in result.pinned_comment
     assert "breath" not in result.pinned_comment.lower()
@@ -152,7 +153,7 @@ def test_a_stat_dare_riddle_hook_is_replaced_by_the_first_clue(tmp_path):
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="riddle", client=fake_client(riddle))
     assert result.script.startswith("I have a face, but I never smile. I have hands") and "5%" not in result.script
     assert result.title_card == "I HAVE A FACE, BUT I NEVER SMILE?"
-    assert [f.text for f in result.flashes][:2] == ["CLUE 1", "?"]
+    assert [f.text for f in result.flashes][:3] == ["RIDDLE", "CLUE 1", "?"]
     assert "clock" not in result.script.lower().split("hint:")[-1]
     assert "Bonus" not in result.pinned_comment  # it named the answer
     assert quiz.riddle_hook("What has a face but never smiles?", "A clock") == "What has a face but never smiles?"
@@ -222,7 +223,8 @@ def test_trivia_trap(tmp_path, monkeypatch):
     result = script_writer.write_script(make_settings(tmp_path), "GTA V", mode="trivia",
                                         client=trivia_client([[trivia()]], ["1: PASS"], seen))
     assert "video games" in seen["prompts"][0] and "Venus" in seen["prompts"][1]
-    assert result.script.startswith("Only 5% get this right. Which planet in our solar system is the hottest? Is it ")
+    assert result.script.startswith("Which planet in our solar system is the hottest? Is it ")  # no spoken dare
+    assert result.hook == "Only 5% get this right."
     assert "Or is it " in result.script
     assert "Think fast! Three. Two. One. Hint:" in result.script and "you failed" not in result.script
     assert "Venus" not in result.script.split("One.")[-1]  # named as an option, never as the reveal
@@ -241,6 +243,20 @@ def test_trivia_trap(tmp_path, monkeypatch):
     assert [t.text for t in timed] == labels
     question_end = next(w.end for w in words if w.text.endswith("?"))
     assert timed[1].start >= question_end - 0.1  # an option named in the question can't trigger option A
+
+
+def test_paradox_says_think_fast_once(tmp_path):
+    twice = CROCODILE.model_copy(update={"dilemma": "Think fast! What should the crocodile do?"})
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "paradox", client=fake_client(twice))
+    assert result.script.count("Think fast!") == 1 and "Think fast! What should the crocodile do?" in result.script
+
+
+def test_fit_quiz_drops_the_optional_lines_in_order_until_it_fits():
+    long = "word " * 22
+    lines = [long, long, "Hint: x.", "Extra line."]  # 48 words
+    assert quiz.fit_quiz(lines, "Extra line.", "Hint: x.") == [long, long, "Hint: x."]  # 46: fits
+    assert quiz.fit_quiz([long, long, long], long) == [long, long]
+    assert quiz.fit_quiz(["short"], "short") == ["short"]  # nothing to drop when it fits
 
 
 def test_trivia_says_the_with_country_names(tmp_path):
@@ -305,20 +321,22 @@ def test_paradox_trap(tmp_path):
     result = script_writer.write_script(make_settings(tmp_path), "Minecraft", mode="paradox",
                                         client=fake_client(CROCODILE, seen))
     assert seen["schema"] is quiz.GeminiParadox and "PARADOX TRAP" in seen["prompt"]
-    assert result.mode == "paradox" and result.script.startswith("Only 2% can escape this paradox. A crocodile steals")
+    assert result.mode == "paradox" and result.script.startswith("A crocodile steals")  # the story first
     assert "Think fast! What should the crocodile do? If he keeps" in result.script
     assert "return my child!' Think fast!" in result.script  # no "!'." after the quote
-    assert result.script.endswith("trapped forever? Comment keep or return right now!")
+    # too long for 20 s with the debate: it stays in the pinned comment only
+    assert result.script.endswith("the father was wrong! Comment keep or return right now!")
     assert result.title_card == "ONLY 2% CAN SOLVE THIS PARADOX" and result.title.endswith("🧠")
     assert result.hashtags[:3] == ["#shorts", "#paradox", "#logic"]
     assert result.pinned_comment.startswith("Did the father just outsmart the crocodile") and "Team KEEP or Team RETURN" in result.pinned_comment
     assert "crocodile dilemma" in result.on_screen and "self-reference" in result.on_screen
     assert [r.word for r in result.reactions] == ["wrong"] and result.reactions[0].mood == "shocked"
     labels = [f.text for f in result.flashes]
-    assert labels == ["PARADOX", "THINK FAST!", "A) KEEP", "B) RETURN", "?", "KEEP OR RETURN?"]
+    assert labels == ["PARADOX", "THINK FAST!", "A) KEEP", "B) RETURN", "KEEP OR RETURN?"]
 
     timed = quiz.schedule_flashes(result.flashes, va.estimate_word_timings(result.script, 25))
     assert [t.text for t in timed] == labels
+    assert timed[0].start < 0.5  # something moves at once
     assert all(a.start < b.start for a, b in zip(timed, timed[1:]))
 
 
@@ -431,8 +449,8 @@ def test_movie_misquote_trap_hides_the_answer_and_keeps_the_full_options(tmp_pat
     result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "movie", notes="a quote one", rng=random.Random(4),
                              client=movie_client([[VADER]], ["1: PASS"], seen=seen))
     assert result.mode == "movie" and "MISQUOTE" in seen["prompts"][0] and "No, I am your father" in seen["prompts"][1]
-    assert "What did Darth Vader actually say to Luke in Star Wars? Option A:" in result.script
-    assert result.script.endswith("Only one is the real line. Comment A, B or C right now!")
+    assert result.script.startswith("What did Darth Vader actually say to Luke in Star Wars? Option A:")
+    assert result.script.endswith("Three. Two. One. Comment A, B or C right now!")  # "Only one is..." didn't fit
     assert "real answer is" not in result.script.lower()
     assert sorted(c[3:] for c in result.choices) == ["I am your father, Luke.", "Luke, I am your father.",
                                                      "No, I am your father."]
@@ -455,7 +473,8 @@ def test_guess_the_movie_from_emojis_pops_them_up_and_hides_the_title(tmp_path):
     result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="emoji please",
                              client=movie_client(emoji=UP), rng=random.Random(1))
     assert result.script.split("!")[0] + "!" in quiz.EMOJI_HOOKS
-    assert "Three emojis, one famous movie. Emoji one: Balloons" in result.script
+    assert "seconds! Emoji one: Balloons" in result.script  # "Three emojis, one famous movie." didn't fit
+    assert [f.text for f in result.flashes][0] == "5 SECONDS!"
     assert "Hint: It starts with a flying house! Three. Two. One. Comment the movie right now!" in result.script
     assert [(p.word, p.emoji) for p in result.popups] == [("Balloons", "🎈"), ("house", "🏠"), ("man", "👴")]
     assert result.answer == "Up" and result.title_card == "GUESS THE MOVIE IN 5 SECONDS"

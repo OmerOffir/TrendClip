@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 WIDTH, HEIGHT = 1080, 1920
 LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
 LANDSCAPE_OVERLAY_SCALE = 0.72
-TAIL_SECONDS = 1.5  # the video ends this long after the last spoken word (the voice is padded with silence)
+TAIL_SECONDS = 2.0  # the video ends this long after the last spoken word (the voice is padded with silence)
 # Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
 LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
                        "title_chars": 26}

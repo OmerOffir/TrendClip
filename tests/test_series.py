@@ -93,7 +93,7 @@ def test_end_card_shows_over_the_last_seconds(tmp_path):
                                                    end_card="PART 2 TOMORROW · SUB @SideQuestLogic")
     text = path.read_text()
     end_line = next(line for line in text.splitlines() if ",EndCard," in line)
-    assert end_line.startswith("Dialogue: 1,0:00:06.40,0:00:10.90,EndCard")  # last word ends at 9.9 s
+    assert end_line.startswith("Dialogue: 1,0:00:06.40,0:00:11.90,EndCard")  # last word 9.9 s + the 2 s tail
     assert end_line.endswith(r"PART 2 TOMORROW\NSUB @SideQuestLogic")  # one phrase per line, case kept
     two = video_assembler.end_card_event("SUB @SideQuestLogic · DROP YOUR STORY BELOW", 0, 1)
     assert two.endswith(r"SUB @SideQuestLogic\NDROP YOUR STORY\NBELOW")

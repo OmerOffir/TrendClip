@@ -8,6 +8,7 @@ buttons keep working after a restart (their custom ids carry the action).
 import asyncio
 import io
 import logging
+import random
 import sys
 import uuid
 from datetime import date as Day, datetime, timedelta, timezone
@@ -904,15 +905,25 @@ async def act_delete(bot: TrendClipBot, interaction: discord.Interaction, filena
     await interaction.response.edit_message(content="🗑️ Deleted.", view=None)
 
 
-KINDS = {"story": ("📖 Story", discord.ButtonStyle.success), "math": ("🧮 Math challenge", discord.ButtonStyle.primary),
-         "riddle": ("🧩 Riddle", discord.ButtonStyle.primary), "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary),
+# Math first: its Shorts get the most comments (13-18 against 2-8 for the other quizzes).
+KINDS = {"math": ("🧮 Math challenge 🔥", discord.ButtonStyle.success),
+         "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary), "riddle": ("🧩 Riddle", discord.ButtonStyle.primary),
+         "movie": ("🎬 Movie quiz", discord.ButtonStyle.primary),
          "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary),
-         "movie": ("🎬 Movie quiz", discord.ButtonStyle.primary)}
+         "story": ("📖 Story", discord.ButtonStyle.secondary)}
+# "🎲 Pick for me": a quiz kind, math most often.
+PICK_WEIGHTS = {"math": 4, "trivia": 2, "riddle": 2, "movie": 2, "paradox": 1}
+
+
+def pick_kind(rng: random.Random | None = None) -> str:
+    rng = rng or random.Random()
+    return rng.choices(list(PICK_WEIGHTS), weights=list(PICK_WEIGHTS.values()))[0]
 
 
 def kind_buttons(game: str | None = None) -> list[ActionButton | None]:
-    """Story / math / riddle choice; `mk` args are 'kind:game' (just 'kind' when the game doesn't fit)."""
-    out = []
+    """The kind choice (🎲 first); `mk` args are 'kind:game' (just 'kind' when the game doesn't fit)."""
+    out = [(button("mk", f"pick:{game}", "🎲 Pick for me") if game else None)
+           or button("mk", "pick", "🎲 Pick for me")]
     for kind, (label, style) in KINDS.items():
         with_game = button("mk", f"{kind}:{game}", label, style) if game else None
         out.append(with_game or button("mk", kind, label, style))
@@ -927,6 +938,8 @@ async def ask_kind(interaction: discord.Interaction, game: str | None) -> None:
 
 async def act_make(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
     kind, _, game = arg.partition(":")
+    if kind == "pick":
+        kind = pick_kind()
     if kind not in KINDS:  # the old "Create a random video" buttons
         return await ask_kind(interaction, None)
     await bot.create_random(interaction, game.strip() or None, kind)

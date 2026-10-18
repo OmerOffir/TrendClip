@@ -333,10 +333,13 @@ def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
     from trendclip import discord_bot
 
     ids = [b.item.custom_id for b in discord_bot.kind_buttons("GTA V")]
-    assert ids == ["tc:mk:story:GTA V", "tc:mk:math:GTA V", "tc:mk:riddle:GTA V", "tc:mk:trivia:GTA V",
-                   "tc:mk:paradox:GTA V", "tc:mk:movie:GTA V"]
+    assert ids == ["tc:mk:pick:GTA V", "tc:mk:math:GTA V", "tc:mk:trivia:GTA V", "tc:mk:riddle:GTA V",
+                   "tc:mk:movie:GTA V", "tc:mk:paradox:GTA V", "tc:mk:story:GTA V"]
     assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
-        "tc:mk:story", "tc:mk:math", "tc:mk:riddle", "tc:mk:trivia", "tc:mk:paradox", "tc:mk:movie"]
+        "tc:mk:pick", "tc:mk:math", "tc:mk:trivia", "tc:mk:riddle", "tc:mk:movie", "tc:mk:paradox", "tc:mk:story"]
+    import random
+    picks = [discord_bot.pick_kind(random.Random(i)) for i in range(400)]
+    assert "story" not in picks and max(set(picks), key=picks.count) == "math"
 
     made, asked = [], []
 
