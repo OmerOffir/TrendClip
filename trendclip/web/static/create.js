@@ -393,6 +393,8 @@
   };
 
   const QUIZ = ["math", "riddle", "trivia", "paradox", "movie"];
+  // The movie quiz picks its shape from the notes ("emoji" = guess the movie from 3 emojis).
+  const EMOJI_NOTES = "Guess the movie from 3 emojis";
   const isQuiz = () => QUIZ.includes(els.mode.value);
 
   function renderIdeas() {
@@ -401,7 +403,8 @@
       b.classList.toggle("active", !isQuiz() && notes === IDEAS[b.dataset.idea]);
     }
     for (const b of els.ideas.querySelectorAll("[data-quiz]")) {
-      b.classList.toggle("active", els.mode.value === b.dataset.quiz);
+      const emoji = notes === EMOJI_NOTES;
+      b.classList.toggle("active", els.mode.value === b.dataset.quiz && (b.dataset.shape === "emoji") === emoji);
     }
   }
 
@@ -414,9 +417,11 @@
     updateButtons();
   }
 
-  function pickQuiz(kind) {
+  function pickQuiz(kind, shape) {
     if (!QUIZ.includes(kind)) return;
-    if (Object.values(IDEAS).includes(els.notes.value.trim())) els.notes.value = "";
+    const notes = els.notes.value.trim();
+    if (Object.values(IDEAS).includes(notes) || notes === EMOJI_NOTES) els.notes.value = "";
+    if (shape === "emoji" && !els.notes.value.trim()) els.notes.value = EMOJI_NOTES;
     els.mode.value = kind;
     if (state.format === "multi") setFormat("short");
     renderIdeas();
@@ -1338,7 +1343,7 @@
       const b = e.target.closest("[data-idea]");
       if (b) pickIdea(b.dataset.idea);
       const q = e.target.closest("[data-quiz]");
-      if (q) pickQuiz(q.dataset.quiz);
+      if (q) pickQuiz(q.dataset.quiz, q.dataset.shape);
     });
     els.cleared.addEventListener("click", (e) => {
       if (e.target.closest("[data-undo-clear]")) undoClear();
