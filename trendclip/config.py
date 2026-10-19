@@ -143,7 +143,7 @@ class Settings(BaseModel):
     youtube_reply_daily_max: int = Field(100, ge=1, le=180)
     # Read the comments this often to reply to new ones (0 = only the morning read and /replies).
     youtube_reply_check_hours: float = Field(3, ge=0, le=24)
-    # Reply on Instagram too (one per fan per Reel; about half invite them to the YouTube leaderboard).
+    # Reply on Instagram too (one per fan per Reel; every reply invites them to the YouTube leaderboard).
     instagram_auto_replies: bool = True
     instagram_reply_daily_max: int = Field(50, ge=1, le=200)
     # How Instagram replies name the YouTube channel ("… SideQuest Logic on YouTube"); no links or @.

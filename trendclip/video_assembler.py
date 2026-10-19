@@ -298,10 +298,12 @@ def end_card_event(text: str, start: float, end: float) -> str:
     return f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},EndCard,,0,0,0,,{anim}" + r"\N".join(lines)
 
 
-def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None) -> str:
-    """Quiz step ('+18', 'CLUE 1', '?') that slams in big in the middle of the screen (or at `pos`)."""
+def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None, color: str = "") -> str:
+    """Quiz step ('+18', 'CLUE 1', '?') that slams in big in the middle of the screen (or at `pos`), in the
+    caption highlight colour or `color`."""
     at = rf"\pos({pos[0]},{pos[1]})" if pos else ""
-    anim = rf"{{{at}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
+    tint = rf"\1c{_resolve_color(color)}&" if color else ""
+    anim = rf"{{{at}{tint}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
     return f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},Flash,,0,0,0,,{anim}{_ass_text(text, True)}"
 
 
@@ -363,10 +365,14 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     events = [title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse)] if title_card.strip() else []
     if end_card.strip() and words:
         last = words[-1].end
-        start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0)
+        # A quiz's end card waits for its last flash (the closing line), so it never covers the countdown.
+        closing = flashes[-1].start if flashes else 0.0
+        start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0, min(closing, last))
         events.append(end_card_event(end_card, start, last + TAIL_SECONDS))
-    pos = (size[0] // 2, round(size[1] * flash_y)) if flash_y else None
-    events += [flash_event(f.text, f.start, f.end, pos) for f in flashes or []]
+    for f in flashes or []:
+        y = getattr(f, "y", None) or flash_y
+        pos = (size[0] // 2, round(size[1] * y)) if y else None
+        events.append(flash_event(f.text, f.start, f.end, pos, getattr(f, "color", "")))
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds
@@ -532,6 +538,14 @@ def to_landscape(overlay: Overlay, size: tuple[int, int] = LANDSCAPE) -> Overlay
 def popup_layout(index: int) -> tuple[int, float]:
     """Alternate pop-ups slightly left/right with a small tilt so they feel hand placed."""
     return [(-70, -7.0), (70, 6.0), (0, -3.0), (60, -5.0), (-60, 5.0)][index % 5]
+
+
+ROW_BOX = 300  # three of them fit side by side on the 1080-wide canvas
+
+
+def row_layout(index: int) -> tuple[int, float]:
+    """Pop-ups shown together in a row, left to right (the emoji movie quiz)."""
+    return [(-330, -6.0), (0, 4.0), (330, -4.0)][index % 3]
 
 
 def _source_frames(overlay: Overlay) -> list[tuple[Any, float]]:

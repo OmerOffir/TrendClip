@@ -27,6 +27,7 @@ THUMB_WIDTH = 640
 STICKER_SIZE = 460  # longest side of the sticker on the 1080x1920 canvas
 MIN_SECONDS, MAX_SECONDS = 1.5, 2.5
 MIN_SPACING = 2.5  # seconds between two pop-ups starting; the target pace is one every 3-5 s
+ROW_SPACING = 0.3  # a row shown together (emoji quiz): back to back
 MAX_POPUPS = 15
 # (file name pattern, credit) in order of preference; {} is the emoji's codepoints, e.g. 1f408-200d-2b1b.
 EMOJI_SETS = [
@@ -83,9 +84,11 @@ def _matches(spoken: str, trigger: str) -> bool:
 
 
 def schedule(popups: list[Popup], words: list, total: float | None = None, *,
-             min_seconds: float = MIN_SECONDS, max_seconds: float = MAX_SECONDS) -> list[TimedPopup]:
+             min_seconds: float = MIN_SECONDS, max_seconds: float = MAX_SECONDS, spacing: float = MIN_SPACING,
+             hold_until: float | None = None) -> list[TimedPopup]:
     """Place each pop-up on the first matching spoken word after the previous pop-up; drop pop-ups
-    whose word is never spoken or that would crowd the previous one."""
+    whose word is never spoken or that would crowd the previous one. `hold_until`: every pop-up stays up
+    until then (a row of them shown together, e.g. the emoji movie quiz)."""
     if not words:
         return []
     total = total if total is not None else words[-1].end + 0.3
@@ -102,12 +105,17 @@ def schedule(popups: list[Popup], words: list, total: float | None = None, *,
         if hit is None:
             continue
         start = max(words[hit].start - 0.05, 0.0)
-        if starts and start < starts[-1][1] + max(min_seconds + 0.1, MIN_SPACING):
+        if starts and start < starts[-1][1] + spacing:
             continue
         starts.append((popup, start))
         cursor = hit + 1
     out = []
     for i, (popup, start) in enumerate(starts):
+        if hold_until is not None:
+            end = min(max(hold_until, start + min_seconds), total)
+            if end - start >= 0.5:
+                out.append(TimedPopup(popup, round(start, 3), round(end, 3)))
+            continue
         limit = starts[i + 1][1] - 0.1 if i + 1 < len(starts) else total
         end = min(start + max_seconds, limit)
         if end - start >= min(min_seconds, 1.0):

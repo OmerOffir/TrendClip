@@ -15,7 +15,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel
 
-from . import music, planner, publish, script_writer, shorts, video_assembler, video_downloader
+from . import music, planner, publish, quiz, script_writer, shorts, video_assembler, video_downloader
 from .config import Settings
 from .planner import PlanItem, Slot
 from .video_downloader import BackgroundClip, DownloadError
@@ -163,12 +163,32 @@ def create_random_short(settings: Settings, game: str | None = None, progress: P
     pop-ups and stickers."""
     if script_writer.gemini_api_key(settings) is None:
         raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed to write the story)")
+    if mode in quiz.QUIZ_MODES and not game:
+        return _themed_quiz(settings, mode, progress)
     clip = fresh_clip(settings, game, progress)
     path = Path(clip.path)
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
                                         max_seconds=clip_seconds, progress=progress)
     return _render_script(settings, clip, script, progress)
+
+
+def _themed_quiz(settings: Settings, mode: str, progress: ProgressFn) -> shorts.ShortVideo:
+    """A quiz is written first (it doesn't need the clip), then the gameplay that fits its theme is
+    downloaded: a war movie over a shooter, space trivia over a space game, else a neutral fast one."""
+    try:
+        games = [name for name, n in video_downloader.get_library(settings).counts().items() if n]
+    except Exception as err:  # noqa: BLE001 - no library: fresh_clip falls back to the downloaded clips
+        logger.warning("Game library unavailable (%s)", err)
+        games = []
+    first = random.choice(games) if games else ""
+    script = script_writer.write_script(settings, first or "Gameplay", None, mode=mode, watch_clip=False,
+                                        progress=progress)
+    themed = quiz.theme_game(settings, script, games, progress=progress) or first or None
+    if themed and themed != first:
+        progress(None, f"Background that fits the quiz: {themed}")
+    clip = fresh_clip(settings, themed, progress)
+    return _render_script(settings, clip, script.model_copy(update={"game": clip.game or script.game}), progress)
 
 
 OWN_TEXT_MAX_SECONDS = 170  # stays a Short (YouTube: up to 3 minutes)

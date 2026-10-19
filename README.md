@@ -249,15 +249,16 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    ("What number did you get? 👇 / Hint: it's two digits."). The real answer stays in the creator view
    and in Discord as a spoiler. Reaction stickers are skipped on math so nothing covers the numbers.
 
-   **🌍 Trivia trap** (gamified fact trap, about 15 s) builds a speed quiz on a counter-intuitive but
+   **🌍 Trivia trap** (gamified fact trap, 12–15 s) builds a speed quiz on a counter-intuitive but
    true fact from science, geography, history, animals, space, food or pop culture. The banner is a
-   challenge like "90% GET THIS TRIVIA TRAP WRONG!". The voiceover goes: a dare, then "Which country
-   has the most islands? Is it Indonesia? Is it the Philippines? Or is it Sweden? Think fast! Three.
-   Two. One. Hint: over 267,000. Comment the real answer right now!". The correct option is never
-   named after the choices. Each option (`A) Sweden`), the countdown and **HINT** flash on screen.
-   Gemini picks the trap most people would choose, a distractor and the surprising answer, and is told
-   to use only documented facts that are easy to check. The pinned comment is the question plus the hint,
-   not the answer. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
+   challenge like "90% GET THIS TRIVIA TRAP WRONG!". The voiceover goes: "Which country has the most
+   islands? Is it Indonesia? The Philippines? Or Sweden? Three. Two. One. Did you guess it right? Drop
+   your answer below!". The last line flows back into the question when YouTube replays the Short. The
+   correct option is never named after the choices. Each option (`A) Sweden`) and the countdown flash on
+   screen, then a green **GOT IT?** with **DROP YOUR ANSWER BELOW!** on top (never the answer, so the
+   comments and the leaderboard stay a real game). Gemini picks the trap most people would choose, a
+   distractor and the surprising answer, and only a question that passes a Google fact-check is used.
+   The pinned comment is the question plus a hint, not the answer. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
    keeps your words, removes any subscribe line and ends on the comment line.
 
    **🎬 Movie quiz** (15–25 s) is built on a famous movie from any year. It takes turns between three
@@ -266,15 +267,23 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
      Option B: No, I am your father. Option C: I am your father, Luke. Think fast! Three. Two. One. Only
      one is the real line. Comment A, B or C right now!" Gemini writes 3 candidates and checks each line
      on Google, and only a line that passes is used. **A**, **B** and **C** flash on screen.
-   - **Guess the movie from 3 emojis:** "Guess the movie in five seconds! Three emojis, one famous movie.
-     Emoji one: balloons… Hint: it starts with a flying house!" Each emoji pops up as a sticker when it's
-     said, and the title is never spoken.
+   - **Guess the movie from 3 emojis** (12–15 s): "Name this movie in five seconds! Balloons. Flying
+     house. Grumpy old man. Hint: it won two Oscars! Three. Two. One. Did you guess it right? Drop your
+     answer below!" The three emojis pop up back to back (all on screen by about 4 s) and stay up side by
+     side; the countdown flashes above them; the ending is the same green **GOT IT?** as the trivia trap.
+     The hint is dropped when it would push the Short past 15 s. The title is never spoken or shown.
    - **Movie logic debate**, shaped like the paradox trap: "If Marty McFly stops his parents from
      meeting, does he vanish at once or get time to fix it?" Viewers comment one word for their side.
 
    As with the other quizzes, the answer stays off the video and goes into the pinned comment and Discord
    (as a spoiler), so comments score on the leaderboard. Movies already used are listed in
    `output/movie_history.json` and are not picked again.
+
+   **Background that fits:** when the bot makes a quiz on random gameplay (`/create` without `game:`,
+   the automatic videos), it writes the quiz first, then Gemini picks the game whose world matches it
+   (a war movie over a shooter, space trivia over a space game) or, when nothing matches, a neutral,
+   fast, high-contrast one; that game's gameplay is downloaded. A quiz about the gameplay's own game
+   keeps it.
 
    **Viral Shorts (length up to 30 s, spoken as 18–22 s):** one story in four beats. 0–3 s is a shock
    hook already in the middle of the action; 3–12 s the problem gets about twice as bad; 12–18 s is
@@ -672,10 +681,10 @@ YouTube:
 - quiz and paradox Reels wait 24 h;
 - never a second reply, and nothing for a comment you already answered by hand.
 
-Instagram and YouTube accounts can't be linked, so the replies claim no points. About half of them invite
-the fan to the leaderboard by the channel's name: "Correct! 🧠 On YouTube that's points on the SideQuest
-Leaderboard. Come claim your spot: SideQuest Logic 👑". The others just thank them: "Nailed it! ✅ You saw
-through the trap."
+Instagram and YouTube accounts can't be linked, so the replies claim no points. Every reply sends the
+fan to the leaderboard on YouTube by the channel's name, e.g. "Correct! 🧠 On YouTube that's points on the
+SideQuest Leaderboard. Come claim your spot: SideQuest Logic 👑" or "The trap got you 🪤 Get your revenge on
+the next one: search SideQuest Logic on YouTube 🧠" (several wordings, so they don't all look alike).
 
 There are no links or @ in the replies, because Instagram flags those as spam. Put the YouTube link in
 your Instagram bio instead.

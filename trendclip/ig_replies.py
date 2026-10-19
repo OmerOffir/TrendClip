@@ -4,8 +4,8 @@ The same rules as the YouTube replies (leaderboard.py): one reply per fan per Re
 comment; spam, links and rude comments get none (Gemini checks them); quiz / paradox Reels wait 24 h so
 the reply doesn't give the answer away; "wrong" only when Gemini agrees; never a second reply, nor one
 the account already answered by hand. The Instagram leaderboard doesn't exist (Instagram and YouTube
-accounts can't be linked), so the replies claim no points: about half invite the fan to the YouTube
-leaderboard by the channel's name (no links or @: Instagram flags those as spam), the others just thank.
+accounts can't be linked), so the replies claim no points: every one invites the fan to the YouTube
+leaderboard by the channel's name (no links or @: Instagram flags those as spam).
 
 Quiz answers come from the Shorts this machine posted (Short.uploads["instagram"]["media_id"]); other
 Reels are thanked like stories. Stored in output/instagram_comments.json (Reels, comments, Gemini's
@@ -33,54 +33,34 @@ logger = logging.getLogger(__name__)
 MAX_REELS = 60  # the newest Reels of the last REPLY_MAX_AGE_DAYS; one API call each per read
 MAX_PAGES = 10  # of 50 comments per Reel
 LIMIT_PAUSE_MINUTES = 30  # after Instagram's rate limit, no replies for this long
-INVITE_SHARE = 0.5  # the share of replies that invite the fan to YouTube
-
-TEXTS = {
-    "first": (
-        "FIRST and correct! ⚡ Sharp one.",
-        "Fastest correct answer here! 🧠🔥",
-    ),
-    "correct": (
-        "BOOM, correct! 🧠 Sharp one.",
-        "Nailed it! ✅ You saw through the trap.",
-        "Correct! 🔥 Not many get that one.",
-    ),
-    "wrong": (
-        "Ouch, the trap got you 🪤 Try the next one!",
-        "So close! 😅 This trap was a sneaky one.",
-        "Not quite 🪤 but nice try! A new trap drops daily.",
-    ),
-    "voted": (
-        "🗳️ Vote counted! Which side wins?",
-        "Good pick! 🗳️ The comments are split on this one.",
-    ),
-    "comment": (
-        "🙌 Thanks for watching!",
-        "🔥 Appreciate you!",
-        "🧠 Thanks for the comment! New traps drop daily.",
-    ),
-}
+# Every reply sends the fan to YouTube, where the leaderboard is. Several wordings each, so the replies
+# don't all look alike (Instagram flags repeated identical replies). The channel by name: no links or @.
 INVITES = {
     "first": (
         "FIRST and correct! ⚡ On YouTube that's +10 pts on our leaderboard. Find {name} on YouTube 👑",
         "Fastest correct answer! 🧠 That would put you on our daily leaderboard. It lives on YouTube: {name} 🏆",
+        "First and right! 👑 Claim that win on the leaderboard: search {name} on YouTube 🏆",
     ),
     "correct": (
         "Correct! 🧠 On YouTube that's points on the SideQuest Leaderboard. Come claim your spot: {name} 👑",
         "BOOM, you got it! ✅ Answers like that climb our daily leaderboard on YouTube ({name}) 🏆",
+        "Nailed it! 🔥 Brains like that belong on our leaderboard. Search {name} on YouTube 👑",
     ),
     "wrong": (
         "Ouch, the trap got you 🪤 On YouTube you'd still get points for trying. Find {name} there 🏆",
         "So close! 😅 Our YouTube leaderboard gives points even for trying: {name} on YouTube 🏆",
+        "The trap got you 🪤 Get your revenge on the next one: search {name} on YouTube 🧠",
     ),
     "voted": (
         "🗳️ Vote counted! Votes earn points on our YouTube leaderboard too: {name} on YouTube 🏆",
         "Good pick! 🗳️ On YouTube every vote climbs the daily leaderboard. Find {name} there 👑",
+        "Bold choice! 🗳️ Pick a side on YouTube too and earn leaderboard points: {name} 🏆",
     ),
     "comment": (
         "🔥 Love it! Our daily leaderboard lives on YouTube: {name} 🏆",
         "🙌 Thanks for watching! Comment on {name} on YouTube to join the daily leaderboard 👑",
         "🧠 Appreciate you! The daily trap leaderboard is on our YouTube: {name} 🏆",
+        "Thanks! 🙌 Every comment on YouTube earns leaderboard points. Search {name} on YouTube 👑",
     ),
 }
 _lock = threading.Lock()
@@ -220,10 +200,8 @@ def refresh(settings: Settings, gemini=None) -> Board:
 
 def reply_text(settings: Settings, result: str, seed: str) -> str:
     rng = random.Random(seed)
-    kind = result if result in TEXTS else "comment"
-    if rng.random() < INVITE_SHARE:
-        return rng.choice(INVITES[kind]).format(name=settings.instagram_youtube_name)
-    return rng.choice(TEXTS[kind])
+    kind = result if result in INVITES else "comment"
+    return rng.choice(INVITES[kind]).format(name=settings.instagram_youtube_name)
 
 
 def plan_replies(settings: Settings, board: Board, today: date, now: datetime | None = None,

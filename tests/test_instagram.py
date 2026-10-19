@@ -94,7 +94,7 @@ def test_post_reel_creates_waits_and_publishes(settings, monkeypatch):
                      ("POST", "/17841/media_publish"), ("GET", "/m1"), ("POST", "/m1/comments")]
     container = fake.calls[1][2]
     assert container["media_type"] == "REELS" and container["video_url"].startswith("https://abc.trycloudflare")
-    assert "#riddle" in container["caption"] and "Orbital" in container["caption"]  # the Instagram text
+    assert "#riddle" in container["caption"] and "Music: Song" in container["caption"] and "Orbital" not in container["caption"]
 
     short = shorts.get_short(settings, name)
     assert short.uploads["instagram"]["media_id"] == "m1"

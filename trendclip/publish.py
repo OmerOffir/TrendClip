@@ -157,7 +157,7 @@ def clean(texts: GeminiTexts, credit: str, source: str, model: str = "", as_shor
         instagram=SocialText(caption=texts.instagram.caption.strip(),
                              hashtags=_hashtags(texts.instagram.hashtags, INSTAGRAM_MAX_HASHTAGS),
                              mentions=_mentions(texts.instagram.mentions)),
-        source=source, model=model, credit=credit,
+        source=source, model=model, credit=public_credit(credit),
     )
 
 
@@ -247,14 +247,20 @@ def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: Progres
     return clean(result, short.credit, "gemini", model, as_short=is_short(short))
 
 
+def public_credit(credit: str) -> str:
+    """The credits posted with the video: music and images, never the "Gameplay footage: ..." line."""
+    return "\n".join(line for line in credit.splitlines()
+                     if line.strip() and not line.strip().lower().startswith("gameplay footage:"))
+
+
 def full_text(text: SocialText, credit: str) -> str:
     """Ready-to-paste caption: text, mentions, hashtags, credits (cut to the platform limit)."""
-    parts = [text.caption.strip(), " ".join(text.mentions), " ".join(text.hashtags), credit.strip()]
+    parts = [text.caption.strip(), " ".join(text.mentions), " ".join(text.hashtags), public_credit(credit)]
     return "\n\n".join(p for p in parts if p)[:CAPTION_MAX]
 
 
 def youtube_description(text: YouTubeText, credit: str, links: str = "") -> str:
-    parts = [text.description.strip(), links.strip(), " ".join(text.hashtags), credit.strip()]
+    parts = [text.description.strip(), links.strip(), " ".join(text.hashtags), public_credit(credit)]
     return "\n\n".join(p for p in parts if p)[:5000]
 
 

@@ -11,7 +11,8 @@
   movie-logic debate (two sides, like a paradox).
 
 Each number / clue flashes big in the middle of the screen the moment it is spoken (`Flash`), the video
-ends on a big "?" and "COMMENT YOUR ANSWER", and the answer goes in the pinned comment.
+ends on a big "?" and "COMMENT YOUR ANSWER" (trivia and emoji movie: 12-15 s loops ending on a green
+"GOT IT?" and "DROP YOUR ANSWER BELOW!"), and the answer goes in the pinned comment, never on screen.
 """
 
 from __future__ import annotations
@@ -49,6 +50,8 @@ class Flash(BaseModel):
 
     word: str = Field(min_length=1, max_length=40, description="The spoken word that triggers it.")
     text: str = Field(min_length=1, max_length=16, description="What is shown, e.g. '+18' or 'CLUE 1'.")
+    color: str = Field("", max_length=12, description="'' (the caption highlight colour) or e.g. 'green'.")
+    y: float | None = Field(None, ge=0.05, le=0.95, description="Height on screen (0-1); None: the usual spot.")
 
 
 @dataclass
@@ -56,6 +59,8 @@ class TimedFlash:
     text: str
     start: float
     end: float
+    color: str = ""
+    y: float | None = None
 
 
 def schedule_flashes(flashes: list[Flash], words: list, total: float | None = None) -> list[TimedFlash]:
@@ -65,7 +70,7 @@ def schedule_flashes(flashes: list[Flash], words: list, total: float | None = No
         return []
     total = total if total is not None else words[-1].end + 0.6
     spoken = [_norm(w.text) for w in words]
-    starts: list[tuple[str, float]] = []
+    starts: list[tuple[Flash, float]] = []
     cursor = 0
     for flash in flashes:
         tokens = [t for t in (_norm(w) for w in flash.word.split()) if t]
@@ -73,15 +78,15 @@ def schedule_flashes(flashes: list[Flash], words: list, total: float | None = No
                     and all(_matches(spoken[i + k], t) for k, t in enumerate(tokens))), None)
         if hit is None:
             continue
-        starts.append((flash.text, max(words[hit].start - 0.05, 0.0)))
+        starts.append((flash, max(words[hit].start - 0.05, 0.0)))
         cursor = hit + len(tokens)
     out = []
-    for i, (text, start) in enumerate(starts):
+    for i, (flash, start) in enumerate(starts):
         last = i + 1 == len(starts)
         limit = total if last else starts[i + 1][1] - 0.05
         end = min(start + (LAST_FLASH_SECONDS if last else FLASH_SECONDS), limit)
         if end - start >= 0.3:
-            out.append(TimedFlash(text, round(start, 3), round(end, 3)))
+            out.append(TimedFlash(flash.text, round(start, 3), round(end, 3), flash.color, flash.y))
     return out
 
 
@@ -103,6 +108,7 @@ SAY = {
 QUIZ_RATE = 5  # % faster speech at least: en-US-AndrewNeural at +5% lands a step every ~1.2 s
 CAPTION_MARGIN = 620  # vertical: captions end at 68% of the height...
 FLASH_Y = 0.39  # ...and the big flash sits above them; a 3-line caption still clears it (and the title card)
+TOP_FLASH_Y = 0.2  # above a row of pop-ups, where the title card was (it is gone after 3 s)
 
 
 def english_voice(voice: str) -> str:
@@ -351,7 +357,7 @@ class GeminiTrivia(BaseModel):
         "A spoken dare before the question, at most 7 words, e.g. 'Only 5% get this right.' or '90% fall for "
         "this one.'"))
     question: str = Field(description=(
-        "The trap question, at most 12 words, 'Which [category item] is [surprising condition]?', e.g. 'Which "
+        "The trap question, at most 10 words, 'Which [category item] is [surprising condition]?', e.g. 'Which "
         "country has the most pyramids?' or 'Which planet is the hottest?'"))
     trap: str = Field(description=(
         "The obvious answer about 90% of people pick instinctively, but WRONG, 1 to 4 words, as spoken after "
@@ -374,7 +380,7 @@ class GeminiTrivia(BaseModel):
         "'ONLY 5% SOLVE THIS GEOGRAPHY TRAP!'. No emoji."))
 
 
-TRIVIA_PROMPT = """Write {count} different GAMIFIED FACT TRAP candidates for a Short (15-20 seconds), one per
+TRIVIA_PROMPT = """Write {count} different GAMIFIED FACT TRAP candidates for a Short (12-15 seconds), one per
 category, in this order: {categories}. Each is a speed trivia question built on a counter-intuitive but
 TRUE fact, with three options: the trap most people pick instinctively, a plausible distractor, and the
 surprising correct answer. The viewer must feel sure of the trap, then doubt it, and comment to argue.
@@ -691,17 +697,32 @@ def _ask(client, model: str, schema: type[BaseModel], prompt: str, progress: Pro
 # Spoken words in a quiz: about 18 s of voice (quizzes run ~2.6 words/s with the countdown pauses), so the
 # Short with its ending stays at about 20 s. Shorts over ~21 s were swiped away.
 QUIZ_MAX_WORDS = 46
+# Loop quizzes (emoji movie, trivia): 12-15 s in all, the 2 s tail included, and the last line flows back
+# into the first one when YouTube replays the Short.
+LOOP_MAX_WORDS = 32
+LOOP_END = "Did you guess it right? Drop your answer below!"
+LOOP_END_SHORT = "Got it? Drop your answer below!"
+LOOP_CARD = "DROP YOUR ANSWER BELOW!"
+
+def got_it(end_line: str) -> Flash:
+    """The green payoff on the closing line. Never the answer: viewers still comment it (the leaderboard)."""
+    return Flash(word=end_line.split()[0], text="GOT IT?", color="green")
 
 
 def _words(lines: list[str]) -> int:
     return sum(len(line.split()) for line in lines)
 
 
-def fit_quiz(lines: list[str], *optional: str) -> list[str]:
-    """`lines` without the `optional` ones (dropped in that order) until it fits QUIZ_MAX_WORDS."""
+def loop_end(lines: list[str]) -> str:
+    """The long closing line when it still fits LOOP_MAX_WORDS, else the short one."""
+    return LOOP_END if _words([*lines, LOOP_END]) <= LOOP_MAX_WORDS else LOOP_END_SHORT
+
+
+def fit_quiz(lines: list[str], *optional: str, limit: int = QUIZ_MAX_WORDS) -> list[str]:
+    """`lines` without the `optional` ones (dropped in that order) until it fits `limit` words."""
     lines = list(lines)
     for line in optional:
-        if _words(lines) <= QUIZ_MAX_WORDS:
+        if _words(lines) <= limit:
             break
         if line in lines:
             lines.remove(line)
@@ -907,7 +928,7 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     if result is None:
         raise sw.ScriptError("No trivia question passed the Google fact-check; try again")
     trap, distractor, correct = _trivia_options(result)
-    question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
+    question = (_one_line(result.question, 12).rstrip(".!?") or "Which one is it") + "?"
     options = [trap, distractor, correct]
     rng.shuffle(options)
     hooks = [h for h in TRIVIA_HOOKS if "game" in result.category.lower() or "Gamers" not in h] or TRIVIA_HOOKS
@@ -916,27 +937,25 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     hook = _one_line(result.hook, 8) if result.hook.strip() and rng.random() < 0.4 else rng.choice(hooks)
     _remember(settings, "trivia", answer=correct, question=question)
     hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
-    asks = [f"Is it {options[0]}?", f"Is it {options[1]}?", f"Or is it {options[2]}?"]
-    hint_line = f"Hint: {hint}."
-    # The question is the first word spoken; the dare is only on the banner.
-    lines = fit_quiz([question, *asks, "Think fast! Three. Two. One.", hint_line,
-                      "Comment the real answer right now!"], hint_line)
+    asks = [f"Is it {options[0]}?", f"{options[1][:1].upper()}{options[1][1:]}?", f"Or {options[2]}?"]
+    # The question is the first word spoken (the dare is only on the banner); the hint is in the pinned
+    # comment, so the Short stays at 12-15 s and ends on a line that loops into the question.
+    lines = [question, *asks, COUNTDOWN]
+    end = loop_end(lines)
+    lines.append(end)
     # The question first, so an option named in the question can't trigger its flash early.
     flashes = [Flash(word=question.split()[0], text="?")]
-    for letter, option in zip("ABC", options):
+    for letter, option, said in zip("ABC", options, ("Is it ", "", "Or ")):
         name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
         label = f"{letter}) {name[:1].upper()}{name[1:]}"
-        flashes.append(Flash(word=f"it {option.split()[0]}", text=label if len(label) <= 16 else letter))
-    flashes += [Flash(word="Think fast", text="THINK FAST!"), Flash(word="Three", text="3"), Flash(word="two", text="2"),
-                Flash(word="one", text="1")]
-    if hint_line in lines:
-        flashes.append(Flash(word="Hint", text="HINT"))
-    flashes.append(Flash(word="real answer", text="?"))
+        word = (said + " ".join(option.split()[:3])).strip()[:40]
+        flashes.append(Flash(word=word, text=label if len(label) <= 16 else letter))
+    flashes += [*COUNTDOWN_FLASHES, got_it(end)]
     fact = result.fact.strip()
     pinned = public_pin(question, hint)
     script = _script(settings, game, model, "trivia", format, " ".join(lines), hook, flashes, correct, pinned,
-                     result, on_screen=f"Answer: {correct} (trap: {trap}). {fact}")
-    return script.model_copy(update={"reactions": [Reaction(word="Hint", mood="suspicious")]})
+                     result, on_screen=f"Answer: {correct} (trap: {trap}). {fact}", end_card=LOOP_CARD)
+    return script.model_copy(update={"reactions": [Reaction(word="Three", mood="suspicious")]})
 
 
 def _write_math(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
@@ -1099,7 +1118,7 @@ class GeminiOwnQuiz(BaseModel):
 
 def _script(settings: Settings, game: str, model: str, mode: str, format: str, script: str, hook: str,
             flashes: list[Flash], answer: str, pinned: str, pack, *, on_screen: str, card: str = "",
-            choices: list[str] | None = None, popups: list | None = None) -> ShortScript:
+            choices: list[str] | None = None, popups: list | None = None, end_card: str = END_CARD) -> ShortScript:
     from . import script_writer as sw
 
     card = card or frame_zero(pack.title_card, hook)
@@ -1115,7 +1134,7 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         title_card=" ".join(re.sub(r"[^\w\s%!?.,'&-]", "", card).split()).upper()[:48],
         music_mood=MUSIC_MOOD,
         ending="question",
-        end_card=END_CARD,
+        end_card=end_card,
         flashes=flashes,
         answer=answer[:80],
         choices=[c[:100] for c in choices or []],
@@ -1128,6 +1147,43 @@ def _script(settings: Settings, game: str, model: str, mode: str, format: str, s
         word_count=len(script.split()),
         estimated_seconds=sw.estimate_seconds(script),
     )
+
+
+# --------------------------------------------------------------------------- background that fits
+
+
+THEME_PROMPT = """Pick the background gameplay for a quiz Short. The quiz: {topic}
+Gameplay available: {games}.
+Pick the one whose world or mood matches the quiz (a war movie over a war or shooter game, space trivia
+over a space game, a jungle movie over a jungle level). If none clearly matches, pick the most neutral,
+high-contrast, fast-moving one (racing, parkour, an endless runner). Answer with one name from the list,
+exactly as written, and nothing else."""
+
+
+def theme_game(settings: Settings, script: ShortScript, games: list[str], *, progress: ProgressFn = lambda f, m: None,
+               client=None) -> str | None:
+    """The available game whose look fits the quiz (Gemini picks), or None when it can't tell. A quiz
+    about the gameplay's own game keeps it."""
+    from . import script_writer as sw
+
+    if not games:
+        return None
+    if script.game and script.game in games and script.game.lower() in script.script.lower():
+        return script.game
+    try:
+        from google.genai import errors, types
+
+        client, model = sw._gemini(settings, client)
+        topic = f"{script.title}. {script.on_screen}"[:400]
+        response, _ = sw._generate_with_fallback(
+            client, model, [THEME_PROMPT.format(topic=topic, games="; ".join(games))],
+            types.GenerateContentConfig(temperature=0.2), progress, errors.APIError)
+    except Exception as err:  # noqa: BLE001 - a background that fits is a bonus, never a failure
+        logger.warning("Could not pick a background that fits the quiz: %s", err)
+        return None
+    answer = (response.text or "").strip().strip("\"'.*").lower()
+    return next((g for g in games if g.lower() == answer), None) or next(
+        (g for g in sorted(games, key=len, reverse=True) if g.lower() in answer), None)
 
 
 # --------------------------------------------------------------------------- movie quizzes
@@ -1194,15 +1250,15 @@ class GeminiMovieEmoji(BaseModel):
     class Pic(BaseModel):
         emoji: str = Field(description="One emoji, e.g. 🎈.")
         line: str = Field(description=(
-            "A spoken description of the emoji, 4 to 6 words, starting with the thing, e.g. 'Balloons, "
-            "hundreds of colorful balloons.' Never the movie's title or a character's name."))
+            "What the emoji shows, said in 1 to 3 words, e.g. 'Balloons.', 'A flying house.' or 'A grumpy old "
+            "man.' Never the movie's title or a character's name."))
         word: str = Field(description="The thing's word as written in the line, e.g. 'Balloons'.")
 
     movie: str = Field(description="The movie's title as people would type it, e.g. 'Up'. No year.")
     year: str = Field(description="Its release year, e.g. '2009'.")
     emojis: list[Pic] = Field(description="Exactly 3 emojis that together point to this movie and no other.")
     hint: str = Field(description=(
-        "One spoken hint, at most 10 words, never a word of the title, e.g. 'It starts with a flying house!'"))
+        "One spoken hint, at most 7 words, never a word of the title, e.g. 'It won two Oscars!'"))
     title: str = Field(description="YouTube title, at most 60 characters, no hashtags, never the movie, e.g. 'Guess The Movie From 3 Emojis 🎬'.")
     description: str = Field(description="One or two short sentences daring viewers to comment the movie, no hashtags.")
     hashtags: list[str] = Field(description="5 to 8 hashtags, e.g. #shorts #guessthemovie #emojichallenge #movies #quiz.")
@@ -1219,11 +1275,12 @@ or a comma: the difference must be clear when read aloud. Each option at most 7 
 Movies already used on the channel, pick others: {used}.
 Background gameplay: {game}.{notes}"""
 
-MOVIE_EMOJI_PROMPT = """Write a GUESS THE MOVIE FROM 3 EMOJIS Short (about 15 seconds). The movie: {seed}, famous
-enough that most people have seen it or know it. Pick 3 emojis that together point to this movie and no
-other (its most iconic image, character or moment), in the order that makes it click at the last one,
-plus one spoken hint that helps without giving the title away. Never say or write the title, a word of
-it, or a character's name anywhere except "movie".
+MOVIE_EMOJI_PROMPT = """Write a GUESS THE MOVIE FROM 3 EMOJIS Short (12-15 seconds; the 3 emojis pop up back to
+back in the first 4 seconds). The movie: {seed}, famous enough that most people have seen it or know it.
+Pick 3 emojis that together point to this movie and no other (its most iconic image, character or
+moment), in the order that makes it click at the last one, each said in 1 to 3 words, plus one short
+spoken hint that helps without giving the title away. Never say or write the title, a word of it, or a
+character's name anywhere except "movie".
 Movies already used on the channel, pick another: {used}.
 Background gameplay: {game}.{notes}"""
 
@@ -1324,28 +1381,33 @@ def _write_movie_emoji(settings: Settings, game: str, *, used: str, extra: str, 
     pics = [p for p in result.emojis if p.emoji.strip() and p.line.strip()][:3]
     if len(pics) < 3 or not movie:
         raise sw.ScriptError("Gemini wrote an emoji quiz without 3 emojis; try again")
-    names = ("one", "two", "three")
     lines, popups = [], []
-    for name, pic in zip(names, pics):
-        line = _one_line(pic.line, 9)
+    for pic in pics:
+        line = _one_line(pic.line, 4)
         if title_words & set(re.findall(r"[a-z0-9']+", line.lower())):
             raise sw.ScriptError("Gemini gave the movie away in an emoji line; try again")
-        lines.append(f"Emoji {name}: {line}")
-        word = pic.word.strip() or line.split()[0]
-        popups.append(Popup(word=word[:40], emoji=pic.emoji.strip()[:16], query=word[:60]))
+        # Rapid fire ("Balloons. Flying house. Grumpy old man.") and each emoji pops up as its line starts,
+        # so all three are up by ~4 s.
+        said = re.sub(r"^(an?|the)\s+", "", line, flags=re.I).strip(" .,!?")
+        said = said[:1].upper() + said[1:]
+        lines.append(f"{said}.")
+        noun = pic.word.strip() if _norm(pic.word) and _norm(pic.word) in _norm(line) else line.split()[-1]
+        popups.append(Popup(word=said[:40], emoji=pic.emoji.strip()[:16], query=noun.strip(".,!?")[:60]))
     hint = safe_hint(result.hint, movie, *title_words) or "it's a famous one"
     hook = rng.choice([h for h in EMOJI_HOOKS if h.lower() not in {o.lower() for o in recent_openings(settings)}]
                       or EMOJI_HOOKS)
-    intro, hint_line = "Three emojis, one famous movie.", f"Hint: {hint.rstrip('.!')}!"
-    spoken = fit_quiz([hook, intro, *lines, hint_line, "Three. Two. One.", "Comment the movie right now!"],
-                      intro, hint_line)
+    hint_line = f"Hint: {hint.rstrip('.!')}!"
+    # The emojis right after the hook (all on screen by ~4 s), the hint only while it fits 12-15 s, and a
+    # closing line that flows back into the hook on the replay.
+    spoken = fit_quiz([hook, *lines, hint_line, COUNTDOWN], hint_line, limit=LOOP_MAX_WORDS - 6)
+    end = loop_end(spoken)
+    spoken.append(end)
     script = " ".join(spoken)
-    flashes = [Flash(word="five", text="5 SECONDS!")]  # moves on the first words
-    if hint_line in spoken:
-        flashes.append(Flash(word="Hint", text="HINT"))
-    flashes += [*COUNTDOWN_FLASHES, Flash(word="Comment", text="WHICH MOVIE?")]
+    # The emojis stay up side by side in the middle, so the steps flash above them.
+    flashes = [Flash(word="Hint", text="HINT", y=TOP_FLASH_Y)] if hint_line in spoken else []
+    flashes += [f.model_copy(update={"y": TOP_FLASH_Y}) for f in COUNTDOWN_FLASHES] + [got_it(end)]
     _remember(settings, "movie", shape="emoji", movie=f"{movie} ({result.year.strip()})", answer=movie)
     pinned = public_pin("Which movie is it?", hint)
     return _script(settings, game, model, "movie", format, script, hook, flashes, movie, pinned, result,
-                   popups=popups, card=result.title_card or "GUESS THE MOVIE IN 5 SECONDS",
+                   popups=popups, card=result.title_card or "GUESS THE MOVIE IN 5 SECONDS", end_card=LOOP_CARD,
                    on_screen=f"Answer: {movie} ({result.year.strip()}). Emojis: {' '.join(p.emoji for p in pics)}")

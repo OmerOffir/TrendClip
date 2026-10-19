@@ -173,7 +173,7 @@ def test_upload_request_uses_the_upload_tab_texts(settings):
     req = assistant.upload_request(settings, name)
     assert req.privacy == "public" and req.publish_at is None
     assert req.title == "The Day My Cat Outsmarted the Block #shorts"
-    assert req.description.startswith("I searched for three hours.") and "Gameplay footage" in req.description
+    assert req.description.startswith("I searched for three hours.") and "Gameplay footage" not in req.description
     assert "GTA V / Online" in req.tags
     assert shorts.get_short(settings, name).texts  # saved, so the Upload tab shows the same texts
 

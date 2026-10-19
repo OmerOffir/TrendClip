@@ -225,18 +225,21 @@ def test_trivia_trap(tmp_path, monkeypatch):
     assert "video games" in seen["prompts"][0] and "Venus" in seen["prompts"][1]
     assert result.script.startswith("Which planet in our solar system is the hottest? Is it ")  # no spoken dare
     assert result.hook == "Only 5% get this right."
-    assert "Or is it " in result.script
-    assert "Think fast! Three. Two. One. Hint:" in result.script and "you failed" not in result.script
+    assert "? Or " in result.script and "Think fast" not in result.script and "Hint:" not in result.script
+    assert "you failed" not in result.script
     assert "Venus" not in result.script.split("One.")[-1]  # named as an option, never as the reveal
-    assert result.script.endswith("Comment the real answer right now!")
+    assert result.script.endswith("Three. Two. One. Did you guess it right? Drop your answer below!")
+    assert len(result.script.split()) <= quiz.LOOP_MAX_WORDS  # 12-15 s with the tail
+    assert result.end_card == quiz.LOOP_CARD
     assert result.title_card == "90% GET THIS TRIVIA TRAP WRONG!"  # no emoji: the subtitle font can't draw it
     assert result.answer == "Venus" and result.pinned_comment.startswith("Which planet in our solar system is the hottest? 👇")
     assert "Venus" not in result.pinned_comment and "Hint:" in result.pinned_comment
-    assert [r.word for r in result.reactions] == ["Hint"] and result.reactions[0].mood == "suspicious"
+    assert [r.word for r in result.reactions] == ["Three"] and result.reactions[0].mood == "suspicious"
     labels = [f.text for f in result.flashes]
     assert labels[0] == "?" and [l[:3] for l in labels[1:4]] == ["A) ", "B) ", "C) "]
     assert sorted(l[3:] for l in labels[1:4]) == ["Mars", "Mercury", "Venus"]
-    assert labels[4:] == ["THINK FAST!", "3", "2", "1", "HINT", "?"]
+    assert labels[4:] == ["3", "2", "1", "GOT IT?"]
+    assert result.flashes[-1].color == "green"
 
     words = va.estimate_word_timings(result.script.replace("hottest?", "hottest Venus?"), 18)
     timed = quiz.schedule_flashes(result.flashes, words)
@@ -264,8 +267,8 @@ def test_trivia_says_the_with_country_names(tmp_path):
                      fact="Sweden: 267,570.", hook="90% fall for this.")
     result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", client=trivia_client([[islands]], ["1: PASS"]),
                              rng=random.Random(2))
-    assert "Is it the Philippines?" in result.script or "Or is it the Philippines?" in result.script
-    assert any(f.text.endswith(") Philippines") and f.word == "it the" for f in result.flashes)
+    assert any(f"{said} the Philippines?" in result.script for said in ("Is it", "Or")) or "The Philippines?" in result.script
+    assert any(f.text.endswith(") Philippines") and "the Philippines" in f.word for f in result.flashes)
 
 
 def test_trivia_flash_labels_drop_the_article(tmp_path):
@@ -273,7 +276,7 @@ def test_trivia_flash_labels_drop_the_article(tmp_path):
     result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia",
                              client=trivia_client([[organ]], ["1: PASS"]), rng=random.Random(3))
     assert sorted(f.text[3:] for f in result.flashes[1:4]) == ["Brain", "Heart", "Liver"]
-    assert "Is it the liver?" in result.script or "Or is it the liver?" in result.script
+    assert any(f"{said} the liver?" in result.script for said in ("Is it", "Or")) or "The liver?" in result.script
 
 
 def test_trivia_uses_only_a_fact_checked_question(tmp_path):
@@ -292,7 +295,7 @@ def test_trivia_writes_again_when_every_candidate_fails(tmp_path):
     result = quiz.write_quiz(make_settings(tmp_path), "GTA V", "trivia", rng=random.Random(1),
                              client=trivia_client([[trivia()], [good]], ["1: FAIL: myth", "1: PASS"], seen))
     assert result.answer == "Sweden" and "Venus" in seen["prompts"][2]  # the rejected answer isn't asked for again
-    assert "Hint: over 220,000 of them." in result.script and "!." not in result.pinned_comment
+    assert "Hint: over 220,000 of them." in result.pinned_comment and "!." not in result.pinned_comment
 
 
 def test_trivia_gives_up_after_three_failed_rounds(tmp_path):
@@ -400,6 +403,65 @@ def test_flashes_are_drawn_in_the_subtitles(tmp_path):
     assert "Style: Flash," in text and ",Flash,," in text and text.count("+18") == 1
 
 
+def test_the_payoff_flash_is_green_and_the_end_card_waits_for_it(tmp_path):
+    words = [va.Word("Three,", 0.0, 0.4), va.Word("two,", 0.5, 0.8), va.Word("one!", 0.9, 1.2),
+             va.Word("Did", 1.3, 1.5), va.Word("you", 1.5, 1.7), va.Word("guess?", 1.7, 2.2)]
+    flashes = quiz.schedule_flashes([*[f.model_copy(update={"y": quiz.TOP_FLASH_Y}) for f in quiz.COUNTDOWN_FLASHES],
+                                     quiz.got_it("Did you guess?")], words)
+    assert [f.text for f in flashes] == ["3", "2", "1", "GOT IT?"] and flashes[0].y == quiz.TOP_FLASH_Y
+    text = va.create_karaoke_ass_file(words, tmp_path / "s.ass", end_card=quiz.LOOP_CARD, flashes=flashes,
+                                      flash_y=quiz.FLASH_Y).read_text(encoding="utf-8")
+    assert rf"\pos(540,{round(1920 * quiz.TOP_FLASH_Y)})" in text  # the countdown above the emoji row
+    got = next(line for line in text.splitlines() if "GOT IT?" in line)
+    assert rf"\pos(540,{round(1920 * quiz.FLASH_Y)})" in got and r"\1c&H0000FF00&" in got
+    card = next(line for line in text.splitlines() if ",EndCard," in line)
+    assert card.split(",")[1] == va._ass_time(flashes[-1].start)  # not over the countdown
+
+
+def test_the_quiz_background_fits_its_theme(tmp_path):
+    games = ["Call of Duty", "Subway Surfers", "Minecraft"]
+    script = SimpleNamespace(game="Minecraft", script="Name this movie in five seconds!", title="Guess The Movie",
+                             on_screen="Answer: 1917 (2019). Emojis: 🪖 💣 🏃")
+    seen = {}
+
+    def client(reply):
+        class Models:
+            def generate_content(self, model, contents, config):
+                seen["prompt"] = contents[0]
+                return SimpleNamespace(text=reply)
+        return SimpleNamespace(models=Models())
+
+    settings = make_settings(tmp_path)
+    assert quiz.theme_game(settings, script, games, client=client("Call of Duty")) == "Call of Duty"
+    assert "1917" in seen["prompt"] and "Subway Surfers" in seen["prompt"]
+    assert quiz.theme_game(settings, script, games, client=client("**Subway Surfers**.")) == "Subway Surfers"
+    assert quiz.theme_game(settings, script, games, client=client("no idea")) is None
+    about_it = SimpleNamespace(**{**vars(script), "script": "What was Minecraft first called?"})
+    assert quiz.theme_game(settings, about_it, games, client=client("Call of Duty")) == "Minecraft"
+
+
+def test_a_random_quiz_downloads_the_gameplay_that_fits(tmp_path, monkeypatch):
+    from trendclip import assistant
+
+    settings = make_settings(tmp_path)
+    written = quiz.write_quiz(settings, "Minecraft", "movie", notes="emoji", client=movie_client(emoji=UP),
+                              rng=random.Random(1))
+    seen = {}
+    monkeypatch.setattr(assistant.script_writer, "gemini_api_key", lambda s: "key")
+    monkeypatch.setattr(assistant.video_downloader, "get_library", lambda s: SimpleNamespace(
+        counts=lambda: {"Minecraft": 3, "Fall Guys": 2, "Empty": 0}))
+    monkeypatch.setattr(assistant.script_writer, "write_script",
+                        lambda s, game, clip, **kw: seen.setdefault("written_for", game) and written)
+    monkeypatch.setattr(assistant.quiz, "theme_game",
+                        lambda s, script, games, **kw: seen.setdefault("games", games) and "Fall Guys")
+    monkeypatch.setattr(assistant, "fresh_clip", lambda s, game, progress: SimpleNamespace(
+        filename="fg.mp4", game=seen.setdefault("downloaded", game), path="fg.mp4"))
+    monkeypatch.setattr(assistant, "_render_script", lambda s, clip, script, progress: script)
+    result = assistant.create_random_short(settings, mode="movie")
+    assert seen["games"] == ["Minecraft", "Fall Guys"] and seen["downloaded"] == "Fall Guys"
+    assert result.game == "Fall Guys" and result.script == written.script
+
+
 # --------------------------------------------------------------------------- movie quizzes
 
 
@@ -412,10 +474,10 @@ VADER = quiz.GeminiMovieQuote(
 
 UP = quiz.GeminiMovieEmoji(
     movie="Up", year="2009",
-    emojis=[quiz.GeminiMovieEmoji.Pic(emoji="🎈", line="Balloons, hundreds of colorful balloons.", word="Balloons"),
-            quiz.GeminiMovieEmoji.Pic(emoji="🏠", line="A little wooden house floating away.", word="house"),
-            quiz.GeminiMovieEmoji.Pic(emoji="👴", line="A grumpy old man with a cane.", word="man")],
-    hint="It starts with a flying house!", title="Guess The Movie From 3 Emojis", description="Comment the movie!",
+    emojis=[quiz.GeminiMovieEmoji.Pic(emoji="🎈", line="Balloons.", word="Balloons"),
+            quiz.GeminiMovieEmoji.Pic(emoji="🏠", line="A flying house.", word="house"),
+            quiz.GeminiMovieEmoji.Pic(emoji="👴", line="A grumpy old man.", word="man")],
+    hint="It won two Oscars!", title="Guess The Movie From 3 Emojis", description="Comment the movie!",
     hashtags=["#shorts", "#guessthemovie"], title_card="guess the movie in 5 seconds")
 
 MARTY = CROCODILE.model_copy(update={
@@ -472,17 +534,37 @@ def test_movie_lines_that_fail_the_google_check_are_not_used(tmp_path):
 def test_guess_the_movie_from_emojis_pops_them_up_and_hides_the_title(tmp_path):
     result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="emoji please",
                              client=movie_client(emoji=UP), rng=random.Random(1))
-    assert result.script.split("!")[0] + "!" in quiz.EMOJI_HOOKS
-    assert "seconds! Emoji one: Balloons" in result.script  # "Three emojis, one famous movie." didn't fit
-    assert [f.text for f in result.flashes][0] == "5 SECONDS!"
-    assert "Hint: It starts with a flying house! Three. Two. One. Comment the movie right now!" in result.script
-    assert [(p.word, p.emoji) for p in result.popups] == [("Balloons", "🎈"), ("house", "🏠"), ("man", "👴")]
+    hook = result.script.split("!")[0] + "!"
+    assert hook in quiz.EMOJI_HOOKS
+    assert result.script == (f"{hook} Balloons. Flying house. Grumpy old man. Hint: It won two Oscars! "
+                             "Three. Two. One. Did you guess it right? Drop your answer below!")
+    assert len(result.script.split()) <= quiz.LOOP_MAX_WORDS  # 12-15 s with the tail; loops into the hook
+    assert [f.text for f in result.flashes] == ["HINT", "3", "2", "1", "GOT IT?"]
+    assert all(f.y == quiz.TOP_FLASH_Y for f in result.flashes[:-1])  # above the emoji row
+    assert result.flashes[-1].color == "green" and result.flashes[-1].y is None
+    assert [(p.word, p.emoji, p.query) for p in result.popups] == [
+        ("Balloons", "🎈", "Balloons"), ("Flying house", "🏠", "house"), ("Grumpy old man", "👴", "man")]
     assert result.answer == "Up" and result.title_card == "GUESS THE MOVIE IN 5 SECONDS"
-    assert "Up" not in result.pinned_comment.split()
+    assert result.end_card == quiz.LOOP_CARD and "Up" not in result.pinned_comment.split()
 
-    words = va.estimate_word_timings(result.script, 20)
+    words = va.estimate_word_timings(result.script, len(result.script.split()) / 2.6)  # the quiz voice's pace
     from trendclip import popups
-    assert len(popups.schedule(result.popups, words)) == 3  # far enough apart that all three pop up
+    closing = quiz.schedule_flashes(result.flashes, words)[-1].start
+    row = popups.schedule(result.popups, words, spacing=popups.ROW_SPACING, hold_until=closing)
+    assert len(row) == 3 and row[-1].start < 4.0  # all three up within the first 4 s...
+    assert {p.end for p in row} == {closing}  # ...and they stay together until "GOT IT?"
+
+
+def test_long_emoji_lines_are_cut_and_a_long_hint_is_dropped(tmp_path):
+    wordy = UP.model_copy(update={"hint": "It is a Pixar film that won two Oscars in 2010!", "emojis": [
+        quiz.GeminiMovieEmoji.Pic(emoji="🎈", line="Hundreds of colorful balloons in the sky.", word="ribbon"),
+        *UP.emojis[1:]]})
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "movie", notes="emoji",
+                             client=movie_client(emoji=wordy), rng=random.Random(1))
+    assert "Hundreds of colorful balloons." in result.script
+    assert result.popups[0].word == "Hundreds of colorful balloons" and result.popups[0].query == "balloons"
+    assert "Hint" not in result.script and [f.text for f in result.flashes][0] == "3"
+    assert len(result.script.split()) <= quiz.LOOP_MAX_WORDS
 
 
 def test_an_emoji_line_that_names_the_movie_is_refused(tmp_path):

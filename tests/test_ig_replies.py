@@ -103,10 +103,12 @@ def test_one_reply_per_fan_per_reel_no_points_and_some_invite_to_youtube(setting
     assert (o["replied"], o["queued"], o["skipped"], o["sent_today"]) == (2, 0, 1, 2)
 
 
-def test_about_half_the_replies_invite_to_youtube(settings):
-    texts = [ig_replies.reply_text(settings, "comment", f"id{i}") for i in range(400)]
-    invites = sum("SideQuest Logic" in t for t in texts)
-    assert 140 < invites < 260
+def test_every_reply_invites_to_youtube(settings):
+    texts = [ig_replies.reply_text(settings, kind, f"id{i}") for i in range(100)
+             for kind in ("first", "correct", "wrong", "voted", "comment", "unknown")]
+    assert all("SideQuest Logic" in t and "YouTube" in t for t in texts)
+    assert all("http" not in t and "@" not in t for t in texts)
+    assert len(set(texts)) >= 12  # several wordings, not one reply over and over
     assert all("{name}" not in t for t in texts)
     custom = settings.model_copy(update={"instagram_youtube_name": "Brain Traps"})
     assert any("Brain Traps on YouTube" in ig_replies.reply_text(custom, "comment", f"id{i}") for i in range(20))

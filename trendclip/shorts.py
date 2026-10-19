@@ -242,10 +242,14 @@ def music_volume(settings: Settings, requested: float | None) -> float:
     return music.clamp_volume(settings.music_volume if requested is None else requested)
 
 
-def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, progress: ProgressFn):
+def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, progress: ProgressFn,
+                   row_until: float | None = None):
     """(overlays, assets, words shown): pop-ups timed to their spoken word, images fetched (cached).
-    A pop-up without a usable image is skipped rather than failing the render."""
-    timed = popups.schedule(wanted, words)
+    A pop-up without a usable image is skipped rather than failing the render. `row_until`: they pop up
+    back to back and stay up side by side until then."""
+    row = row_until is not None
+    timed = (popups.schedule(wanted, words, spacing=popups.ROW_SPACING, hold_until=row_until) if row
+             else popups.schedule(wanted, words))
     if timed:
         progress(None, f"Fetching {len(timed)} pop-up images")
     overlays, assets, shown = [], [], []
@@ -253,9 +257,10 @@ def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, 
         asset = popups.fetch_asset(settings, t.popup)
         if not asset:
             continue
-        x, tilt = video_assembler.popup_layout(len(overlays))
+        x, tilt = (video_assembler.row_layout if row else video_assembler.popup_layout)(len(overlays))
         overlays.append(video_assembler.Overlay(settings.assets_dir / "popups" / asset.filename,
-                                                t.start, t.end, x, tilt))
+                                                t.start, t.end, x, tilt,
+                                                **({"box": video_assembler.ROW_BOX} if row else {})))
         assets.append(asset)
         shown.append(t.popup.word)
     return overlays, assets, shown
@@ -314,7 +319,10 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         progress(None, f"Recording the voiceover ({voice})")
         words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate, local_rate=chosen_rate)
 
-    overlays, assets, shown = resolve_popups(settings, req.popups, words, progress)
+    flashes = quiz.schedule_flashes(req.flashes, words)
+    # Pop-ups in a quiz are its clues (the emoji movie quiz): a row that stays up until the closing flash.
+    row_until = (flashes[-1].start if flashes else words[-1].end) if req.flashes and req.popups else None
+    overlays, assets, shown = resolve_popups(settings, req.popups, words, progress, row_until)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)
 
     progress(0.0, "Rendering video")
@@ -326,7 +334,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         music_volume=music_volume(settings, req.music_volume),
         music_start=req.music_start,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
-        flashes=quiz.schedule_flashes(req.flashes, words), landscape=req.aspect == "landscape",
+        flashes=flashes, landscape=req.aspect == "landscape",
         **(quiz.render_style(req.aspect == "landscape") if req.flashes else {}),
     )
 

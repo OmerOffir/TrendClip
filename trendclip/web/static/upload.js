@@ -143,7 +143,10 @@
 
   const seriesLinks = () => (current() && current().series ? current().series.links : "");
   const ytHashtags = (t) => (asShort() ? t.youtube.hashtags : t.youtube.hashtags.filter((h) => h.toLowerCase() !== "#shorts"));
-  const ytDescription = (t) => join([t.youtube.description, seriesLinks(), ytHashtags(t).join(" "), t.credit]);
+  // Music / image credits only: the "Gameplay footage: ..." line is never posted.
+  const publicCredit = (credit) => (credit || "").split("\n")
+    .filter((l) => l.trim() && !/^gameplay footage:/i.test(l.trim())).join("\n");
+  const ytDescription = (t) => join([t.youtube.description, seriesLinks(), ytHashtags(t).join(" "), publicCredit(t.credit)]);
   const social = (p, credit) => join([p.caption, p.mentions.join(" "), p.hashtags.join(" "), credit]).slice(0, CAPTION_MAX);
 
   function renderFinals() {
@@ -165,14 +168,14 @@
     els.ytTagsCount.textContent = `${tagChars}/${YT_TAGS_MAX} characters`;
     els.ytTagsCount.classList.toggle("over", tagChars > YT_TAGS_MAX);
 
-    const ig = social(t.instagram, t.credit);
+    const ig = social(t.instagram, publicCredit(t.credit));
     els.igFinal.textContent = ig;
     els.igCount.textContent = `${ig.length}/${CAPTION_MAX}`;
     const igTags = t.instagram.hashtags.length;
     els.igTagCount.textContent = `${igTags}/${IG_MAX_TAGS}${igTags > IG_MAX_TAGS ? " · Instagram allows 5, extra ones are dropped" : ""}`;
     els.igTagCount.classList.toggle("over", igTags > IG_MAX_TAGS);
 
-    const tt = social(t.tiktok, t.credit);
+    const tt = social(t.tiktok, publicCredit(t.credit));
     els.ttFinal.textContent = tt;
     els.ttCount.textContent = `${tt.length}/${CAPTION_MAX}`;
   }

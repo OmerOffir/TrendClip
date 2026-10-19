@@ -8,6 +8,7 @@ from trendclip.config import Settings
 from trendclip.web import app as web
 
 CREDIT = "Gameplay footage: Orbital - https://youtu.be/abc\nMusic: Song\nMusic provided by NoCopyrightSounds"
+POSTED = "Music: Song\nMusic provided by NoCopyrightSounds"  # the gameplay line is never posted
 
 
 def make_settings(tmp_path):
@@ -42,8 +43,8 @@ def test_template_texts_follow_platform_rules(tmp_path):
     assert len(t.instagram.hashtags) <= publish.INSTAGRAM_MAX_HASHTAGS
     assert "#GTAV" in t.tiktok.hashtags
     full = publish.full_text(t.tiktok, t.credit)
-    assert full.startswith(t.tiktok.caption) and full.endswith(CREDIT)
-    assert publish.youtube_description(t.youtube, t.credit).endswith(CREDIT)
+    assert full.startswith(t.tiktok.caption) and full.endswith(POSTED) and "Orbital" not in full
+    assert publish.youtube_description(t.youtube, t.credit).endswith(POSTED)
 
 
 def test_clean_limits_and_normalises():
@@ -78,7 +79,7 @@ def test_gemini_texts_uses_schema_and_keeps_credit(tmp_path, monkeypatch):
 
     t = publish.gemini_texts(settings, short, client=SimpleNamespace(models=Models()))
     assert "I spent three hours." in seen["prompt"] and "Orbital" not in seen["prompt"]
-    assert t.source == "gemini" and t.youtube.title == "Cat hid all day #shorts" and t.credit == CREDIT
+    assert t.source == "gemini" and t.youtube.title == "Cat hid all day #shorts" and t.credit == POSTED
 
 
 def test_upload_youtube_records_the_video(tmp_path):
@@ -161,7 +162,7 @@ def test_ready_flow_and_texts_endpoints(client, monkeypatch):
     queue = http.get("/api/upload/shorts").json()
     assert [s["filename"] for s in queue] == [name]
     item = queue[0]
-    assert item["texts"]["source"] == "template" and item["paste"]["tiktok"].endswith(CREDIT)
+    assert item["texts"]["source"] == "template" and item["paste"]["tiktok"].endswith(POSTED)
 
     texts = item["texts"]
     texts["tiktok"]["caption"] = "Edited caption"
