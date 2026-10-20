@@ -507,7 +507,7 @@ def set_answer(settings: Settings, video_id: str, answer: str, choices: str = ""
 # and no links or tags. A reply YouTube refuses for a moment is tried REPLY_TRIES times; when it can't be
 # posted at all (comment deleted), the fan's other comment on that video gets the one reply instead.
 
-REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS, REPLY_TRIES = 24, 30, 3
+REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS, REPLY_TRIES = 10, 30, 3
 REPLY_TEXTS = {
     "first": (
         "FIRST & CORRECT! ⚡ You secured the +10 pts mega bonus! You're #{rank} on the SideQuest Leaderboard! 👑",

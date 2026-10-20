@@ -114,8 +114,8 @@ def test_every_reply_invites_to_youtube(settings):
     assert any("Brain Traps on YouTube" in ig_replies.reply_text(custom, "comment", f"id{i}") for i in range(20))
 
 
-def test_quiz_reels_wait_24h(settings, monkeypatch):
-    monkeypatch.setattr(instagram, "_call", FakeGraph(quiz_age_hours=10))
+def test_quiz_reels_wait_10h(settings, monkeypatch):
+    monkeypatch.setattr(instagram, "_call", FakeGraph(quiz_age_hours=6))
     board = ig_replies.refresh(settings)
     assert [q["comment_id"] for q in ig_replies.plan_replies(settings, board, DAY, NOW)] == ["c5"]
     assert ig_replies.reply_overview(settings, board, DAY, NOW)["quiz_wait"] == 1

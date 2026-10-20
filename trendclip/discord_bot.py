@@ -1314,7 +1314,7 @@ def reply_overview_lines(settings: Settings, platform: str, o: dict[str, Any], s
 
 
 @app_commands.command(name="replies", description="Read the YouTube and Instagram comments now and reply to new fans")
-@app_commands.describe(now="True: reply on quiz videos too, without the 24 h wait (the replies show the answer)")
+@app_commands.describe(now="True: reply on quiz videos too, without the 10 h wait (the replies show the answer)")
 async def replies_cmd(interaction: discord.Interaction, now: bool = False) -> None:
     bot = _bot(interaction)
     settings = bot.settings
@@ -1448,7 +1448,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
         "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours); "
-        "`now:True` replies on quiz videos too, without the 24 h spoiler wait",
+        "`now:True` replies on quiz videos too, without the 10 h spoiler wait",
     ]), ephemeral=True)
 
 

@@ -324,21 +324,21 @@ def test_a_fan_whose_scoring_comment_isnt_checked_yet_waits_for_it(settings, mon
     assert [q["comment_id"] for q in lb.plan_replies(settings, board, DAY, NOW)] == ["a2"]
 
 
-def test_quiz_replies_wait_24h_but_story_replies_dont(settings):
-    board = _quiz_board("2026-10-14T00:00:00Z")  # 12 h old
+def test_quiz_replies_wait_10h_but_story_replies_dont(settings):
+    board = _quiz_board("2026-10-14T06:00:00Z")  # 6 h old
     queued = lb.plan_replies(settings, board, DAY, NOW)
     assert [q["comment_id"] for q in queued] == ["e1"]
     o = lb.reply_overview(settings, board, DAY, NOW)
-    assert o["queued"] == 1 and o["quiz_wait"] == 4 and o["next_quiz"].startswith("2026-10-15T00:00")
-    later = lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=13))
+    assert o["queued"] == 1 and o["quiz_wait"] == 4 and o["next_quiz"].startswith("2026-10-14T16:00")
+    later = lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=5))
     assert {q["comment_id"] for q in later} == {"b1", "a2", "c1", "d1"}
 
 
 def test_replies_now_skips_the_quiz_wait(settings):
-    board = _quiz_board("2026-10-14T00:00:00Z")  # 12 h old
+    board = _quiz_board("2026-10-14T06:00:00Z")  # 6 h old
     queued = lb.plan_replies(settings, board, DAY, NOW, wait=False)
     assert {q["comment_id"] for q in queued} == {"b1", "a2", "c1", "d1", "e1"}
-    assert lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=13)) == []  # still one reply each
+    assert lb.plan_replies(settings, board, DAY, NOW + timedelta(hours=5)) == []  # still one reply each
 
 
 def test_send_skips_comments_the_channel_answered(settings):

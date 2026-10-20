@@ -1,7 +1,7 @@
 """Replies to the comments on the account's Instagram Reels, to thank fans and bring them to YouTube.
 
 The same rules as the YouTube replies (leaderboard.py): one reply per fan per Reel, under their best
-comment; spam, links and rude comments get none (Gemini checks them); quiz / paradox Reels wait 24 h so
+comment; spam, links and rude comments get none (Gemini checks them); quiz / paradox Reels wait 10 h so
 the reply doesn't give the answer away; "wrong" only when Gemini agrees; never a second reply, nor one
 the account already answered by hand. The Instagram leaderboard doesn't exist (Instagram and YouTube
 accounts can't be linked), so the replies claim no points: every one invites the fan to the YouTube

@@ -675,7 +675,7 @@ Every fan gets exactly one YouTube reply per video (YouTube always notifies abou
 in posts), under the comment that scored: "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +3 pts…",
 "Ouch! You fell for the trap! 🪤 +1 pt for trying…", "🗳️ Vote counted!…" or "🙌 Thanks for commenting!…",
 with the current rank. Their other comments on that video get nothing more, unless the scoring one
-can't be replied to (deleted): then another of theirs gets the one reply. Scoring comments go out first. Quiz and paradox videos wait until they're 24 h old, so the replies don't
+can't be replied to (deleted): then another of theirs gets the one reply. Scoring comments go out first. Quiz and paradox videos wait until they're 10 h old, so the replies don't
 give the answer away. Gemini double-checks quiz answers (typos, synonyms, other languages); "wrong" is only
 said when Gemini agrees, otherwise the plain +1 pt text. Never a second reply to a fan on a video, nor to a comment the
 channel already answered. Replies go out one every 2 minutes, with varied wording and no links, up to
@@ -691,9 +691,9 @@ links is replied to.
 The bot reads the comments in the morning, at 13:30, and every `YOUTUBE_REPLY_CHECK_HOURS` (default 3; 0
 turns it off), and says in Discord how many replies it queued. **`/replies`** does it now: it reads the
 comments, queues a reply to every unanswered one, and sends the first right away. Then it shows the
-counts: replied, in the queue, waiting for the quiz 24 h (and when the next one opens), not checked yet,
+counts: replied, in the queue, waiting for the quiz 10 h (and when the next one opens), not checked yet,
 spam, refused, and sent today. **`/replies now:True`** also replies on quiz and paradox videos younger
-than 24 h, on YouTube and Instagram (those replies say who was right, so they show the answer).
+than 10 h, on YouTube and Instagram (those replies say who was right, so they show the answer).
 `YOUTUBE_AUTO_REPLIES=false` turns replies off; the record is
 `output/comment_replies.json`.
 
@@ -703,7 +703,7 @@ The bot replies to fans on your Instagram Reels too (`ig_replies.py`), with the 
 YouTube:
 - one reply per fan per Reel, under their best comment;
 - no reply to spam, links or rude comments (listed in Discord with the Reel's link);
-- quiz and paradox Reels wait 24 h;
+- quiz and paradox Reels wait 10 h;
 - never a second reply, and nothing for a comment you already answered by hand.
 
 Instagram and YouTube accounts can't be linked, so the replies claim no points. Every reply sends the
