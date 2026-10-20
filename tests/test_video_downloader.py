@@ -362,3 +362,13 @@ def test_dropped_connection_is_retried(monkeypatch, tmp_path):
     with pytest.raises(vd.DownloadError) as err:
         vd._download_from_youtube("https://youtu.be/x", tmp_path / "y.mp4", clip_seconds=60, start_seconds=10)
     assert "[0;31m" not in str(err.value) and "connection to YouTube dropped" in str(err.value)
+
+
+def test_jobs_download_room_for_the_fastest_gameplay_speed(tmp_path, monkeypatch):
+    seen = []
+    monkeypatch.setattr(vd, "download_background", lambda game, **k: seen.append(k["clip_seconds"]))
+    manager = vd.DownloadManager()
+    jobs = [manager.submit(make_settings(tmp_path), "GTA V", ["youtube"], s, "landscape") for s in (30, 60, 0)]
+    manager._executor.shutdown(wait=True)
+    assert [j.clip_seconds for j in jobs] == [45, 90, 0]
+    assert sorted(seen) == [0, 45, 90]

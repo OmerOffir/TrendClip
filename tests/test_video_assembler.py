@@ -132,3 +132,20 @@ def test_video_ends_a_beat_after_the_last_word(tmp_path):
 def test_a_voice_that_stops_on_its_last_word_still_gets_the_tail(tmp_path):
     out = _render_with_voice(tmp_path, 1.25)
     assert abs(va.media_duration(out) - (1.2 + va.TAIL_SECONDS)) < 0.15
+
+
+def test_video_filter_background_speed():
+    assert "setpts" not in va.video_filter("crop", 30)
+    assert va.video_filter("crop", 30, speed=1.25).startswith("[0:v]setpts=PTS/1.25,")
+    assert "[0:v]setpts=PTS/1.5,split=2" in va.video_filter("blur", 30, speed=1.5)
+
+
+def test_render_request_background_speed():
+    from pydantic import ValidationError
+
+    from trendclip.shorts import RenderRequest
+
+    assert RenderRequest(clip="a.mp4", game="G", script="Hi.").background_speed == 1
+    assert RenderRequest(clip="a.mp4", game="G", script="Hi.", background_speed=1.25).background_speed == 1.25
+    with pytest.raises(ValidationError):
+        RenderRequest(clip="a.mp4", game="G", script="Hi.", background_speed=2)

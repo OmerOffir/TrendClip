@@ -306,7 +306,9 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    `trendclip/voices/ref.wav`, so the speaker stays close to the Edge voice. Machines Microsoft
    still accepts keep the Edge voice.) a free edge-tts
    voice (47 English voices) with exact word timings, speed,
-   highlight colour, words per line and crop/blur layout. **Create Short** renders in the background.
+   highlight colour, words per line, crop/blur layout and **Gameplay speed** (×1 / ×1.25 / ×1.5: only the
+   background footage plays faster, the voice and music keep their speed). Trend tab downloads are 1.5× the chosen clip length (30 s → 45 s),
+   so a clip still covers the full video at ×1.5. **Create Short** renders in the background.
 4. **Background music (optional):** pick it in the **Background music** menu:
    - **By story mood** (default): automatic, strictly **chill lo-fi / quirky**. Gemini sorts every
      script into `funny_quirky` (awkward, weird, chaotic stories) or `chill_lofi` (everything else,

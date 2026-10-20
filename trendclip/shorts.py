@@ -100,6 +100,7 @@ class RenderRequest(BaseModel):
     stickers: bool = True  # reaction stickers from stickers/ (Gemini beats, else spoken-word cues)
     cta_sticker: bool = True  # subscribe / Part 2 sticker when the call to action starts
     background_start: float = Field(0.0, ge=0)
+    background_speed: Literal[1, 1.25, 1.5] = 1  # the gameplay at 1.25x / 1.5x (voice and music untouched)
     music_start: float = Field(0.0, ge=0)
     output_name: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,80}$")
     series_id: str | None = Field(None, pattern=r"^[a-f0-9]{6,32}$")
@@ -138,6 +139,7 @@ class SeriesRenderRequest(BaseModel):
     rate: str | None = Field(None, pattern=r"^[+-]\d{1,3}%$")
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
+    background_speed: Literal[1, 1.25, 1.5] = 1
     max_words: int = Field(3, ge=1, le=6)
     music_source: str = Field("none", max_length=200)
     music_track: str | None = Field(None, pattern=TRACK_ID)
@@ -329,7 +331,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     output = video_assembler.assemble_video(
         background, base.with_suffix(".mp3"), words, base.with_suffix(".mp4"),
         fit=req.fit, highlight=req.highlight, max_words=req.max_words, progress=progress,
-        background_start=req.background_start,
+        background_start=req.background_start, background_speed=req.background_speed,
         music=music.track_path(settings, track) if track else None,
         music_volume=music_volume(settings, req.music_volume),
         music_start=req.music_start,
@@ -471,7 +473,8 @@ def render_series(settings: Settings, req: SeriesRenderRequest, progress: Progre
             music_volume=req.music_volume,
             title_card=part.title_card, popups=part.popups, end_card=part.end_card,
             reactions=part.reactions, stickers=req.stickers, cta_sticker=req.cta_sticker,
-            background_start=offset, music_start=offset, output_name=f"{name}_Part{n}",
+            background_start=offset * req.background_speed, background_speed=req.background_speed,
+            music_start=offset, output_name=f"{name}_Part{n}",
             series_id=series_id, story_name=req.story_name, part=n, parts_total=total,
             pinned_comment=req.pinned_comment if n == 1 else "", channel_handle=handle,
         ), scaled)

@@ -457,15 +457,18 @@ def find_font_file(preferred: str | None = None) -> tuple[str, Path | None]:
     return preferred or "Arial", None
 
 
-def video_filter(fit: Literal["crop", "blur"], fps: int, size: tuple[int, int] = (WIDTH, HEIGHT)) -> str:
-    """Filter graph from input 0 to a 1080x1920 (or `size`) [base] stream."""
+def video_filter(fit: Literal["crop", "blur"], fps: int, size: tuple[int, int] = (WIDTH, HEIGHT),
+                 speed: float = 1.0) -> str:
+    """Filter graph from input 0 to a 1080x1920 (or `size`) [base] stream; `speed` 2 or 3 plays the
+    gameplay 2x / 3x as fast (the voice and music are not touched)."""
     w, h = size
+    fast = f"setpts=PTS/{speed:g}," if speed > 1 else ""
     cover = f"scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h}"
     if fit == "crop":
-        return f"[0:v]{cover},setsar=1,fps={fps}[base]"
+        return f"[0:v]{fast}{cover},setsar=1,fps={fps}[base]"
     # Whole frame in the middle, a blurred zoomed copy filling the rest.
     return (
-        f"[0:v]split=2[bgsrc][fgsrc];"
+        f"[0:v]{fast}split=2[bgsrc][fgsrc];"
         f"[bgsrc]{cover},boxblur=24:2,eq=brightness=-0.08[bg];"
         f"[fgsrc]scale={w}:{h}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2[fg];"
         f"[bg][fg]overlay=(W-w)/2:(H-h)/2,setsar=1,fps={fps}[base]"
@@ -641,6 +644,7 @@ def assemble_video(
     *,
     fit: Literal["crop", "blur"] = "crop",
     background_start: float = 0.0,
+    background_speed: float = 1.0,
     fps: int = 30,
     crf: int = 20,
     preset: str = "medium",
@@ -679,7 +683,8 @@ def assemble_video(
         background_start %= bg_len  # seeking past the end of a looped input fails, so wrap around
     if music is not None and music_start and (music_len := media_duration(Path(music))) > 1:
         music_start %= music_len
-    loop = bg_len - background_start < voice_len
+    background_speed = min(max(background_speed, 1.0), 1.5)
+    loop = (bg_len - background_start) / background_speed < voice_len
     output.parent.mkdir(parents=True, exist_ok=True)
 
     font_name, font_file = find_font_file(subtitle_style.pop("font", None))
@@ -698,7 +703,7 @@ def assemble_video(
         if background_start:
             cmd += ["-ss", f"{background_start:.2f}"]
         cmd += ["-i", str(background.resolve()), "-i", str(voiceover.resolve())]
-        graph = video_filter(fit, fps, size)
+        graph = video_filter(fit, fps, size, background_speed)
         audio_out = "[aout]"
         if music is not None:
             cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]

@@ -221,6 +221,14 @@
               <option value="blur">Whole frame + blur</option>
             </select>
           </label>
+          <label class="field" title="Plays the gameplay faster; the voice and music keep their speed">
+            <span>Gameplay speed</span>
+            <select id="cBgSpeed">
+              <option value="1" selected>×1 Normal</option>
+              <option value="1.25">×1.25</option>
+              <option value="1.5">×1.5</option>
+            </select>
+          </label>
         </div>
         <div class="music-box">
           <div class="form-row">
@@ -590,7 +598,7 @@
         </div>
       </div>
       <div class="controls dl-controls">
-        <label class="field">
+        <label class="field" title="Downloads 1.5× longer, so the video still has enough gameplay at Create's ×1.5 speed">
           <span>Clip length</span>
           <select id="dlSeconds">
             <option value="30">30 seconds</option>

@@ -291,6 +291,7 @@ def _random_start(duration: float | None, clip_seconds: int) -> float:
     return round(random.uniform(low, high), 1)
 
 
+MAX_BACKGROUND_SPEED = 1.5  # Create's fastest gameplay speed; Trend tab clips are downloaded this much longer
 MOTION_SLACK = 12  # extra seconds downloaded so the clip can open on movement, not a still frame
 _MOTION_PX = 16
 
@@ -1136,6 +1137,8 @@ class DownloadManager:
         channel_id: str | None = None,
         channel_title: str = "",
     ) -> DownloadJob:
+        """`clip_seconds` is the video length wanted, so the clip still covers it at the fastest speed."""
+        clip_seconds = round(clip_seconds * MAX_BACKGROUND_SPEED)
         job = DownloadJob(
             id=uuid.uuid4().hex[:12], game=game, sources=sources,
             clip_seconds=clip_seconds, orientation=orientation, url=url,

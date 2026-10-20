@@ -27,6 +27,7 @@
     highlight: $("cHighlight"),
     words: $("cWords"),
     fit: $("cFit"),
+    bgSpeed: $("cBgSpeed"),
     phone: $("cPhone"),
     preview: $("cPreview"),
     phoneSub: $("cPhoneSub"),
@@ -80,7 +81,7 @@
 
   const DRAFT_KEY = "trendclip.createDraft";
   const DRAFT_FIELDS = ["mode", "game", "notes", "script", "title", "desc", "tags", "titleCard", "endCard", "voice", "rate",
-    "highlight", "words", "fit", "music", "musicMood", "musicVol", "handle", "story", "pinned"];
+    "highlight", "words", "fit", "bgSpeed", "music", "musicMood", "musicVol", "handle", "story", "pinned"];
   const PART_FIELDS = ["script", "title", "desc", "tags", "titleCard", "endCard"];
   const LENGTHS = {
     // Up to 30 s the viral rules apply: 18–22 s, punchy lines, a question or loop ending (script_writer.VIRAL_BRIEF).
@@ -569,6 +570,7 @@
     setSelect(els.highlight, r.highlight);
     setSelect(els.words, r.max_words);
     setSelect(els.fit, r.fit);
+    setSelect(els.bgSpeed, r.background_speed || 1);
     setSelect(els.musicVol, r.music_volume);
     els.stickers.checked = r.stickers !== false;
     els.ctaSticker.checked = r.cta_sticker !== false;
@@ -955,6 +957,7 @@
       rate: els.rate.value,
       highlight: els.highlight.value,
       fit: els.fit.value,
+      background_speed: Number(els.bgSpeed.value) || 1,
       max_words: Number(els.words.value),
       music_source: els.music.value,
       music_track: state.track ? state.track.video_id : null,
