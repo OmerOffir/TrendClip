@@ -281,11 +281,15 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         cta = None
         if req.cta_sticker:
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
+        reactions = list(req.reactions)
+        if req.flashes and quiz.COUNTDOWN in req.script and not any(r.word == "Three" for r in reactions):
+            reactions.append(Reaction(word="Three", mood="thinking"))  # the viewer's thinking time
         return stickers.plan(
-            settings, [s for s in lib if s.category != "off"], words, req.reactions, cta=cta,
+            settings, [s for s in lib if s.category != "off"], words, reactions, cta=cta,
             auto=req.stickers and not req.flashes,
             popups=popup_overlays, title_seconds=3.0 if req.title_card.strip() else 0.0,
             end_seconds=3.5 if req.end_card.strip() else 0.0, seed=req.script,
+            focus="thinking" if req.flashes and req.stickers else None,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Sticker placement failed; rendering without stickers")

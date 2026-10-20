@@ -142,6 +142,21 @@ def test_plan_keeps_something_new_on_screen_every_3_to_5_seconds(tmp_path):
     assert [o for o in off if not o.pulse] == []
 
 
+def test_quiz_focus_uses_only_thinking_stickers(tmp_path):
+    settings = make_settings(tmp_path)
+    thinking = [StickerInfo(filename=f"think{i}.gif", category="reaction", moods=["thinking"]) for i in range(3)]
+    words = words_of("Only five percent get this. " + " ".join(f"clue{i}" for i in range(20))
+                     + " Which one is it? Three. Two. One. Comment your answer!", 0.4)
+    overlays, used = stickers.plan(settings, lib() + thinking, words, [Reaction(word="Three", mood="shocked")],
+                                   cta=None, auto=False, title_seconds=3.0, seed="quiz", focus="thinking")
+    assert len(overlays) >= 2 and all(name.startswith("think") for name in used)
+    three = words[[w.text for w in words].index("Three.")].start - 0.05
+    assert any(o.start == pytest.approx(three) for o in overlays)  # on the countdown
+    plain, _ = stickers.plan(settings, lib() + thinking, words, [], cta=None, auto=False, title_seconds=3.0)
+    assert plain == []  # quizzes without focus: no fillers, as before
+    assert stickers.guess(StickerInfo(filename="Think Winnie The Pooh GIF.gif")).moods == ["thinking"]
+
+
 def test_animated_reactions_stay_until_their_loop_ends(tmp_path):
     settings = make_settings(tmp_path)
     add_files(settings.stickers_dir)

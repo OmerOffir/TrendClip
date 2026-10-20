@@ -372,12 +372,15 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
 
 - **Scan:** the folder is scanned when the server starts and again whenever a file changes. Gemini
   looks at each new image once and tags it as a *reaction* (mood: funny, awkward, shocked, approve,
-  reject, proud, pain, nope, innocent, crazy, embarrassed, suspicious) or a *CTA* (subscribe / follow /
+  reject, proud, pain, nope, innocent, crazy, embarrassed, suspicious, thinking) or a *CTA* (subscribe / follow /
   part 2 / comment). If Gemini is unavailable, the filename is used (`oh_no.png` → shocked,
   `subscribe_*.gif` → subscribe CTA) and the next scan tries again. For an animated GIF, Gemini sees
   4 frames from start to end, so it tags what the whole animation shows. Tags are cached in
   `assets/cache/stickers.json`. See them under **Sticker library** in the Create tab, with
   **Rescan** and **Re-tag with Gemini** buttons.
+- **Quizzes** (every kind): their reactions come only from the *thinking* stickers: one on the
+  "Three. Two. One." countdown, plus one every 3-5 s after the title banner. To add one, drop the GIF in
+  `stickers/` and tag it `{"moods": ["thinking"]}` (files named think… / calculating… get the tag on their own).
 - **Fix a tag:** add it to `stickers/stickers.json`, which always wins, e.g.
   `{"oh_no_2.png": {"moods": ["embarrassed"]}, "image.png": {"category": "off"}}`.
 - **When they appear:** Gemini marks 2-5 reaction beats in the script (a word + mood, shown as chips

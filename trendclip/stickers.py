@@ -49,6 +49,7 @@ MOODS = {
     "crazy": "chaos, unhinged, losing it",
     "embarrassed": "facepalm, embarrassment, regret",
     "suspicious": "side-eye, something is off, a sly look",
+    "thinking": "thinking hard, figuring it out, calculating, 'hmm, which one?', not knowing the answer",
 }
 MOOD_LIST = ", ".join(MOODS)
 RELATED = {
@@ -64,6 +65,7 @@ RELATED = {
     "crazy": ["shocked", "funny"],
     "embarrassed": ["awkward", "pain"],
     "suspicious": ["innocent", "awkward"],
+    "thinking": ["suspicious", "innocent"],
 }
 CTA_KINDS = ("subscribe", "part2", "follow", "comment")
 # Spoken-word cues for scripts without Gemini reactions (matched on lowercase words).
@@ -81,8 +83,10 @@ LEXICON = {
     "reject": r"\bno way\b|\bnever again\b|\bterrible idea\b|\bbad idea\b",
     "approve": r"\bgood idea\b|\bperfect\b",
     "suspicious": r"\bsuspicious|\bsmirk|\bside-?eye|\bsomething was off\b",
+    "thinking": r"\bhmm+\b|\bcalculat|\bfigure (it|this) out\b|\bwhich one\b",
 }
 NAME_HINTS = [  # file-name fallback when Gemini can't tag
+    (r"think|calculat|figur|which.?one|don.?t.?know", "reaction", ["thinking"], ""),
     (r"oh.?no|omg|shock|wow|surpris", "reaction", ["shocked"], ""),
     (r"crazy|insane|chaos", "reaction", ["crazy"], ""),
     (r"go.?out|exit|leave|bye|nope", "reaction", ["nope"], ""),
@@ -525,11 +529,15 @@ def plan(
     seed: str = "",
     max_reactions: int = 5,
     pace: bool = True,
+    focus: str | None = None,
 ) -> tuple[list[Overlay], list[str]]:
     """Sticker overlays for one Short: (overlays, sticker file names used). With `pace`, extra reactions
-    fill every stretch longer than 5 s without a new pop-up or sticker."""
+    fill every stretch longer than 5 s without a new pop-up or sticker. `focus` (a mood, e.g. "thinking"
+    for quizzes): every reaction, the fillers too, comes from the stickers with that mood."""
     if not words:
         return [], []
+    if focus and any(s.category == "reaction" and focus in s.moods for s in lib):
+        lib = [s for s in lib if s.category != "reaction" or focus in s.moods]
     total = words[-1].end + 0.3
     rng = random.Random(seed)
     busy: list[tuple[Rect, float, float]] = [(CAPTIONS, 0.0, 1e9)] + [(r, 0.0, 1e9) for r in SHORTS_UI]
@@ -622,15 +630,15 @@ def plan(
         nxt = next((words[i].start for i, _ in moments if words[i].start > start + MIN_GAP), stop)
         place(start, end, mood, room=min(nxt - 0.1, stop - 0.05))
 
-    if pace and auto and any(s.category == "reaction" for s in lib):
+    if pace and (auto or focus) and any(s.category == "reaction" for s in lib):
         _fill_gaps(words, moments, [o.start for o in popups or []] + [o.start for o in out],
-                   max(title_seconds, words[0].start), stop, place)
+                   max(title_seconds, words[0].start), stop, place, focus)
     out.sort(key=lambda o: o.start)
     return out, list(dict.fromkeys(used))
 
 
 def _fill_gaps(words: list, moments: list[tuple[int, str]], starts: list[float], begin: float, stop: float,
-               place) -> None:
+               place, focus: str | None = None) -> None:
     """Walk the timeline and drop a reaction about 4 s after the last visual whenever the next one is
     more than 5 s away. Fillers start on a spoken word, using the nearest keyword mood if there is one."""
     low, high = PACE
@@ -654,7 +662,7 @@ def _fill_gaps(words: list, moments: list[tuple[int, str]], starts: list[float],
         start = max(words[index].start - 0.05, 0.0)
         end = min(start + REACTION_SECONDS, nxt - 0.1, stop - 0.05)
         near = [m for i, m in moments if abs(i - index) <= 3]
-        mood = near[0] if near else FILLER_MOODS[n % len(FILLER_MOODS)]
+        mood = focus or (near[0] if near else FILLER_MOODS[n % len(FILLER_MOODS)])
         if end - start >= 1.0 and place(start, end, mood, room=min(nxt - 0.1, stop - 0.05)):
             events.append(start)
             events.sort()
