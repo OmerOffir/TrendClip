@@ -60,6 +60,16 @@ def clip_text(text: str, limit: int = MESSAGE_MAX) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
 
 
+def champions_note(final: list[dict]) -> str:
+    """For you, above the champions post: who to check before giving a prize (must be subscribed)."""
+    text = "👑 Last month's final podium: post the next message on YouTube (Community) and Instagram."
+    if missing := leaderboard.unverified(final):
+        names = ", ".join(f"**{leaderboard.safe(p['name'], 40)}**" for p in missing)
+        text += (f"\n⚠️ YouTube doesn't show {names} as subscribed (their subscriptions may be private). "
+                 "Must be subscribed to win: check before giving the prize.")
+    return text
+
+
 def already_on(item: planner.PlanItem, short: shorts.ShortVideo, platform: str) -> bool:
     """Uploaded by TrendClip, or marked posted by hand (Upload tab or plan) after posting it in the app."""
     return bool(short.uploads.get(platform) or short.posted.get(platform) or platform in item.posted)
@@ -526,6 +536,11 @@ class TrendClipBot(discord.Client):
             if not board.updated_at:
                 await channel.send(clip_text(f"🏆 Couldn't read the YouTube comments for the leaderboard: {err}"))
                 return
+        if assistant.today(settings).day == 1:
+            month, final = leaderboard.last_month(settings, board)
+            if text := leaderboard.champions_text(month, final):
+                await channel.send(clip_text(champions_note(final)), allowed_mentions=NO_PINGS)
+                await channel.send(text, allowed_mentions=NO_PINGS, suppress_embeds=True)
         if not board.people:
             return
         if fresh:
@@ -539,7 +554,8 @@ class TrendClipBot(discord.Client):
         png = await asyncio.to_thread(leaderboard_card.render, board.people, handle, day=assistant.today(settings),
                                       logo=settings.channel_dir / "logo.png")
         caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE,
-                                         leaderboard.next_drop(settings))
+                                         leaderboard.next_drop(settings),
+                                         leaderboard.month_name(leaderboard.month_start(settings)))
         await send("🏆 Today's leaderboard post: save the picture, copy the next message (long-press → "
                    "Copy Text), and post both on YouTube (Create → Post). Pick each @name from YouTube's "
                    "list as you type it, or it may not become a tag.",
@@ -575,9 +591,10 @@ class TrendClipBot(discord.Client):
         new = [c for c in board.comments if c.published >= since]
         head = f"💬 **{len(new)} new comment{'s' * (len(new) != 1)}** since yesterday"
         lines = [head + (":" if new else "."), *leaderboard.new_lines(board, new), "",
-                 "🏆 **Leaderboard** (/leaderboard · /comments · /points)", *leaderboard.top_lines(board)]
+                 f"🏆 **Leaderboard, {leaderboard.month_name(leaderboard.month_start(self.settings))}** "
+                 "(/leaderboard · /comments · /points)", *leaderboard.top_lines(board)]
         if not board.people:
-            lines.append("Nobody has commented yet.")
+            lines.append("Nobody has commented this month yet.")
         for text in chunks(lines):
             await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
         await self.queue_replies(channel, board)
@@ -1194,16 +1211,28 @@ def _updated(settings: Settings, board: leaderboard.Board) -> str:
 @app_commands.command(name="leaderboard", description="Fans ranked by points from their YouTube comments")
 @app_commands.describe(refresh="Read the comments from YouTube now and queue the replies (default: this morning's)",
                        image="The podium picture of the top 13 plus the text for your YouTube post",
-                       post="Just the text for your YouTube post (tags the top 13)")
+                       post="Just the text for your YouTube post (tags the top 13)",
+                       last_month="Last month's final standings (the board starts from 0 on the 1st)")
 async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = False, image: bool = False,
-                          post: bool = False) -> None:
+                          post: bool = False, last_month: bool = False) -> None:
     board = await _board(interaction, refresh)
     if board is None:
         return
+    settings = _bot(interaction).settings
     if refresh:
         await _bot(interaction).queue_replies(interaction.channel, board)
+    if last_month:
+        month, final = leaderboard.last_month(settings, board)
+        lines = [f"👑 **{month}: final standings** ({len(final)} people)",
+                 *[leaderboard.person_line(i, p) for i, p in enumerate(final[:30], 1)]]
+        if final:
+            lines += ["", champions_note(final), leaderboard.champions_text(month, final)]
+        else:
+            lines.append("Nobody commented that month.")
+        await reply_lines(interaction, lines)
+        return
     if (image or post) and not board.people:
-        await reply(interaction, "Nobody has commented yet, so there's no leaderboard to post.")
+        await reply(interaction, "Nobody has commented this month yet, so there's no leaderboard to post.")
         return
     if image:
         await _bot(interaction).send_post(interaction.followup.send, board)
@@ -1211,17 +1240,19 @@ async def leaderboard_cmd(interaction: discord.Interaction, refresh: bool = Fals
     if post:
         await reply(interaction, "📝 Your YouTube post text is the next message: long-press → Copy Text, then "
                                  "YouTube → Create → Post. Pick each @name from YouTube's list as you type it.")
-        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE,
-                                         leaderboard.next_drop(_bot(interaction).settings))
+        caption = leaderboard.post_caption(board.people, 3 + leaderboard_card.LIST_SIZE, leaderboard.next_drop(settings),
+                                         leaderboard.month_name(leaderboard.month_start(settings)))
         await interaction.followup.send(caption, allowed_mentions=NO_PINGS, suppress_embeds=True)
         return
-    lines = [f"🏆 **Leaderboard**: {len(board.people)} people, {len(board.comments)} comments",
-             *leaderboard.top_lines(board, 30)]
+    month = leaderboard.month_name(leaderboard.month_start(settings))
+    lines = [f"🏆 **Leaderboard, {month}**: {len(board.people)} people (resets on the 1st; "
+             f"`last_month:True` for the last one)", *leaderboard.top_lines(board, 30)]
     if not board.people:
-        lines.append("Nobody has commented yet.")
+        lines.append("Nobody has commented this month yet.")
     lines += ["", f"Points: first correct answer {leaderboard.FIRST_POINTS}, correct / paradox vote "
-              f"{leaderboard.CORRECT_POINTS}, other comment {leaderboard.COMMENT_POINTS} (best comment per video), "
-              f"subscriber +{leaderboard.SUBSCRIBER_POINTS}", _updated(_bot(interaction).settings, board)]
+              f"{leaderboard.CORRECT_POINTS}, any comment / try {leaderboard.COMMENT_POINTS} (best comment per video). "
+              f"Skip {leaderboard.MISS_LIMIT} videos in a row: −50%. Must be subscribed (⭐) to win.",
+              _updated(_bot(interaction).settings, board)]
     await reply_lines(interaction, lines)
 
 

@@ -239,13 +239,17 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    **Questions → 🧮 Math challenge / 🧩 Riddle** (also under Script type) make a ~20–25 s interactive
    quiz that viewers answer in the comments. Frame 0 is a large pulsing dare ("ONLY 5% OF PEOPLE FINISH
    THIS") and the voice starts on that same line, with no soft intro. A math challenge then reads a fast
-   chain ("Start with 24. Add 18. Divide by 2. Times 3…") and ends with "Got your number? Hint: it's two
-   digits. Comment your answer right now!". The answer is never spoken or written on screen. TrendClip
-   picks the numbers itself, using whole numbers only and at least one × and one ÷, so the answer is
-   always right. Gemini writes the hook, title (with an emoji) and hashtags; if Gemini is busy, built-in
+   chain built to be hard ("Start with 18. Add 16. Subtract 26. Times 4. Add half of it. Divide by half.
+   Divide by 6. Multiply by 4.") and ends with "Got your number? Three. Two. One. Most people get this
+   wrong. Comment yours!". The answer is never spoken or written on screen. TrendClip picks the numbers
+   itself: awkward numbers (no multiples of 5 or 10), ×3–×9 and ÷3–÷9, never a step that undoes the one
+   before, and two trick steps per chain ("Divide by half" is ×2 and most people halve; "Add half of it",
+   "Take away a third of it", "Square it", "Double it"). Whole numbers only, so the answer is always
+   right; the creator view shows the working and the number most people get. There is no spoken hint
+   (the digit count is in the pinned comment). Gemini writes the hook, title (with an emoji) and hashtags; if Gemini is busy, built-in
    texts are used. A riddle is a hook, 2–3 clues, the question, then a hint that is not the answer.
    Each number or clue (`24`, `+18`, `÷2`, `CLUE 1`) flashes big in the middle while it is spoken, and
-   the end shows **HINT** and **COMMENT YOUR ANSWER**. The pinned comment is the question plus that hint
+   the end shows **COMMENT YOUR ANSWER** (riddles also flash **HINT**). The pinned comment is the question plus a hint
    ("What number did you get? 👇 / Hint: it's two digits."). The real answer stays in the creator view
    and in Discord as a spoiler. Reaction stickers are skipped on math so nothing covers the numbers.
 
@@ -629,16 +633,31 @@ Every morning after the report, the bot reads every top-level comment on the cha
 channel's own comments are skipped). It posts the new ones since yesterday with their points, and the
 top 10. Everything is kept in `output/comments.json` on the bot's machine. Commands:
 
-- `/leaderboard` everyone ranked (`refresh:True` reads YouTube again right now).
+- `/leaderboard` everyone ranked this month (`refresh:True` reads YouTube again right now,
+  `last_month:True` last month's final standings plus a champions post to copy).
 - `/comments video:` every comment on one video, with its result and points.
 - `/points name:` one fan's total and comments.
 - `/answer video: answer: choices:` the quiz answer for a video this machine didn't make (choices like
   `A) Rome | B) Paris`; for a paradox, only the two sides). Quizzes made here are known by themselves.
 
 Points per person and video (only their best comment on a video counts, so spamming or guessing every
-option doesn't pay): the first correct answer 10, another correct answer or a paradox vote 2, any other
-comment 1. Subscribers get 10 once. YouTube only shows subscribers who keep their subscriptions public.
+option doesn't pay): the first correct answer 10, another correct answer or a paradox vote 3, any other
+comment or try 1. There are no subscriber points: you must be subscribed to win a prize (⭐ in Discord).
+YouTube only shows subscribers who keep their subscriptions public, so the bot warns you about podium fans
+it can't see as subscribed.
+
+**The 3-video rule:** a fan who doesn't comment on 3 videos in a row loses 50% of their points (an odd
+half is rounded in their favour). A video counts as missed once it is 24 hours old without their comment,
+and a late comment still counts. It only applies once they have points this month. `/points` shows what
+was lost.
 It uses the YouTube login from the Upload tab, so there is nothing else to set up.
+
+**The leaderboard resets every month.** Only comments posted since midnight on the 1st (`TIMEZONE`)
+count, so everyone starts from 0. Older comments stay stored. On the 1st, the daily leaderboard post
+starts with last month's final podium ("👑 SEPTEMBER 2026 CHAMPIONS 👑 …", with the prizes and how to
+claim them) to copy into a YouTube and Instagram post.
+The picture says "OCTOBER LEADERBOARD", and the caption says the board resets on the 1st. The bot's
+replies give the fan's rank and points for this month.
 
 Every day at `DISCORD_LEADERBOARD_TIME` (default 13:30, empty = off) the bot sends a podium picture of
 the top 13 and a caption that tags all of them. Any time, `/leaderboard image:True` sends both and
@@ -647,7 +666,7 @@ API can't create posts, so post it yourself: save the picture, copy the text, Yo
 Put the channel logo in `channels/<channel>/logo.png` and it's drawn on the picture.
 
 Every fan gets exactly one YouTube reply per video (YouTube always notifies about replies, unlike tags
-in posts), under the comment that scored: "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +2 pts…",
+in posts), under the comment that scored: "FIRST & CORRECT! ⚡ +10 pts…", "BOOM! Correct answer! +3 pts…",
 "Ouch! You fell for the trap! 🪤 +1 pt for trying…", "🗳️ Vote counted!…" or "🙌 Thanks for commenting!…",
 with the current rank. Their other comments on that video get nothing more, unless the scoring one
 can't be replied to (deleted): then another of theirs gets the one reply. Scoring comments go out first. Quiz and paradox videos wait until they're 24 h old, so the replies don't

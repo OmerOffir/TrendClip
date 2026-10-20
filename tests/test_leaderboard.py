@@ -48,17 +48,42 @@ def test_score_first_correct_best_comment_and_subscriber():
     comments = [
         _c("1", "q", "bob", "51", 1),
         _c("2", "q", "amy", "63", 2),  # first correct: 10
-        _c("3", "q", "bob", "63!", 3),  # correct: 2, his "51" then gets 0
+        _c("3", "q", "bob", "63!", 3),  # correct: 3, his "51" then gets 0
         _c("4", "q", "bob", "63 63 63", 4),  # still 0: one best comment per video
-        _c("5", "s", "bob", "nice", 5),  # 1
+        _c("5", "s", "bob", "nice", 5),  # any comment: 1
     ]
     people = lb.score(videos, comments, subscribers={"bob"})
     by = {p["id"]: p for p in people}
     assert by["amy"]["points"] == 10 and by["amy"]["first"] == 1
-    assert by["bob"]["points"] == 2 + 1 + 10 and by["bob"]["subscriber"]
-    assert [c.points for c in comments] == [0, 10, 2, 0, 1]
+    assert by["bob"]["points"] == 3 + 1 and by["bob"]["subscriber"]  # no subscriber bonus: it's what lets you win
+    assert [c.points for c in comments] == [0, 10, 3, 0, 1]
     assert comments[1].result == "first"
-    assert people[0]["id"] == "bob"
+    assert people[0]["id"] == "amy" and lb.unverified(people) == [by["amy"]]
+
+
+def _video(vid: str, published: str) -> Video:
+    return Video(vid, vid, published=published, kind="quiz", answer="63")
+
+
+def test_skipping_three_videos_in_a_row_halves_your_points():
+    now = datetime(2026, 10, 20, 12, tzinfo=timezone.utc)
+    videos = {f"v{d}": _video(f"v{d}", f"2026-10-0{d}T10:00:00Z") for d in range(1, 7)}
+    videos["v7"] = _video("v7", "2026-10-20T06:00:00Z")  # under 24 h old: not missed yet
+    at = lambda day, h: f"2026-10-{day:02d}T{h:02d}:00:00Z"  # noqa: E731
+    comments = [
+        Comment("a1", "v1", "Amy", "amy", "63", at(1, 11)),  # first: 10
+        Comment("b1", "v1", "Bob", "bob", "51", at(1, 12)),  # a try: 1
+        Comment("a2", "v2", "Amy", "amy", "63", at(2, 11)),  # first on v2: 20
+        Comment("b5", "v5", "Bob", "bob", "63", at(5, 11)),  # bob skipped v2-v4: his 1 pt halved (keeps 1), then +10
+        Comment("a3", "v3", "Amy", "amy", "63", at(19, 11)),  # a late comment on v3 still counts as commenting
+    ]
+    by = {p["id"]: p for p in lb.score(videos, comments, set(), since="2026-09-30T21:00:00Z", now=now)}
+    assert (by["bob"]["points"], by["bob"]["lost"], by["bob"]["halved"]) == (11, 0, 1)
+    # amy: 20, then she skips v4, v5, v6 → 10, then +10 for v3
+    assert (by["amy"]["points"], by["amy"]["lost"], by["amy"]["halved"]) == (20, 10, 1)
+    assert "🔥 −10" in lb.person_line(1, by["amy"])
+    later = lb.score(videos, comments, set(), since="2026-09-30T21:00:00Z", now=now - timedelta(days=14))
+    assert {p["id"]: p["points"] for p in later}["amy"] == 30  # on 6 Oct v6 wasn't 24 h old yet: 2 missed
 
 
 def test_safe_text_cannot_ping_or_format():
@@ -124,7 +149,30 @@ def settings(tmp_path, monkeypatch):
     from trendclip import script_writer
 
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: None)  # never the real Gemini
+    month_start = lb.month_start  # the comments below are from October 2026: score that month
+    monkeypatch.setattr(lb, "month_start", lambda s, now=None, back=0: month_start(
+        s, now or datetime(2026, 10, 20, 12, tzinfo=s.tz), back))
     return Settings(youtube_api_key="k", output_dir=tmp_path / "output")
+
+
+def test_the_board_starts_from_zero_every_month(settings):
+    threads = [
+        _thread("c1", "vq", "amy", "63", "2026-09-30T20:00:00Z"),  # 23:00 on the 30th in Israel: September
+        _thread("c2", "vq", "bob", "63", "2026-09-30T21:30:00Z"),  # 00:30 on 1 October in Israel
+        _thread("c3", "vx", "amy", "hi", "2026-10-05T10:00:00Z"),
+    ]
+    board, _ = lb.refresh(settings, FakeYouTube(threads))
+    assert board.since == "2026-09-30T21:00:00Z"  # midnight on 1 October, channel time
+    assert [(p["name"], p["points"]) for p in board.people] == [("bob", 3), ("amy", 1)]  # amy's 10 was September
+    assert "c1" not in "".join(lb.person_lines(board, "amy"))
+    month, final = lb.last_month(settings, board)
+    assert month == "September 2026" and [(p["name"], p["points"]) for p in final] == [("amy", 10)]
+    text = lb.champions_text(month, final)
+    assert text.startswith("👑 SEPTEMBER 2026 CHAMPIONS 👑\n🥇 @amy: 10 pts") and "starts from 0" in text
+    assert "gift card" in text and "sidequestlogic@gmail.com" in text
+    assert lb.champions_text(month, []) == ""
+    assert "resets on the 1st" in lb.post_caption(board.people, month="October 2026")
+    assert lb.month_start(settings, back=10).strftime("%Y-%m-%d") == "2025-12-01"
 
 
 def test_refresh_stores_scores_and_reports_new(settings):
@@ -135,20 +183,21 @@ def test_refresh_stores_scores_and_reports_new(settings):
     ]
     board, new = lb.refresh(settings, FakeYouTube(threads, subs=["bob"]))
     assert new == []  # the first read is the starting point, not "new"
-    assert [(p["name"], p["points"]) for p in board.people] == [("bob", 11), ("amy", 10)]  # amy: by title
+    assert [(p["name"], p["points"]) for p in board.people] == [("amy", 10), ("bob", 1)]  # amy: by title
+    assert board.people[1]["subscriber"]  # no bonus points: being subscribed is what lets you win
 
     lb.set_answer(settings, "vx", "Paris", "A) Rome | C) Paris")
     board = lb.load(settings)
     assert board.videos["vx"].choices == [("A", "Rome"), ("C", "Paris")]
-    assert board.people[0]["name"] == "bob" and board.people[0]["points"] == 20
+    assert [(p["name"], p["points"]) for p in board.people] == [("amy", 10), ("bob", 10)]
 
     threads.append(_thread("c4", "vq", "cat", "sixty three", "2026-10-13T09:00:00Z"))
     board, new = lb.refresh(settings, FakeYouTube(threads, subs=["bob"]))
-    assert [c.id for c in new] == ["c4"] and new[0].points == 2
+    assert [c.id for c in new] == ["c4"] and new[0].points == 3
     assert board.videos["vx"].answer == "Paris"  # /answer survives a refresh
     assert any("sixty three" in line for line in lb.new_lines(board, new))
     assert lb.video_lines(board, "vq")[0].startswith("🎬 **Quiz** · 2 comments")
-    assert "20 pts" in lb.person_lines(board, "bob")[0]
+    assert "10 pts" in lb.person_lines(board, "bob")[0] and "can win a prize" in lb.person_lines(board, "bob")[2]
 
 
 def test_card_renders_podium_and_list():
@@ -251,7 +300,7 @@ def test_one_reply_per_fan_per_video_with_its_result(settings):
     assert "a1" not in got  # amy's earlier wrong guess gets nothing: one reply per fan per video
     assert [q["result"] for q in queued][:2] == ["first", "correct"]  # the best news goes out first
     texts = {q["comment_id"]: q["text"] for q in queued}
-    assert "+10" in texts["b1"] and "+2" in texts["a2"] and "+1" in texts["c1"]
+    assert "+10" in texts["b1"] and "+3" in texts["a2"] and "+1" in texts["c1"]
     assert texts["d1"] in [t.format(rank=3, total="1 pt") for t in lb.REPLY_TEXTS["comment"]]
     assert all("http" not in t for t in texts.values())
     assert lb.plan_replies(settings, board, DAY, NOW) == []  # never queued twice

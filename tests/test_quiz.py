@@ -22,19 +22,34 @@ def fake_client(answer, seen=None):
     return SimpleNamespace(models=Models())
 
 
-def test_chains_are_whole_numbers_with_times_and_divide():
+def test_chains_are_hard_whole_numbers_with_times_divide_and_tricks():
+    halves = 0
     for seed in range(300):
         start, chain = quiz.make_chain(random.Random(seed))
-        assert len(chain) == 7
-        assert {"×", "÷"} <= {s.op for s in chain}
+        assert len(chain) == 7 and start % 5 and 14 <= start <= 64
+        assert {"×", "÷"} <= {s.op for s in chain if not s.trick}
+        assert len([s for s in chain if s.trick]) == quiz.MATH_TRICKS and not chain[0].trick
         assert all(a.op != b.op for a, b in zip(chain, chain[1:]))
+        assert not any(quiz.UNDO[a.op] == b.op and a.value == b.value for a, b in zip(chain, chain[1:]))
+        assert all(s.value >= 3 for s in chain if s.op == "÷")
         exact = Fraction(start)
         for step in chain:
             exact = {"+": exact + step.value, "-": exact - step.value,
                      "×": exact * step.value, "÷": exact / step.value}[step.op]
             assert exact.denominator == 1 and exact > 0
-        assert 5 <= exact <= 199 and quiz.solve(start, chain)[-1] == exact
+        assert 21 <= exact <= 399 and exact % 10 and quiz.solve(start, chain)[-1] == exact
         assert quiz.trap_answer(start, chain) != exact
+        halves += any(s.trick == "div_half" for s in chain)
+    assert halves > 180  # "Divide by half" in most chains
+
+
+def test_divide_by_half_is_times_two_and_halving_is_the_trap():
+    chain = [quiz.Step(op="+", value=16), quiz.trick_step("div_half", 40), quiz.Step(op="-", value=17)]
+    assert quiz.solve(24, chain) == [24, 40, 80, 63] and quiz.misread(24, chain) == 3
+    assert quiz.trap_answer(24, chain) == 3
+    lines, flashes = quiz.math_lines(24, chain, random.Random(1))
+    assert lines[2] == "Divide by half." and flashes[2].text == "÷ HALF" and flashes[2].word == "Divide by half"
+    assert '"Divide by half" (× 2) = 80' in quiz.working(24, chain)
 
 
 def test_working_reads_like_the_pinned_comment():
@@ -52,11 +67,11 @@ def test_math_quiz_script_flashes_and_answer(tmp_path):
     assert result.mode == "math" and result.script.startswith("Start with ")  # the puzzle from the first word
     assert "5%" not in result.script and result.hook == "Only 5% of people finish this without pausing."
     assert "Don't pause" not in result.script and "made a mistake" not in result.script
-    assert "Start with" in result.script and "Hint: it's " in result.script
-    assert result.script.endswith("Comment your answer right now!")
+    assert "Start with" in result.script and "Hint" not in result.script  # the hint made it too easy
+    assert result.script.endswith("Got your number? Three. Two. One. " + quiz.MATH_CLOSING)
     assert result.end_card == quiz.END_CARD and result.title_card == "ONLY 5% OF PEOPLE FINISH THIS"
-    assert len(result.flashes) == 13 and [f.text for f in result.flashes[-5:]] == ["?", "3", "2", "1", "HINT"]
-    assert "Got your number? Three. Two. One. Hint:" in result.script
+    assert len(result.flashes) == 12 and [f.text for f in result.flashes[-4:]] == ["?", "3", "2", "1"]
+    assert len(result.script.split()) <= quiz.QUIZ_MAX_WORDS and "most people get" in result.on_screen
     assert result.flashes[1].text[0] in "+-×÷"
     assert result.answer and result.answer not in result.pinned_comment and "→" not in result.pinned_comment
     assert result.pinned_comment.startswith("What number did you get? 👇") and "Hint:" in result.pinned_comment

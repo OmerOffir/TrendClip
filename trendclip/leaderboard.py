@@ -3,8 +3,11 @@
 Stored in output/comments.json on the machine that runs the bot; refreshed each morning and by
 /leaderboard refresh. Points per person and video (only their best comment on a video counts, so
 guessing every option or spamming doesn't pay): the first correct quiz answer 10, any other correct
-answer or a paradox vote 2, any other comment 1. A subscriber gets 10 once (YouTube only shows
-subscribers who made their subscriptions public). The channel's own comments are skipped.
+answer or a paradox vote 3, any other comment 1. Skipping 3 videos in a row halves a fan's points.
+Being subscribed earns no points but is needed to win a prize (YouTube only shows subscribers who made
+their subscriptions public). The channel's own comments are skipped. The board is
+monthly: only comments posted since the 1st (channel timezone) count, so everyone starts from 0 each month;
+older comments stay stored for last month's final standings.
 
 Quiz answers come from the Shorts on this machine (matched by YouTube id, else by title); /answer sets
 them for videos made elsewhere. Word rules judge each answer; Gemini double-checks quiz answers (typos,
@@ -32,7 +35,13 @@ from .models import utcnow
 
 logger = logging.getLogger(__name__)
 
-FIRST_POINTS, CORRECT_POINTS, COMMENT_POINTS, SUBSCRIBER_POINTS = 10, 2, 1, 10
+FIRST_POINTS, CORRECT_POINTS, COMMENT_POINTS = 10, 3, 1
+# The 3-video rule: a fan who doesn't comment on 3 videos in a row loses half their points. A video
+# counts as missed once it is MISS_GRACE old without their comment (a late comment still saves it).
+MISS_LIMIT, MISS_GRACE = 3, timedelta(hours=24)
+PRIZES = ("🎁 1st place: a digital gift card (Steam / Amazon / Google Play) + a pinned comment!",
+          "🏅 2nd & 3rd place: a Hall of Fame shoutout on YouTube & Instagram!",
+          "📩 To claim: DM @sidequestlogic or email sidequestlogic@gmail.com (you must be subscribed to win).")
 MAX_COMMENT_PAGES = 200  # 100 threads a page, 1 quota unit each
 RESULT_POINTS = {"first": FIRST_POINTS, "correct": CORRECT_POINTS, "voted": CORRECT_POINTS,
                  "wrong": COMMENT_POINTS, "comment": COMMENT_POINTS, "skip": 0}
@@ -91,7 +100,8 @@ class Board:
     verdicts: dict[str, str] = field(default_factory=dict)  # comment id -> Gemini's correct / wrong / comment
     updated_at: str = ""
     channel_id: str = ""
-    people: list[dict[str, Any]] = field(default_factory=list)  # best first
+    people: list[dict[str, Any]] = field(default_factory=list)  # this month's, best first
+    since: str = ""  # the month's start ("…Z"): older comments are kept but don't count
 
 
 # --------------------------------------------------------------------------- judging answers
@@ -162,10 +172,70 @@ def judge(video: Video, text: str) -> str:
     return "wrong" if numeric and any(w.isdigit() for w in words) else "comment"
 
 
+def in_period(c: Comment, since: str = "", until: str = "") -> bool:
+    return (not since or c.published >= since) and (not until or c.published < until)
+
+
+def month_start(settings: Settings, now: datetime | None = None, back: int = 0) -> datetime:
+    """Midnight on the 1st of this month (or `back` months earlier) in the channel's timezone."""
+    now = (now or datetime.now(settings.tz)).astimezone(settings.tz)
+    year, month = now.year, now.month - back
+    while month < 1:
+        year, month = year - 1, month + 12
+    return datetime(year, month, 1, tzinfo=settings.tz)
+
+
+def utc_text(moment: datetime) -> str:
+    """As YouTube / Instagram times are stored, so they compare as text: "2026-10-01T00:00:00Z"."""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def month_name(moment: datetime) -> str:
+    return moment.strftime("%B %Y")
+
+
+def _parse(text: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+
+
+def _closings(videos: dict[str, Video], since: str, until: str, now: datetime) -> list[tuple[str, str]]:
+    """(when it counts as missed, video id) for the period's videos that are old enough, in order."""
+    limit = min(now, _parse(until) or now)
+    out = []
+    for v in videos.values():
+        if (at := _parse(v.published)) and (not since or v.published >= since) and at + MISS_GRACE <= limit:
+            out.append((utc_text(at + MISS_GRACE), v.id))
+    return sorted(out)
+
+
+def apply_misses(own: list[Comment], closings: list[tuple[str, str]], commented: set[str]) -> tuple[int, int, int]:
+    """The 3-video rule over one fan's period: (points, points lost, times halved). Points come in as their
+    comments are posted; each MISS_LIMIT videos in a row they never commented on halves what they have."""
+    events = [(c.published, 0, c.points, "") for c in own] + [(at, 1, 0, vid) for at, vid in closings]
+    points = lost = halved = streak = 0
+    for _, is_closing, pts, vid in sorted(events):
+        if not is_closing:
+            points += pts
+        elif vid in commented:
+            streak = 0
+        elif points > 0:
+            streak += 1
+            if streak == MISS_LIMIT:
+                cut = points // 2  # an odd half is rounded in the fan's favour
+                points, lost, halved, streak = points - cut, lost + cut, halved + 1, 0
+    return points, lost, halved
+
+
 def score(videos: dict[str, Video], comments: list[Comment], subscribers: set[str],
-          verdicts: dict[str, str] | None = None) -> list[dict[str, Any]]:
+          verdicts: dict[str, str] | None = None, since: str = "", until: str = "",
+          now: datetime | None = None) -> list[dict[str, Any]]:
     """Fill each comment's result / points and return the people, best first. Gemini's verdicts win over
-    the word rules (quiz answers); links and what Gemini flags (spam, rude) are "skip": no points."""
+    the word rules (quiz answers); links and what Gemini flags (spam, rude) are "skip": no points.
+    `since` / `until` (UTC "…Z" times): only comments posted then count for the people (the month), and
+    the 3-video rule halves the points of fans who skip MISS_LIMIT videos in a row."""
     verdicts = verdicts or {}
     for c in comments:
         video = videos.get(c.video_id)
@@ -191,20 +261,26 @@ def score(videos: dict[str, Video], comments: list[Comment], subscribers: set[st
             c.points = RESULT_POINTS[c.result] if best[c.author_id] is c else 0
 
     people: dict[str, dict[str, Any]] = {}
+    own: dict[str, list[Comment]] = defaultdict(list)
+    commented: dict[str, set[str]] = defaultdict(set)
     for c in sorted(comments, key=lambda c: c.published):
         if c.result == "skip":
             continue
+        commented[c.author_id].add(c.video_id)
+        if not in_period(c, since, until):
+            continue
+        own[c.author_id].append(c)
         p = people.setdefault(c.author_id, {"name": c.author, "id": c.author_id, "points": 0, "comments": 0,
                                             "videos": set(), "correct": 0, "first": 0})
         p["name"] = c.author  # the newest display name
         p["comments"] += 1
         p["videos"].add(c.video_id)
-        p["points"] += c.points
         p["correct"] += c.points > 0 and c.result in ("first", "correct")
         p["first"] += c.result == "first"
+    closings = _closings(videos, since, until, now or datetime.now(timezone.utc))
     for p in people.values():
-        p["subscriber"] = p["id"] in subscribers
-        p["points"] += SUBSCRIBER_POINTS if p["subscriber"] else 0
+        p["points"], p["lost"], p["halved"] = apply_misses(own[p["id"]], closings, commented[p["id"]])
+        p["subscriber"] = p["id"] in subscribers  # must be subscribed to win a prize
         p["videos"] = len(p["videos"])
     return sorted(people.values(), key=lambda p: (-p["points"], -p["first"], p["name"].lower()))
 
@@ -330,9 +406,36 @@ def _path(settings: Settings) -> Path:
 
 
 def _rescore(settings: Settings, board: Board) -> Board:
+    """Score the board for the current month: everyone starts from 0 on the 1st."""
     _apply_answers(settings, list(board.videos.values()), board.answers)
-    board.people = score(board.videos, board.comments, board.subscribers, board.verdicts)
+    board.since = utc_text(month_start(settings))
+    board.people = score(board.videos, board.comments, board.subscribers, board.verdicts, since=board.since)
     return board
+
+
+def last_month(settings: Settings, board: Board, now: datetime | None = None) -> tuple[str, list[dict[str, Any]]]:
+    """(name, final people) of the month before this one, e.g. ("September 2026", [...])."""
+    start, end = month_start(settings, now, back=1), month_start(settings, now)
+    people = score(board.videos, board.comments, board.subscribers, board.verdicts,
+                   since=utc_text(start), until=utc_text(end))
+    return month_name(start), people
+
+
+def champions_text(month: str, people: list[dict[str, Any]]) -> str:
+    """The month-end announcement: the final podium, then the fresh start."""
+    if not people:
+        return ""
+    medals = ("🥇", "🥈", "🥉")
+    lines = [f"👑 {month.upper()} CHAMPIONS 👑"]
+    lines += [f"{m} {_tag(p['name'])}: {p['points']} pts" for m, p in zip(medals, people)]
+    lines += ["", *PRIZES, "",
+              "The leaderboard just reset: everyone starts from 0 this month. First correct answer = 10 pts! 🧠🔥"]
+    return "\n".join(lines)
+
+
+def unverified(people: list[dict[str, Any]], top: int = 3) -> list[dict[str, Any]]:
+    """Podium fans YouTube doesn't show as subscribed (must be subscribed to win; subscriptions can be private)."""
+    return [p for p in people[:top] if not p.get("subscriber")]
 
 
 def load(settings: Settings) -> Board:
@@ -413,10 +516,10 @@ REPLY_TEXTS = {
         "👑 First to solve it! That's the +10 pts mega bonus. Rank #{rank} with {total} total!",
     ),
     "correct": (
-        "BOOM! Correct answer! 🧠 You just earned +2 pts on the SideQuest Leaderboard! [Current Rank: #{rank}] 🏆",
-        "✅ Nailed it! +2 pts for you. You're #{rank} on the SideQuest Leaderboard 🏆",
-        "🧠 Big brain! Correct answer, +2 pts. Current rank: #{rank} with {total} 🔥",
-        "🎯 Spot on! +2 pts added. You're sitting at #{rank} on our leaderboard!",
+        "BOOM! Correct answer! 🧠 You just earned +3 pts on the SideQuest Leaderboard! [Current Rank: #{rank}] 🏆",
+        "✅ Nailed it! +3 pts for you. You're #{rank} on the SideQuest Leaderboard 🏆",
+        "🧠 Big brain! Correct answer, +3 pts. Current rank: #{rank} with {total} 🔥",
+        "🎯 Spot on! +3 pts added. You're sitting at #{rank} on our leaderboard!",
     ),
     "wrong": (
         "Ouch! You fell for the trap! 🪤 But no worries, you still earned +1 pt for trying! Check the community "
@@ -427,9 +530,9 @@ REPLY_TEXTS = {
         "🪤 So close! This trap fools a lot of people. +1 pt for jumping in! Current rank: #{rank}",
     ),
     "voted": (
-        "🗳️ Vote counted! +2 pts on the SideQuest Leaderboard. Current rank: #{rank} 🧠",
-        "🌀 Bold pick! Your vote earned +2 pts. You're #{rank} on our leaderboard!",
-        "🗳️ Side chosen! +2 pts for taking a stand. Rank #{rank}, now defend your answer 👇",
+        "🗳️ Vote counted! +3 pts on the SideQuest Leaderboard. Current rank: #{rank} 🧠",
+        "🌀 Bold pick! Your vote earned +3 pts. You're #{rank} on our leaderboard!",
+        "🗳️ Side chosen! +3 pts for taking a stand. Rank #{rank}, now defend your answer 👇",
     ),
     "comment": (
         "🙌 Thanks for commenting! +1 pt on the SideQuest Leaderboard. Current rank: #{rank} 🏆",
@@ -745,6 +848,8 @@ def person_line(rank: int, p: dict[str, Any]) -> str:
         bits.append(f"{p['first']}× first")
     if p["subscriber"]:
         bits.append("⭐ sub")
+    if p.get("lost"):
+        bits.append(f"🔥 −{p['lost']}")
     return f"{medal} **{safe(p['name'], 40)}** {p['points']} pts · " + " · ".join(bits)
 
 
@@ -778,8 +883,13 @@ def person_lines(board: Board, author_id: str) -> list[str]:
         return ["Nobody by that name has commented."]
     lines = [person_line(rank, p), f"<https://www.youtube.com/channel/{p['id']}>"]
     if p["subscriber"]:
-        lines.append(f"⭐ Subscriber bonus: +{SUBSCRIBER_POINTS}")
-    for c in sorted((c for c in board.comments if c.author_id == author_id), key=lambda c: c.published, reverse=True):
+        lines.append("⭐ Subscribed: can win a prize")
+    else:
+        lines.append("Not shown as subscribed (maybe private subscriptions): check before giving a prize")
+    if p["lost"]:
+        lines.append(f"🔥 3-video rule: lost {p['lost']} pts ({p['halved']}× skipped {MISS_LIMIT} videos in a row)")
+    for c in sorted((c for c in board.comments if c.author_id == author_id and in_period(c, board.since)),
+                    key=lambda c: c.published, reverse=True):
         title = board.videos[c.video_id].name if c.video_id in board.videos else c.video_id
         lines.append(f"{RESULT_ICON[c.result]} `+{c.points}` {safe(title, 40)}: {safe(c.text, 100)}")
     return lines
@@ -803,15 +913,20 @@ def next_drop(settings: Settings, now: datetime | None = None) -> str:
     return "soon"
 
 
-def post_caption(people: list[dict[str, Any]], tags: int = 13, drop: str = "in 1 hour") -> str:
-    """The daily YouTube post text, tagging everyone on the picture."""
+def post_caption(people: list[dict[str, Any]], tags: int = 13, drop: str = "in 1 hour", month: str = "") -> str:
+    """The daily YouTube post text, tagging everyone on the picture. `month`: "October 2026"."""
     if not people:
         return ""
     top = people[0]
     pts = "pt" if top["points"] == 1 else "pts"
     lines = ["🏆 DAILY LEADERBOARD UPDATE! 🏆",
-             f"Current Kings of Logic: {_tag(top['name'])} with {top['points']} {pts}!",
+             f"Current Kings of Logic{f' of {month.split()[0]}' if month else ''}: {_tag(top['name'])} with "
+             f"{top['points']} {pts}!",
              f"Next trap drops {drop}! Who's taking the #1 spot today? 🧠🔥"]
+    if month:
+        lines.append("The leaderboard resets on the 1st of every month: everyone starts from 0.")
+    lines.append(f"⚠️ 3-video rule: skip {MISS_LIMIT} videos in a row and lose 50% of your points! "
+                 "Must be subscribed to win 🎁")
     tagged = " ".join(_tag(p["name"]) for p in people[:tags])
     return "\n".join(lines) + ("\n\n" + tagged if len(people) > 1 else "")
 

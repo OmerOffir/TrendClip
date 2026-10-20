@@ -163,7 +163,8 @@ def render(people: list[dict[str, Any]], handle: str = "@SideQuestLogic", *, day
     while size > 60 and d.textlength(TITLE, font=_font(size)) > W - 100:
         size -= 4
     _glow_text(img, (W / 2, 160), TITLE, _font(size), YELLOW, (255, 170, 0), radius=18)
-    sub = f"COMMENT LEADERBOARD · {(day or date.today()).strftime('%d %b %Y').upper()}"
+    day = day or date.today()
+    sub = f"{day:%B} LEADERBOARD · {day:%d %b %Y}".upper()  # it starts again on the 1st
     d.text((W / 2, 262), sub, font=_font(30), fill=WHITE, anchor="mm")
 
     floor = 720

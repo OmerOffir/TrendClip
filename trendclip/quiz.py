@@ -96,6 +96,21 @@ def schedule_flashes(flashes: list[Flash], words: list, total: float | None = No
 class Step(BaseModel):
     op: Literal["+", "-", "×", "÷"]
     value: int
+    trick: str = ""  # a key of TRICKS: worded to trip people up, its value follows the running total
+
+
+# Steps worded to trip people up: (spoken, flashed, spoken trigger word, applies to the running total v,
+# usable on v). "Divide by half" is ×2: most people halve.
+TRICKS = {
+    "div_half": ("Divide by half.", "÷ HALF", "Divide by half", lambda v: v * 2, lambda v: v <= 120),
+    "add_half": ("Add half of it.", "+ HALF", "half of", lambda v: v + v // 2, lambda v: v % 2 == 0 and 20 <= v <= 200),
+    "sub_third": ("Take away a third of it.", "- A THIRD", "third", lambda v: v - v // 3,
+                  lambda v: v % 3 == 0 and 18 <= v <= 300),
+    "square": ("Square it.", "SQUARED", "Square", lambda v: v * v, lambda v: 4 <= v <= 12),
+    "double": ("Double it.", "×2", "Double", lambda v: v * 2, lambda v: 15 <= v <= 150),
+}
+TRICK_OP = {"div_half": "×", "add_half": "+", "sub_third": "-", "square": "×", "double": "×"}
+MATH_TRICKS = 2  # per chain; "Divide by half" in most of them
 
 
 # No "Plus" / "Minus": they are French words too, and multilingual voices read "Plus 27." as French.
@@ -181,6 +196,8 @@ def with_emoji(title: str, emoji: str = "🧠") -> str:
 
 
 def apply(value: int, step: Step) -> int:
+    if step.trick:
+        return TRICKS[step.trick][3](value)
     if step.op == "+":
         return value + step.value
     if step.op == "-":
@@ -190,39 +207,66 @@ def apply(value: int, step: Step) -> int:
     return value // step.value
 
 
-def _next_step(rng: random.Random, value: int, last_op: str | None) -> Step | None:
+def _awkward(rng: random.Random, low: int, high: int) -> int:
+    """A number that is hard to add in your head: no multiples of 5 when it can be helped."""
+    picks = [n for n in range(low, high + 1) if n % 5]
+    return rng.choice(picks or [low])
+
+
+def trick_step(trick: str, value: int) -> Step:
+    after = TRICKS[trick][3](value)
+    op = TRICK_OP[trick]
+    amount = after // value if op == "×" else abs(after - value)
+    return Step(op=op, value=amount, trick=trick)
+
+
+def _next_step(rng: random.Random, value: int, last_op: str | None, trick: str | None = None,
+               last_value: int | None = None) -> Step | None:
+    if trick:
+        step = trick_step(trick, value) if TRICKS[trick][4](value) and TRICK_OP[trick] != last_op else None
+        return None if step and (last_op, step.value) == (UNDO.get(step.op), last_value) else step
     options = []
-    divisors = [d for d in range(2, 10) if value % d == 0 and value // d >= 2]
-    if divisors and last_op != "÷":
+    divisors = [d for d in range(3, 10) if value % d == 0 and value // d >= 3]
+    if divisors:
         options.append(Step(op="÷", value=rng.choice(divisors)))
-    if value <= 25 and last_op != "×":
-        options.append(Step(op="×", value=rng.randint(2, 5 if value <= 12 else 3)))
-    if value <= 150:
-        options.append(Step(op="+", value=rng.randint(3, 29)))
-    if value > 12:
-        options.append(Step(op="-", value=rng.randint(2, min(29, value - 5))))
-    options = [o for o in options if o.op != last_op]
+    if value <= 30:
+        options.append(Step(op="×", value=rng.randint(3, 9 if value <= 12 else 6 if value <= 20 else 4)))
+    if value <= 300:
+        options.append(Step(op="+", value=_awkward(rng, 13, 49)))
+    if value > 25:
+        options.append(Step(op="-", value=_awkward(rng, 13, min(49, value - 8))))
+    options = [o for o in options if o.op != last_op and (last_op, o.op, o.value) != (UNDO.get(o.op), o.op, last_value)]
     return rng.choice(options) if options else None
 
 
+UNDO = {"÷": "×", "×": "÷", "+": "-", "-": "+"}  # "Times 3. Divide by 3." cancels out: too easy
+
+
 def make_chain(rng: random.Random | None = None, steps: int = 7) -> tuple[int, list[Step]]:
-    """A start number and `steps` operations: whole numbers only, at least one × and one ÷, never
-    the same operation twice in a row, answer 5-199."""
+    """A start number and `steps` operations, built to be hard: awkward two-digit numbers, ×3-×9 and
+    ÷3-÷9, and MATH_TRICKS steps worded to trip people up ("Divide by half." is ×2). Whole numbers only,
+    at least one × and one ÷, never the same operation twice in a row, answer 21-399."""
     rng = rng or random.Random()
-    for _ in range(500):
-        value = start = rng.randint(8, 40)
+    for _ in range(2000):
+        value = start = _awkward(rng, 14, 64)
+        tricks = ["div_half"] if rng.random() < 0.75 else []
+        tricks += rng.sample([t for t in TRICKS if t != "div_half"], MATH_TRICKS - len(tricks))
+        rng.shuffle(tricks)
+        at = sorted(rng.sample(range(1, steps), MATH_TRICKS))  # never the first step
+        plan = dict(zip(at, tricks))
         chain: list[Step] = []
-        for _ in range(steps):
-            step = _next_step(rng, value, chain[-1].op if chain else None)
+        for i in range(steps):
+            step = _next_step(rng, value, chain[-1].op if chain else None, plan.get(i),
+                              chain[-1].value if chain else None)
             if step is None:
                 break
             chain.append(step)
             value = apply(value, step)
-        ops = {s.op for s in chain}
-        if len(chain) == steps and {"×", "÷"} <= ops and 5 <= value <= 199:
+        ops = {s.op for s in chain if not s.trick}
+        if len(chain) == steps and {"×", "÷"} <= ops and 21 <= value <= 399 and value % 10:
             return start, chain
-    return 24, [Step(op="+", value=18), Step(op="÷", value=2), Step(op="×", value=3),
-                Step(op="-", value=13), Step(op="+", value=7), Step(op="÷", value=3), Step(op="+", value=9)]
+    return 34, [Step(op="-", value=13), Step(op="×", value=4), Step(op="÷", value=7), trick_step("div_half", 12),
+                Step(op="+", value=27), trick_step("sub_third", 51), Step(op="+", value=29)]
 
 
 def solve(start: int, chain: list[Step]) -> list[int]:
@@ -234,8 +278,10 @@ def solve(start: int, chain: list[Step]) -> list[int]:
 
 
 def trap_answer(start: int, chain: list[Step]) -> int:
-    """The number you get by missing one step in the middle: the 'If you got X, you made a mistake' bait."""
+    """The number most people get: "Divide by half" read as ÷2, else one step in the middle missed."""
     answer = solve(start, chain)[-1]
+    if (wrong := misread(start, chain)) is not None and wrong != answer and wrong > 0:
+        return wrong
     for skip in (2, 3, 1, 4):
         if skip < len(chain):
             rest = chain[:skip] + chain[skip + 1:]
@@ -245,11 +291,36 @@ def trap_answer(start: int, chain: list[Step]) -> int:
     return answer + 10
 
 
+def misread(start: int, chain: list[Step]) -> int | None:
+    """The answer when "Divide by half" is done as ÷2 (None without one, or when it isn't whole)."""
+    if not any(s.trick == "div_half" for s in chain):
+        return None
+    value = start
+    for step in chain:
+        if step.trick == "div_half":
+            if value % 2:
+                return None
+            value //= 2
+        elif step.trick and not TRICKS[step.trick][4](value):
+            return None
+        elif step.op == "÷" and not step.trick and value % step.value:
+            return None
+        else:
+            value = apply(value, step)
+    return value
+
+
+def _shown(step: Step) -> str:
+    if step.trick:
+        return f'"{TRICKS[step.trick][0].rstrip(".")}" ({step.op} {step.value})'
+    return f"{step.op} {step.value}"
+
+
 def working(start: int, chain: list[Step]) -> str:
-    """'24 + 18 = 42 → ÷ 2 = 21 → …' for the pinned comment."""
+    """'24 + 18 = 42 → ÷ 2 = 21 → "Divide by half" (× 2) = 42 → …' for the pinned comment."""
     values = solve(start, chain)
-    parts = [f"{start} {chain[0].op} {chain[0].value} = {values[1]}"]
-    parts += [f"{s.op} {s.value} = {v}" for s, v in zip(chain[1:], values[2:])]
+    parts = [f"{start} {_shown(chain[0])} = {values[1]}"]
+    parts += [f"{_shown(s)} = {v}" for s, v in zip(chain[1:], values[2:])]
     return " → ".join(parts).replace(" - ", " − ")
 
 
@@ -257,6 +328,11 @@ def math_lines(start: int, chain: list[Step], rng: random.Random) -> tuple[list[
     lines = [f"Start with {start}."]
     flashes = [Flash(word=str(start), text=str(start))]
     for step in chain:
+        if step.trick:
+            said, shown, trigger = TRICKS[step.trick][:3]
+            lines.append(said)
+            flashes.append(Flash(word=trigger, text=shown))
+            continue
         lines.append(rng.choice(SAY[step.op]).format(n=step.value))
         flashes.append(Flash(word=str(step.value), text=f"{step.op}{step.value}"))
     return lines, flashes
@@ -316,7 +392,9 @@ class GeminiRiddle(BaseModel):
 
 
 MATH_PROMPT = """Package this RAPID MATH CHAIN Short. The voiceover reads the chain fast, one step every
-1.2-1.5 seconds, then asks viewers to comment their final number. The chain (for you only, don't repeat it):
+1.2-1.5 seconds, then asks viewers to comment their final number. It is built to be hard: awkward numbers
+and steps worded to trip people up (e.g. "Divide by half" is ×2, most people halve), so most viewers get
+it wrong and argue in the comments. The chain (for you only, don't repeat it or hint at the trick):
 {chain} (answer {answer}).
 Write the hook, title, description, hashtags and title card. Topic flavour for the game background: {game}.{notes}"""
 
@@ -984,21 +1062,20 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
         hook = rng.choice(MATH_HOOKS)
     lines, flashes = math_lines(start, chain, rng)
     hint = digit_hint(answer)
-    hint_line = f"Hint: {hint}."
-    # "Start with 24." is the first thing spoken (its number slams in at once); the dare is the banner.
-    spoken = fit_quiz([*lines, "Got your number?", COUNTDOWN, hint_line, CLOSING], hint_line)
+    # "Start with 24." is the first thing spoken (its number slams in at once); the dare is the banner. No
+    # spoken hint: it made the chain too easy (the digit count is in the pinned comment).
+    spoken = [*lines, "Got your number?", COUNTDOWN, MATH_CLOSING]
     flashes += [Flash(word="number", text="?"), *COUNTDOWN_FLASHES]
-    if hint_line in spoken:
-        flashes.append(Flash(word="Hint", text="HINT"))
     pinned = public_pin("What number did you get?", hint)
     return _script(settings, game, model, "math", format, " ".join(spoken), hook, flashes, str(answer), pinned,
-                   pack, on_screen=f"Math chain: {steps_text} (answer {answer})")
+                   pack, on_screen=f"Math chain: {steps_text} (answer {answer}; most people get {trap})")
 
 
 # --------------------------------------------------------------------------- your own quiz text
 
 
 CLOSING = "Comment your answer right now!"
+MATH_CLOSING = "Most people get this wrong. Comment yours!"
 FOLLOW_LINE = re.compile(r"\b(subscribe|sub to|follow|stories|part (2|two))\b", re.I)
 _NUM = r"(\d+)\s*(%|percent)?"
 STEP_PATTERNS = [  # (op, regex); the first match in each sentence wins
