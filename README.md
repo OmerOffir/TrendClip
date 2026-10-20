@@ -378,8 +378,9 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
   4 frames from start to end, so it tags what the whole animation shows. Tags are cached in
   `assets/cache/stickers.json`. See them under **Sticker library** in the Create tab, with
   **Rescan** and **Re-tag with Gemini** buttons.
-- **Quizzes** (every kind): their reactions come only from the *thinking* stickers: one on the
-  "Three. Two. One." countdown, plus one every 3-5 s after the title banner. To add one, drop the GIF in
+- **Quizzes** (every kind): their reactions come only from the *thinking* stickers, at least 3 per
+  video and bigger (420 px instead of 300), in the upper corners or beside the flashes, never over them:
+  one on the "Three. Two. One." countdown when it fits, the rest every 3-5 s after the title banner. To add one, drop the GIF in
   `stickers/` and tag it `{"moods": ["thinking"]}` (files named think… / calculating… get the tag on their own).
 - **Fix a tag:** add it to `stickers/stickers.json`, which always wins, e.g.
   `{"oh_no_2.png": {"moods": ["embarrassed"]}, "image.png": {"category": "off"}}`.

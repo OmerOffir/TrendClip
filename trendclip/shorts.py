@@ -269,7 +269,7 @@ def resolve_popups(settings: Settings, wanted: list[popups.Popup], words: list, 
 
 
 def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_overlays: list,
-                     progress: ProgressFn) -> tuple[list, list[str]]:
+                     progress: ProgressFn, flashes: list | None = None) -> tuple[list, list[str]]:
     """Reaction stickers at the story beats + a subscribe / Part 2 sticker at the call to action.
     Sticker problems never fail the render."""
     if not (req.stickers or req.cta_sticker):
@@ -289,7 +289,7 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
             auto=req.stickers and not req.flashes,
             popups=popup_overlays, title_seconds=3.0 if req.title_card.strip() else 0.0,
             end_seconds=3.5 if req.end_card.strip() else 0.0, seed=req.script,
-            focus="thinking" if req.flashes and req.stickers else None,
+            focus="thinking" if req.flashes and req.stickers else None, flashes=flashes, flash_y=quiz.FLASH_Y,
         )
     except Exception:  # noqa: BLE001
         logger.exception("Sticker placement failed; rendering without stickers")
@@ -329,7 +329,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     # Pop-ups in a quiz are its clues (the emoji movie quiz): a row that stays up until the closing flash.
     row_until = (flashes[-1].start if flashes else words[-1].end) if req.flashes and req.popups else None
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress, row_until)
-    sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress)
+    sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress, flashes)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(

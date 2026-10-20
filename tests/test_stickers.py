@@ -149,12 +149,32 @@ def test_quiz_focus_uses_only_thinking_stickers(tmp_path):
                      + " Which one is it? Three. Two. One. Comment your answer!", 0.4)
     overlays, used = stickers.plan(settings, lib() + thinking, words, [Reaction(word="Three", mood="shocked")],
                                    cta=None, auto=False, title_seconds=3.0, seed="quiz", focus="thinking")
-    assert len(overlays) >= 2 and all(name.startswith("think") for name in used)
+    assert len(overlays) >= stickers.FOCUS_MIN and all(name.startswith("think") for name in used)
+    assert all(o.box == stickers.FOCUS_BOX > stickers.REACTION_BOX for o in overlays)
     three = words[[w.text for w in words].index("Three.")].start - 0.05
     assert any(o.start == pytest.approx(three) for o in overlays)  # on the countdown
     plain, _ = stickers.plan(settings, lib() + thinking, words, [], cta=None, auto=False, title_seconds=3.0)
     assert plain == []  # quizzes without focus: no fillers, as before
     assert stickers.guess(StickerInfo(filename="Think Winnie The Pooh GIF.gif")).moods == ["thinking"]
+
+
+def test_quiz_focus_gets_three_even_in_a_short_quiz_and_keeps_flashes_clear(tmp_path):
+    from trendclip.quiz import TimedFlash
+
+    settings = make_settings(tmp_path)
+    thinking = [StickerInfo(filename=f"think{i}.gif", category="reaction", moods=["thinking"]) for i in range(4)]
+    words = words_of("Start with 18. Times 3. Add 27. Double it. Divide by 6. Got your number? Three. Two. One.", 0.75)
+    flashes = [TimedFlash(t, s, s + 1.2) for t, s in (("18", 1.0), ("+ HALF", 4.5), ("+27", 7.0), ("?", 9.5))]
+    overlays, _ = stickers.plan(settings, thinking, words, [], cta="subscribe", auto=False, title_seconds=3.0,
+                                end_seconds=3.5, seed="short", focus="thinking", flashes=flashes)
+    reactions = [o for o in overlays if not o.pulse]
+    assert len(reactions) >= stickers.FOCUS_MIN
+    for o in reactions:
+        rect = stickers._rect(o.center, o.box, o.box)
+        assert not stickers._hits(rect, stickers.CAPTIONS)
+        for f in flashes:
+            if f.start < o.end and o.start < f.end:
+                assert not stickers._hits(rect, stickers.flash_rect(f.text, 0.39))
 
 
 def test_animated_reactions_stay_until_their_loop_ends(tmp_path):

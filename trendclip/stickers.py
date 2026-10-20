@@ -29,7 +29,7 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 from .config import Settings
-from .video_assembler import WIDTH, Overlay
+from .video_assembler import HEIGHT, WIDTH, Overlay
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,16 @@ SLOTS = {  # centres of the reaction sticker positions
     "center-left": (205, 800),
     "center-right": (875, 800),
 }
+FOCUS_BOX = 420  # quiz reactions are bigger; the strip under the captions is too small for them
+FOCUS_SLOTS = {
+    "top-right": (810, 350),
+    "mid-left": (228, 790),
+    "top-left": (270, 350),
+    "mid-right": (852, 790),
+}
+FOCUS_MIN = 3  # reactions in every quiz, however short
+FOCUS_GAP = 2.0  # top-up reactions start at least this far apart
+FLASH_FONT = 288  # px: the flash style is 2.4x the 120 px captions
 CTA_CENTER = (WIDTH // 2, 1490)
 REACTION_SECONDS = 1.9
 ANIMATED_MAX_SECONDS = 3.2  # an animated reaction stays until its loop ends, at most this long
@@ -458,6 +468,12 @@ def _hits(a: Rect, b: Rect) -> bool:
     return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
+def flash_rect(text: str, y: float) -> Rect:
+    """Roughly where a quiz flash (big centred text, `y` = height 0-1) lands on screen."""
+    width = min(WIDTH - 40, round(0.5 * FLASH_FONT * len(text)) + 30)
+    return _rect((WIDTH // 2, round(y * HEIGHT)), width, FLASH_FONT + 40)
+
+
 def _clean(text: str) -> str:
     return re.sub(r"[^\w' ]", "", text.lower()).strip()
 
@@ -530,10 +546,13 @@ def plan(
     max_reactions: int = 5,
     pace: bool = True,
     focus: str | None = None,
+    flashes: list | None = None,
+    flash_y: float = 0.39,
 ) -> tuple[list[Overlay], list[str]]:
     """Sticker overlays for one Short: (overlays, sticker file names used). With `pace`, extra reactions
     fill every stretch longer than 5 s without a new pop-up or sticker. `focus` (a mood, e.g. "thinking"
-    for quizzes): every reaction, the fillers too, comes from the stickers with that mood."""
+    for quizzes): every reaction, the fillers too, comes from the stickers with that mood; they are
+    bigger and there are at least FOCUS_MIN. `flashes` (quiz TimedFlash) are kept clear."""
     if not words:
         return [], []
     if focus and any(s.category == "reaction" and focus in s.moods for s in lib):
@@ -547,6 +566,8 @@ def plan(
         busy.append((TOP_BANNER, max(words[-1].end - end_seconds, 0.0), 1e9))
     for ov in popups or []:
         busy.append((_rect(ov.xy(), ov.box, ov.box), ov.start, ov.end))
+    for f in flashes or []:
+        busy.append((flash_rect(f.text, f.y or flash_y), f.start, f.end))
 
     def free(rect: Rect, start: float, end: float) -> bool:
         return not any(_hits(rect, r) and start < e and s < end for r, s, e in busy)
@@ -590,7 +611,8 @@ def plan(
 
     stop = cta_time if cta_time is not None else total
     placed, last = 0, -1e9
-    slot_names = list(SLOTS)
+    slots, size = (FOCUS_SLOTS, FOCUS_BOX) if focus else (SLOTS, REACTION_BOX)
+    slot_names = list(slots)
 
     def place(start: float, end: float, mood: str, room: float | None = None) -> bool:
         """`room`: how long an animated sticker may stay so its animation plays through once."""
@@ -602,12 +624,12 @@ def plan(
             end = max(end, min(start + min(info.loop_seconds, ANIMATED_MAX_SECONDS), room))
         order = slot_names[placed % len(slot_names):] + slot_names[: placed % len(slot_names)]
         for name in order:
-            center = SLOTS[name]
-            rect = _rect(center, REACTION_BOX + 30, REACTION_BOX + 30)
+            center = slots[name]
+            rect = _rect(center, size + 30, size + 30)
             if free(rect, start, end):
                 tilt = (-6.0 if center[0] < WIDTH // 2 else 6.0) * (1 if placed % 2 == 0 else 0.6)
                 out.append(Overlay(settings.stickers_dir / info.filename, start, end, center=center,
-                                   box=REACTION_BOX, tilt=tilt, style="sticker" if info.transparent else "card",
+                                   box=size, tilt=tilt, style="sticker" if info.transparent else "card",
                                    animated=info.animated))
                 busy.append((rect, start, end))
                 used.append(info.filename)
@@ -633,8 +655,38 @@ def plan(
     if pace and (auto or focus) and any(s.category == "reaction" for s in lib):
         _fill_gaps(words, moments, [o.start for o in popups or []] + [o.start for o in out],
                    max(title_seconds, words[0].start), stop, place, focus)
+    if focus and any(s.category == "reaction" for s in lib):
+        begin = max(title_seconds, words[0].start, 0.8)
+        _top_up(words, [o for o in out if not o.pulse], begin, stop, place, focus)
+        if sum(not o.pulse for o in out) < FOCUS_MIN and begin > 0.8:  # very short: start during the banner
+            _top_up(words, [o for o in out if not o.pulse], 0.8, stop, place, focus)
     out.sort(key=lambda o: o.start)
     return out, list(dict.fromkeys(used))
+
+
+def _top_up(words: list, have: list[Overlay], begin: float, stop: float, place, mood: str) -> None:
+    """Add reactions in the middle of the widest gaps until there are FOCUS_MIN."""
+    starts = sorted(o.start for o in have)
+    failed: set[int] = set()
+    while len(starts) < FOCUS_MIN:
+        edges = [begin, *starts, stop]
+        best = None
+        for a, b in zip(edges, edges[1:]):
+            low = a if a == begin else a + FOCUS_GAP
+            high = stop - 1.1 if b == stop else b - FOCUS_GAP
+            options = [i for i, w in enumerate(words) if low <= w.start - 0.05 <= high and i not in failed]
+            if options and (best is None or b - a > best[0]):
+                mid = (a + b) / 2
+                best = (b - a, min(options, key=lambda i: abs(words[i].start - mid)), b)
+        if best is None:
+            return
+        _, index, nxt = best
+        start = max(words[index].start - 0.05, 0.0)
+        end = min(start + REACTION_SECONDS, nxt - 0.1, stop - 0.05)
+        if end - start >= 1.0 and place(start, end, mood, room=min(nxt - 0.1, stop - 0.05)):
+            starts = sorted([*starts, start])
+        else:
+            failed.add(index)
 
 
 def _fill_gaps(words: list, moments: list[tuple[int, str]], starts: list[float], begin: float, stop: float,
