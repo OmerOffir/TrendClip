@@ -1131,7 +1131,9 @@ def plan_pick(settings: Settings, games: list[str] | None = None, rng: random.Ra
     analytics.plan_video), else by the fixed weights above. `games`: the gameplay to choose from."""
     if settings.auto_pick:
         try:
-            return analytics.plan_video(settings, games=games, rng=rng)
+            trending = analytics.trending_games(settings) if games and settings.auto_pick_trends else None
+            return analytics.plan_video(settings, games=games, rng=rng, trending=trending)
+
         except Exception as err:  # noqa: BLE001 - a broken analytics file must not stop the video
             logger.warning("Numbers-based pick failed (%s); using the fixed weights", err)
     rng = rng or random.Random()

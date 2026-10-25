@@ -56,6 +56,7 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick": "AUTO_PICK",
     "auto_pick_explore": "AUTO_PICK_EXPLORE",
     "auto_pick_days": "AUTO_PICK_DAYS",
+    "auto_pick_trends": "AUTO_PICK_TRENDS",
     "script_learning": "SCRIPT_LEARNING",
     "auto_produce": "AUTO_PRODUCE",
     "auto_produce_time": "AUTO_PRODUCE_TIME",
@@ -149,6 +150,10 @@ class Settings(BaseModel):
     auto_pick: bool = True
     auto_pick_explore: float = Field(0.2, ge=0, le=1)
     auto_pick_days: int = Field(60, ge=7, le=365)
+    # The game pick also reads the trend pipeline (YT_REGIONS, a few quota units, at most twice a day):
+    # proven games that trend now get a boost, and the exploration share goes to untried games by momentum.
+    auto_pick_trends: bool = True
+
     # Every script prompt gets the channel's own lessons (analytics.lessons): the hooks that kept viewers, the
     # styles that lost them, the length that works, the endings that drew comments, the titles used lately.
     script_learning: bool = True

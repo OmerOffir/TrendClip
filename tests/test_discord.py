@@ -499,11 +499,21 @@ def test_create_asks_story_math_or_riddle_with_buttons(settings, monkeypatch):
     assert "story" not in {p.mode for p in picks} and max({p.mode for p in picks}, key=[p.mode for p in picks].count) == "math"
     assert all(p.game == "GTA V" for p in picks)
     # With AUTO_PICK: the numbers decide; a broken analytics file falls back to the fixed weights.
-    monkeypatch.setattr(analytics, "plan_video", lambda s, games=None, rng=None: analytics.Pick(mode="story", game=(games or [None])[0]))
-    assert discord_bot.plan_pick(settings, ["Minecraft"]).model_dump(include={"mode", "game"}) == {"mode": "story", "game": "Minecraft"}
+    monkeypatch.setattr(analytics, "trending_games", lambda s: {"Minecraft": 5.0})  # no pipeline run in tests
+    seen = {}
 
-    def broken(s, games=None, rng=None):
+    def planned(s, games=None, rng=None, trending=None):
+        seen["trending"] = trending
+        return analytics.Pick(mode="story", game=(games or [None])[0])
+    monkeypatch.setattr(analytics, "plan_video", planned)
+    assert discord_bot.plan_pick(settings, ["Minecraft"]).model_dump(include={"mode", "game"}) == {"mode": "story", "game": "Minecraft"}
+    assert seen["trending"] == {"Minecraft": 5.0}
+    discord_bot.plan_pick(settings.with_overrides(auto_pick_trends=False), ["Minecraft"])
+    assert seen["trending"] is None
+
+    def broken(s, games=None, rng=None, trending=None):
         raise OSError("db locked")
+
     monkeypatch.setattr(analytics, "plan_video", broken)
     assert discord_bot.plan_pick(settings, ["Minecraft"], random.Random(1)).mode in discord_bot.PICK_WEIGHTS
 

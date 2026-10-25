@@ -18,14 +18,15 @@ answer in the dashboard (Insights tab), in Discord (/insights, the morning summa
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import math
 import random
-
 import re
 import sqlite3
 import statistics
 import sys
+import time
 from contextlib import closing
 from datetime import date as Day, datetime, timedelta, timezone
 from pathlib import Path
@@ -714,6 +715,62 @@ class Weight(BaseModel):
     n: int = 0
     vs_channel: float | None = None
     avg_view_pct: float | None = None
+    trend: float | None = None  # games: YouTube momentum right now, 0-1 of the top trending game
+    rank: int | None = None  # games: place in the trending list (1 = hottest)
+
+
+TREND_CACHE_HOURS = 12  # the trend pipeline (a few quota units) runs for the bot at most this often
+TREND_BOOST = 0.5  # a proven game that is also trending gets up to +50%
+UNTRIED_BASE = 0.2  # an untried game that is not trending keeps this much chance within the exploration pool
+
+
+def trending_games(settings: Settings, max_age_hours: float = TREND_CACHE_HOURS) -> dict[str, float]:
+    """{game: momentum} from the trend pipeline (output/latest.json when fresh, else a new run). {} when it fails."""
+    path = settings.output_dir / "latest.json"
+    try:
+        if path.is_file() and time.time() - path.stat().st_mtime < max_age_hours * 3600:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            from .main import run_pipeline, write_result
+
+            result = run_pipeline(settings)
+            write_result(result, settings.output_dir)
+            data = result.model_dump(mode="json")
+        return {g["name"]: float(g["score"]) for g in data.get("games", []) if g.get("name")}
+    except Exception as err:  # noqa: BLE001 - quota, network, a bad file: the pick works without trends
+        logger.warning("Trending games unavailable for the pick (%s)", err)
+        return {}
+
+
+def game_weights(report: Report, games: list[str], trending: dict[str, float] | None = None) -> list[Weight]:
+    """Games with published videos keep their numbers-based weight, boosted when trending now; games never
+    tried are weighted by their YouTube momentum alone (they form the exploration pool)."""
+    weights = weights_for(report, "game", games)
+    trending = trending or {}
+    top = max(trending.values(), default=0.0) or 1.0
+    order = {name: i + 1 for i, name in enumerate(sorted(trending, key=trending.get, reverse=True))}
+    for w in weights:
+        if w.key in trending:
+            w.trend = round(trending[w.key] / top, 2)
+            w.rank = order[w.key]
+        if w.n:
+            if w.trend:
+                w.weight = round(w.weight * (1 + TREND_BOOST * w.trend), 3)
+        else:
+            w.weight = round(UNTRIED_BASE + (w.trend or 0.0), 3)
+    return weights
+
+
+def _draw_game(weights: list[Weight], rng: random.Random, explore: float) -> tuple[str, bool]:
+    """Mostly a proven game by its weight; `explore` of the time an untried one by its momentum."""
+    proven = [w for w in weights if w.n]
+    untried = [w for w in weights if not w.n]
+    if not proven or not untried:
+        pool = proven or untried
+        return rng.choices([w.key for w in pool], weights=[w.weight for w in pool])[0], False
+    if rng.random() < explore:
+        return rng.choices([w.key for w in untried], weights=[w.weight for w in untried])[0], True
+    return rng.choices([w.key for w in proven], weights=[w.weight for w in proven])[0], False
 
 
 class Pick(BaseModel):
@@ -763,9 +820,11 @@ def _draw(weights: list[Weight], rng: random.Random, explore: float) -> tuple[st
 
 
 def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[str, ...] = PICK_KINDS,
-               rng: random.Random | None = None, report: Report | None = None) -> Pick:
+               rng: random.Random | None = None, report: Report | None = None,
+               trending: dict[str, float] | None = None) -> Pick:
     """Draw the next random video's kind, game (one of `games`; None = leave the choice to the caller)
-    and, for a story, its length from the last AUTO_PICK_DAYS days' numbers."""
+    and, for a story, its length from the last AUTO_PICK_DAYS days' numbers. `trending` ({game: momentum},
+    trending_games()): proven games that trend get a boost, untried games are explored by momentum."""
     rng = rng or random.Random()
     report = report or build_report(settings, days=settings.auto_pick_days)
     explore = settings.auto_pick_explore
@@ -776,9 +835,9 @@ def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[
     if explored:
         pick.explored.append("mode")
     if games:
-        game_weights = weights_for(report, "game", list(dict.fromkeys(games)))
-        pick.game, explored = _draw(game_weights, rng, explore)
-        pick.weights["game"] = game_weights
+        weights = game_weights(report, list(dict.fromkeys(games)), trending)
+        pick.game, explored = _draw_game(weights, rng, explore)
+        pick.weights["game"] = weights
         if explored:
             pick.explored.append("game")
     if pick.mode == "story":
@@ -794,15 +853,19 @@ def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[
 def describe_pick(pick: Pick) -> str:
     """One Discord line: what was picked and why."""
     def why(dimension: str, key: str) -> str:
-        if dimension in pick.explored:
-            return "trying it out"
         w = next((x for x in pick.weights.get(dimension, []) if x.key == key), None)
+        hot = f"#{w.rank} on YouTube right now" if w is not None and w.rank else ""
+        if dimension in pick.explored:
+            return "trying it out" + (f", {hot}" if hot else "")
         if w is None or not w.n or w.vs_channel is None:
-            return "no numbers yet"
+            return hot or "no numbers yet"
         text = f"{w.vs_channel:.1f}× the channel median over {w.n} video{'s' * (w.n != 1)}"
         if w.avg_view_pct is not None:
             text += f", {w.avg_view_pct:.0f}% watched"
+        if hot:
+            text += f", {hot}"
         return text
+
 
     bits = [f"**{MODE_LABELS.get(pick.mode, pick.mode)}** ({why('mode', pick.mode)})"]
     if pick.game:

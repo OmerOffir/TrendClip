@@ -141,19 +141,34 @@
       ? `Chances from the last ${p.days} days (${p.videos} ranked videos); ${Math.round(p.explore * 100)}% of picks are random so untried ideas still get a turn.`
       : "AUTO_PICK is off: the bot uses its fixed weights (math most often). Set AUTO_PICK=true to use these chances.";
     els.picker.innerHTML = Object.entries(DIM).map(([key, title]) => {
-      const rows = p[key] || [];
-      const total = rows.reduce((a, w) => a + w.weight, 0) || 1;
+      let rows = p[key] || [];
+      let hint = "";
+      if (key === "game") {
+        // Proven games share (1 - explore); untried games share the exploration part, by YouTube momentum.
+        const proven = rows.filter((w) => w.n), untried = rows.filter((w) => !w.n);
+        const sum = (xs) => xs.reduce((a, w) => a + w.weight, 0) || 1;
+        const share = proven.length && untried.length ? p.explore : 0;
+        rows = [...proven.map((w) => ({ ...w, chance: (w.weight / sum(proven)) * (1 - share) })),
+          ...untried.map((w) => ({ ...w, chance: (w.weight / sum(untried)) * (proven.length ? share : 1) }))]
+          .sort((a, b) => b.chance - a.chance).slice(0, 12);
+        hint = p.trends ? `${proven.length} with numbers, ${untried.length} untried (${Math.round(share * 100)}% between them, by YouTube momentum 🔥)`
+          : `${proven.length} with numbers, ${untried.length} untried (${Math.round(share * 100)}% between them); trends unavailable`;
+      } else {
+        const total = rows.reduce((a, w) => a + w.weight, 0) || 1;
+        rows = rows.map((w) => ({ ...w, chance: w.weight / total }));
+      }
       return `<section class="card">
-        <div class="card-head"><div><h2>${esc(title)}</h2></div></div>
+        <div class="card-head"><div><h2>${esc(title)}</h2>${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</div></div>
         <div class="in-groups">${rows.map((w) => `
           <div class="in-group">
-            <div class="in-group-name"><span>${esc(LABEL[w.key] || w.key)}</span><small>${w.n ? `${w.n} video${w.n === 1 ? "" : "s"}` : "no numbers yet"}</small></div>
-            <div class="metric"><b>${Math.round((w.weight / total) * 100)}%</b><span>chance</span></div>
-            <div class="share-bar"><i style="width:${Math.max(3, (w.weight / total) * 100)}%"></i></div>
+            <div class="in-group-name"><span>${esc(LABEL[w.key] || w.key)}</span><small>${w.n ? `${w.n} video${w.n === 1 ? "" : "s"}` : "untried"}${w.rank ? ` · 🔥 #${w.rank} on YouTube` : ""}</small></div>
+            <div class="metric"><b>${w.chance < 0.005 && w.chance > 0 ? "<1" : Math.round(w.chance * 100)}%</b><span>chance</span></div>
+            <div class="share-bar"><i style="width:${Math.max(2, w.chance * 100)}%"></i></div>
             <div class="in-group-meta">${vs(w.vs_channel)}${w.avg_view_pct !== null && w.avg_view_pct !== undefined ? `<span>${pct(w.avg_view_pct)} watched</span>` : ""}</div>
           </div>`).join("")}</div>
       </section>`;
     }).join("");
+
   }
 
   async function loadPicker() {

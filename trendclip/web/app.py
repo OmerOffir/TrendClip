@@ -776,11 +776,13 @@ def insights_picker() -> dict[str, Any]:
         games = []
     seen = {g.key for d in report.dimensions if d.key == "game" for g in d.groups if g.key}
     games = sorted(set(games) | seen)
+    trending = analytics.trending_games(settings) if settings.auto_pick_trends else {}
     return {
         "enabled": settings.auto_pick, "explore": settings.auto_pick_explore, "days": report.days,
-        "videos": report.ranked,
+        "videos": report.ranked, "trends": bool(trending),
         "mode": [w.model_dump() for w in analytics.weights_for(report, "mode", list(analytics.PICK_KINDS))],
-        "game": [w.model_dump() for w in analytics.weights_for(report, "game", games)],
+        "game": [w.model_dump() for w in analytics.game_weights(report, games, trending)],
+
         "length_bucket": [w.model_dump() for w in analytics.weights_for(report, "length_bucket", list(analytics.STORY_LENGTHS))],
     }
 

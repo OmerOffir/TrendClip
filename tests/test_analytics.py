@@ -510,3 +510,52 @@ def test_a_math_challenge_hook_is_its_dare_banner(tmp_path):
     assert facts.hook == "ONLY 5% FINISH THIS" and facts.hook_style == "dare"
     plain = uploaded(s, "r.mp4", "r", 3, mode="riddle", script="What has keys but no locks? A piano.", title_card="RIDDLE")
     assert analytics.facts_from_short(s, plain).hook == "What has keys but no locks?"
+
+
+def test_game_picks_keep_proven_games_first_and_explore_untried_ones_by_trend(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    report = analytics.build_report(s, days=90, at=NOW)
+    library = ["Minecraft", "GTA V / Online", "God of War", "Among Us", "Fortnite", "Tetris"]
+    trending = {"Fortnite": 40.0, "Minecraft": 30.0, "God of War": 10.0}
+    w = {x.key: x for x in analytics.game_weights(report, library, trending)}
+    assert w["Minecraft"].n == 3 and w["Minecraft"].rank == 2 and w["Minecraft"].trend == 0.75
+    plain = {x.key: x for x in analytics.weights_for(report, "game", library)}
+    assert w["Minecraft"].weight == pytest.approx(plain["Minecraft"].weight * 1.375, abs=0.01)  # +50% × 0.75
+    assert w["GTA V / Online"].weight == plain["GTA V / Online"].weight and w["GTA V / Online"].trend is None
+    assert w["Fortnite"].weight == 1.2 and w["God of War"].weight == 0.45 and w["Among Us"].weight == 0.2  # untried: momentum
+    assert w["Fortnite"].rank == 1 and w["Tetris"].rank is None
+
+    picks = [analytics.plan_video(s, games=library, rng=random.Random(i), report=report, trending=trending) for i in range(500)]
+    proven = sum(p.game in ("Minecraft", "GTA V / Online") for p in picks)
+    assert 350 < proven < 450  # about 80%: the exploration share is 20%, however many games are untried
+    untried = [p for p in picks if p.game not in ("Minecraft", "GTA V / Online")]
+    assert all("game" in p.explored for p in untried) and not any("game" in p.explored for p in picks if p.game == "Minecraft")
+    counts = {g: sum(p.game == g for p in untried) for g in ("Fortnite", "God of War", "Among Us", "Tetris")}
+    assert counts["Fortnite"] > counts["God of War"] > counts["Among Us"] >= 0 and counts["Fortnite"] > 2 * counts["Tetris"]
+
+    hot = next(p for p in untried if p.game == "Fortnite")
+    assert "on **Fortnite** (trying it out, #1 on YouTube right now)" in analytics.describe_pick(hot)
+    mine = next(p for p in picks if p.game == "Minecraft")
+    assert "#2 on YouTube right now" in analytics.describe_pick(mine)
+
+    # No proven games at all: untried ones are drawn by momentum alone, not flagged as exploration.
+    fresh = analytics.plan_video(make_settings(tmp_path / "x"), games=["God of War", "Fortnite"], rng=random.Random(2), trending=trending)
+    assert fresh.game in ("God of War", "Fortnite") and "game" not in fresh.explored
+    # No trend data: the old behaviour, untried games equal.
+    none = {x.key: x.weight for x in analytics.game_weights(report, library, {})}
+    assert none["Fortnite"] == none["Tetris"] == 0.2 and none["Minecraft"] == plain["Minecraft"].weight
+
+
+def test_trending_games_reuse_a_fresh_latest_json_and_survive_failures(tmp_path, monkeypatch):
+    import json
+
+    from trendclip import main as pipeline
+
+    s = make_settings(tmp_path)
+    s.output_dir.mkdir(parents=True, exist_ok=True)
+    (s.output_dir / "latest.json").write_text(json.dumps({"games": [{"name": "Minecraft", "score": 12.5}, {"name": "GTA V / Online", "score": 3}]}))
+    calls = []
+    monkeypatch.setattr(pipeline, "run_pipeline", lambda settings: calls.append(1) or (_ for _ in ()).throw(RuntimeError("quota")))
+    assert analytics.trending_games(s) == {"Minecraft": 12.5, "GTA V / Online": 3.0} and calls == []
+    assert analytics.trending_games(s, max_age_hours=0) == {} and calls == [1]  # stale: a run is tried; failure = no trends
