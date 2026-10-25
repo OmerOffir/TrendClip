@@ -261,6 +261,34 @@ def make_pictures(prompts: list[str], out_dir: Path, backend: str | None = None,
     return pictures, " + ".join(used) + (f" ({'; '.join(notes)})" if notes else "")
 
 
+# --------------------------------------------------------------------------- the grade
+
+
+def grade(img, saturation: float = 0.78, contrast: float = 1.06, brightness: float = 0.96, cold: float = 0.05,
+          vignette: float = 0.55):
+    """The DarkArchives look on a still: less colour, a little more contrast, a cold tint and a vignette.
+    Done once per picture here (Pillow) instead of on every frame in ffmpeg, which is far slower."""
+    from PIL import Image, ImageEnhance
+
+    img = ImageEnhance.Color(img.convert("RGB")).enhance(saturation)
+    img = ImageEnhance.Contrast(img).enhance(contrast)
+    img = ImageEnhance.Brightness(img).enhance(brightness)
+    r, g, b = img.split()
+    r = r.point(lambda v: int(v * (1 - cold)))
+    b = b.point(lambda v: min(255, int(v * (1 + cold))))
+    img = Image.merge("RGB", (r, g, b))
+    mask = Image.radial_gradient("L").resize(img.size, Image.BILINEAR).point(lambda v: int(v * vignette))
+    return Image.composite(Image.new("RGB", img.size, (0, 0, 0)), img, mask)
+
+
+def graded_copy(path: Path, out: Path | None = None) -> Path:
+    from PIL import Image
+
+    out = out or path.with_name(f"graded_{path.name}")
+    grade(Image.open(path)).save(out, quality=94)
+    return out
+
+
 # --------------------------------------------------------------------------- Wikipedia photos
 
 

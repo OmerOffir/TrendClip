@@ -9,8 +9,8 @@ The beats are the hook and every scene. Flow:
   2. timing     each beat starts when its first word is spoken (split_beats);
   3. pictures   one 9:16 picture per beat from scene_images (the GPU, Gemini or placeholders). A Wikipedia
                 story gets the article's real photos for scene 1 and the middle scene, with credits;
-  4. motion     ffmpeg: a slow push-in or pull-out on every picture (alternating), 0.6 s dissolves between
-                beats, a cold grade, vignette and film grain -> pictures/background.mp4;
+  4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
+                pull-out on each (alternating), 0.6 s dissolves between beats, film grain -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: karaoke captions (3 words, amber highlight), the scene's
                 overlay text flashing in above them, the title card for 3 s, dramatic music from
                 music/dramatic under the voice.
@@ -129,16 +129,16 @@ def kenburns_filter(index: int, beat_seconds: float, w: int, h: int, fps: int = 
             f"zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuv420p[v{index}]")
 
 
-GRADE = ("eq=saturation=0.78:contrast=1.06:brightness=-0.02,"
-         "colorbalance=rs=-0.04:gs=-0.01:bs=0.06:rm=-0.03:bm=0.05,"
-         "vignette=angle=PI/4.2,noise=alls=9:allf=t,format=yuv420p")
+# The colour grade and vignette are baked into the stills (scene_images.grade); only the grain moves.
+GRAIN = "noise=alls=9:allf=t,format=yuv420p"
 
 
 def build_background(pictures: list[Path], beats: list[Beat], output: Path, size: tuple[int, int] = scene_images.SIZE,
                      fps: int = FPS, dissolve: float = DISSOLVE, progress: ProgressFn = lambda f, m: None,
-                     crf: int = 18, preset: str = "medium") -> Path:
+                     crf: int = 18, preset: str = "veryfast") -> Path:
     """The moving background: every picture for its beat, dissolves centred on the beat changes
-    (clip i runs its beat plus the dissolve; the first one plus half), graded dark."""
+    (clip i runs its beat plus the dissolve; the first one plus half), with film grain. It is an
+    intermediate the assembler encodes again, so a fast x264 preset is enough."""
     from trendclip.video_assembler import ffmpeg_with_libass
 
     if len(pictures) != len(beats) or not beats:
@@ -160,7 +160,7 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
         out = f"x{i}" if i < n - 1 else "mix"
         filters.append(f"[{current}][v{i}]xfade=transition=fade:duration={dissolve}:offset={max(offset, 0):.3f}[{out}]")
         current = out
-    filters.append(f"[{current}]{GRADE}[out]")
+    filters.append(f"[{current}]{GRAIN}[out]")
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_name(output.stem + ".rendering.mp4")
     cmd += ["-filter_complex", ";".join(filters), "-map", "[out]", "-an",
@@ -279,8 +279,9 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     for slot, photo in zip(slots, photo_list):
         pictures[slot] = photo
 
-    progress(0.55, "Moving the pictures")
-    background = build_background([p.path for p in pictures], beats, work / "pictures" / "background.mp4",
+    progress(0.55, "Grading the pictures")
+    graded = [scene_images.graded_copy(p.path) for p in pictures]
+    background = build_background(graded, beats, work / "pictures" / "background.mp4",
                                   progress=lambda f, m: progress(0.55 + 0.2 * (f or 0), m))
 
     track = _music(settings, progress)
@@ -297,6 +298,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
         highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
         title_card=title_card, title_chars=16, title_size=104, flashes=flashes, flash_scale=1.0,
+        preset=setting("DA_X264_PRESET", "fast"),
     )
 
     credits = [p.credit for p in pictures if p.credit]

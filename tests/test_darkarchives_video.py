@@ -72,6 +72,19 @@ def test_commons_file_picker_and_article_title():
     assert picked[0].credit == "Photo: Wikimedia Commons"
 
 
+def test_grade_keeps_size_and_darkens_edges(tmp_path):
+    from PIL import Image
+
+    src = tmp_path / "p.jpg"
+    Image.new("RGB", (180, 320), (200, 120, 90)).save(src)
+    out = scene_images.graded_copy(src)
+    img = Image.open(out)
+    assert out.name == "graded_p.jpg" and img.size == (180, 320)
+    centre, corner = img.getpixel((90, 160)), img.getpixel((2, 2))
+    assert sum(corner) < sum(centre) * 0.7  # the vignette
+    assert centre[2] > 90 * 0.9 and centre[0] < 200  # colder and less saturated than the source
+
+
 def test_backend_order(monkeypatch):
     monkeypatch.setattr(scene_images.LocalSDXL, "available", staticmethod(lambda: False))
     monkeypatch.setattr(scene_images.GeminiImages, "available", staticmethod(lambda: True))
@@ -129,6 +142,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert [b["label"] for b in info["beats"]] == ["hook", "scene 1", "scene 2", "scene 3"]
     assert info["pictures"] == "placeholder" and info["photos"] == [] and info["music"] is None
     assert (tmp_path / "out" / "story_1" / "pictures" / "beat_4.jpg").is_file()
+    assert (tmp_path / "out" / "story_1" / "pictures" / "graded_beat_4.jpg").is_file()
     assert (tmp_path / "out" / "story_1" / "pictures" / "background.mp4").is_file()
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
