@@ -455,6 +455,7 @@
   async function loadVideos() {
     try {
       const { body } = await api("/api/darkarchives/videos");
+      vids.data = body.videos;
       vids.error.hidden = true;
       vids.count.textContent = `· ${body.videos.length}`;
       vids.nav.textContent = body.videos.length;
@@ -492,6 +493,7 @@
               <select aria-label="Time">${slotOptions(body.slots, body.slots[0])}</select>
               <button type="button" class="btn-secondary" data-plan="${v.story_id}">📅 Plan</button>
               <button type="button" class="btn-secondary" data-open="${v.story_id}">Story · pictures · upload now</button>
+              <button type="button" class="btn-ghost da-delete" data-delete="${v.story_id}" title="Delete the video and its pictures (the story can be made again)">🗑 Delete</button>
             </div>
           </div>
         </article>`;
@@ -516,7 +518,24 @@
     }
   }
 
+  async function deleteVideo(storyId, title) {
+    if (!window.confirm(`Delete the video "${title}"?\n\nThe file, its pictures and its plan entries are removed; the story goes back to "script ready" so it can be made again.${up(storyId) ? "\n\nIt stays on YouTube: remove it there yourself if you want." : ""}`)) return;
+    try {
+      await api(`/api/darkarchives/stories/${storyId}/video`, { method: "DELETE" });
+      vids.error.hidden = true;
+      await loadVideos();
+      onShow();
+      if (state.selected === storyId) open(storyId);
+    } catch (err) {
+      vids.error.textContent = err.message;
+      vids.error.hidden = false;
+    }
+  }
+  const up = (storyId) => Boolean((vids.data || []).find((v) => v.story_id === storyId && v.uploads && v.uploads.youtube));
+
   vids.list.addEventListener("click", (e) => {
+    const del = e.target.closest("button[data-delete]");
+    if (del) return deleteVideo(Number(del.dataset.delete), del.closest(".da-vcard").querySelector("b").textContent);
     const plan = e.target.closest("button[data-plan]");
     if (plan) return planVideo(plan.closest(".da-vcard"), Number(plan.dataset.plan));
     const openBtn = e.target.closest("button[data-open]");

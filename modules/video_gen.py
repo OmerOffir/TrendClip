@@ -239,6 +239,35 @@ def existing_video_ids(out_dir: Path | None = None) -> list[int]:
     return sorted(int(m.group(1)) for p in folder.glob("story_*.mp4") if (m := re.fullmatch(r"story_(\d+)\.mp4", p.name)))
 
 
+def delete_video(story_id: int, out_dir: Path | None = None, db_path=None) -> dict:
+    """Remove the video, its JSON, subtitles, work folder (voice, pictures) and Discord copy, and its plan
+    entries; the story goes back to SCRIPT_READY when its script is still there (NEW otherwise), so it
+    can be made again. Returns what was removed."""
+    import shutil
+
+    from modules import da_plan
+
+    out_dir = out_dir or OUTPUT_DIR
+    removed = []
+    for path in (video_path(story_id, out_dir), info_path(story_id, out_dir), video_path(story_id, out_dir).with_suffix(".ass"),
+                 out_dir / "discord" / f"story_{story_id}.mp4"):
+        if path.is_file():
+            path.unlink()
+            removed.append(path.name)
+    work = out_dir / f"story_{story_id}"
+    if work.is_dir():
+        shutil.rmtree(work)
+        removed.append(work.name + "/")
+    plan_items = [i.id for i in da_plan.load(out_dir).items if i.story_id == story_id]
+    for item_id in plan_items:
+        da_plan.delete_item(item_id, out_dir)
+    status = None
+    if repository.get_story(story_id, db_path):
+        status = "SCRIPT_READY" if script_gen.script_path(story_id).is_file() else "NEW"
+        repository.set_status(story_id, status, db_path, note="")
+    return {"story_id": story_id, "removed": removed, "plan_items": len(plan_items), "status": status}
+
+
 def photo_slots(n_beats: int, n_photos: int) -> list[int]:
     """Which beats show real photos: scene 1, then the middle scene (never the hook)."""
     slots = [1] if n_beats > 1 else []

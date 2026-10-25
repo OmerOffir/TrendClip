@@ -212,6 +212,19 @@ def video_file(story_id: int) -> FileResponse:
     return FileResponse(path, media_type="video/mp4", filename=path.name)
 
 
+@router.delete("/stories/{story_id}/video")
+def delete_video(story_id: int) -> dict[str, Any]:
+    """Remove the video (and its pictures, plan entries); the story can be made again."""
+    if not video_gen.video_path(story_id).is_file() and not video_gen.info_path(story_id).is_file():
+        raise HTTPException(status_code=404, detail="No video for this story")
+    with _lock:
+        busy = _video_job.get("running") and _video_job.get("story_id") == story_id
+        uploading = _upload_job.get("running") and _upload_job.get("story_id") == story_id
+    if busy or uploading:
+        raise HTTPException(status_code=409, detail="This video is being made or uploaded right now")
+    return video_gen.delete_video(story_id)
+
+
 @router.get("/stories/{story_id}/video/pictures/{name}")
 def video_picture(story_id: int, name: str) -> FileResponse:
     if not re.fullmatch(r"(beat|photo)_\d{1,2}\.jpg", name):

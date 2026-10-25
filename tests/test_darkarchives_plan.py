@@ -120,3 +120,35 @@ def test_plan_endpoints(tmp_path, monkeypatch):
     assert client.post("/api/darkarchives/plan/items/nope", json={"date": "2026-11-03"}).status_code == 404
     assert client.delete(f"/api/darkarchives/plan/items/{item['id']}").json() == {"deleted": item["id"]}
     assert client.delete(f"/api/darkarchives/plan/items/{item['id']}").status_code == 404
+
+
+def test_delete_video_removes_files_plan_and_resets_the_story(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from db import repository
+    from modules import script_gen
+    from trendclip.web import app as web
+
+    out = tmp_path / "videos"
+    _video(out, 1)
+    (out / "story_1").mkdir()
+    (out / "story_1" / "voice.mp3").write_bytes(b"\x00")
+    (out / "discord").mkdir()
+    (out / "discord" / "story_1.mp4").write_bytes(b"\x00")
+    da_plan.add_item(da_plan.ItemRequest(story_id=1, date=Day(2026, 11, 2)), out)
+    monkeypatch.setattr(video_gen, "OUTPUT_DIR", out)
+    monkeypatch.setattr(script_gen, "OUTPUT_DIR", tmp_path / "scripts")
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "story_1.json").write_text("{}")
+    monkeypatch.setattr(repository, "DB_PATH", tmp_path / "bank.db")
+    repository.init_db()
+    repository.save_story("gemini_a", "gemini", "Ship", "t", "", 70)
+    repository.set_status(1, "USED", note="video story_1.mp4")
+    client = TestClient(web.app)
+
+    body = client.delete("/api/darkarchives/stories/1/video").json()
+    assert body == {"story_id": 1, "removed": ["story_1.mp4", "story_1.json", "story_1.mp4", "story_1/"], "plan_items": 1, "status": "SCRIPT_READY"}
+    assert not (out / "story_1.mp4").exists() and not (out / "story_1").exists() and not (out / "discord" / "story_1.mp4").exists()
+    assert da_plan.load(out).items == [] and repository.get_story(1)["status"] == "SCRIPT_READY"
+    assert client.delete("/api/darkarchives/stories/1/video").status_code == 404
+    assert client.get("/api/darkarchives/videos").json()["videos"] == []
