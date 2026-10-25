@@ -497,7 +497,9 @@ def test_lessons_judge_each_hook_once_and_do_not_trust_tiny_replayed_videos(tmp_
     # 202% at 143 views is replays on a tiny video: labelled, and not ahead of a real 90% at 2.3k views.
     assert les.winners[0].startswith("“Start with 18.”") and "202% watched incl. replays" in " ".join(les.winners)
     assert all(not any(h in w for w in les.winners) for h in [x.split("”")[0].strip("“") for x in les.weak])  # never in both lists
-    assert les.endings[0].startswith("“Comment the REAL answer right now!” (")  # stray quotes stripped
+    assert les.endings == ["“Comment the REAL answer right now!” (35 comments per 1,000 views)"]  # quotes stripped, listed once, best rate
+
+
     assert "Command hooks:" in " ".join(les.styles) and "incl. replays" not in " ".join(les.styles)  # capped at 120
 
 

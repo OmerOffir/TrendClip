@@ -926,7 +926,12 @@ def lessons(settings: Settings, mode: str, days: int | None = None, report: Repo
             if ending:
                 commented.append((r.comments / r.views * 1000, ending))
     commented.sort(reverse=True)
-    out.endings = [f"“{e}” ({c:.0f} comments per 1,000 views)" for c, e in commented[:3]]
+    seen_endings: set[str] = set()
+    for rate, ending in commented:  # the same closing line ends several videos: once, at its best rate
+        if ending.lower() not in seen_endings and len(out.endings) < 3:
+            seen_endings.add(ending.lower())
+            out.endings.append(f"“{ending}” ({rate:.0f} comments per 1,000 views)")
+
     since = now - timedelta(days=LESSON_RECENT_DAYS)
     out.recent = [r.title for r in report.rows if r.mode == mode and r.title and r.published_at and r.published_at >= since][:12]
 
