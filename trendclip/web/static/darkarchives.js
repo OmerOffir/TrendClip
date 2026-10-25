@@ -247,13 +247,18 @@
     const timer = setInterval(() => {
       if (!popup || popup.closed) {
         clearInterval(timer);
-        reloadVideo();
+        refreshYouTube();
       }
     }, 1000);
   }
 
   async function reloadVideo() {
     if (state.selected) await loadVideo(state.selected);
+  }
+
+  async function refreshYouTube() {
+    await reloadVideo();
+    if (sections.current === "videos") await renderYouTubeBar();
   }
 
   function showUploadJob(job) {
@@ -452,6 +457,59 @@
   const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   const slotOptions = (slots, chosen) => slots.map((s) => `<option value="${s}" ${s === chosen ? "selected" : ""}>${s}</option>`).join("");
 
+  vids.yt = null;
+  async function renderYouTubeBar() {
+    const bar = $("daVideosYouTube");
+    try {
+      const { body: yt } = await api("/api/darkarchives/youtube/status");
+      vids.yt = yt;
+      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "DarkArchives");
+      bar.innerHTML = `<b>YouTube</b>
+        ${yt.connected
+          ? `<span class="pill good">Connected: ${who}</span><button type="button" class="btn-secondary" id="daVidYtLogout">Disconnect</button>
+             <span class="hint">Planned videos go out by themselves; <b>Upload now</b> on a card sends it right away</span>`
+          : `<span class="pill">Not connected</span><button type="button" class="btn-primary" id="daVidYtConnect" ${yt.client_secret ? "" : "disabled"}>Connect YouTube</button>
+             <span class="hint">Google opens in a new window: pick the <b>Dark Archives</b> channel there. Until then nothing can be uploaded, planned slots included</span>`}
+        ${!yt.folder ? '<span class="da-note">channels/darkarchives/channel.env is missing on the dashboard machine</span>' : ""}
+        ${!yt.client_secret ? '<span class="da-note">client_secret.json is missing (Upload tab → Connect YouTube explains)</span>' : ""}
+        ${yt.error ? `<span class="da-note">${esc(yt.error)}</span>` : ""}`;
+    } catch (err) {
+      bar.innerHTML = `<span class="da-note">YouTube: ${esc(err.message)}</span>`;
+    }
+    vids.list.querySelectorAll("button[data-upload]").forEach((b) => { b.disabled = !(vids.yt && vids.yt.connected); });
+  }
+  $("daVideosYouTube").addEventListener("click", (e) => {
+    if (e.target.closest("#daVidYtConnect")) connectYouTube();
+    if (e.target.closest("#daVidYtLogout")) api("/api/darkarchives/youtube/logout", { method: "POST" }).then(refreshYouTube).catch((err) => showError(err.message));
+  });
+
+  async function uploadFromCard(card, storyId) {
+    const privacy = card.querySelector("select[data-privacy]").value;
+    const status = card.querySelector(".da-upload-status");
+    try {
+      const { body } = await api(`/api/darkarchives/stories/${storyId}/upload`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ privacy }),
+      });
+      vids.error.hidden = true;
+      status.textContent = "Uploading…";
+      const tick = async () => {
+        const { body: job } = await api("/api/darkarchives/upload-job");
+        if (job.running) {
+          status.textContent = `${job.message || "Uploading"}…`;
+          return setTimeout(tick, 2000);
+        }
+        status.textContent = job.error ? `❌ ${job.error}` : "";
+        await loadVideos();
+        onShow();
+      };
+      setTimeout(tick, 1500);
+      return body;
+    } catch (err) {
+      vids.error.textContent = err.message;
+      vids.error.hidden = false;
+    }
+  }
+
   async function loadVideos() {
     try {
       const { body } = await api("/api/darkarchives/videos");
@@ -492,12 +550,17 @@
               <input type="date" value="${todayIso()}" min="${todayIso()}" aria-label="Day" />
               <select aria-label="Time">${slotOptions(body.slots, body.slots[0])}</select>
               <button type="button" class="btn-secondary" data-plan="${v.story_id}">📅 Plan</button>
-              <button type="button" class="btn-secondary" data-open="${v.story_id}">Story · pictures · upload now</button>
+              <button type="button" class="btn-secondary" data-open="${v.story_id}">Story · pictures</button>
+              <span class="da-sep"></span>
+              <select data-privacy aria-label="Privacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public" ${body.privacy === "public" ? "selected" : ""}>Public</option></select>
+              <button type="button" class="btn-primary" data-upload="${v.story_id}" disabled>⬆️ ${up ? "Upload again" : "Upload now"}</button>
+              <span class="hint da-upload-status"></span>
               <button type="button" class="btn-ghost da-delete" data-delete="${v.story_id}" title="Delete the video and its pictures (the story can be made again)">🗑 Delete</button>
             </div>
           </div>
         </article>`;
       }).join("");
+      renderYouTubeBar();
     } catch (err) {
       vids.error.textContent = `Couldn't load the videos: ${err.message}`;
       vids.error.hidden = false;
@@ -534,6 +597,8 @@
   const up = (storyId) => Boolean((vids.data || []).find((v) => v.story_id === storyId && v.uploads && v.uploads.youtube));
 
   vids.list.addEventListener("click", (e) => {
+    const upl = e.target.closest("button[data-upload]");
+    if (upl) return uploadFromCard(upl.closest(".da-vcard"), Number(upl.dataset.upload));
     const del = e.target.closest("button[data-delete]");
     if (del) return deleteVideo(Number(del.dataset.delete), del.closest(".da-vcard").querySelector("b").textContent);
     const plan = e.target.closest("button[data-plan]");
@@ -653,7 +718,7 @@
     if (e.target.closest("#daYtLogout")) api("/api/darkarchives/youtube/logout", { method: "POST" }).then(reloadVideo).catch((err) => showError(err.message));
     if (e.target.closest("#daUpload")) uploadVideo();
   });
-  window.addEventListener("message", (e) => { if (e.data === "trendclip:youtube") reloadVideo(); });
+  window.addEventListener("message", (e) => { if (e.data === "trendclip:youtube") refreshYouTube(); });
   els.source.addEventListener("change", load);
   els.status.addEventListener("change", load);
   els.pillar.addEventListener("change", load);
