@@ -43,7 +43,7 @@ DISSOLVE = 0.6  # seconds of cross-fade between beats
 ZOOM = 0.12  # push in / pull out by 12% over a beat
 OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window moves over it (less jitter)
 MIN_BEAT = 1.0
-DEFAULT_RATE = "-4%"  # a calmer narrator than the gameplay channel
+DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
 HASHTAGS = ["darkarchives", "mystery", "unsolved", "truestory", "history", "shorts"]
 ProgressFn = Callable[[float | None, str], None]
 

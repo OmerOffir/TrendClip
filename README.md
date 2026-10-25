@@ -821,7 +821,7 @@ USED. Uploading waits for the channel's own `channels/darkarchives/` folder (han
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
-   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, −4%). The word
+   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +6%). The word
    timings give every beat its start.
 2. **Pictures** (`modules/scene_images.py`): one 9:16 picture per beat from the scene's `image_prompt`.
    `DA_IMAGE_BACKEND`: `auto` (default) = `local` when an NVIDIA GPU and diffusers are there, else `gemini`

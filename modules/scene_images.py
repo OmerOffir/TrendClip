@@ -147,7 +147,11 @@ class LocalSDXL:
             pipe.enable_model_cpu_offload()
         else:
             pipe.to("cuda")
-        pipe.enable_vae_slicing()
+        vae = getattr(pipe, "vae", None)  # newer diffusers: pipe.vae.enable_slicing(); older: pipe.enable_vae_slicing()
+        if hasattr(vae, "enable_slicing"):
+            vae.enable_slicing()
+        elif hasattr(pipe, "enable_vae_slicing"):
+            pipe.enable_vae_slicing()
         pipe.set_progress_bar_config(disable=True)
         self._pipe = pipe
         return pipe
