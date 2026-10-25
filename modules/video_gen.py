@@ -402,7 +402,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         music=music_mod.track_path(settings, track) if track else None,
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
         highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
-        title_card=title_card, title_chars=16, title_size=92, flashes=flashes, flash_scale=1.0,
+        title_card=title_card, title_chars=18, title_lines=4, title_size=88, flashes=flashes, flash_scale=1.0,
         end_card=end_card, overlays=overlays,
         title_pop=False, cover_text=cover, cover_seconds=0.8,  # frame 0 is the thumbnail: everything at full strength
         preset=setting("DA_X264_PRESET", "fast"),

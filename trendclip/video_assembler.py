@@ -277,11 +277,11 @@ PULSE_MS = 250
 
 
 def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True, max_chars: int = 14,
-                     pulse: bool = False, pop: bool = True) -> str:
+                     pulse: bool = False, pop: bool = True, max_lines: int = 3) -> str:
     """Top banner for the first seconds: pops in, fades out. `pulse`: the box flashes yellow / white
     and the text throbs every 250 ms (quiz hooks). `pop=False`: full size from the first frame (the
     first frame is the thumbnail of a video uploaded through the API)."""
-    lines = [_ass_text(line, uppercase) for line in wrap_title(text, max_chars=max_chars)]
+    lines = [_ass_text(line, uppercase) for line in wrap_title(text, max_chars=max_chars, max_lines=max_lines)]
     anim = (r"\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)" if pop
             else r"\fad(0,300)")
     if pulse:
@@ -344,6 +344,7 @@ def create_karaoke_ass_file(
     title_pulse: bool = False,
     flash_scale: float = 2.4,  # the Flash style's size as a multiple of the captions (1.0: a line of on-screen text)
     title_pop: bool = True,  # False: the title card is at full size on frame 0
+    title_lines: int = 3,  # a long title (DarkArchives: up to 60 characters) needs 4
     cover_text: str = "",  # a headline over the middle of frame 0 (the thumbnail), gone after cover_seconds
     cover_seconds: float = 1.0,
     cover_size: int = 140,
@@ -378,7 +379,8 @@ Style: Cover,{font},{cover_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,10
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = [title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse, title_pop)] if title_card.strip() else []
+    events = ([title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse, title_pop, title_lines)]
+              if title_card.strip() else [])
     if cover_text.strip():
         pos = (size[0] // 2, round(size[1] * cover_y))
         events.append(cover_event(cover_text, cover_seconds).replace("{\\fad(0,160)}", f"{{\\pos({pos[0]},{pos[1]})\\fad(0,160)}}"))
