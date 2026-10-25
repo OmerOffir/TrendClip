@@ -800,6 +800,7 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .da-plan-slot .title { font-size: 13px; min-width: 0; }
 .da-plan-slot .spacer { flex: 1; }
 .da-plan-slot select { max-width: 320px; }
+.da-plan-slot .btn-ghost, .da-plan-slot .btn-secondary { width: auto; margin: 0; padding: 4px 10px; font-size: 12px; }
 .da-plan-slot.done { border-color: rgba(61, 220, 151, 0.4); }
 .da-plan-slot.late { border-color: rgba(255, 110, 110, 0.4); }
 .da-youtube { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
