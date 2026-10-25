@@ -180,7 +180,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
     ass = (tmp_path / "out" / "story_1.ass").read_text()
     assert ",EndCard," in ass and "Follow for more\\Ndark stories" in ass and ",Title," in ass and "BEAT 3" in ass
-    assert "0:00:00.00,0:00:01.00,Cover,,0,0,0,,{\\pos(540,902)\\fad(0,160)}A SHIP\\NSAILED FOR" in ass
+    assert "0:00:00.00,0:00:00.80,Cover,,0,0,0,,{\\pos(540,960)\\fad(0,160)}A SHIP SAILED\\NFOR" in ass
     assert "{\\fad(0,300)}THE SHIP" in ass and info["cover_text"] == "A SHIP SAILED FOR"
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
     assert any("Drawing picture 4 of 4" in m for m in messages) and messages[-1] == "Done"

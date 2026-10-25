@@ -300,7 +300,7 @@ def end_card_event(text: str, start: float, end: float) -> str:
     return f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},EndCard,,0,0,0,,{anim}" + r"\N".join(lines)
 
 
-def cover_event(text: str, seconds: float, max_chars: int = 12, max_lines: int = 3) -> str:
+def cover_event(text: str, seconds: float, max_chars: int = 14, max_lines: int = 3) -> str:
     """The thumbnail headline: big words in the middle of the screen, full strength on frame 0, gone
     after `seconds` (the first frame is what YouTube shows for a video uploaded through the API)."""
     lines = [_ass_text(line, True) for line in wrap_title(text, max_chars=max_chars, max_lines=max_lines)]
@@ -346,8 +346,8 @@ def create_karaoke_ass_file(
     title_pop: bool = True,  # False: the title card is at full size on frame 0
     cover_text: str = "",  # a headline over the middle of frame 0 (the thumbnail), gone after cover_seconds
     cover_seconds: float = 1.0,
-    cover_size: int = 150,
-    cover_y: float = 0.47,  # its centre, as a share of the height
+    cover_size: int = 140,
+    cover_y: float = 0.5,  # its centre, as a share of the height
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
