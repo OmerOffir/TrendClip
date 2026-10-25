@@ -242,9 +242,15 @@ def cta_sticker(settings, words: list, flashes: list, title: bool, end_card: boo
     if kind not in stickers.CTA_KINDS:
         raise VideoGenError(f"DA_CTA_STICKER must be one of {', '.join(stickers.CTA_KINDS)} or none, not '{kind}'")
     try:
+        from dataclasses import replace
+
+        from trendclip.video_assembler import TAIL_SECONDS
+
         overlays, used = stickers.plan(settings, [], words, [], cta=kind, auto=False, pace=False,
                                        title_seconds=3.0 if title else 0.0, end_seconds=3.5 if end_card else 0.0,
                                        flashes=flashes, flash_y=0.3)
+        # The planner ends the button 0.3 s after the last word; here it stays through the video's tail.
+        overlays = [replace(o, end=words[-1].end + TAIL_SECONDS) for o in overlays]
         return overlays, used or [f"built-in {kind} button"]
     except Exception:  # noqa: BLE001
         logger.exception("The call-to-action sticker failed; rendering without it")

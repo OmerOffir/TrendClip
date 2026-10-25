@@ -48,6 +48,15 @@ def test_cta_line_joins_the_last_beat():
     assert video_gen.off("none") and video_gen.off(" ") and not video_gen.off("Follow")
 
 
+def test_cta_sticker_stays_until_the_end():
+    from trendclip.config import get_settings
+
+    words = estimate_word_timings("One fact. Another fact here. Follow for more dark stories.", 6.0)
+    overlays, used = video_gen.cta_sticker(get_settings(), words, [], True, True)
+    assert used == ["built-in subscribe button"] and len(overlays) == 1
+    assert overlays[0].start < words[-4].start + 0.01 and overlays[0].end == words[-1].end + 2.0
+
+
 def test_photo_slots_and_description():
     assert video_gen.photo_slots(9, 2) == [1, 5] and video_gen.photo_slots(9, 1) == [1]
     assert video_gen.photo_slots(1, 2) == [] and video_gen.photo_slots(3, 2) == [1]
