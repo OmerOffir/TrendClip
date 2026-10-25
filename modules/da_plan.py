@@ -1,7 +1,7 @@
 """DarkArchives plan: which video goes out on which day and time, and the bot's post at that time.
 
 The plan lives in output/darkarchives/plan.json, apart from the gameplay channel's planner. Every day
-has the slots of DA_SLOTS (default one, 19:00, in Settings.timezone); a slot holds one video. With
+has the slots of DA_SLOTS (default 14:30 and 23:00, in Settings.timezone); a slot holds one video. With
 DA_AUTO_POST the Discord bot uploads the slot's video to the DarkArchives YouTube channel at its time
 (DA_UPLOAD_PRIVACY, default public) and reports in the channel's Discord channel. A video already on
 YouTube counts as posted.
@@ -25,7 +25,7 @@ from modules.scene_images import setting
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_SLOTS = "19:00"
+DEFAULT_SLOTS = "14:30,23:00"  # two a day, like the gameplay channel (DA_SLOTS)
 POST_WINDOW = timedelta(hours=2)  # a slot's post missed by more than this (bot was off) is skipped
 _lock = threading.Lock()
 
@@ -56,9 +56,9 @@ class ItemUpdate(BaseModel):
 
 
 def slots() -> list[str]:
-    """DA_SLOTS: upload times, "HH:MM,HH:MM", sorted (default 19:00)."""
+    """DA_SLOTS: upload times, "HH:MM,HH:MM", sorted (default 14:30 and 23:00)."""
     found = sorted({s.strip() for s in setting("DA_SLOTS", DEFAULT_SLOTS).split(",") if re.fullmatch(r"\s*([01]\d|2[0-3]):[0-5]\d\s*", s)})
-    return found or [DEFAULT_SLOTS]
+    return found or DEFAULT_SLOTS.split(",")
 
 
 def auto_post() -> bool:

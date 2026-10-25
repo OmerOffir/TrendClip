@@ -845,7 +845,7 @@ link. `python -m modules.video_gen --id 17 --quiet` skips the post.
 
 **Videos and Plan** (the tab's other two sections). *Videos* lists every finished video with its
 pictures, where it is planned and whether it is on YouTube, with Plan and Upload buttons. *Plan* is the
-next two weeks: every day has the slots of `DA_SLOTS` (default one, `19:00`, in `TIMEZONE`), each
+next two weeks: every day has the slots of `DA_SLOTS` (default `14:30,23:00`, in `TIMEZONE`), each
 holding one video; the plan lives in `output/darkarchives/plan.json`, apart from the gameplay channel's.
 With `DA_AUTO_POST=1` the Discord bot uploads the slot's video to the DarkArchives channel at its time as
 `DA_UPLOAD_PRIVACY` (default public) and reports the link, or the failure, in its Discord channel; a slot
