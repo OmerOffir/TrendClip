@@ -707,7 +707,7 @@ def _write_paradox(settings: Settings, game: str, *, notes: str, format: str, pr
         idea = pick_paradox(settings, rng)
         used = used_paradoxes(settings)[-40:]
         prompt = PARADOX_PROMPT.format(idea=idea, used="; ".join(used) or "none yet", game=game,
-                                       notes=_notes(notes) + _variety(settings))
+                                       notes=_notes(notes) + _variety(settings) + _learned(settings, "paradox"))
     result, model = _ask(client, model, GeminiParadox, prompt, progress)
     setup = [_one_line(s, 22) for s in result.setup if s.strip()][:2]
     twist, side_a, side_b = _one_line(result.twist, 18), _one_line(result.side_a, 18), _one_line(result.side_b, 16)
@@ -818,6 +818,13 @@ def _notes(notes: str) -> str:
     return f"\nCreator's notes: {notes.strip()}" if notes.strip() else ""
 
 
+def _learned(settings: Settings, kind: str) -> str:
+    """What worked on the channel for this kind of quiz (script_writer.learned)."""
+    from . import script_writer as sw
+
+    return sw.learned(settings, kind)
+
+
 def _quiz_shorts(settings: Settings, limit: int = 15) -> list:
     from . import shorts
 
@@ -859,7 +866,7 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
     style = rng.choice(RIDDLE_STYLES)
     for attempt in range(2):
         prompt = RIDDLE_PROMPT.format(topic=topic, style=style, used="; ".join(used[-60:]) or "none yet", game=game,
-                                      notes=_notes(notes) + _variety(settings))
+                                      notes=_notes(notes) + _variety(settings) + _learned(settings, "riddle"))
         result, model = _ask(client, model, GeminiRiddle, prompt, progress)
         if _answer_key(result.answer) not in {_answer_key(u) for u in used} or attempt:
             break
@@ -987,7 +994,7 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
         prompt = TRIVIA_PROMPT.format(count=len(categories), categories=", ".join(categories),
                                       used=", ".join(used[-40:]) or "none yet",
                                       questions="; ".join(used_trivia_questions(settings)[-30:]) or "none yet",
-                                      game=game, notes=_notes(notes) + _variety(settings))
+                                      game=game, notes=_notes(notes) + _variety(settings) + _learned(settings, "trivia"))
         batch, model = _ask(client, model, GeminiTriviaSet, prompt, progress)
         usable = [c for c in batch.candidates if _trivia_options(c) and _option(c.correct).lower() not in
                   {u.lower() for u in used}]
@@ -1047,7 +1054,8 @@ def _write_math(settings: Settings, game: str, *, notes: str, format: str, progr
     try:
         client, model = sw._gemini(settings, client)
         pack, model = _ask(client, model, GeminiMathPack,
-                           MATH_PROMPT.format(chain=steps_text, answer=answer, game=game, notes=_notes(notes) + _variety(settings)), progress)
+                           MATH_PROMPT.format(chain=steps_text, answer=answer, game=game,
+                                              notes=_notes(notes) + _variety(settings) + _learned(settings, "math")), progress)
     except sw.ScriptError as err:
         if "GEMINI_API_KEY" in str(err):
             raise
@@ -1376,7 +1384,8 @@ def _write_movie(settings: Settings, game: str, *, notes: str, format: str, prog
                  rng: random.Random) -> ShortScript:
     shape = pick_movie_shape(settings, rng, notes)
     used = "; ".join(used_movies(settings)[-50:]) or "none yet"
-    extra = _notes(notes) + _variety(settings)
+    extra = _notes(notes) + _variety(settings) + _learned(settings, "movie")
+
     if shape == "logic":
         seed = _movie_seed(rng)
         prompt = MOVIE_LOGIC_PROMPT.format(seed=seed, used=used, game=game, notes=extra)

@@ -785,7 +785,16 @@ def insights_picker() -> dict[str, Any]:
     }
 
 
+@app.get("/api/insights/brief")
+def insights_brief(mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> dict[str, Any]:
+    """The lessons every new script of this kind is written with (what Gemini is told)."""
+    settings = _base_settings()
+    return {**analytics.lessons(settings, mode).model_dump(mode="json"), "enabled": settings.script_learning,
+            "min_videos": analytics.LESSON_MIN_VIDEOS}
+
+
 @app.post("/api/insights/refresh")
+
 
 def refresh_insights(days: int = Query(90, ge=7, le=730)) -> dict[str, Any]:
     """Read today's numbers from YouTube (Data API + Analytics API), then return the report."""

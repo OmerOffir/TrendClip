@@ -410,3 +410,71 @@ def test_picker_endpoint(tmp_path, monkeypatch):
     assert [w["key"] for w in body["mode"]] == list(analytics.PICK_KINDS)
     assert {w["key"] for w in body["game"]} >= {"Minecraft", "GTA V / Online"}
     assert [w["key"] for w in body["length_bucket"]] == list(analytics.STORY_LENGTHS)
+
+
+# --------------------------------------------------------------------------- what Gemini is told
+
+
+def test_lessons_turn_the_numbers_into_a_brief(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    math = analytics.lessons(s, "math", days=90, at=NOW)
+    assert math.videos == 3 and math.winners[0].startswith("“ONLY 5% OF PEOPLE FINISH THIS.” (80% watched, 9.0k views)")
+    assert math.weak == [] and math.length == "" and math.recent == ["The Day My Cat Outsmarted the Block"] * 3
+    assert "Dare hooks: 80% watched over 3 videos" in math.styles[0]
+    assert math.text.startswith("WHAT WORKED ON THIS CHANNEL (YouTube Analytics, last 90 days, 3 math challenge videos):")
+    assert "Already published lately" in math.text and "not as text to copy" in math.text
+    # Endings come from the Shorts' own scripts, ranked by comments per 1,000 views.
+    assert len(math.endings) == 3 and all("Start with" in e and "(10 comments per 1,000 views)" in e for e in math.endings)
+
+
+    # Too few riddles: the brief falls back to every kind, and says so.
+    riddle = analytics.lessons(s, "riddle", days=90, at=NOW)
+    assert riddle.videos == 5 and "5 videos of every kind" in riddle.text
+    assert any("Question" not in w for w in riddle.winners) and riddle.recent == []
+    assert riddle.weak and "45% watched" in riddle.weak[0]  # the stories lost viewers
+    assert any(l.startswith("First person hooks: 45% watched over 2 videos") and "loses viewers" in l for l in riddle.styles)
+    assert riddle.length.startswith("16-22 s videos get 7.0k views median and 80% watched; 31-45 s ones only 900")
+
+    # Nothing with retention: no brief.
+    empty = analytics.lessons(make_settings(tmp_path / "other"), "story", at=NOW)
+    assert empty.videos == 0 and empty.text == ""
+
+
+def test_prompts_end_with_the_brief_unless_learning_is_off(tmp_path, monkeypatch):
+    from trendclip import quiz, script_writer
+
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    brief = script_writer.learned(s, "clip")
+    assert brief.startswith("\nWHAT WORKED ON THIS CHANNEL") and "5 videos of every kind" in brief  # clip = story
+    assert script_writer.learned(s.with_overrides(script_learning=False), "math") == ""
+    assert script_writer.build_prompt("GTA V", 22, [], "", False, "story", "short", brief).endswith(brief)
+    assert "WHAT WORKED" not in script_writer.build_prompt("GTA V", 22, [], "", False, "story")
+
+    def boom(settings, mode, **kw):
+        raise OSError("db locked")
+    monkeypatch.setattr(analytics, "lessons", boom)
+    assert script_writer.learned(s, "math") == ""  # never breaks a script
+
+    seen = {}
+    monkeypatch.setattr(script_writer, "learned", lambda settings, mode: f"\nLEARNED {mode}")
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            seen["prompt"] = contents[0]
+            return SimpleNamespace(parsed=quiz.GeminiMathPack(hook="Only 5% finish this.", title="Only 5% 🧠",
+                                                              description="d", hashtags=["#math"], title_card="t"), text="")
+    quiz.write_quiz(s, "Minecraft", "math", client=SimpleNamespace(models=Models()))
+    assert seen["prompt"].endswith("LEARNED math")
+
+
+def test_brief_endpoint(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    monkeypatch.setattr(web, "_base_settings", lambda: s)
+    client = TestClient(web.app)
+    body = client.get("/api/insights/brief?mode=math").json()
+    assert body["enabled"] is True and body["mode"] == "math" and body["text"].startswith("WHAT WORKED")
+    assert body["min_videos"] == 3 and len(body["winners"]) == 3
+    assert client.get("/api/insights/brief?mode=poetry").status_code == 422

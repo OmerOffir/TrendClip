@@ -276,8 +276,30 @@ def popup_target(seconds: float) -> int:
     return max(3, min(15, round(seconds / POPUP_EVERY_SECONDS)))
 
 
+def learned(settings: Settings, mode: str) -> str:
+    """The channel's own lessons for this kind of video (analytics.lessons), as a prompt block starting with a
+    newline; "" when SCRIPT_LEARNING is off or there is nothing to say yet. Never fails a script."""
+    if not settings.script_learning:
+        return ""
+    try:
+        from . import analytics
+
+        text = analytics.lessons(settings, "story" if mode == "clip" else mode).text
+    except Exception as err:  # noqa: BLE001 - a broken analytics file must not stop the script
+        logger.warning("Could not build the learning brief (%s); writing without it", err)
+        return ""
+    return f"\n{text}" if text else ""
+
+
 def build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes: str, watched: bool,
-                 mode: ScriptMode = "clip", format: ScriptFormat = "short") -> str:
+                 mode: ScriptMode = "clip", format: ScriptFormat = "short", brief: str = "") -> str:
+    """`brief`: what worked on the channel lately (learned()), appended after the creator's notes."""
+    text = _build_prompt(game, target_seconds, trend_titles, notes, watched, mode, format)
+    return text + brief if brief else text
+
+
+def _build_prompt(game: str, target_seconds: int, trend_titles: list[str], notes: str, watched: bool,
+                  mode: ScriptMode, format: ScriptFormat) -> str:
     words = int(target_seconds * WORDS_PER_SECOND)
     pace = (f"Visual pacing: about {popup_target(target_seconds)} pop-ups{' per part' if format == 'multi' else ''}, "
             "one every 3 to 5 seconds, so something new pops up on screen all the time.")
@@ -575,7 +597,7 @@ def write_script(
             contents.append(uploaded)
 
         contents.append(build_prompt(game, target, trend_titles or [], notes, watched, mode,
-                                     "long" if format == "long" else "short"))
+                                     "long" if format == "long" else "short", learned(settings, mode)))
         schema = GeminiViralShort if looped else GeminiShort
         config = types.GenerateContentConfig(
             system_instruction=SYSTEM_INSTRUCTION,
@@ -750,7 +772,8 @@ def write_series(
             response_schema=GeminiSeries,
             temperature=1.1,
         )
-        prompt = build_prompt(game, target_seconds, [], notes, False, "story", "multi")
+        prompt = build_prompt(game, target_seconds, [], notes, False, "story", "multi", learned(settings, "story"))
+
         response, model = _generate_with_fallback(client, model, [prompt], config, progress, errors.APIError)
         result = response.parsed
         if not isinstance(result, GeminiSeries):

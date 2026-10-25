@@ -788,3 +788,4 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .insights-table tr.young { opacity: 0.6; }
 .in-empty { color: var(--muted); padding: 10px 0; }
 @media (max-width: 700px) { .insights-grid { grid-template-columns: 1fr; } }
+.in-brief { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--text); }

@@ -810,7 +810,120 @@ def describe_pick(pick: Pick) -> str:
     return head + " ".join(bits)
 
 
+# --------------------------------------------------------------------------- what Gemini is told
+
+LESSON_MIN_VIDEOS = 3  # with fewer videos that have retention, there is nothing worth telling Gemini
+LESSON_RECENT_DAYS = 30  # titles of this period are listed as "already used"
+_CTA_WORDS = re.compile(r"\b(subscribe|follow|sub to|hit that|part 2|tomorrow)\b", re.I)
+
+
+class Lessons(BaseModel):
+    """What the channel's own numbers say about videos of one kind, as a brief for the script prompts."""
+
+    mode: str
+    days: int
+    videos: int = 0  # videos with retention the brief is built from
+    winners: list[str] = Field(default_factory=list)  # hooks that held viewers
+    weak: list[str] = Field(default_factory=list)  # hooks that lost them
+    styles: list[str] = Field(default_factory=list)  # one sentence per hook style with enough videos
+    length: str = ""
+    endings: list[str] = Field(default_factory=list)  # closing lines that drew comments
+    recent: list[str] = Field(default_factory=list)  # titles used lately (don't repeat)
+    text: str = ""  # the brief as it goes into the prompt ("" when there is nothing to say)
+
+
+def _last_sentence(script: str) -> str:
+    """The closing line of a voiceover without the follow / subscribe call to action."""
+    sentences = [s.strip() for s in _SENTENCE_END.split(" ".join(script.split())) if s.strip()]
+    for sentence in reversed(sentences):
+        if not _CTA_WORDS.search(sentence):
+            return sentence[:120]
+    return ""
+
+
+def lessons(settings: Settings, mode: str, days: int | None = None, report: Report | None = None,
+            at: datetime | None = None) -> Lessons:
+    """The brief for `mode` (story / math / riddle / trivia / paradox / movie): the hooks that kept viewers
+    and the ones that lost them, how each hook style does, the length that works, the endings that drew
+    comments, and the titles used lately. Built from videos of the same kind; with too few, from all."""
+    now = at or datetime.now(settings.tz)
+    report = report or build_report(settings, days=days or settings.auto_pick_days, at=now)
+    out = Lessons(mode=mode, days=report.days)
+    ranked = [r for r in report.rows if r.ranked]
+    same = [r for r in ranked if r.mode == mode]
+    pool = same if sum(r.avg_view_pct is not None for r in same) >= LESSON_MIN_VIDEOS else ranked
+    with_ret = [r for r in pool if r.avg_view_pct is not None and r.hook]
+    out.videos = len(with_ret)
+    if len(with_ret) < LESSON_MIN_VIDEOS:
+        return out
+    avg_pct = statistics.fmean(r.avg_view_pct for r in with_ret)  # type: ignore[misc]
+    by_hold = sorted(with_ret, key=lambda r: ((r.avg_view_pct or 0), r.views), reverse=True)
+    out.winners = [f"“{r.hook}” ({r.avg_view_pct:.0f}% watched, {_n(r.views)} views)" for r in by_hold[:5]]
+    out.weak = [f"“{r.hook}” ({r.avg_view_pct:.0f}% watched)" for r in reversed(by_hold[-3:])
+                if (r.avg_view_pct or 0) < avg_pct - 10]
+    styles: dict[str, list[VideoRow]] = {}
+    for r in with_ret:
+        styles.setdefault(r.hook_style, []).append(r)
+    judged = sorted(((k, v) for k, v in styles.items() if k and len(v) >= 2),
+                    key=lambda kv: statistics.fmean(r.avg_view_pct or 0 for r in kv[1]), reverse=True)
+    for key, rows in judged:
+        pct = statistics.fmean(r.avg_view_pct or 0 for r in rows)
+        views = statistics.median(r.views for r in rows)
+        label = HOOK_STYLES.get(key, key).split(" (")[0]
+        verdict = "holds viewers" if pct >= avg_pct else "loses viewers"
+        line = f"{label} hooks: {pct:.0f}% watched over {len(rows)} videos, {_n(views)} views median ({verdict})"
+        if key == "question" and pct < avg_pct:
+            line += ": a question works only when its answer lands within the first 5 seconds"
+        out.styles.append(line)
+    lengths = {}
+    for r in pool:
+        if r.length_bucket:
+            lengths.setdefault(r.length_bucket, []).append(r)
+    solid = {k: v for k, v in lengths.items() if len(v) >= 2}
+    if len(solid) >= 2:
+        best = max(solid, key=lambda k: statistics.median(r.views for r in solid[k]))
+        worst = min(solid, key=lambda k: statistics.median(r.views for r in solid[k]))
+        held = [r.avg_view_pct for r in solid[best] if r.avg_view_pct is not None]
+        out.length = (f"{best} videos get {_n(statistics.median(r.views for r in solid[best]))} views median"
+                      + (f" and {statistics.fmean(held):.0f}% watched" if held else "")
+                      + f"; {worst} ones only {_n(statistics.median(r.views for r in solid[worst]))}")
+    commented = []
+    for r in pool:
+        if r.filename and r.comments and r.views:
+            try:
+                ending = _last_sentence(shorts.get_short(settings, r.filename).script)
+            except (ValueError, FileNotFoundError):
+                continue
+            if ending:
+                commented.append((r.comments / r.views * 1000, ending))
+    commented.sort(reverse=True)
+    out.endings = [f"“{e}” ({c:.0f} comments per 1,000 views)" for c, e in commented[:3]]
+    since = now - timedelta(days=LESSON_RECENT_DAYS)
+    out.recent = [r.title for r in report.rows if r.mode == mode and r.title and r.published_at and r.published_at >= since][:12]
+
+    kind = MODE_LABELS.get(mode, mode).lower()
+    lines = [f"WHAT WORKED ON THIS CHANNEL (YouTube Analytics, last {report.days} days, {out.videos} "
+             f"{kind if pool is same else 'videos of every kind'}{' videos' if pool is same else ''}):"]
+    lines.append("- Hooks that kept viewers watching: " + "; ".join(out.winners))
+    if out.weak:
+        lines.append("- Hooks that lost viewers: " + "; ".join(out.weak))
+    if out.styles:
+        lines.append("- Hook styles: " + ". ".join(out.styles) + ".")
+    if out.length:
+        lines.append(f"- Length: {out.length}.")
+    if out.endings:
+        lines.append("- Endings that got people commenting: " + "; ".join(out.endings))
+    if out.recent:
+        lines.append("- Already published lately (write something new, not a variation of these): "
+                     + "; ".join(f"“{t}”" for t in out.recent))
+    lines.append("Use these as evidence of what this audience responds to, not as text to copy: open with the "
+                 "same kind of stakes and rhythm as the winners, avoid what lost viewers.")
+    out.text = "\n".join(lines)
+    return out
+
+
 # --------------------------------------------------------------------------- text for Discord / the CLI
+
 
 
 
@@ -895,6 +1008,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="TrendClip insights: which videos perform best")
     parser.add_argument("--refresh", action="store_true", help="Read today's numbers from YouTube first")
     parser.add_argument("--days", type=int, default=90)
+    parser.add_argument("--brief", metavar="MODE", choices=PICK_KINDS,
+                        help="Print the brief the script prompts get for this kind of video, instead of the report")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)-7s %(name)s: %(message)s", stream=sys.stderr)
     try:
@@ -912,10 +1027,16 @@ def main(argv: list[str] | None = None) -> int:
               f"{result.with_retention} with retention", file=sys.stderr)
         for warning in result.warnings:
             print(f"! {warning}", file=sys.stderr)
+    if args.brief:
+        brief = lessons(settings, args.brief, days=args.days)
+        print(brief.text or f"Nothing to tell Gemini yet: {brief.videos} {args.brief} videos with retention "
+                            f"(needs {LESSON_MIN_VIDEOS}).")
+        return 0
     for message in format_report(build_report(settings, days=args.days)):
         print(message.replace("**", "").replace("__", ""))
         print()
     return 0
+
 
 
 if __name__ == "__main__":

@@ -15,6 +15,9 @@
     hooks: $("inHooks"),
     picker: $("inPicker"),
     pickerHint: $("inPickerHint"),
+    brief: $("inBrief"),
+    briefMode: $("inBriefMode"),
+    briefHint: $("inBriefHint"),
     rows: $("inRows"),
     madeHere: $("inMadeHere"),
   };
@@ -162,9 +165,25 @@
     }
   }
 
+  async function loadBrief() {
+    try {
+      const { body } = await api(`/api/insights/brief?mode=${encodeURIComponent(els.briefMode.value)}`);
+      if (!body.enabled) {
+        els.brief.textContent = "SCRIPT_LEARNING is off: scripts are written without the channel's lessons.";
+      } else if (!body.text) {
+        els.brief.textContent = `Nothing to tell Gemini yet: ${body.videos} videos of this kind have retention (needs ${body.min_videos}). Until then scripts are written as before.`;
+      } else {
+        els.brief.textContent = body.text;
+      }
+    } catch (err) {
+      els.brief.textContent = err.message || String(err);
+    }
+  }
+
   function render(r) {
     state.report = r;
     loadPicker();
+    loadBrief();
 
     renderNotes(r);
     renderStats(r);
@@ -196,6 +215,8 @@
   els.refresh.addEventListener("click", () => load(true));
   els.days.addEventListener("change", () => load(false));
   els.madeHere.addEventListener("change", () => state.report && renderRows(state.report));
+  els.briefMode.addEventListener("change", loadBrief);
+
   document.addEventListener("trendclip:view", (e) => {
     if (e.detail.view === "insights" && !state.loaded) load(false);
   });

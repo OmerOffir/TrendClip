@@ -56,6 +56,7 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick": "AUTO_PICK",
     "auto_pick_explore": "AUTO_PICK_EXPLORE",
     "auto_pick_days": "AUTO_PICK_DAYS",
+    "script_learning": "SCRIPT_LEARNING",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
@@ -146,6 +147,10 @@ class Settings(BaseModel):
     auto_pick: bool = True
     auto_pick_explore: float = Field(0.2, ge=0, le=1)
     auto_pick_days: int = Field(60, ge=7, le=365)
+    # Every script prompt gets the channel's own lessons (analytics.lessons): the hooks that kept viewers, the
+    # styles that lost them, the length that works, the endings that drew comments, the titles used lately.
+    script_learning: bool = True
+
 
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")

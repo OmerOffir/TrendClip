@@ -648,6 +648,15 @@ The channel only grows from what the numbers say, so every published video is tr
   what it picked and why ("Math challenge (1.6× the channel median over 9 videos, 93% watched) on
   Minecraft (trying it out)"), and the Insights tab shows the current chances under **What the bot
   picks next**.
+- **The scripts learn from it too** (`SCRIPT_LEARNING=true`): every story and quiz prompt ends with a
+  brief built from the same numbers for that kind of video (all kinds when fewer than 3 of it have
+  retention): the five hooks that kept viewers watching, the hooks that lost them, how each hook style
+  does ("Question hooks: 61% watched … loses viewers: a question works only when its answer lands within
+  the first 5 seconds"), the length that gets the views, the closing lines that drew the most comments
+  per 1,000 views, and the titles published in the last 30 days so Gemini writes something new. It is
+  evidence of what the audience responds to, not text to copy. See it under **What Gemini is told** in
+  the Insights tab or with `python -m trendclip.analytics --brief math`. Creator's notes still win.
+
 
 
 ### Channel report
