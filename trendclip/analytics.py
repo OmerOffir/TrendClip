@@ -663,8 +663,16 @@ def build_report(settings: Settings, days: int = 90, min_age_days: int = MIN_AGE
     if latest and (now.date() - latest).days > 1:
         report.notes.append(f"Numbers last read on {latest.isoformat()}; press Refresh for today's.")
     if not report.with_retention:
-        report.notes.append("Retention (average view %) needs the YouTube Analytics permission: Upload tab → "
-                            "Disconnect → Connect YouTube again. Views, likes and comments are counted meanwhile.")
+        from . import publish
+
+        if publish.has_scope(ANALYTICS_SCOPE):
+            report.notes.append("No retention (average view %) yet: the YouTube Analytics API must be enabled in the "
+                                "Google Cloud project (APIs & Services → Library → YouTube Analytics API → Enable), "
+                                "then Refresh. Views, likes and comments are counted meanwhile.")
+        else:
+            report.notes.append("Retention (average view %) needs the YouTube Analytics permission: Upload tab → "
+                                "Disconnect → Connect YouTube again. Views, likes and comments are counted meanwhile.")
+
     if not ranked:
         report.notes.append(f"Every video is younger than {min_age_days} days; the group ranks start once they age.")
         return report
