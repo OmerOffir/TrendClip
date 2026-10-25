@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import repository
-from modules import da_channel, fetcher, script_gen, video_gen
+from modules import da_channel, da_plan, fetcher, script_gen, video_gen
 from trendclip import publish
 
 logger = logging.getLogger(__name__)
@@ -288,3 +288,56 @@ def start_upload(story_id: int, body: UploadRequest) -> dict[str, Any]:
 def upload_status() -> dict[str, Any]:
     with _lock:
         return dict(_upload_job)
+
+
+# --------------------------------------------------------------------------- videos and the plan
+
+
+@router.get("/videos")
+def videos() -> dict[str, Any]:
+    """Every finished video with where it is planned and whether it is on YouTube."""
+    planned = da_plan.planned_dates()
+    return {"videos": [{**v, "planned": planned.get(v.get("story_id"), [])} for v in da_plan.videos()],
+            "slots": da_plan.slots()}
+
+
+@router.get("/plan")
+def plan() -> dict[str, Any]:
+    return da_plan.view()
+
+
+@router.post("/plan/items", status_code=201)
+def add_plan_item(req: da_plan.ItemRequest) -> dict[str, Any]:
+    try:
+        return da_plan.item_view(da_plan.add_item(req))
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/plan/items/{item_id}")
+def update_plan_item(item_id: str, req: da_plan.ItemUpdate) -> dict[str, Any]:
+    try:
+        return da_plan.item_view(da_plan.update_item(item_id, req))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No such plan item") from None
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.delete("/plan/items/{item_id}")
+def delete_plan_item(item_id: str) -> dict[str, Any]:
+    if not da_plan.delete_item(item_id):
+        raise HTTPException(status_code=404, detail="No such plan item")
+    return {"deleted": item_id}
+
+
+class PostedUpdate(BaseModel):
+    posted: bool = True
+
+
+@router.post("/plan/items/{item_id}/posted")
+def set_plan_posted(item_id: str, body: PostedUpdate) -> dict[str, Any]:
+    try:
+        return da_plan.item_view(da_plan.set_posted(item_id, body.posted))
+    except KeyError:
+        raise HTTPException(status_code=404, detail="No such plan item") from None

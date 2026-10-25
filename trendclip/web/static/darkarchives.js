@@ -316,6 +316,7 @@
           await open(body.story_id);
           showVideoJob(body);
         }
+        onShow();
       }
     } catch (err) {
       showError(err.message);
@@ -427,6 +428,188 @@
     }
   }
 
+  // ---- sections: Stories / Videos / Plan
+  const sections = { current: "stories" };
+  function showSection(name) {
+    sections.current = name;
+    document.querySelectorAll("#daNav [data-da-view]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.daView === name);
+      b.setAttribute("aria-selected", b.dataset.daView === name ? "true" : "false");
+    });
+    document.querySelectorAll("[data-da-panel]").forEach((p) => { p.hidden = p.dataset.daPanel !== name; });
+    if (name === "videos") loadVideos();
+    if (name === "plan") loadPlan();
+  }
+  $("daNav").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-da-view]");
+    if (btn) showSection(btn.dataset.daView);
+  });
+  window.TrendClip.showDarkSection = showSection;
+
+  // ---- Videos
+  const vids = { error: $("daVideosError"), list: $("daVideos"), count: $("daVideosCount"), nav: $("daNavVideos") };
+  const fmtWhen = (iso) => (iso || "").replace("T", " ").slice(0, 16);
+  const todayIso = () => new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const slotOptions = (slots, chosen) => slots.map((s) => `<option value="${s}" ${s === chosen ? "selected" : ""}>${s}</option>`).join("");
+
+  async function loadVideos() {
+    try {
+      const { body } = await api("/api/darkarchives/videos");
+      vids.error.hidden = true;
+      vids.count.textContent = `· ${body.videos.length}`;
+      vids.nav.textContent = body.videos.length;
+      vids.nav.hidden = !body.videos.length;
+      if (!body.videos.length) {
+        vids.list.innerHTML = '<div class="empty">No videos yet. In <b>Stories</b>: pick a story → Write the Shorts script → Make the video.</div>';
+        return;
+      }
+      vids.list.innerHTML = body.videos.map((v) => {
+        const up = v.uploads && v.uploads.youtube;
+        const first = (v.beats || [])[0];
+        const pic = first ? `/api/darkarchives/stories/${v.story_id}/video/pictures/${esc(first.picture)}` : "";
+        return `<article class="da-vcard" data-story="${v.story_id}">
+          <a href="/api/darkarchives/stories/${v.story_id}/video" target="_blank" rel="noopener" title="Open the video">${pic ? `<img src="${pic}" alt="" loading="lazy" />` : ""}</a>
+          <div class="da-vcard-body">
+            <b>${esc(v.title)}</b>
+            <div class="pills"><span class="pill">${v.duration_seconds}s</span><span class="pill">story ${v.story_id}</span>
+              ${up ? `<span class="pill good">▶️ YouTube · ${esc(up.privacy)}</span>` : '<span class="pill">not on YouTube</span>'}
+              ${v.planned.length ? v.planned.map((p) => `<span class="pill">📅 ${esc(p)}</span>`).join("") : '<span class="pill">not planned</span>'}</div>
+            <span class="hint">made ${esc(fmtWhen(v.created_at))} · pictures: ${esc(v.pictures || "")}${v.photos && v.photos.length ? ` · ${v.photos.length} photo${v.photos.length > 1 ? "s" : ""}` : ""}</span>
+            ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a></span>` : ""}
+            <div class="da-vcard-actions">
+              <input type="date" value="${todayIso()}" min="${todayIso()}" aria-label="Day" />
+              <select aria-label="Time">${slotOptions(body.slots, body.slots[0])}</select>
+              <button type="button" class="btn-secondary" data-plan="${v.story_id}">📅 Plan</button>
+              <button type="button" class="btn-secondary" data-open="${v.story_id}">Story</button>
+            </div>
+          </div>
+        </article>`;
+      }).join("");
+    } catch (err) {
+      vids.error.textContent = `Couldn't load the videos: ${err.message}`;
+      vids.error.hidden = false;
+    }
+  }
+
+  async function planVideo(card, storyId) {
+    const date = card.querySelector("input[type=date]").value;
+    const slot = card.querySelector("select").value;
+    try {
+      await api("/api/darkarchives/plan/items", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ story_id: storyId, date, slot }) });
+      vids.error.hidden = true;
+      await loadVideos();
+    } catch (err) {
+      vids.error.textContent = err.message;
+      vids.error.hidden = false;
+    }
+  }
+
+  vids.list.addEventListener("click", (e) => {
+    const plan = e.target.closest("button[data-plan]");
+    if (plan) return planVideo(plan.closest(".da-vcard"), Number(plan.dataset.plan));
+    const openBtn = e.target.closest("button[data-open]");
+    if (openBtn) {
+      showSection("stories");
+      els.status.value = "";
+      load().then(() => open(Number(openBtn.dataset.open)));
+    }
+  });
+  $("daVideosRefresh").addEventListener("click", loadVideos);
+
+  // ---- Plan
+  const plan = { error: $("daPlanError"), box: $("daPlan"), nav: $("daNavPlan"), hint: $("daPlanHint"), offset: 0, data: null };
+  const DAYS_SHOWN = 14;
+  const DAY_MS = 86400000;
+  const dayIso = (d) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  const dayLabel = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+
+  function renderPlan() {
+    const d = plan.data;
+    if (!d) return;
+    const now = new Date();
+    const today = dayIso(now);
+    const pending = d.items.filter((i) => !i.youtube.done);
+    plan.nav.textContent = pending.length;
+    plan.nav.hidden = !pending.length;
+    plan.hint.textContent = d.auto_post
+      ? `The Discord bot uploads each slot's video to the DarkArchives channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
+      : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`;
+    const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube));
+    const byKey = {};
+    d.items.forEach((i) => { byKey[`${i.date} ${i.slot}`] = i; });
+    const start = new Date(now.getTime() + plan.offset * DAY_MS);
+    const days = [];
+    for (let n = 0; n < DAYS_SHOWN; n++) days.push(dayIso(new Date(start.getTime() + n * DAY_MS)));
+    const late = d.items.filter((i) => !i.youtube.done && (i.date < days[0] || i.date < today));
+    plan.box.innerHTML = (late.length && plan.offset >= 0 ? `<div class="da-note">${late.length} planned video${late.length > 1 ? "s" : ""} in the past not on YouTube: ${late.map((i) => `${esc(i.date)} ${esc(i.slot)} ${esc(i.title)}`).join(" · ")}</div>` : "") +
+      days.map((iso) => `
+      <div class="da-plan-day${iso === today ? " today" : ""}${iso < today ? " past" : ""}">
+        <div class="da-plan-date"><b>${esc(dayLabel(iso))}</b><small>${esc(iso)}</small></div>
+        <div class="da-plan-slots">${d.slots.map((slot) => {
+          const item = byKey[`${iso} ${slot}`];
+          const passed = `${iso} ${slot}` < `${today} ${now.toTimeString().slice(0, 5)}`;
+          if (item) {
+            const yt = item.youtube;
+            const cls = yt.done ? " done" : passed ? " late" : "";
+            return `<div class="da-plan-slot${cls}" data-item="${item.id}"><span class="time">${slot}</span>
+              <span class="title">🎬 ${esc(item.title)}${item.video_missing ? ' <span class="da-note">(video missing)</span>' : ""}</span>
+              ${yt.done ? `<span class="pill good">▶️ on YouTube${yt.privacy ? ` · ${esc(yt.privacy)}` : ""}</span>${yt.url ? ` <a class="hint" href="${esc(yt.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}`
+                : passed ? '<span class="pill">⚠️ not posted</span>' : '<span class="pill">⏳ waits for its time</span>'}
+              <span class="spacer"></span>
+              ${yt.done ? "" : `<button type="button" class="btn-ghost" data-posted="${item.id}" title="I uploaded it myself">Mark posted</button>`}
+              <button type="button" class="btn-ghost" data-remove="${item.id}" title="Take it off the plan">✕</button></div>`;
+          }
+          const options = unplanned.map((v) => `<option value="${v.story_id}">${esc(v.title)} (${v.duration_seconds}s${v.planned.length ? ", planned " + esc(v.planned[0]) : ""})</option>`).join("");
+          return `<div class="da-plan-slot"><span class="time">${slot}</span>
+            ${passed ? '<span class="hint">passed</span>' : options
+              ? `<select aria-label="Video for ${iso} ${slot}"><option value="">— pick a video —</option>${options}</select>
+                 <button type="button" class="btn-secondary" data-add="${iso}" data-slot="${slot}">Add</button>`
+              : '<span class="hint">free · make a video first</span>'}</div>`;
+        }).join("")}</div>
+      </div>`).join("");
+  }
+
+  async function loadPlan() {
+    try {
+      const { body } = await api("/api/darkarchives/plan");
+      plan.data = body;
+      plan.error.hidden = true;
+      renderPlan();
+    } catch (err) {
+      plan.error.textContent = `Couldn't load the plan: ${err.message}`;
+      plan.error.hidden = false;
+    }
+  }
+
+  async function planCall(path, options) {
+    try {
+      await api(path, options);
+      plan.error.hidden = true;
+      await loadPlan();
+    } catch (err) {
+      plan.error.textContent = err.message;
+      plan.error.hidden = false;
+    }
+  }
+
+  plan.box.addEventListener("click", (e) => {
+    const json = (data) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const add = e.target.closest("button[data-add]");
+    if (add) {
+      const sel = add.parentElement.querySelector("select");
+      if (!sel || !sel.value) return;
+      return planCall("/api/darkarchives/plan/items", json({ story_id: Number(sel.value), date: add.dataset.add, slot: add.dataset.slot }));
+    }
+    const rm = e.target.closest("button[data-remove]");
+    if (rm) return planCall(`/api/darkarchives/plan/items/${rm.dataset.remove}`, { method: "DELETE" });
+    const posted = e.target.closest("button[data-posted]");
+    if (posted) return planCall(`/api/darkarchives/plan/items/${posted.dataset.posted}/posted`, json({ posted: true }));
+  });
+  $("daPlanPrev").addEventListener("click", () => { plan.offset -= 7; renderPlan(); });
+  $("daPlanNext").addEventListener("click", () => { plan.offset += 7; renderPlan(); });
+  $("daPlanToday").addEventListener("click", () => { plan.offset = 0; renderPlan(); });
+
   els.list.addEventListener("click", (e) => {
     const item = e.target.closest(".da-item");
     if (item) open(Number(item.dataset.id));
@@ -452,8 +635,17 @@
 
   const onShow = () => {
     if (document.body.dataset.workspace !== "darkarchives") return;
+    showSection(sections.current);
     if (!state.loaded) load();
     if (!state.polling) poll();
+    api("/api/darkarchives/plan").then(({ body }) => {
+      plan.data = body;
+      const pending = body.items.filter((i) => !i.youtube.done).length;
+      plan.nav.textContent = pending;
+      plan.nav.hidden = !pending;
+      vids.nav.textContent = body.videos.length;
+      vids.nav.hidden = !body.videos.length;
+    }).catch(() => {});
   };
   new MutationObserver(onShow).observe(document.body, { attributes: true, attributeFilter: ["data-workspace"] });
   onShow();

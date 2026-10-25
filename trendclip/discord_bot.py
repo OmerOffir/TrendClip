@@ -516,9 +516,10 @@ class TrendClipBot(discord.Client):
 
     @tasks.loop(seconds=60)
     async def reminders(self) -> None:
+        at = assistant.now(self.settings)
+        self.darkarchives_posts(at)
         if not self.settings.discord_channel_id:
             return
-        at = assistant.now(self.settings)
         for reminder in assistant.due_reminders(self.settings, at, self.sent.load()):
             try:
                 channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
@@ -545,6 +546,41 @@ class TrendClipBot(discord.Client):
                 logger.exception("Reminder %s failed; retrying next minute", reminder.key)
                 continue
             self.sent.add(reminder.key, at.date())
+
+    def darkarchives_posts(self, at: datetime) -> None:
+        """DarkArchives (its own plan, channel and token): the slot's planned video goes to its YouTube
+        channel at its time, reported in its Discord channel."""
+        from modules import da_plan
+
+        try:
+            due = da_plan.due_posts(self.settings, at, self.sent.load())
+        except Exception:  # noqa: BLE001 - never let the second channel stop the first one's reminders
+            logger.exception("DarkArchives plan check failed")
+            return
+        for key, day, slot in due:
+            self.sent.add(key, at.date())  # marked first: an upload takes minutes and must never start twice
+            task = asyncio.create_task(self.darkarchives_post(day, slot))
+            self.jobs.add(task)
+            task.add_done_callback(self._job_done)
+
+    async def darkarchives_post(self, day: Day, slot: str) -> None:
+        from modules import da_channel, da_plan
+
+        item = await asyncio.to_thread(da_plan.slot_item, day, slot)
+        if item is None:
+            return
+        rest = da_channel._rest(self.settings)
+        try:
+            record = await asyncio.to_thread(da_plan.post_now, item)
+            logger.info("DarkArchives %s %s: %s is on YouTube (%s)", day, slot, item.title, record.get("url"))
+        except Exception as err:  # noqa: BLE001 - reported in the channel
+            logger.exception("DarkArchives post for %s %s failed", day, slot)
+            if rest is not None:
+                try:
+                    await asyncio.to_thread(rest.post, clip_text(
+                        f"❌ {slot}: **{item.title}** did not go out: {err}\nUpload it from the DarkArchives tab."))
+                except Exception:  # noqa: BLE001
+                    logger.exception("Could not report the failure in the DarkArchives channel")
 
     def _job_done(self, task: asyncio.Task) -> None:
         self.jobs.discard(task)

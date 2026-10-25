@@ -843,6 +843,14 @@ Upload and Plan tabs stay the gameplay channel's. No TikTok or Instagram for thi
 every finished video is posted there (shrunk under 10 MB when needed) and every upload with its YouTube
 link. `python -m modules.video_gen --id 17 --quiet` skips the post.
 
+**Videos and Plan** (the tab's other two sections). *Videos* lists every finished video with its
+pictures, where it is planned and whether it is on YouTube, with Plan and Upload buttons. *Plan* is the
+next two weeks: every day has the slots of `DA_SLOTS` (default one, `19:00`, in `TIMEZONE`), each
+holding one video; the plan lives in `output/darkarchives/plan.json`, apart from the gameplay channel's.
+With `DA_AUTO_POST=1` the Discord bot uploads the slot's video to the DarkArchives channel at its time as
+`DA_UPLOAD_PRIVACY` (default public) and reports the link, or the failure, in its Discord channel; a slot
+missed by more than two hours (bot off) is skipped. A video already on YouTube counts as posted.
+
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
    GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +6%). The word
