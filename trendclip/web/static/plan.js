@@ -40,11 +40,12 @@
     save: $("pSave"),
   };
 
-  const PLATFORMS = [
+  const ALL_PLATFORMS = [
     { id: "youtube", label: "YouTube", short: "YT" },
     { id: "instagram", label: "Instagram", short: "IG" },
     { id: "tiktok", label: "TikTok", short: "TT" },
   ];
+  let PLATFORMS = ALL_PLATFORMS; // narrowed to the active ones (PLATFORMS in .env) once the plan is loaded
   const DAYS_SHOWN = 7;
   const DAY_MS = 86400000;
 
@@ -115,6 +116,9 @@
   async function load() {
     try {
       state.data = (await api("/api/plan")).body;
+      const active = state.data.platforms || ALL_PLATFORMS.map((p) => p.id);
+      PLATFORMS = ALL_PLATFORMS.filter((p) => active.includes(p.id));
+
       showError("");
     } catch (err) {
       showError(`Could not load the plan: ${err.message}`);

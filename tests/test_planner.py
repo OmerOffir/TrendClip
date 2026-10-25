@@ -13,7 +13,10 @@ DAY = date(2026, 10, 6)
 
 @pytest.fixture
 def settings(tmp_path):
-    return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output")
+    # Every platform on, so the tests below cover TikTok too; the default (YouTube + Instagram) has its own test.
+    return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output",
+                    platforms=["youtube", "instagram", "tiktok"])
+
 
 
 def test_plans_saved_with_the_old_18_00_slot_move_to_14_30(settings):
@@ -136,3 +139,33 @@ def test_plan_endpoints(settings, monkeypatch):
     assert client.put("/api/plan/goals", json={"reels_per_day": 99}).status_code == 422
     assert client.delete(f"/api/plan/items/{item_id}").status_code == 200
     assert client.delete(f"/api/plan/items/{item_id}").status_code == 404
+
+
+def test_only_the_active_platforms_are_in_the_plan(tmp_path, settings):
+    from datetime import timedelta
+
+    import pytest
+
+    from trendclip.config import Settings
+
+
+    # A plan made with TikTok on (goals and items), then read with the default PLATFORMS=youtube,instagram.
+    name = add_short(settings, "t.mp4")
+    planner.set_goals(settings, planner.Goals(reel_platforms=["youtube", "instagram", "tiktok"], long_platforms=["tiktok"]))
+    item = planner.add_item(settings, planner.ItemRequest(date=DAY, short=name))
+    assert item.platforms == ["youtube", "instagram", "tiktok"]
+    default = Settings(youtube_api_key="k", assets_dir=settings.assets_dir, output_dir=settings.output_dir)
+    assert default.platforms == ["youtube", "instagram"]
+    plan = planner.load(default)
+    assert plan.goals.reel_platforms == ["youtube", "instagram"] and plan.goals.long_platforms == ["youtube"]
+    assert plan.items[0].platforms == ["youtube", "instagram"]
+    assert planner.view(default)["platforms"] == ["youtube", "instagram"]
+    assert planner.view(default)["items"][0]["status"].keys() == {"youtube", "instagram"}
+    # New items can't ask for a platform that is off.
+    with pytest.raises(ValueError, match="youtube, instagram"):
+        planner.add_item(default, planner.ItemRequest(date=DAY + timedelta(days=1), short=name, platforms=["tiktok"]))
+    assert planner.add_item(default, planner.ItemRequest(date=DAY + timedelta(days=1), short=name)).platforms == ["youtube", "instagram"]
+    # The setting accepts a comma list in any order and refuses an empty one.
+    assert Settings(youtube_api_key="k", platforms="tiktok, YouTube").platforms == ["youtube", "tiktok"]
+    with pytest.raises(ValueError):
+        Settings(youtube_api_key="k", platforms="")

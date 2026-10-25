@@ -757,6 +757,13 @@
       const btn = e.target.closest("[data-platform]");
       if (btn) setPlatform(btn.dataset.platform);
     });
+    // Only the active platforms (PLATFORMS in .env) get a tab; TikTok is off unless listed there.
+    document.addEventListener("trendclip:config", (e) => {
+      const active = e.detail.platforms || [];
+      els.tabs.querySelectorAll("button[data-platform]").forEach((b) => { b.hidden = !active.includes(b.dataset.platform); });
+      if (!active.includes(state.platform)) setPlatform(active[0] || "youtube");
+
+    });
     for (const el of [els.ytTitle, els.ytDesc, els.ytHashtags, els.ytTags, els.igCaption, els.igHashtags,
       els.igMentions, els.ttCaption, els.ttHashtags, els.ttMentions]) {
       el.addEventListener("input", () => {

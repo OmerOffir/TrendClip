@@ -101,9 +101,21 @@ def plan_path(settings: Settings) -> Path:
 def load(settings: Settings) -> Plan:
     path = plan_path(settings)
     try:
-        return Plan.model_validate_json(path.read_text(encoding="utf-8"))
+        plan = Plan.model_validate_json(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return Plan()
+        plan = Plan()
+    return _restrict(plan, settings.platforms)
+
+
+def _restrict(plan: Plan, active: list[str]) -> Plan:
+    """Only the active platforms (PLATFORMS) in the goals and on every item; a platform switched off later
+    (TikTok) disappears from the plan without touching the saved file until the next save."""
+    keep = [p for p in PLATFORMS if p in active]
+    plan.goals.reel_platforms = [p for p in plan.goals.reel_platforms if p in keep] or list(keep)
+    plan.goals.long_platforms = [p for p in plan.goals.long_platforms if p in keep] or [keep[0]]
+    for item in plan.items:
+        item.platforms = [p for p in item.platforms if p in keep] or list(keep)
+    return plan
 
 
 def _save(settings: Settings, plan: Plan) -> None:
@@ -121,12 +133,13 @@ def _find(plan: Plan, item_id: str) -> PlanItem:
     raise KeyError(item_id)
 
 
-def _platforms(plan: Plan, kind: Kind, wanted: list[str] | None) -> list[Platform]:
+def _platforms(plan: Plan, active: list[str], kind: Kind, wanted: list[str] | None) -> list[Platform]:
+    """The platforms an item goes to: the wanted ones (default: the goals') that are active (PLATFORMS)."""
     if wanted is None:
         wanted = plan.goals.reel_platforms if kind == "reel" else plan.goals.long_platforms
-    out = [p for p in PLATFORMS if p in wanted]
+    out = [p for p in PLATFORMS if p in wanted and p in active]
     if not out:
-        raise ValueError("Pick at least one platform")
+        raise ValueError("Pick at least one platform" + ("" if len(active) == len(PLATFORMS) else f" ({', '.join(active)})"))
     return out
 
 
@@ -181,7 +194,7 @@ def add_item(settings: Settings, req: ItemRequest) -> PlanItem:
             slot = _first_free(plan, req.date)
         item = PlanItem(id=secrets.token_hex(6), kind=req.kind, date=req.date, slot=slot,
                         title=req.title.strip(), notes=req.notes.strip(),
-                        platforms=_platforms(plan, req.kind, req.platforms))
+                        platforms=_platforms(plan, settings.platforms, req.kind, req.platforms))
         _check_slot(plan, item)
         if req.short:
             _link(settings, item, req.short)
@@ -211,7 +224,7 @@ def update_item(settings: Settings, item_id: str, req: ItemUpdate) -> PlanItem:
         if req.notes is not None:
             item.notes = req.notes.strip()
         if req.platforms is not None:
-            item.platforms = _platforms(plan, item.kind, req.platforms)
+            item.platforms = _platforms(plan, settings.platforms, item.kind, req.platforms)
         if req.unlink:
             item.short = None
         elif req.short and req.short != item.short:
@@ -338,6 +351,7 @@ def view(settings: Settings) -> dict[str, Any]:
     items = sorted(plan.items, key=lambda i: (i.date, i.kind != "reel", i.slot or "99", i.created_at))
     return {
         "goals": plan.goals.model_dump(mode="json"),
+        "platforms": list(settings.platforms),
         "slots": list(SLOTS),
         "items": [item_view(i, all_shorts.get(i.short) if i.short else None) for i in items],
         "shorts": [{

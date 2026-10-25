@@ -137,16 +137,24 @@ def _fence(text: str) -> str:
     return "```\n" + text.replace("```", "'''").strip() + "\n```"
 
 
+CAPTION_LABELS = {"youtube": "▶️ YouTube", "instagram": "📸 Instagram", "tiktok": "🎵 TikTok"}
+
+
+def platform_names(settings: Settings) -> str:
+    """"YouTube and Instagram" / "YouTube, Instagram and TikTok" (PLATFORMS)."""
+    names = [PLATFORM_NAMES[p] for p in settings.platforms]
+    return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0]
+
+
 def caption_message(settings: Settings, short: shorts.ShortVideo, heading: str) -> str:
-    """Ready-to-paste caption (text + hashtags) for YouTube, TikTok and Instagram."""
+    """Ready-to-paste caption (text + hashtags) for each active platform (PLATFORMS)."""
     stored = publish.texts_for(settings, short.filename)
     texts = publish.PlatformTexts.model_validate(stored.texts)
     links = (publish.series_info(settings, stored) or {}).get("links", "")
-    blocks = [
-        ("▶️ YouTube", publish.youtube_description(texts.youtube, texts.credit, links)),
-        ("🎵 TikTok", publish.full_text(texts.tiktok, texts.credit)),
-        ("📸 Instagram", publish.full_text(texts.instagram, texts.credit)),
-    ]
+    bodies = {"youtube": publish.youtube_description(texts.youtube, texts.credit, links),
+              "instagram": publish.full_text(texts.instagram, texts.credit),
+              "tiktok": publish.full_text(texts.tiktok, texts.credit)}
+    blocks = [(CAPTION_LABELS[p], bodies[p]) for p in settings.platforms]
     lines = [heading, f"**{texts.youtube.title}**"]
     for label, body in blocks:
         lines.append(f"{label}\n{_fence(body)}")
@@ -1395,7 +1403,7 @@ async def status_cmd(interaction: discord.Interaction) -> None:
 
 @app_commands.command(name="stats", description="Followers, and views / likes / comments of the last 24 h videos")
 async def stats_cmd(interaction: discord.Interaction) -> None:
-    await reply(interaction, "📊 Reading YouTube, TikTok and Instagram…")
+    await reply(interaction, f"📊 Reading {platform_names(_bot(interaction).settings)}…")
     await _bot(interaction).send_stats(interaction.channel)
 
 
@@ -1659,7 +1667,8 @@ async def plan_move(interaction: discord.Interaction, item: str, day: str, time:
 async def help_cmd(interaction: discord.Interaction) -> None:
     await reply(interaction, "\n".join([
         "**TrendClip bot**",
-        "`/today` today's 14:30 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
+        "`/today` today's 14:30 and 23:00 videos, plus a copy-ready caption per platform",
+
         "`/slot time:14:30` send me the video for a slot (`day:` for another day)",
         "`/create` make a video: I ask story, math challenge, riddle, trivia trap, paradox trap or movie quiz (`game:` picks the gameplay, "
         "`text:` or ✍️ uses your own words); 🎲 **Pick for me** and the emergency videos choose the kind, game and length "

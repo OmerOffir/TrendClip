@@ -67,6 +67,7 @@ _ENV_MAP: dict[str, str] = {
     "instagram_auto_replies": "INSTAGRAM_AUTO_REPLIES",
     "instagram_reply_daily_max": "INSTAGRAM_REPLY_DAILY_MAX",
     "instagram_youtube_name": "INSTAGRAM_YOUTUBE_NAME",
+    "platforms": "PLATFORMS",
     "stats_youtube": "STATS_YOUTUBE",
     "stats_tiktok": "STATS_TIKTOK",
     "stats_instagram": "STATS_INSTAGRAM",
@@ -182,6 +183,23 @@ class Settings(BaseModel):
 
     # The channel folder under channels/ whose channel.env and login files are used.
     channel: str = DEFAULT_CHANNEL
+
+    # Where the videos go: the plan's platforms, the captions, the morning report and the Upload tab's tabs.
+    # TikTok (no upload API) is kept in the code but off by default: PLATFORMS=youtube,instagram,tiktok adds it.
+    platforms: list[Literal["youtube", "instagram", "tiktok"]] = Field(default_factory=lambda: ["youtube", "instagram"])
+
+    @field_validator("platforms", mode="before")
+    @classmethod
+    def _platform_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = [part.strip().lower() for part in value.split(",") if part.strip()]
+        if isinstance(value, list):
+            order = ("youtube", "instagram", "tiktok")
+            value = [p for p in order if p in value]
+            if not value:
+                raise ValueError("PLATFORMS must name at least one of youtube, instagram, tiktok")
+        return value
+
 
     # Your own channels for the morning stats report (empty = skip that platform).
     stats_youtube: str = "@SideQuestLogic-t6g"

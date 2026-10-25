@@ -546,11 +546,18 @@ def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings
 
     short = shorts.get_short(settings, add_short(settings))
     text = discord_bot.caption_message(settings, short, "📝 `14:30` **The Day**")
-    for label in ("▶️ YouTube", "🎵 TikTok", "📸 Instagram"):
+    for label in ("▶️ YouTube", "📸 Instagram"):
         assert label in text
+    assert "TikTok" not in text  # off by default (PLATFORMS)
+    with_tiktok = discord_bot.caption_message(settings.with_overrides(platforms=["youtube", "instagram", "tiktok"]),
+                                              short, "📝")
+    assert "🎵 TikTok" in with_tiktok and discord_bot.platform_names(settings) == "YouTube and Instagram"
+
     assert "I searched for three hours" in text  # the description text
-    assert "#storytime" in text and "#fyp" in text and "#shorts" in text
-    assert text.count("```") == 6 and len(text) <= discord_bot.MESSAGE_MAX
+    assert "#storytime" in text and "#shorts" in text and "#fyp" in with_tiktok  # #fyp is TikTok's
+
+    assert text.count("```") == 4 and with_tiktok.count("```") == 6 and len(text) <= discord_bot.MESSAGE_MAX
+
 
 
 def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):

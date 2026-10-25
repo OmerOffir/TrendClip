@@ -361,8 +361,9 @@ def build_report(settings: Settings, hours: int = WINDOW_HOURS, at: datetime | N
     platforms: list[PlatformStats] = []
     for platform, fetch in FETCHERS.items():
         handle = getattr(settings, HANDLE_FIELD[platform])
-        if not handle:
+        if not handle or platform not in settings.platforms:
             continue
+
         try:
             stats = fetch(settings, since)
         except Exception as err:  # noqa: BLE001 - one platform failing must not hide the others

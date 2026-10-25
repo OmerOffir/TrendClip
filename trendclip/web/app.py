@@ -146,7 +146,9 @@ def config() -> dict[str, Any]:
             "top": settings.top_topics,
         },
         "cache_ttl_seconds": TRENDS_TTL_SECONDS,
+        "platforms": list(settings.platforms),
         "backgrounds": {
+
             "pexels_enabled": settings.pexels_enabled,
             "sources": settings.background_sources,
             "clip_seconds": settings.background_clip_seconds,

@@ -31,6 +31,11 @@ channels/
 ```
 
 - `CHANNEL` in `.env` picks the active channel (default `sidequestlogic`).
+- `PLATFORMS` (default `youtube,instagram`) is where the videos go: the plan's platforms and goals,
+  the captions the bot posts, the morning channel report and the Upload tab's tabs. TikTok has no
+  upload API, so it is off by default; `PLATFORMS=youtube,instagram,tiktok` brings its captions, tab,
+  stats and plan buttons back. A platform switched off disappears from existing plans on load.
+
 - Settings in `channel.env` win over `.env`, so any setting (`TTS_VOICE`, `MUSIC_VOLUME`, …) can
   differ per channel. Real environment variables win over both.
 - A channel may also have its own `client_secret.json` in its folder.
