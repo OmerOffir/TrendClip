@@ -57,8 +57,9 @@ HOOK_STYLES = {
     "first_person": "First person (\"I …\", \"My …\")",
     "claim": "Bold claim",
 }
+# No trailing \b: "%" is not a word character, so "only 3% can" would never end on a word boundary.
 _DARE = re.compile(r"\b(only \d+ ?%|\d+ ?% (of people|get|fail)|most people|can you|bet you|nobody|no one can|"
-                   r"impossible|if you|are you smart)\b", re.I)
+                   r"impossible|if you|are you smart)(?!\w)", re.I)
 _COMMAND_WORDS = {"name", "guess", "watch", "start", "imagine", "stop", "listen", "think", "picture", "try",
                   "look", "wait", "remember", "tell", "answer", "finish", "solve", "spot", "find"}
 _FIRST_PERSON = re.compile(r"^(i|i'm|i've|i'd|i'll|my|we|we're|our|me)\b", re.I)
@@ -735,11 +736,14 @@ def format_report(report: Report, per_dimension: int = 3) -> list[str]:
         lines.append(f"ℹ️ {note}")
     for dim in report.dimensions:
         lines += ["", f"__{dim.label}__"]
-        for g in dim.groups[:per_dimension]:
+        # Groups of one video say little: show them only when there is nothing better.
+        solid = [g for g in dim.groups if g.n >= 2] or dim.groups
+        for g in solid[:per_dimension]:
             lines.append(f"• {_group_line(g)}")
-        if len(dim.groups) > per_dimension:
-            worst = dim.groups[-1]
+        if len(solid) > per_dimension:
+            worst = solid[-1]
             lines.append(f"• … weakest: {worst.label} ({_n(worst.median_views)} median, {worst.n})")
+
     if report.top_views:
         lines += ["", "__Top videos by views__"]
         for r in report.top_views[:5]:

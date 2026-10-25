@@ -89,6 +89,9 @@ def test_hook_is_the_first_sentence_and_its_style_is_recognised():
     styles = {
         "ONLY 5% OF PEOPLE FINISH THIS.": "dare",
         "Most people get this wrong.": "dare",
+        "Only 3% can keep up without pausing.": "dare",
+        "Only 5% finish.": "dare",
+
         "Which country has the most islands?": "question",
         "3 seconds. That's all it took.": "number",
         "\"You shall not pass,\" he said.": "quote",
