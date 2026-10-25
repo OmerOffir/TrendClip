@@ -57,6 +57,8 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick_explore": "AUTO_PICK_EXPLORE",
     "auto_pick_days": "AUTO_PICK_DAYS",
     "script_learning": "SCRIPT_LEARNING",
+    "auto_produce": "AUTO_PRODUCE",
+    "auto_produce_time": "AUTO_PRODUCE_TIME",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
@@ -150,6 +152,13 @@ class Settings(BaseModel):
     # Every script prompt gets the channel's own lessons (analytics.lessons): the hooks that kept viewers, the
     # styles that lost them, the length that works, the endings that drew comments, the titles used lately.
     script_learning: bool = True
+    # Full automation: at AUTO_PRODUCE_TIME the bot makes a video for every empty slot of tomorrow (and of
+    # today when the slot is still 3+ hours away), by the channel's numbers, plans it there and posts it to
+    # Discord; it goes out at its time unless "Don't post this" is pressed. The emergency video stays the
+    # fallback for a slot still empty an hour before.
+    auto_produce: bool = True
+    auto_produce_time: str = Field("10:15", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+
 
 
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.

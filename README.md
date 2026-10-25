@@ -580,7 +580,18 @@ On its own the bot posts to `DISCORD_CHANNEL_ID`:
   platform it's already on is skipped. TikTok has no upload API, so the message reminds you to post
   it there. If the bot was off at the slot time, it still posts when it's back, up to 2 h late.
   Items made outside TrendClip, and videos no longer on the machine, are only reported;
+- **the production run** (`AUTO_PRODUCE=true`, at `AUTO_PRODUCE_TIME`, default 10:15): every morning
+  the bot makes a video for each empty slot of tomorrow (and of today when the slot is still 3+ hours
+  away), one at a time. The kind, game and length come from the channel's numbers (**Insights**, the
+  same picker as 🎲 Pick for me) and the script gets the learning brief; the bot says what it picked and
+  why. Each video is planned in its slot and posted to Discord with **🚫 Don't post this**: press nothing
+  and it goes out at its time by itself (`AUTO_POST`); press it and the video comes off the plan (it stays
+  in /videos) with a **🎬 Make another now** button, or the emergency video below fills the slot an hour
+  before. A video that fails 5 times is left to the emergency video, with a **Try again now** button.
+  This is the whole channel on autopilot: your daily effort is a glance at two videos, and only if you
+  want to.
 - **an emergency video for an empty slot** (`EMERGENCY_VIDEO=true`): if 14:30 or 23:00 still has
+
   nothing planned an hour before, the bot makes a video over GTA V or Minecraft gameplay (never
   another game, even when the download fails and it falls back to a downloaded clip) with a random
   type (math, trivia, riddle, movie, paradox or story), plans it in that slot, and it goes out at its

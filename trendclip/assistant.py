@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 ProgressFn = Callable[[float | None, str], None]
 DISCORD_FILE_LIMIT = 10 * 1024 * 1024  # servers without boosts
 MORNING_WINDOW = timedelta(hours=6)  # a summary missed by more than this (bot was off) is skipped
+PRODUCE_LEAD = timedelta(hours=3)  # the production run also fills today's slots that are at least this far away
 POST_WINDOW = timedelta(hours=2)  # a slot's automatic post missed by more than this (bot was off) is skipped
 EMERGENCY_LEAD = timedelta(hours=1)  # an empty slot gets its emergency video this long before it
 
@@ -307,9 +308,22 @@ def discord_copy(settings: Settings, filename: str, limit: int = DISCORD_FILE_LI
 
 class Reminder(BaseModel):
     key: str
-    kind: Literal["morning", "slot", "leaderboard", "post", "emergency"]
+    kind: Literal["morning", "slot", "leaderboard", "post", "emergency", "produce"]
     day: Day
     slot: Slot | None = None
+
+
+def produce_targets(settings: Settings, at: datetime) -> list[tuple[Day, Slot]]:
+    """The slots the production run fills: today's empty ones still PRODUCE_LEAD away, then tomorrow's."""
+    at = at.astimezone(settings.tz)
+    out = []
+    for day in (at.date(), at.date() + timedelta(days=1)):
+        for slot in planner.SLOTS:
+            if planner.slot_item(settings, day, slot) is not None:
+                continue
+            if planner.slot_time(settings, day, slot) - at >= PRODUCE_LEAD:
+                out.append((day, slot))
+    return out
 
 
 def post_key(day: Day, slot: Slot) -> str:
@@ -323,9 +337,11 @@ def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Remi
     at = at.astimezone(settings.tz)
     day = at.date()
     out = []
-    for kind, clock in (("morning", settings.discord_morning_time), ("leaderboard", settings.discord_leaderboard_time)):
+    for kind, clock in (("morning", settings.discord_morning_time), ("leaderboard", settings.discord_leaderboard_time),
+                        ("produce", settings.auto_produce_time if settings.auto_produce else "")):
         if not clock:
             continue
+
         hour, minute = map(int, clock.split(":"))
         start = datetime(day.year, day.month, day.day, hour, minute, tzinfo=settings.tz)
         key = f"{day.isoformat()} {kind}"

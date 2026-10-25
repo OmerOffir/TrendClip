@@ -33,6 +33,7 @@ NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", 
 EMERGENCY_GAMES = ("GTA V / Online", "Minecraft")  # names from games.py
 CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini busy) is made again from scratch
 EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
+PRODUCE_ATTEMPTS = 5     # the morning production run has all day: a failed video is made again from scratch
 RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["14:30", "23:00"]
@@ -519,11 +520,14 @@ class TrendClipBot(discord.Client):
                 elif reminder.kind == "leaderboard":
                     if publish.TOKEN_FILE.is_file():
                         await self.leaderboard_post(channel)
-                elif reminder.kind in ("post", "emergency"):
+                elif reminder.kind in ("post", "emergency", "produce"):
                     # Marked sent first: an upload or a render takes minutes and must never start twice.
                     self.sent.add(reminder.key, at.date())
-                    work = self.auto_post if reminder.kind == "post" else self.emergency_video
-                    task = asyncio.create_task(work(channel, reminder.day, reminder.slot))
+                    if reminder.kind == "produce":
+                        task = asyncio.create_task(self.produce_videos(channel))
+                    else:
+                        work = self.auto_post if reminder.kind == "post" else self.emergency_video
+                        task = asyncio.create_task(work(channel, reminder.day, reminder.slot))
                     self.jobs.add(task)
                     task.add_done_callback(self._job_done)
                     continue
@@ -592,6 +596,10 @@ class TrendClipBot(discord.Client):
         if empty:
             text += "\nSome slots are empty: plan a video with /plan add, or let me make one."
             buttons.append(button("mk", "-", "Create a random video", discord.ButtonStyle.success))
+        if self.settings.auto_produce:
+            text += (f"\n🏭 At {self.settings.auto_produce_time} I make the videos for every slot still empty "
+                     f"(tomorrow's, and today's if 3+ hours away) and post them here; press **Don't post this** "
+                     f"on any you don't like.")
         await channel.send(clip_text(text), view=view_of(*buttons))
         await self.send_stats(channel)
         if publish.TOKEN_FILE.is_file():
@@ -862,6 +870,63 @@ class TrendClipBot(discord.Client):
         await channel.send(clip_text(f"{head} **{short.title}** ({slot})\n" + "\n".join(lines + notes)),
                            view=view_of(*retry), suppress_embeds=True)
 
+    # ---- the production run (full automation) -------------------------------------------
+
+    async def produce_videos(self, channel: discord.abc.Messageable) -> None:
+        """AUTO_PRODUCE: a video for every empty slot of tomorrow (and today's still 3+ h away), made by the
+        channel's numbers, planned there and shown here with a "Don't post this" button."""
+        settings = self.settings
+        targets = await asyncio.to_thread(assistant.produce_targets, settings, assistant.now(settings))
+        if not targets:
+            await channel.send("🏭 Every slot of today and tomorrow is planned; nothing to make.")
+            return
+        if script_writer.gemini_api_key(settings) is None:
+            await channel.send("🏭 Can't make the videos for the empty slots without GEMINI_API_KEY.")
+            return
+        labels = ", ".join(f"{day_label(settings, d)} {s}" for d, s in targets)
+        await channel.send(clip_text(
+            f"🏭 **Making the videos for {labels}**, one at a time, by the channel's numbers. Each goes out at "
+            f"its time by itself; press **Don't post this** under any you don't like."))
+        games = await asyncio.to_thread(library_games, settings)
+        for day, slot in targets:
+            await self.produce_one(channel, day, slot, games)
+
+    async def produce_one(self, channel: discord.abc.Messageable, day: Day, slot: str,
+                          games: list[str] | None = None) -> None:
+        """One slot's video: picked, made (PRODUCE_ATTEMPTS tries), planned, shown with the veto button."""
+        settings = self.settings
+        if await asyncio.to_thread(planner.slot_item, settings, day, slot):
+            return
+        label = f"{day_label(settings, day)} {slot}"
+        pick = await asyncio.to_thread(plan_pick, settings, games or list(EMERGENCY_GAMES))
+        kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
+        noun = NOUNS.get(kind, "story")
+        await channel.send(clip_text(f"🏭 {label}: a {noun} on {game} gameplay.\n{analytics.describe_pick(pick)}"))
+        try:
+            short = await self.run_job(channel, f"Making the {noun} for {label}",
+                                       lambda p: assistant.create_random_short(settings, game, p, kind, EMERGENCY_GAMES,
+                                                                               target_seconds=pick.target_seconds),
+                                       self.render_lock, attempts=PRODUCE_ATTEMPTS,
+                                       give_up=lambda: planner.slot_item(settings, day, slot) is not None)
+        except JobFailed:
+            await channel.send(f"🏭 Couldn't make the video for {label} after {PRODUCE_ATTEMPTS} attempts. The "
+                               f"emergency video will try again an hour before the slot, or:",
+                               view=view_of(button("prod", f"{day.isoformat()} {slot}", "🎬 Try again now",
+                                                   discord.ButtonStyle.success)))
+            return
+        if await asyncio.to_thread(planner.slot_item, settings, day, slot):
+            await self.send_video(channel, short.filename,
+                                  f"🎬 **{short.title}** is ready, but {label} got a video meanwhile, so it waits "
+                                  f"in /videos.\n{short_meta(short)}", view_of(*video_buttons(self, short)))
+            return
+        item = await asyncio.to_thread(assistant.plan_short, settings, short.filename, day, slot)
+        answer = f"\nAnswer (spoiler): ||{short.answer}||" if short.answer else ""
+        await self.send_video(channel, short.filename,
+                              f"🏭 **{short.title}** is planned for {label} and goes out by itself.\n"
+                              f"{short_meta(short)}{answer}",
+                              view_of(button("veto", item.id, "🚫 Don't post this", discord.ButtonStyle.danger),
+                                      button("cm", short.filename, "Captions")))
+
     async def emergency_video(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
         """EMERGENCY_VIDEO: a slot still empty an hour before it gets a random video (a random type over
         GTA V or Minecraft gameplay), planned there so it goes out at its time."""
@@ -1002,6 +1067,36 @@ async def act_plan_today(bot: TrendClipBot, interaction: discord.Interaction, ar
     await reply(interaction, f"📅 Planned **{item.title}** for today at {item.slot}.")
 
 
+async def act_veto(bot: TrendClipBot, interaction: discord.Interaction, item_id: str) -> None:
+    """The production run's "Don't post this": off the plan; the video is kept; the slot can be refilled."""
+    settings = bot.settings
+    try:
+        item = await asyncio.to_thread(planner.find_item, settings, item_id)
+    except KeyError:
+        return await reply(interaction, "That video is no longer on the plan.", ephemeral=True)
+    await asyncio.to_thread(planner.delete_item, settings, item_id)
+    label = f"{day_label(settings, item.date)} {item.slot or ''}".strip()
+    arg = f"{item.date.isoformat()} {item.slot}" if item.slot else ""
+    await reply(interaction, f"🚫 **{item.title}** won't be posted: it's off {label} (the video stays in /videos). "
+                             f"The slot is empty again: make another now, or the emergency video fills it an hour "
+                             f"before.",
+                view=view_of(button("prod", arg, "🎬 Make another now", discord.ButtonStyle.success) if arg else None,
+                             *kind_buttons()))
+
+
+async def act_produce(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    """"Make another now" / "Try again now" for one slot: the production run for just that slot."""
+    try:
+        date_text, slot = arg.split()
+        day = Day.fromisoformat(date_text)
+    except ValueError as err:
+        raise ValueError(f"bad slot {arg!r}") from err
+    if slot not in planner.SLOTS:
+        raise ValueError(f"unknown slot {slot}")
+    await reply(interaction, f"On it: making a video for {day_label(bot.settings, day)} {slot}.")
+    await bot.produce_one(interaction.channel, day, slot)
+
+
 async def act_unplan(bot: TrendClipBot, interaction: discord.Interaction, item_id: str) -> None:
     item = assistant.unplan(bot.settings, item_id)
     await reply(interaction, f"🗑️ Took **{item.title}** off {day_label(bot.settings, item.date)} "
@@ -1123,7 +1218,7 @@ ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
-    "iggo": act_instagram,
+    "iggo": act_instagram, "veto": act_veto, "prod": act_produce,
 }
 
 
@@ -1569,6 +1664,10 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "by what got views and retention lately (`/insights`), trying something else now and then",
 
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
+        "🏭 Every morning I make a video for each empty slot (tomorrow's, and today's if 3+ h away), plan it and "
+        "post it here; it goes out by itself unless you press **Don't post this**. An hour before a slot that is "
+        "still empty, the emergency video fills it.",
+
         "`/upload` publish on YouTube now (default: the next video planned today) · **Post on Instagram** "
         "button under a video posts it as a Reel",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",

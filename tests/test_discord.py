@@ -1,5 +1,7 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
+
 
 import pytest
 
@@ -14,8 +16,10 @@ DAY = date(2026, 10, 7)
 
 @pytest.fixture
 def settings(tmp_path):
+    # The production run (AUTO_PRODUCE) has its own tests; off here so the reminder tests stay about one thing.
     return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output",
-                    discord_morning_time="10:00", discord_reminder_minutes=30, discord_leaderboard_time="")
+                    discord_morning_time="10:00", discord_reminder_minutes=30, discord_leaderboard_time="",
+                    auto_produce=False)
 
 
 def at(settings, hour, minute=0, day=DAY):
@@ -688,3 +692,111 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
     assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]
+
+
+# --------------------------------------------------------------------------- the production run
+
+
+def test_the_production_run_is_due_once_a_morning_and_knows_which_slots_to_fill(settings):
+    settings = settings.with_overrides(auto_produce=True)
+    at_1015 = at(settings, 10, 15)
+    due = assistant.due_reminders(settings, at_1015, {"2026-10-07 morning"})
+    assert [(r.kind, r.key) for r in due] == [("produce", "2026-10-07 produce")]
+    assert "produce" not in [r.kind for r in assistant.due_reminders(settings, at(settings, 10, 14), {"2026-10-07 morning"})]
+    assert assistant.due_reminders(settings, at_1015, {"2026-10-07 morning", "2026-10-07 produce"}) == []
+    off = settings.with_overrides(auto_produce=False)
+    assert "produce" not in [r.kind for r in assistant.due_reminders(off, at_1015, {"2026-10-07 morning"})]
+
+    tomorrow = DAY + timedelta(days=1)
+    assert assistant.produce_targets(settings, at_1015) == [(DAY, "14:30"), (DAY, "23:00"), (tomorrow, "14:30"),
+                                                             (tomorrow, "23:00")]
+    assert assistant.produce_targets(settings, at(settings, 12)) == [(DAY, "23:00"), (tomorrow, "14:30"), (tomorrow, "23:00")]
+    add_short(settings, "p.mp4")
+    planner.add_item(settings, planner.ItemRequest(date=tomorrow, slot="14:30", short="p.mp4"))
+    assert assistant.produce_targets(settings, at(settings, 21)) == [(tomorrow, "23:00")]
+
+
+def test_the_production_run_fills_the_empty_slots_and_a_veto_frees_one(settings, monkeypatch, clock):
+    import asyncio
+
+    from trendclip import analytics, discord_bot
+
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
+    monkeypatch.setattr(discord_bot, "library_games", lambda s: ["Minecraft", "Roblox"])
+    monkeypatch.setattr(discord_bot, "plan_pick", lambda s, games=None, rng=None: analytics.Pick(
+        mode="story", game=games[0], target_seconds=22, days=60, videos=9))
+    made = []
+
+    def create(s, game, progress, kind, only, target_seconds=None):
+        name = f"prod{len(made)}.mp4"
+        made.append((game, kind, target_seconds))
+        return shorts.get_short(s, add_short(s, name))
+
+    monkeypatch.setattr(assistant, "create_random_short", create)
+    replies = []
+
+    async def fake_reply(interaction, content, **kw):
+        replies.append(content)
+
+    monkeypatch.setattr(discord_bot, "reply", fake_reply)
+
+    class Channel:
+        sent: list = []
+
+        async def send(self, content="", **kw):
+            self.sent.append(content)
+
+    class Bot:
+        render_lock = asyncio.Lock()
+        produce_videos = discord_bot.TrendClipBot.produce_videos
+        produce_one = discord_bot.TrendClipBot.produce_one
+        fail = False
+
+        def __init__(self):
+            self.settings = settings
+
+        async def run_job(self, channel, title, fn, lock, attempts=1, give_up=lambda: False):
+            assert attempts == discord_bot.PRODUCE_ATTEMPTS and give_up() is False
+            if self.fail:
+                raise discord_bot.JobFailed("ffmpeg")
+            return fn(lambda f, m: None)
+
+        async def send_video(self, channel, filename, content, view=None, followup=None):
+            channel.sent.append(content)
+
+    bot, channel = Bot(), Channel()
+    clock[0] = at(settings, 10, 15)
+    asyncio.run(bot.produce_videos(channel))
+    tomorrow = DAY + timedelta(days=1)
+    assert [m[:2] for m in made] == [("Minecraft", "story")] * 4 and made[0][2] == 22
+    assert all(planner.slot_item(settings, d, s) for d in (DAY, tomorrow) for s in planner.SLOTS)
+    assert channel.sent[0].startswith("🏭 **Making the videos for Today") and "Tomorrow (Thu 08 Oct) 23:00**" in channel.sent[0]
+
+    assert "🎲 Picked by the last 60 days' numbers" in channel.sent[1]
+    assert sum("is planned for" in m and "goes out by itself" in m for m in channel.sent) == 4
+
+    asyncio.run(bot.produce_videos(channel))  # nothing left to fill
+    assert channel.sent[-1].startswith("🏭 Every slot of today and tomorrow is planned") and len(made) == 4
+
+    item = planner.slot_item(settings, tomorrow, "14:30")
+    asyncio.run(discord_bot.act_veto(bot, None, item.id))
+    assert planner.slot_item(settings, tomorrow, "14:30") is None and "won't be posted" in replies[-1]
+    assert shorts.get_short(settings, item.short)  # the video itself is kept
+    asyncio.run(discord_bot.act_veto(bot, None, item.id))
+    assert "no longer on the plan" in replies[-1]
+
+    click = SimpleNamespace(channel=channel)
+    asyncio.run(discord_bot.act_produce(bot, click, f"{tomorrow.isoformat()} 14:30"))  # "Make another now"
+    assert planner.slot_item(settings, tomorrow, "14:30").short == "prod4.mp4" and replies[-1].startswith("On it")
+    asyncio.run(discord_bot.act_produce(bot, click, f"{tomorrow.isoformat()} 14:30"))  # taken: nothing made
+    assert len(made) == 5
+    with pytest.raises(ValueError):
+        asyncio.run(discord_bot.act_produce(bot, click, "2026-13-01 14:30"))
+
+
+    planner.delete_item(settings, planner.slot_item(settings, tomorrow, "23:00").id)
+    bot.fail = True
+    asyncio.run(bot.produce_one(channel, tomorrow, "23:00"))
+    assert channel.sent[-1].startswith("🏭 Couldn't make the video for Tomorrow") and "23:00 after 5 attempts" in channel.sent[-1]
+
+    assert planner.slot_item(settings, tomorrow, "23:00") is None  # left to the emergency video / the button
