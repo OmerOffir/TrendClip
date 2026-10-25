@@ -41,6 +41,15 @@ def test_split_beats_uses_spoken_words_and_pads_short_beats():
     assert timed[0].end == video_gen.MIN_BEAT == timed[1].start  # the 0.6 s hook is stretched to a visible beat
 
 
+def test_cover_text_from_gemini_or_the_hook():
+    sc = _script()
+    assert video_gen.cover_text(sc) == "A SHIP SAILED FOR"
+    sc.hook_text = "Five bombers vanished, and nobody knows why."
+    assert video_gen.cover_text(sc) == "FIVE BOMBERS VANISHED"
+    sc.thumbnail_text = "5 planes. no wreckage"
+    assert video_gen.cover_text(sc) == "5 PLANES. NO WRECKAGE"
+
+
 def test_cta_line_joins_the_last_beat():
     beats = video_gen.beats_of(_script(scenes=2), "Follow for more dark stories.")
     assert beats[-1].text.endswith("ship. Follow for more dark stories.") and beats[0].text == _script().hook_text
@@ -171,6 +180,8 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
     ass = (tmp_path / "out" / "story_1.ass").read_text()
     assert ",EndCard," in ass and "Follow for more\\Ndark stories" in ass and ",Title," in ass and "BEAT 3" in ass
+    assert "0:00:00.00,0:00:01.00,Cover,,0,0,0,,{\\pos(540,902)\\fad(0,160)}A SHIP\\NSAILED FOR" in ass
+    assert "{\\fad(0,300)}THE SHIP" in ass and info["cover_text"] == "A SHIP SAILED FOR"
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
     assert any("Drawing picture 4 of 4" in m for m in messages) and messages[-1] == "Done"
     assert video_gen.existing_video_ids(tmp_path / "out") == [1]

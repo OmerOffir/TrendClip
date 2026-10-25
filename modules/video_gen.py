@@ -11,7 +11,9 @@ The beats are the hook and every scene. Flow:
                 story gets the article's real photos for scene 1 and the middle scene, with credits;
   4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
                 pull-out on each (alternating), 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
-  5. assembly   trendclip.video_assembler: karaoke captions (3 words, amber highlight), the scene's
+  5. assembly   trendclip.video_assembler: frame 0 is the thumbnail (YouTube takes it for a video uploaded
+                through the API), so the title card is at full size there with the thumbnail headline
+                (Gemini's thumbnail_text, DA_COVER) over the middle for a second; karaoke captions (3 words, amber highlight), the scene's
                 overlay text flashing in above them, the title card for 3 s, the spoken "Follow for more dark
                 stories." with the red SUBSCRIBE button and the "Follow for more" banner over the last
                 seconds, dramatic music from music/dramatic under the voice.
@@ -106,6 +108,17 @@ def channel_handle() -> str:
 def default_end_card() -> str:
     h = channel_handle()
     return f"{h} · Follow for more" if h else DEFAULT_END_CARD
+
+
+def cover_text(script: script_gen.Script, max_words: int = 4) -> str:
+    """The headline on frame 0: Gemini's thumbnail_text, or the hook's first clause (scripts from before)."""
+    if script.thumbnail_text.strip():
+        return script.thumbnail_text.strip().upper()
+    clause = re.split(r"[,.;:!?]", script.hook_text.strip(), maxsplit=1)[0]
+    words = clause.split()
+    if len(words) > max_words:
+        words = words[:max_words]
+    return " ".join(words).upper()
 
 
 def off(value: str) -> bool:
@@ -351,6 +364,8 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     end_card = setting("DA_END_CARD", default_end_card())  # "·" breaks the line; "none" for no card
     end_card = "" if off(end_card) else end_card
     overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
+    cover = setting("DA_COVER", "auto")  # the headline on frame 0 (the thumbnail): auto, your words, or none
+    cover = "" if off(cover) else cover_text(script) if cover.lower() == "auto" else cover.upper()
     progress(0.75, "Rendering the Short")
     output = assemble_video(
         background, work / "voice.mp3", words, video_path(story_id, out_dir), fit="crop",
@@ -360,6 +375,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
         title_card=title_card, title_chars=16, title_size=104, flashes=flashes, flash_scale=1.0,
         end_card=end_card, overlays=overlays,
+        title_pop=False, cover_text=cover, cover_seconds=1.0,  # frame 0 is the thumbnail: everything at full strength
         preset=setting("DA_X264_PRESET", "fast"),
     )
 
@@ -371,7 +387,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         "voice": voice, "rate": rate, "pictures": backend_used,
         "photos": [p.credit for p in pictures if p.source == "wikipedia"],
         "music": {"title": track.title, "credit": track.credit} if track else None,
-        "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used,
+        "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used, "cover_text": cover,
         "beats": [{**asdict(b), "picture": pictures[i].path.name, "picture_source": pictures[i].source}
                   for i, b in enumerate(beats)],
         "words": len(words), "seconds_to_make": round(time.time() - started),

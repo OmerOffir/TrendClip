@@ -276,7 +276,8 @@ def _draft(n_words=125, usable=True):
     per = max(1, (n_words - 5) // 8)
     scenes = [sg.SceneDraft(narration=say(per), visual_keywords=["dark forest", "old car"],
                             image_prompt="Cinematic dark photo", overlay_text="no trace") for _ in range(8)]
-    return sg.ScriptDraft(usable=usable, title="The Vanishing", hook_text=say(n_words - per * 8), scenes=scenes)
+    return sg.ScriptDraft(usable=usable, title="The Vanishing", hook_text=say(n_words - per * 8), scenes=scenes,
+                          thumbnail_text="no  trace left")
 
 
 def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
@@ -296,11 +297,11 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     assert result["status"] == "SCRIPT_READY" and repository.get_story(1, db)["status"] == "SCRIPT_READY"
     assert "150 words" in prompts[1] and "Cut words" in prompts[1]
     data = json.loads((tmp_path / "scripts" / "story_1.json").read_text())
-    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes"]
+    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text"]
     assert data["story_id"] == 1 and data["total_word_count"] == 125 and data["estimated_duration_seconds"] == 45
     assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 9))
     assert list(data["scenes"][0]) == ["scene_id", "narration", "visual_keywords", "image_prompt", "overlay_text"]
-    assert data["scenes"][0]["overlay_text"] == "NO TRACE"
+    assert data["scenes"][0]["overlay_text"] == "NO TRACE" and data["thumbnail_text"] == "NO TRACE LEFT"
     assert repository.get_next_story(db) is None  # no NEW stories left
 
 
@@ -338,4 +339,4 @@ def test_script_rules_long_sentences_and_prompt():
     prompt = sg.build_prompt({"source_name": "reddit/ColdCases", "title": "T", "raw_text": "x", "pillar": "history"},
                              today=dt.date(2026, 10, 24))
     assert "today is 2026-10-24" in prompt and "Creepy history & obscure anomalies" in prompt
-    assert "never more than 12" in prompt and "creepypasta" in prompt and "ongoing" in prompt
+    assert "never more than 12" in prompt and "creepypasta" in prompt and "ongoing" in prompt and "thumbnail_text" in prompt

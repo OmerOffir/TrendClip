@@ -48,6 +48,7 @@ class ScriptDraft(BaseModel):
     reject_reason: str = Field("", description="Why it is unusable (empty when usable).")
     title: str = ""
     hook_text: str = ""
+    thumbnail_text: str = Field("", description="2-4 words in CAPITALS for the first frame, the thumbnail.")
     scenes: list[SceneDraft] = Field(default_factory=list)
 
 
@@ -66,6 +67,7 @@ class Script(BaseModel):
     estimated_duration_seconds: int
     total_word_count: int
     scenes: list[Scene]
+    thumbnail_text: str = ""  # the headline on frame 0 (scripts from before it existed: made from the hook)
 
 
 class ScriptGenError(RuntimeError):
@@ -108,6 +110,10 @@ EACH SCENE ALSO HAS:
 - overlay_text: 2-5 words in CAPITALS that sum up the beat ("NO WRECKAGE FOUND", "MARCH 3, 1994").
 
 title: a curiosity-gap YouTube title, at most 60 characters, no clickbait lies.
+
+thumbnail_text: 2-4 words in CAPITALS over the first frame, which is the thumbnail people see before
+they press play: the single strongest curiosity gap of the story, concrete, no spoiler ("5 PLANES.
+NO WRECKAGE", "SHE WAS EMBALMED ALIVE?"). Not the title again.
 
 Set usable=false (with reject_reason, nothing else) if the SOURCE is any of these (today is {today}):
 - not a real dark story you can tell: an announcement, a podcast or show promo, a request for help, a
@@ -174,6 +180,7 @@ def finalize(story_id: int, draft: ScriptDraft) -> Script:
         story_id=story_id,
         title=draft.title.strip()[:100],
         hook_text=draft.hook_text.strip(),
+        thumbnail_text=" ".join(draft.thumbnail_text.split()).upper()[:40],
         estimated_duration_seconds=round(n / WORDS_PER_SECOND),
         total_word_count=n,
         scenes=[Scene(scene_id=i, narration=s.narration.strip(),
@@ -245,7 +252,7 @@ def write_script(story: dict, client=None) -> tuple[Script | None, str]:
         ])) or "Fix those problems."
         draft = _ask(client, model, prompt + "\n\n" + FIX_PROMPT.format(
             problems="; ".join(problems), direction=direction,
-            draft=draft.model_dump_json(include={"title", "hook_text", "scenes"})))
+            draft=draft.model_dump_json(include={"title", "hook_text", "thumbnail_text", "scenes"})))
     raise ScriptGenError(f"Gemini missed the rules {ATTEMPTS} times ({'; '.join(problems)})")
 
 
@@ -296,7 +303,7 @@ def main() -> None:
         return
     s = result["script"]
     print(f"{s.total_word_count} words · ~{s.estimated_duration_seconds}s · {len(s.scenes)} scenes -> {result['path']}")
-    print(f"TITLE: {s.title}\nHOOK:  {s.hook_text}")
+    print(f"TITLE: {s.title}\nHOOK:  {s.hook_text}\nCOVER: {s.thumbnail_text or '(from the hook)'}")
     for scene in s.scenes:
         print(f"  {scene.scene_id}. [{scene.overlay_text}] {scene.narration}  {scene.visual_keywords}")
 

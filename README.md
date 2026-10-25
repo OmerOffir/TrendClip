@@ -869,7 +869,11 @@ missed by more than two hours (bot off) is skipped. A video already on YouTube c
 3. **Motion**: ffmpeg moves over every picture (a slow push-in or pull-out, alternating, with a slight
    drift) and dissolves 0.6 s between beats; each still was graded first (less saturation, a cold tint,
    vignette). Moving grain is `DA_GRAIN=1` (it makes the file about ten times bigger).
-4. **Assembly**: the karaoke assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
+4. **Assembly**: frame 0 is the thumbnail (YouTube takes it for a video uploaded through the API), so the
+   title card is at full size there and a big headline sits over the middle for the first second:
+   Gemini's `thumbnail_text` (2-4 words, the strongest curiosity gap), or the hook's first words for
+   scripts written before it existed (`DA_COVER`: `auto`, your own words, or `none`). Then the karaoke
+   assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
    scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), the "Follow for more"
    banner over the last 3.5 s (`DA_END_CARD`, `·` breaks the line, `none` = off), the spoken closing line
    (`DA_CTA_LINE`, default "Follow for more dark stories.") with the red SUBSCRIBE button from that line to

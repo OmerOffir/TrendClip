@@ -277,11 +277,13 @@ PULSE_MS = 250
 
 
 def title_card_event(text: str, seconds: float = 3.0, uppercase: bool = True, max_chars: int = 14,
-                     pulse: bool = False) -> str:
+                     pulse: bool = False, pop: bool = True) -> str:
     """Top banner for the first seconds: pops in, fades out. `pulse`: the box flashes yellow / white
-    and the text throbs every 250 ms (quiz hooks)."""
+    and the text throbs every 250 ms (quiz hooks). `pop=False`: full size from the first frame (the
+    first frame is the thumbnail of a video uploaded through the API)."""
     lines = [_ass_text(line, uppercase) for line in wrap_title(text, max_chars=max_chars)]
-    anim = r"\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)"
+    anim = (r"\fad(80,300)\fscx55\fscy55\t(0,140,\fscx110\fscy110)\t(140,240,\fscx100\fscy100)" if pop
+            else r"\fad(0,300)")
     if pulse:
         anim += r"\3c" + HIGHLIGHT_COLORS["yellow"]
         for k, t in enumerate(range(PULSE_MS, int(seconds * 1000) - 300, PULSE_MS)):
@@ -296,6 +298,13 @@ def end_card_event(text: str, start: float, end: float) -> str:
     lines = [_ass_text(line, False) for line in wrapped[:4]]
     anim = r"{\fad(120,0)\fscx60\fscy60\t(0,160,\fscx108\fscy108)\t(160,260,\fscx100\fscy100)}"
     return f"Dialogue: 1,{_ass_time(start)},{_ass_time(end)},EndCard,,0,0,0,,{anim}" + r"\N".join(lines)
+
+
+def cover_event(text: str, seconds: float, max_chars: int = 12, max_lines: int = 3) -> str:
+    """The thumbnail headline: big words in the middle of the screen, full strength on frame 0, gone
+    after `seconds` (the first frame is what YouTube shows for a video uploaded through the API)."""
+    lines = [_ass_text(line, True) for line in wrap_title(text, max_chars=max_chars, max_lines=max_lines)]
+    return f"Dialogue: 3,{_ass_time(0)},{_ass_time(seconds)},Cover,,0,0,0,,{{\\fad(0,160)}}" + r"\N".join(lines)
 
 
 def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None, color: str = "") -> str:
@@ -334,6 +343,11 @@ def create_karaoke_ass_file(
     flash_y: float | None = None,
     title_pulse: bool = False,
     flash_scale: float = 2.4,  # the Flash style's size as a multiple of the captions (1.0: a line of on-screen text)
+    title_pop: bool = True,  # False: the title card is at full size on frame 0
+    cover_text: str = "",  # a headline over the middle of frame 0 (the thumbnail), gone after cover_seconds
+    cover_seconds: float = 1.0,
+    cover_size: int = 150,
+    cover_y: float = 0.47,  # its centre, as a share of the height
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -359,11 +373,15 @@ Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,1
 Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,{top_margin},1
 Style: EndCard,{font},{round(title_size * 96 / 132)},{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,{top_margin},1
 Style: Flash,{font},{round(font_size * flash_scale)},{hl},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,4,0,1,{round(outline * 1.8)},{shadow + 4},5,40,40,0,1
+Style: Cover,{font},{cover_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,3,0,1,{round(outline * 1.6)},{shadow + 4},5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
-    events = [title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse)] if title_card.strip() else []
+    events = [title_card_event(title_card, title_seconds, uppercase, title_chars, title_pulse, title_pop)] if title_card.strip() else []
+    if cover_text.strip():
+        pos = (size[0] // 2, round(size[1] * cover_y))
+        events.append(cover_event(cover_text, cover_seconds).replace("{\\fad(0,160)}", f"{{\\pos({pos[0]},{pos[1]})\\fad(0,160)}}"))
     if end_card.strip() and words:
         last = words[-1].end
         # A quiz's end card waits for its last flash (the closing line), so it never covers the countdown.
