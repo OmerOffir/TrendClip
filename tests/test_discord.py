@@ -211,13 +211,21 @@ def test_the_emergency_video_is_made_and_planned_in_the_empty_slot(settings, mon
 
     from trendclip import discord_bot
 
+    from trendclip import analytics
+
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
-    monkeypatch.setattr(discord_bot.random, "choice", lambda seq: "math" if "math" in seq else seq[-1])
+    asked = []
+
+    def plan(s, games=None, rng=None):  # the numbers-based choice, restricted to the emergency games
+        asked.append(games)
+        return analytics.Pick(mode="math", game="Minecraft", days=60, videos=9)
+
+    monkeypatch.setattr(discord_bot, "plan_pick", plan)
     kinds = []
 
-    def create(s, game, progress, kind, only):
+    def create(s, game, progress, kind, only, target_seconds=None):
         kinds.append((game, kind))
-        assert only == ("GTA V / Online", "Minecraft")
+        assert only == ("GTA V / Online", "Minecraft") and target_seconds is None
         return shorts.get_short(s, add_short(s, "e.mp4"))
 
     monkeypatch.setattr(assistant, "create_random_short", create)
@@ -226,7 +234,9 @@ def test_the_emergency_video_is_made_and_planned_in_the_empty_slot(settings, mon
     clock[0] = at(settings, 13, 30, day=DAY)
     asyncio.run(bot.emergency_video(channel, DAY, "14:30"))
     assert kinds == [("Minecraft", "math")] and made == ["Emergency math challenge for 14:30"]
-    assert "with Minecraft gameplay" in channel.sent[0]
+    assert asked == [["GTA V / Online", "Minecraft"]]
+    assert "with Minecraft gameplay" in channel.sent[0] and "🎲 Picked by the last 60 days' numbers" in channel.sent[0]
+
     assert planner.slot_item(settings, DAY, "14:30").short == "e.mp4"
     assert "goes out by itself at 14:30" in channel.sent[-1] and posted == []
     assert not bot.emergency
@@ -464,7 +474,8 @@ def test_buttons_carry_their_action_and_skip_too_long_ids():
     assert set(discord_bot.ACTIONS) >= {"show", "up", "upgo", "pl", "pt", "rm", "mk"}
 
 
-def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
+def test_create_asks_story_math_or_riddle_with_buttons(settings, monkeypatch):
+
     import asyncio
 
     from trendclip import discord_bot
@@ -475,23 +486,45 @@ def test_create_asks_story_math_or_riddle_with_buttons(monkeypatch):
     assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
         "tc:mk:pick", "tc:mk:math", "tc:mk:trivia", "tc:mk:riddle", "tc:mk:movie", "tc:mk:paradox", "tc:mk:story"]
     import random
-    picks = [discord_bot.pick_kind(random.Random(i)) for i in range(400)]
-    assert "story" not in picks and max(set(picks), key=picks.count) == "math"
+
+    from trendclip import analytics
+
+    # Without AUTO_PICK: the fixed weights, a quiz kind, math most often.
+    fixed = settings.with_overrides(auto_pick=False)
+    picks = [discord_bot.plan_pick(fixed, ["GTA V"], random.Random(i)) for i in range(400)]
+    assert "story" not in {p.mode for p in picks} and max({p.mode for p in picks}, key=[p.mode for p in picks].count) == "math"
+    assert all(p.game == "GTA V" for p in picks)
+    # With AUTO_PICK: the numbers decide; a broken analytics file falls back to the fixed weights.
+    monkeypatch.setattr(analytics, "plan_video", lambda s, games=None, rng=None: analytics.Pick(mode="story", game=(games or [None])[0]))
+    assert discord_bot.plan_pick(settings, ["Minecraft"]).model_dump(include={"mode", "game"}) == {"mode": "story", "game": "Minecraft"}
+
+    def broken(s, games=None, rng=None):
+        raise OSError("db locked")
+    monkeypatch.setattr(analytics, "plan_video", broken)
+    assert discord_bot.plan_pick(settings, ["Minecraft"], random.Random(1)).mode in discord_bot.PICK_WEIGHTS
 
     made, asked = [], []
 
     class Bot:
-        async def create_random(self, interaction, game, kind):
-            made.append((game, kind))
+        settings = fixed
+
+        async def create_random(self, interaction, game, kind, pick=None):
+            made.append((game, kind, pick is not None))
 
     async def fake_ask(interaction, game):
         asked.append(game)
 
     monkeypatch.setattr(discord_bot, "ask_kind", fake_ask)
+    monkeypatch.setattr(discord_bot, "library_games", lambda s: ["Minecraft"])
     asyncio.run(discord_bot.act_make(Bot(), None, "math:GTA V"))
     asyncio.run(discord_bot.act_make(Bot(), None, "riddle"))
     asyncio.run(discord_bot.act_make(Bot(), None, "-"))  # old "Create a random video" button
-    assert made == [("GTA V", "math"), (None, "riddle")] and asked == [None]
+    asyncio.run(discord_bot.act_make(Bot(), None, "pick:GTA V"))  # the game stays; the kind is drawn
+    asyncio.run(discord_bot.act_make(Bot(), None, "pick"))  # kind and game drawn (from the library's games)
+    assert made[:2] == [("GTA V", "math", False), (None, "riddle", False)] and asked == [None]
+    assert made[2][0] == "GTA V" and made[2][1] in discord_bot.PICK_WEIGHTS and made[2][2]
+    assert made[3] == ("Minecraft", made[3][1], True) and made[3][1] in discord_bot.PICK_WEIGHTS
+
 
 
 def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings):

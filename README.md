@@ -639,6 +639,16 @@ The channel only grows from what the numbers say, so every published video is tr
   retention, and the **hooks that pulled the most views** with their style, to reuse. Videos younger
   than 2 days are listed but not ranked. The morning summary posts the best kind, game and hook style of
   the last 30 days; `/insights` posts the whole report.
+- **The bot learns from it** (`AUTO_PICK=true`): 🎲 **Pick for me** and the emergency videos choose the
+  kind of video, the game and (stories) the length by these numbers instead of fixed weights. Each
+  choice's chance is its median views against the channel median, moved up to ±30% by its retention and
+  shrunk toward average by 3 pseudo-videos, so one lucky video doesn't take over; no choice drops below
+  15% of an average one. `AUTO_PICK_EXPLORE` (default 0.2) of the time a dimension is drawn at random,
+  so untried kinds and games get their turn; `AUTO_PICK_DAYS` (default 60) is the window. The bot says
+  what it picked and why ("Math challenge (1.6× the channel median over 9 videos, 93% watched) on
+  Minecraft (trying it out)"), and the Insights tab shows the current chances under **What the bot
+  picks next**.
+
 
 ### Channel report
 

@@ -13,6 +13,8 @@
     stats: $("inStats"),
     dimensions: $("inDimensions"),
     hooks: $("inHooks"),
+    picker: $("inPicker"),
+    pickerHint: $("inPickerHint"),
     rows: $("inRows"),
     madeHere: $("inMadeHere"),
   };
@@ -129,8 +131,41 @@
     }).join("");
   }
 
+  function renderPicker(p) {
+    const DIM = { mode: "Kind of video", game: "Game", length_bucket: "Story length" };
+    const LABEL = { story: "Story", math: "Math challenge", riddle: "Riddle", trivia: "Trivia trap", paradox: "Paradox trap", movie: "Movie quiz" };
+    els.pickerHint.textContent = p.enabled
+      ? `Chances from the last ${p.days} days (${p.videos} ranked videos); ${Math.round(p.explore * 100)}% of picks are random so untried ideas still get a turn.`
+      : "AUTO_PICK is off: the bot uses its fixed weights (math most often). Set AUTO_PICK=true to use these chances.";
+    els.picker.innerHTML = Object.entries(DIM).map(([key, title]) => {
+      const rows = p[key] || [];
+      const total = rows.reduce((a, w) => a + w.weight, 0) || 1;
+      return `<section class="card">
+        <div class="card-head"><div><h2>${esc(title)}</h2></div></div>
+        <div class="in-groups">${rows.map((w) => `
+          <div class="in-group">
+            <div class="in-group-name"><span>${esc(LABEL[w.key] || w.key)}</span><small>${w.n ? `${w.n} video${w.n === 1 ? "" : "s"}` : "no numbers yet"}</small></div>
+            <div class="metric"><b>${Math.round((w.weight / total) * 100)}%</b><span>chance</span></div>
+            <div class="share-bar"><i style="width:${Math.max(3, (w.weight / total) * 100)}%"></i></div>
+            <div class="in-group-meta">${vs(w.vs_channel)}${w.avg_view_pct !== null && w.avg_view_pct !== undefined ? `<span>${pct(w.avg_view_pct)} watched</span>` : ""}</div>
+          </div>`).join("")}</div>
+      </section>`;
+    }).join("");
+  }
+
+  async function loadPicker() {
+    try {
+      const { body } = await api("/api/insights/picker");
+      renderPicker(body);
+    } catch (err) {
+      els.picker.innerHTML = `<div class="in-empty">${esc(err.message || String(err))}</div>`;
+    }
+  }
+
   function render(r) {
     state.report = r;
+    loadPicker();
+
     renderNotes(r);
     renderStats(r);
     renderDimensions(r);

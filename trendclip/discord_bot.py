@@ -425,8 +425,9 @@ class TrendClipBot(discord.Client):
         return key
 
     async def create_random(self, interaction: discord.Interaction, game: str | None, kind: str = "story",
-                            text: str | None = None) -> None:
-        """A random video, or (`text`) one with your own words as the voiceover."""
+                            text: str | None = None, pick: analytics.Pick | None = None) -> None:
+        """A random video, or (`text`) one with your own words as the voiceover. `pick`: the numbers-based
+        choice behind `kind` / `game` ("🎲 Pick for me"), explained in the channel."""
         if script_writer.gemini_api_key(self.settings) is None:
             return await reply(interaction, "Add GEMINI_API_KEY to .env first (it writes the story).", ephemeral=True)
         noun = NOUNS.get(kind, "story" if text else "video")
@@ -434,12 +435,14 @@ class TrendClipBot(discord.Client):
             what = f"your {noun}" + (f" on {game} gameplay" if game else "")
         else:
             what = f"a random {game} {noun}" if game else f"a random {noun}"
-        await reply(interaction, f"On it: creating {what}. This takes a few minutes; I'll post it here.")
+        note = f"\n{analytics.describe_pick(pick)}" if pick else ""
+        await reply(interaction, f"On it: creating {what}. This takes a few minutes; I'll post it here.{note}")
+        seconds = pick.target_seconds if pick else None
 
         def job(p: assistant.ProgressFn) -> shorts.ShortVideo:
             if text:
                 return assistant.create_from_text(self.settings, text, game, p, kind)
-            return assistant.create_random_short(self.settings, game, p, kind)
+            return assistant.create_random_short(self.settings, game, p, kind, target_seconds=seconds)
 
         short = await self.run_job(interaction.channel, f"Creating {what}", job, self.render_lock,
                                    attempts=CREATE_ATTEMPTS)
@@ -868,18 +871,19 @@ class TrendClipBot(discord.Client):
         if script_writer.gemini_api_key(settings) is None:
             await channel.send(f"🚨 Nothing is planned for {slot}, and I can't make a video without GEMINI_API_KEY.")
             return
-        kind = random.choice(list(KINDS))
-        game = random.choice(EMERGENCY_GAMES)
+        pick = await asyncio.to_thread(plan_pick, settings, list(EMERGENCY_GAMES))
+        kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
         noun = NOUNS.get(kind, "story")
         busy = f"{day.isoformat()} {slot}"
         self.emergency.add(busy)
         try:
             await channel.send(f"🚨 **Emergency:** nothing is planned for {slot}. Making a random {noun} "
-                               f"with {game} gameplay for it now.")
+                               f"with {game} gameplay for it now.\n{analytics.describe_pick(pick)}")
             try:
                 short = await self.run_job(channel, f"Emergency {noun} for {slot}",
                                            lambda p: assistant.create_random_short(settings, game, p, kind,
-                                                                                   EMERGENCY_GAMES),
+                                                                                   EMERGENCY_GAMES,
+                                                                                   target_seconds=pick.target_seconds),
                                            self.render_lock, attempts=EMERGENCY_ATTEMPTS,
                                            give_up=lambda: planner.slot_item(settings, day, slot) is not None)
             except JobFailed:
@@ -1023,13 +1027,30 @@ KINDS = {"math": ("🧮 Math challenge 🔥", discord.ButtonStyle.success),
          "movie": ("🎬 Movie quiz", discord.ButtonStyle.primary),
          "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary),
          "story": ("📖 Story", discord.ButtonStyle.secondary)}
-# "🎲 Pick for me": a quiz kind, math most often.
+# "🎲 Pick for me" and the emergency video without AUTO_PICK: a quiz kind, math most often.
 PICK_WEIGHTS = {"math": 4, "trivia": 2, "riddle": 2, "movie": 2, "paradox": 1}
 
 
-def pick_kind(rng: random.Random | None = None) -> str:
+def plan_pick(settings: Settings, games: list[str] | None = None, rng: random.Random | None = None) -> analytics.Pick:
+    """What "🎲 Pick for me" and the emergency video make: drawn by the channel's own numbers (AUTO_PICK,
+    analytics.plan_video), else by the fixed weights above. `games`: the gameplay to choose from."""
+    if settings.auto_pick:
+        try:
+            return analytics.plan_video(settings, games=games, rng=rng)
+        except Exception as err:  # noqa: BLE001 - a broken analytics file must not stop the video
+            logger.warning("Numbers-based pick failed (%s); using the fixed weights", err)
     rng = rng or random.Random()
-    return rng.choices(list(PICK_WEIGHTS), weights=list(PICK_WEIGHTS.values()))[0]
+    kind = rng.choices(list(PICK_WEIGHTS), weights=list(PICK_WEIGHTS.values()))[0]
+    return analytics.Pick(mode=kind, game=rng.choice(games) if games else None)
+
+
+def library_games(settings: Settings) -> list[str]:
+    """The games the No-Copyright channels have gameplay of (empty when the library can't be read)."""
+    try:
+        return [name for name, n in video_downloader.get_library(settings).counts().items() if n]
+    except Exception as err:  # noqa: BLE001 - no library: the game is picked while downloading
+        logger.warning("Game library unavailable (%s)", err)
+        return []
 
 
 def kind_buttons(game: str | None = None) -> list[ActionButton | None]:
@@ -1050,11 +1071,15 @@ async def ask_kind(interaction: discord.Interaction, game: str | None) -> None:
 
 async def act_make(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
     kind, _, game = arg.partition(":")
+    game = game.strip() or None
+    pick = None
     if kind == "pick":
-        kind = pick_kind()
+        games = None if game else await asyncio.to_thread(library_games, bot.settings)
+        pick = await asyncio.to_thread(plan_pick, bot.settings, games)
+        kind, game = pick.mode, game or pick.game
     if kind not in KINDS:  # the old "Create a random video" buttons
         return await ask_kind(interaction, None)
-    await bot.create_random(interaction, game.strip() or None, kind)
+    await bot.create_random(interaction, game, kind, pick=pick)
 
 
 class OwnTextModal(discord.ui.Modal, title="Your own text"):
@@ -1540,7 +1565,9 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/today` today's 14:30 and 23:00 videos, plus copy-ready YouTube / TikTok / Instagram captions",
         "`/slot time:14:30` send me the video for a slot (`day:` for another day)",
         "`/create` make a video: I ask story, math challenge, riddle, trivia trap, paradox trap or movie quiz (`game:` picks the gameplay, "
-        "`text:` or ✍️ uses your own words)",
+        "`text:` or ✍️ uses your own words); 🎲 **Pick for me** and the emergency videos choose the kind, game and length "
+        "by what got views and retention lately (`/insights`), trying something else now and then",
+
         "`/plan show` · `/plan add` · `/plan remove` · `/plan move` the upload plan",
         "`/upload` publish on YouTube now (default: the next video planned today) · **Post on Instagram** "
         "button under a video posts it as a Reel",

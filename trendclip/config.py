@@ -53,6 +53,9 @@ _ENV_MAP: dict[str, str] = {
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
     "auto_post": "AUTO_POST",
     "emergency_video": "EMERGENCY_VIDEO",
+    "auto_pick": "AUTO_PICK",
+    "auto_pick_explore": "AUTO_PICK_EXPLORE",
+    "auto_pick_days": "AUTO_PICK_DAYS",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
@@ -138,6 +141,12 @@ class Settings(BaseModel):
     auto_post: bool = True
     # An hour before 14:30 / 23:00 with nothing planned, the bot makes a random video and plans it there.
     emergency_video: bool = True
+    # "Pick for me" and the emergency video choose the kind, game and length by the channel's own numbers
+    # (analytics.plan_video): the last AUTO_PICK_DAYS days, drawing at random AUTO_PICK_EXPLORE of the time.
+    auto_pick: bool = True
+    auto_pick_explore: float = Field(0.2, ge=0, le=1)
+    auto_pick_days: int = Field(60, ge=7, le=365)
+
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
     # Reply on YouTube to every fan's comment (they get a notification); see leaderboard.py.

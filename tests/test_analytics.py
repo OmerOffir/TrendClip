@@ -1,5 +1,7 @@
+import random
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+
 
 import pytest
 from fastapi.testclient import TestClient
@@ -337,3 +339,74 @@ def test_insights_endpoints(tmp_path, monkeypatch):
         raise analytics.AnalyticsError("YouTube is not connected")
     monkeypatch.setattr(analytics, "collect", boom)
     assert client.post("/api/insights/refresh").status_code == 400
+
+
+# --------------------------------------------------------------------------- what to make next
+
+
+def test_pick_weights_follow_views_and_retention_but_stay_humble(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    report = analytics.build_report(s, days=90, at=NOW)
+    w = {x.key: x for x in analytics.weights_for(report, "mode", list(analytics.PICK_KINDS))}
+    # math: 1.4× the median, 80% watched (×1.067), over 3 videos, shrunk with 3 average pseudo-videos
+    assert w["math"].weight == pytest.approx((3 * 1.4 * 80 / 75 + 3) / 6, abs=0.01) and w["math"].n == 3
+    # story: 0.18× and 45% watched (floored at ×0.7) over 2 videos: well below average, but not out
+    assert 0.5 < w["story"].weight < 0.7 and w["story"].vs_channel == 0.18
+    assert w["riddle"].weight == 1.0 and w["riddle"].n == 0  # no numbers: average
+    assert w["math"].weight > w["riddle"].weight > w["story"].weight
+    # A group that is far below average still keeps the floor.
+    bad = analytics.Report(generated_at=NOW, days=30, dimensions=[analytics.Dimension(key="mode", label="x", groups=[
+        analytics.GroupStat(key="movie", label="Movie", n=40, median_views=1, mean_views=1, views_per_day=0,
+                            vs_channel=0.01, avg_view_pct=20, likes_per_k=None, comments_per_k=None, total_views=40)])])
+    assert analytics.weights_for(bad, "mode", ["movie"])[0].weight == analytics.PICK_FLOOR
+
+
+def test_plan_video_prefers_the_winners_and_explores(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    report = analytics.build_report(s, days=90, at=NOW)
+    greedy = s.with_overrides(auto_pick_explore=0.0)
+    picks = [analytics.plan_video(greedy, games=["Minecraft", "GTA V / Online", "Roblox"], rng=random.Random(i),
+                                  report=report) for i in range(400)]
+    modes = {m: sum(p.mode == m for p in picks) for m in analytics.PICK_KINDS}
+    assert modes["math"] > modes["riddle"] > modes["story"] and modes["math"] > 70  # ~21% / 17% / 11% of 400
+
+    assert not any(p.explored for p in picks)
+    story = next(p for p in picks if p.mode == "story")
+    assert story.target_seconds in analytics.STORY_LENGTHS.values() and "length_bucket" in story.weights
+    assert all(p.target_seconds is None for p in picks if p.mode != "story")
+    assert {p.game for p in picks} <= {"Minecraft", "GTA V / Online", "Roblox"} and all(p.game for p in picks)
+    assert picks[0].days == 90 and picks[0].videos == 5
+
+    curious = s.with_overrides(auto_pick_explore=1.0)
+    explored = [analytics.plan_video(curious, games=["Minecraft"], rng=random.Random(i), report=report) for i in range(200)]
+    assert {p.mode for p in explored} == set(analytics.PICK_KINDS)  # every kind gets its turn
+    assert all("mode" in p.explored for p in explored)
+    assert all(p.game == "Minecraft" and "game" not in p.explored for p in explored)  # one game: nothing to explore
+
+    text = analytics.describe_pick(next(p for p in picks if p.mode == "math" and p.game == "Minecraft"))
+    assert text.startswith("🎲 Picked by the last 90 days' numbers (5 videos): **Math challenge** (1.4× the channel median over 3 videos, 80% watched)")
+    assert "on **Minecraft** (1.4× the channel median over 3 videos" in text
+    assert "trying it out" in analytics.describe_pick(explored[0])
+
+
+def test_plan_video_without_numbers_is_uniform(tmp_path):
+    s = make_settings(tmp_path)
+    pick = analytics.plan_video(s, games=["Minecraft"], rng=random.Random(1))
+    assert pick.videos == 0 and all(w.weight == 1.0 for w in pick.weights["mode"])
+    assert analytics.describe_pick(pick).startswith("🎲 Picked at random (no numbers yet): ")
+    assert "(no numbers yet)" in analytics.describe_pick(pick)
+    no_game = analytics.plan_video(s, rng=random.Random(1))
+    assert no_game.game is None and "game" not in no_game.weights
+
+
+def test_picker_endpoint(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    monkeypatch.setattr(web, "_base_settings", lambda: s)
+    body = TestClient(web.app).get("/api/insights/picker").json()
+    assert body["enabled"] is True and body["explore"] == 0.2 and body["days"] == 60
+    assert [w["key"] for w in body["mode"]] == list(analytics.PICK_KINDS)
+    assert {w["key"] for w in body["game"]} >= {"Minecraft", "GTA V / Online"}
+    assert [w["key"] for w in body["length_bucket"]] == list(analytics.STORY_LENGTHS)

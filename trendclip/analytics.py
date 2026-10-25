@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import random
 import re
 import sqlite3
 import statistics
@@ -694,7 +695,123 @@ def build_report(settings: Settings, days: int = 90, min_age_days: int = MIN_AGE
     return report
 
 
+# --------------------------------------------------------------------------- what to make next
+
+PICK_PRIOR = 3.0  # pseudo-videos of average performance mixed into every group, so small samples stay humble
+PICK_FLOOR = 0.15  # no choice ever drops below this share of an average one: it can still come back
+PICK_KINDS = ("story", "math", "riddle", "trivia", "paradox", "movie")
+STORY_LENGTHS = {"≤15 s": 15, "16-22 s": 22, "23-30 s": 30, "31-45 s": 45}  # the lengths a random story may get
+
+
+class Weight(BaseModel):
+    key: str
+    weight: float
+    n: int = 0
+    vs_channel: float | None = None
+    avg_view_pct: float | None = None
+
+
+class Pick(BaseModel):
+    """What the bot makes next: the kind of video, the game and (stories) the length, drawn by the channel's
+    own numbers (AUTO_PICK): a group's chance is its median views against the channel median, lifted or
+    lowered by its retention, shrunk toward average by PICK_PRIOR pseudo-videos; with probability
+    AUTO_PICK_EXPLORE a dimension is drawn uniformly instead, so untried kinds and games get their chance."""
+
+    mode: str
+    game: str | None = None
+    target_seconds: int | None = None  # stories only
+    explored: list[str] = Field(default_factory=list)  # dimensions drawn at random this time
+    weights: dict[str, list[Weight]] = Field(default_factory=dict)
+    days: int = 0
+    videos: int = 0  # ranked videos the weights come from
+
+
+def _score(group: GroupStat | None) -> tuple[float, int]:
+    """(performance against the channel's median, videos behind it). Retention moves it by up to ±30%."""
+    if group is None or group.vs_channel is None:
+        return 1.0, 0
+    score = group.vs_channel
+    if group.avg_view_pct is not None:
+        score *= min(max(group.avg_view_pct / 75.0, 0.7), 1.3)
+    return score, group.n
+
+
+def weights_for(report: Report, dimension: str, candidates: list[str]) -> list[Weight]:
+    groups = {g.key: g for d in report.dimensions if d.key == dimension for g in d.groups}
+    out = []
+    for key in candidates:
+        group = groups.get(key)
+        score, n = _score(group)
+        weight = (n * score + PICK_PRIOR) / (n + PICK_PRIOR)
+        out.append(Weight(key=key, weight=round(max(weight, PICK_FLOOR), 3), n=n,
+                          vs_channel=group.vs_channel if group else None,
+                          avg_view_pct=group.avg_view_pct if group else None))
+    return out
+
+
+def _draw(weights: list[Weight], rng: random.Random, explore: float) -> tuple[str, bool]:
+    if len(weights) == 1:
+        return weights[0].key, False
+    if rng.random() < explore:
+        return rng.choice(weights).key, True
+    return rng.choices([w.key for w in weights], weights=[w.weight for w in weights])[0], False
+
+
+def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[str, ...] = PICK_KINDS,
+               rng: random.Random | None = None, report: Report | None = None) -> Pick:
+    """Draw the next random video's kind, game (one of `games`; None = leave the choice to the caller)
+    and, for a story, its length from the last AUTO_PICK_DAYS days' numbers."""
+    rng = rng or random.Random()
+    report = report or build_report(settings, days=settings.auto_pick_days)
+    explore = settings.auto_pick_explore
+    pick = Pick(mode="story", days=report.days, videos=report.ranked)
+    modes = weights_for(report, "mode", list(kinds))
+    pick.mode, explored = _draw(modes, rng, explore)
+    pick.weights["mode"] = modes
+    if explored:
+        pick.explored.append("mode")
+    if games:
+        game_weights = weights_for(report, "game", list(dict.fromkeys(games)))
+        pick.game, explored = _draw(game_weights, rng, explore)
+        pick.weights["game"] = game_weights
+        if explored:
+            pick.explored.append("game")
+    if pick.mode == "story":
+        lengths = weights_for(report, "length_bucket", list(STORY_LENGTHS))
+        bucket, explored = _draw(lengths, rng, explore)
+        pick.target_seconds = STORY_LENGTHS[bucket]
+        pick.weights["length_bucket"] = lengths
+        if explored:
+            pick.explored.append("length_bucket")
+    return pick
+
+
+def describe_pick(pick: Pick) -> str:
+    """One Discord line: what was picked and why."""
+    def why(dimension: str, key: str) -> str:
+        if dimension in pick.explored:
+            return "trying it out"
+        w = next((x for x in pick.weights.get(dimension, []) if x.key == key), None)
+        if w is None or not w.n or w.vs_channel is None:
+            return "no numbers yet"
+        text = f"{w.vs_channel:.1f}× the channel median over {w.n} video{'s' * (w.n != 1)}"
+        if w.avg_view_pct is not None:
+            text += f", {w.avg_view_pct:.0f}% watched"
+        return text
+
+    bits = [f"**{MODE_LABELS.get(pick.mode, pick.mode)}** ({why('mode', pick.mode)})"]
+    if pick.game:
+        bits.append(f"on **{pick.game}** ({why('game', pick.game)})")
+    if pick.target_seconds:
+        bucket = next(k for k, v in STORY_LENGTHS.items() if v == pick.target_seconds)
+        bits.append(f"about {pick.target_seconds} s ({why('length_bucket', bucket)})")
+    head = (f"🎲 Picked by the last {pick.days} days' numbers ({pick.videos} videos): " if pick.videos
+            else "🎲 Picked at random (no numbers yet): ")
+    return head + " ".join(bits)
+
+
 # --------------------------------------------------------------------------- text for Discord / the CLI
+
 
 
 def _n(value: float | int | None) -> str:

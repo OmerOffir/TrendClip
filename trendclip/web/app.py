@@ -765,7 +765,28 @@ def get_insights(days: int = Query(90, ge=7, le=730)) -> dict[str, Any]:
     return {**report.model_dump(mode="json"), "youtube": publish.youtube_status()}
 
 
+@app.get("/api/insights/picker")
+def insights_picker() -> dict[str, Any]:
+    """The chances "Pick for me" and the emergency video give each kind, game and story length right now."""
+    settings = _base_settings()
+    report = analytics.build_report(settings, days=settings.auto_pick_days)
+    try:
+        games = [name for name, n in video_downloader.get_library(settings).counts().items() if n]
+    except Exception:  # noqa: BLE001 - no library yet: the games with numbers still show
+        games = []
+    seen = {g.key for d in report.dimensions if d.key == "game" for g in d.groups if g.key}
+    games = sorted(set(games) | seen)
+    return {
+        "enabled": settings.auto_pick, "explore": settings.auto_pick_explore, "days": report.days,
+        "videos": report.ranked,
+        "mode": [w.model_dump() for w in analytics.weights_for(report, "mode", list(analytics.PICK_KINDS))],
+        "game": [w.model_dump() for w in analytics.weights_for(report, "game", games)],
+        "length_bucket": [w.model_dump() for w in analytics.weights_for(report, "length_bucket", list(analytics.STORY_LENGTHS))],
+    }
+
+
 @app.post("/api/insights/refresh")
+
 def refresh_insights(days: int = Query(90, ge=7, le=730)) -> dict[str, Any]:
     """Read today's numbers from YouTube (Data API + Analytics API), then return the report."""
     settings = _base_settings()

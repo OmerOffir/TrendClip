@@ -165,9 +165,10 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
 
 def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
                         mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story",
-                        only: tuple[str, ...] = ()) -> shorts.ShortVideo:
+                        only: tuple[str, ...] = (), target_seconds: int | None = None) -> shorts.ShortVideo:
     """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
-    pop-ups and stickers. `only`: if the download fails, fall back only to clips of these games."""
+    pop-ups and stickers. `only`: if the download fails, fall back only to clips of these games.
+    `target_seconds`: a story's length (default SHORT_TARGET_SECONDS; quizzes have their own)."""
     if script_writer.gemini_api_key(settings) is None:
         raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed to write the story)")
     if mode in quiz.QUIZ_MODES and not game:
@@ -176,8 +177,9 @@ def create_random_short(settings: Settings, game: str | None = None, progress: P
     path = Path(clip.path)
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
-                                        max_seconds=clip_seconds, progress=progress)
+                                        max_seconds=clip_seconds, progress=progress, target_seconds=target_seconds)
     return _render_script(settings, clip, script, progress, mode)
+
 
 
 def _themed_quiz(settings: Settings, mode: str, progress: ProgressFn) -> shorts.ShortVideo:
