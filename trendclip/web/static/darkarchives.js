@@ -665,12 +665,39 @@
       </div>`).join("");
   }
 
+  async function renderProduce() {
+    const box = $("daProduce");
+    try {
+      const [{ body: t }, { body: job }] = await Promise.all([api("/api/darkarchives/produce/targets"), api("/api/darkarchives/produce-job")]);
+      const slots = t.targets.length ? t.targets.join(", ") : "none (every slot of today and tomorrow is planned)";
+      const done = job.result ? job.result.slots.map((r) => r.status === "planned" ? `✅ ${r.day} ${r.slot}: ${r.title}` : `❌ ${r.day} ${r.slot}: ${r.status} ${r.error || ""}`).join(" · ") : "";
+      box.innerHTML = `<b>Automation</b>
+        <span class="hint">${t.auto_produce ? `Every day at <b>${esc(t.time)}</b> the bot ${t.daily_fetch ? "refreshes the bank and " : ""}makes a video for each empty slot of tomorrow (and today's still 3 h away), checks it and plans it; the Discord post has a "Don't post this" button` : "Off (DA_AUTO_PRODUCE=0)"} · empty slots now: ${esc(slots)}</span>
+        <button type="button" class="btn-primary" id="daProduceNow" ${job.running || !t.targets.length ? "disabled" : ""}>🏭 Run it now</button>
+        <span class="hint" id="daProduceStatus">${job.running ? `${esc(job.message || "Working")}…${job.progress != null ? ` ${Math.round(job.progress * 100)}%` : ""}` : job.error ? `❌ ${esc(job.error)}` : esc(done)}</span>`;
+      if (job.running) setTimeout(() => { renderProduce(); if (sections.current === "plan") loadPlan(); }, 3000);
+    } catch (err) {
+      box.innerHTML = `<span class="da-note">${esc(err.message)}</span>`;
+    }
+  }
+  $("daProduce").addEventListener("click", async (e) => {
+    if (!e.target.closest("#daProduceNow")) return;
+    try {
+      await api("/api/darkarchives/produce", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ fetch: true }) });
+      renderProduce();
+    } catch (err) {
+      plan.error.textContent = err.message;
+      plan.error.hidden = false;
+    }
+  });
+
   async function loadPlan() {
     try {
       const { body } = await api("/api/darkarchives/plan");
       plan.data = body;
       plan.error.hidden = true;
       renderPlan();
+      renderProduce();
     } catch (err) {
       plan.error.textContent = `Couldn't load the plan: ${err.message}`;
       plan.error.hidden = false;

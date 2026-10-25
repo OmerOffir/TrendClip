@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import repository
-from modules import da_channel, da_plan, fetcher, script_gen, video_gen
+from modules import da_channel, da_plan, da_produce, fetcher, script_gen, video_gen
 from trendclip import publish
 
 logger = logging.getLogger(__name__)
@@ -29,6 +29,7 @@ _job: dict[str, Any] = {"running": False}
 _script_job: dict[str, Any] = {"running": False}
 _video_job: dict[str, Any] = {"running": False}
 _upload_job: dict[str, Any] = {"running": False}
+_produce_job: dict[str, Any] = {"running": False}
 
 
 @router.get("/stories")
@@ -361,3 +362,70 @@ def set_plan_posted(item_id: str, body: PostedUpdate) -> dict[str, Any]:
         return da_plan.item_view(da_plan.set_posted(item_id, body.posted))
     except KeyError:
         raise HTTPException(status_code=404, detail="No such plan item") from None
+
+
+# --------------------------------------------------------------------------- the production run
+
+
+def _produce(fetch: bool, max_slots: int | None) -> None:
+    from trendclip.config import get_settings
+
+    def progress(frac, msg):
+        with _lock:
+            _produce_job.update(progress=frac, message=msg)
+
+    try:
+        result = da_produce.run(get_settings(), progress=progress, fetch=fetch, max_slots=max_slots, announce=True)
+        with _lock:
+            _produce_job.update(result={"fetch": result["fetch"], "slots": [
+                {k: v for k, v in r.items() if k != "info"} | ({"title": r["info"]["title"]} if r.get("info") else {})
+                for r in result["slots"]]})
+    except Exception as err:  # noqa: BLE001
+        logger.exception("DarkArchives production run failed")
+        with _lock:
+            _produce_job.update(error=str(err)[:400])
+    finally:
+        with _lock:
+            _produce_job.update(running=False, finished_at=time.time())
+
+
+class ProduceRequest(BaseModel):
+    fetch: bool = True
+    max_slots: int | None = Field(None, ge=1, le=10)
+
+
+@router.post("/produce", status_code=202)
+def start_produce(body: ProduceRequest) -> dict[str, Any]:
+    """The production run now (what the bot does at DA_AUTO_PRODUCE_TIME): fetch, then a video per empty slot."""
+    with _lock:
+        if _produce_job.get("running") or _video_job.get("running"):
+            raise HTTPException(status_code=409, detail="A video is already being made")
+        _produce_job.clear()
+        _produce_job.update(running=True, started_at=time.time(), progress=None, message="Starting",
+                            targets=[f"{d.isoformat()} {s}" for d, s in da_produce.targets(_settings_for_targets(), _now())])
+    threading.Thread(target=_produce, args=(body.fetch, body.max_slots), name="darkarchives-produce", daemon=True).start()
+    return produce_status()
+
+
+def _settings_for_targets():
+    from trendclip.config import get_settings
+
+    return get_settings()
+
+
+def _now():
+    from datetime import datetime
+
+    return datetime.now(_settings_for_targets().tz)
+
+
+@router.get("/produce-job")
+def produce_status() -> dict[str, Any]:
+    with _lock:
+        return dict(_produce_job)
+
+
+@router.get("/produce/targets")
+def produce_targets() -> dict[str, Any]:
+    return {"targets": [f"{d.isoformat()} {s}" for d, s in da_produce.targets(_settings_for_targets(), _now())],
+            "auto_produce": da_produce.auto_produce(), "time": da_produce.produce_time(), "daily_fetch": da_produce.daily_fetch()}

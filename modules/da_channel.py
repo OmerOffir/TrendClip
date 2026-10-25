@@ -58,9 +58,10 @@ def _rest(settings=None):
     return rest
 
 
-def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None) -> str | None:
+def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None, note: str | None = None) -> str | None:
     """Post the finished video (shrunk to Discord's 10 MB when needed) in the DarkArchives channel.
-    Never raises: the video is made whether or not Discord takes it."""
+    `note` replaces the "upload it from the tab" line. Never raises: the video is made whether or not
+    Discord takes it."""
     try:
         rest = _rest(settings)
         if rest is None:
@@ -71,7 +72,7 @@ def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | Non
         text = (f"🎬 **{info.get('title', path.stem)}** · {info.get('duration_seconds', 0):.0f} s · "
                 f"pictures: {info.get('pictures', '?')}" + (f" · {photos} photo{'s' if photos != 1 else ''}" if photos else "")
                 + (f" · 🎵 {info['music']['title']}" if info.get("music") else "")
-                + f"\nStory {story_id}: upload it from the DarkArchives tab (Used → the story → Upload to YouTube).")
+                + "\n" + (note or f"Story {story_id}: upload it from the DarkArchives tab (Used → the story → Upload to YouTube)."))
         return rest.post(text, (path.name, small.read_bytes()))
     except Exception as err:  # noqa: BLE001
         logger.warning("Discord post for story %s failed: %s", story_id, err)

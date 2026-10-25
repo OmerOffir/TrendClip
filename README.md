@@ -854,6 +854,17 @@ With `DA_AUTO_POST=1` the Discord bot uploads the slot's video to the DarkArchiv
 `DA_UPLOAD_PRIVACY` (default public) and reports the link, or the failure, in its Discord channel; a slot
 missed by more than two hours (bot off) is skipped. A video already on YouTube counts as posted.
 
+**Full automation** (`modules/da_produce.py`, `DA_AUTO_PRODUCE=1`): every day at `DA_AUTO_PRODUCE_TIME`
+(default 09:30) the bot refreshes the bank from every source (`DA_DAILY_FETCH`) and then, for every empty
+slot of tomorrow and of today still 3 h away: takes the best NEW story of the pillar the mix needs most,
+has Gemini write its script (a rejected story is marked and the next one tried), makes the video, checks
+it (between `DA_MIN_SECONDS` and `DA_MAX_SECONDS` long, real pictures rather than placeholder cards, enough
+words; a video that fails is deleted and the next story tried, four stories per slot at most) and puts it
+on the plan. Each video is posted in the DarkArchives Discord channel with **Don't post this** (off the
+plan; the video stays in the tab; **Make another now** refills the slot) and goes out at its time. The Plan
+section shows the automation line with **Run it now**; the command line is `python -m modules.da_produce`
+(`--no-fetch`, `--slots N`).
+
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
    GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +6%). The word

@@ -549,19 +549,118 @@ class TrendClipBot(discord.Client):
 
     def darkarchives_posts(self, at: datetime) -> None:
         """DarkArchives (its own plan, channel and token): the slot's planned video goes to its YouTube
-        channel at its time, reported in its Discord channel."""
-        from modules import da_plan
+        channel at its time, reported in its Discord channel; and once a day (DA_AUTO_PRODUCE_TIME) the
+        production run fills the empty slots."""
+        from modules import da_plan, da_produce
 
         try:
-            due = da_plan.due_posts(self.settings, at, self.sent.load())
+            sent = self.sent.load()
+            due = da_plan.due_posts(self.settings, at, sent)
+            local = at.astimezone(self.settings.tz)
+            hour, minute = map(int, da_produce.produce_time().split(":"))
+            start = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+            key = da_produce.produce_key(local.date())
+            produce = (da_produce.auto_produce() and key not in sent and start <= local < start + assistant.MORNING_WINDOW)
         except Exception:  # noqa: BLE001 - never let the second channel stop the first one's reminders
             logger.exception("DarkArchives plan check failed")
             return
-        for key, day, slot in due:
-            self.sent.add(key, at.date())  # marked first: an upload takes minutes and must never start twice
+        for key_post, day, slot in due:
+            self.sent.add(key_post, at.date())  # marked first: an upload takes minutes and must never start twice
             task = asyncio.create_task(self.darkarchives_post(day, slot))
             self.jobs.add(task)
             task.add_done_callback(self._job_done)
+        if produce:
+            self.sent.add(key, local.date())
+            task = asyncio.create_task(self.darkarchives_produce())
+            self.jobs.add(task)
+            task.add_done_callback(self._job_done)
+
+    async def darkarchives_channel(self) -> discord.abc.Messageable | None:
+        from modules import da_channel
+
+        channel_id = da_channel.discord_channel_id()
+        if not channel_id:
+            return None
+        try:
+            return self.get_channel(channel_id) or await self.fetch_channel(channel_id)
+        except discord.HTTPException:
+            logger.exception("DarkArchives Discord channel %s is not reachable", channel_id)
+            return None
+
+    async def darkarchives_produce(self, only: tuple[Day, str] | None = None) -> None:
+        """DA_AUTO_PRODUCE: refresh the bank, then a video for every empty slot of tomorrow (and today's
+        still 3 h away), each planned and shown with a "Don't post this" button. `only`: one slot."""
+        from modules import da_produce
+
+        settings = self.settings
+        channel = await self.darkarchives_channel()
+        if channel is None:
+            logger.warning("DarkArchives production: no Discord channel (DISCORD_CHANNEL_ID in channels/darkarchives/channel.env)")
+            return
+        wanted = [only] if only else await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
+        if not wanted:
+            await channel.send("🏭 Every DarkArchives slot of today and tomorrow is planned; nothing to make.")
+            return
+        if script_writer.gemini_api_key(settings) is None:
+            await channel.send("🏭 Can't write the scripts without GEMINI_API_KEY.")
+            return
+        labels = ", ".join(f"{day_label(settings, d)} {s}" for d, s in wanted)
+        await channel.send(clip_text(f"🏭 **Making the DarkArchives videos for {labels}**: the best story of the pillar "
+                                     "the mix needs, its script, the video, a check, then the slot. Each goes out at "
+                                     "its time by itself; press **Don't post this** under any you don't like."))
+        if not only and da_produce.daily_fetch():
+            try:
+                report = await self.run_job(channel, "Refreshing the story bank", da_produce.refresh_bank, self.render_lock)
+                saved = sum(r.get("saved", 0) for r in report.values())
+                await channel.send(f"📚 {saved} new stories in the bank.")
+            except JobFailed:
+                pass
+        for day, slot in wanted:
+            await self.darkarchives_produce_one(channel, day, slot)
+
+    async def darkarchives_produce_one(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
+        from modules import da_plan, da_produce
+
+        settings = self.settings
+        if await asyncio.to_thread(da_plan.slot_item, day, slot):
+            return
+        label = f"{day_label(settings, day)} {slot}"
+        try:
+            result = await self.run_job(channel, f"Making the video for {label}",
+                                        lambda p: da_produce.produce_one(settings, day, slot, p), self.render_lock)
+        except JobFailed:
+            await channel.send(f"🏭 Couldn't make a video for {label}.",
+                               view=view_of(button("daprod", f"{day.isoformat()} {slot}", "🎬 Try again now",
+                                                   discord.ButtonStyle.success)))
+            return
+        if result["status"] != "planned":
+            return
+        info, item = result["info"], result["item"]
+        skipped = [t for t in result["tried"] if not t.get("ok")]
+        note = ("\nSkipped: " + "; ".join(f"{t['title'][:30]} ({', '.join(t['problems'])})" for t in skipped)) if skipped else ""
+        text = (f"🏭 **{info['title']}** is planned for {label} and goes out by itself as {da_plan.upload_privacy()}.\n"
+                f"{info['duration_seconds']:.0f} s · pictures: {info['pictures']}"
+                + (f" · {len(info['photos'])} photo(s)" if info.get("photos") else "")
+                + (f" · 🎵 {info['music']['title']}" if info.get("music") else "") + note)
+        await self.darkarchives_send_video(channel, result["story_id"], text,
+                                           view_of(button("daveto", item["id"], "🚫 Don't post this", discord.ButtonStyle.danger)))
+
+    async def darkarchives_send_video(self, channel: discord.abc.Messageable, story_id: int, content: str,
+                                      view: discord.ui.View | None = None) -> None:
+        from modules import video_gen
+
+        path = video_gen.video_path(story_id)
+        guild = getattr(channel, "guild", None)
+        limit = guild.filesize_limit if guild else assistant.DISCORD_FILE_LIMIT
+        kwargs: dict[str, Any] = {"content": clip_text(content)}
+        try:
+            small = await asyncio.to_thread(assistant.fit_for_discord, path, path.parent / "discord" / path.name, limit)
+            kwargs["file"] = discord.File(small, filename=path.name)
+        except Exception as err:  # noqa: BLE001
+            kwargs["content"] = clip_text(content + f"\n(Couldn't attach the video: {err})")
+        if view is not None:
+            kwargs["view"] = view
+        await channel.send(**kwargs)
 
     async def darkarchives_post(self, day: Day, slot: str) -> None:
         from modules import da_channel, da_plan
@@ -1260,11 +1359,40 @@ async def act_make_from_text(bot: TrendClipBot, interaction: discord.Interaction
     await bot.create_random(interaction, game, kind, text=text)
 
 
+async def act_da_veto(bot: TrendClipBot, interaction: discord.Interaction, item_id: str) -> None:
+    """DarkArchives "Don't post this": off its plan; the video stays in the tab; the slot can be refilled."""
+    from modules import da_plan
+
+    try:
+        item = await asyncio.to_thread(da_plan.update_item, item_id, da_plan.ItemUpdate())
+    except KeyError:
+        return await reply(interaction, "That video is no longer on the DarkArchives plan.", ephemeral=True)
+    await asyncio.to_thread(da_plan.delete_item, item_id)
+    label = f"{day_label(bot.settings, item.date)} {item.slot}"
+    await reply(interaction, f"🚫 **{item.title}** won't be posted: it's off {label} (the video stays in the "
+                             f"DarkArchives tab). The slot is empty again.",
+                view=view_of(button("daprod", f"{item.date.isoformat()} {item.slot}", "🎬 Make another now",
+                                    discord.ButtonStyle.success)))
+
+
+async def act_da_produce(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    """DarkArchives "Make another now" / "Try again now": the production run for that one slot."""
+    try:
+        date_text, slot = arg.split()
+        day = Day.fromisoformat(date_text)
+    except ValueError as err:
+        return await reply(interaction, f"Couldn't read the slot: {err}", ephemeral=True)
+    await reply(interaction, f"🏭 Making a DarkArchives video for {day_label(bot.settings, day)} {slot}…", ephemeral=True)
+    task = asyncio.create_task(bot.darkarchives_produce(only=(day, slot)))
+    bot.jobs.add(task)
+    task.add_done_callback(bot._job_done)
+
+
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
-    "iggo": act_instagram, "veto": act_veto, "prod": act_produce,
+    "iggo": act_instagram, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
 }
 
 
