@@ -1,4 +1,5 @@
-# Local voice for the Linux GPU when Microsoft refuses Edge (HTTP 403).
+# The Linux GPU: the local voice when Microsoft refuses Edge (HTTP 403), and the DarkArchives
+# scene pictures (Stable Diffusion XL through diffusers; the weights download on the first video).
 # Install into the project venv after the normal ./run.sh setup:
 #
 #   .venv/bin/pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
@@ -7,3 +8,6 @@
 # An 8 GB card is enough. The model weights download on the first video.
 
 f5-tts>=1.1
+diffusers>=0.32
+accelerate>=1.0
+safetensors>=0.4

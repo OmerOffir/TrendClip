@@ -1,4 +1,4 @@
-// DarkArchives tab: the story bank (Reddit / Wikipedia / Gemini), reading, status and fetching.
+// DarkArchives tab: the story bank (Reddit / Wikipedia / Gemini), reading, status, fetching, scripts and videos.
 (() => {
   const { api, esc } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
@@ -13,7 +13,7 @@
   const pillarPill = (p) => (p ? `<span class="pill da-pillar-${p}">${PILLARS[p] || p}</span>` : "");
   const STATUSES = ["NEW", "PROCESSING", "SCRIPT_READY", "USED", "REJECTED"];
   const LABELS = { NEW: "Back to new", PROCESSING: "Processing", SCRIPT_READY: "Script ready", USED: "Used", REJECTED: "Rejected" };
-  const state = { selected: null, nextId: null, loaded: false, polling: null, searchTimer: null };
+  const state = { selected: null, nextId: null, videos: [], loaded: false, polling: null, searchTimer: null };
 
   const family = (s) => s.source_id.split("_")[0];
   const showError = (msg) => { els.error.textContent = msg; els.error.hidden = !msg; };
@@ -56,7 +56,7 @@
         <span class="da-item-body">
           <b>${esc(s.title || "(no title)")}</b>
           <small>${s.id === state.nextId ? '<span class="pill good">NEXT</span> ' : ""}${pillarPill(s.pillar)} <span class="pill da-pill-${family(s)}">${esc(s.source_name)}</span>
-            ${s.status !== "NEW" ? `<span class="pill">${s.status}</span>` : ""} ${s.chars.toLocaleString()} chars</small>
+            ${s.status !== "NEW" ? `<span class="pill">${s.status}</span>` : ""}${state.videos.includes(s.id) ? ' <span class="pill good">🎬 video</span>' : ""} ${s.chars.toLocaleString()} chars</small>
           ${s.note ? `<span class="da-note">${esc(s.note)}</span>` : ""}
           <span class="da-preview">${esc(s.preview)}</span>
         </span>
@@ -72,6 +72,7 @@
     try {
       const { body } = await api(`/api/darkarchives/stories?${params}`);
       state.nextId = body.next_id;
+      state.videos = body.videos || [];
       renderSources(body.sources, body.counts);
       if (body.mix) renderMix(body.mix, body.pillar_labels || {}, body.next_pillar);
       renderList(body.stories);
@@ -109,12 +110,17 @@
           ${s.status === "USED" ? "" : `<div class="da-actions"><button type="button" class="btn-primary" id="daWrite">✍️ ${s.status === "SCRIPT_READY" ? "Rewrite" : "Write"} the Shorts script</button><span class="hint" id="daWriteStatus"></span></div>`}
         </div>
         <div id="daScript"></div>
-        <details class="da-raw" ${s.status === "SCRIPT_READY" ? "" : "open"}><summary>Raw story</summary>
+        <div id="daVideo"></div>
+        <details class="da-raw" ${s.status === "SCRIPT_READY" || s.status === "USED" ? "" : "open"}><summary>Raw story</summary>
           <div class="da-text">${esc(s.raw_text).replace(/\n/g, "<br>")}</div></details>`;
       loadScript(s.id);
       api("/api/darkarchives/script-job").then(({ body }) => {
         showScriptJob(body);
         if (body.running && body.story_id === s.id) setTimeout(pollScript, 2000);
+      }).catch(() => {});
+      api("/api/darkarchives/video-job").then(({ body }) => {
+        showVideoJob(body);
+        if (body.running && body.story_id === s.id) setTimeout(pollVideo, 2500);
       }).catch(() => {});
     } catch (err) {
       els.detail.innerHTML = `<div class="empty error">${esc(err.message)}</div>`;
@@ -143,9 +149,88 @@
                 <div class="hint">🖼️ ${esc(c.image_prompt)}</div>
               </div>
             </div>`).join("")}
+        </div>
+        <div class="da-actions da-make">
+          <button type="button" class="btn-primary" id="daMake">🎬 ${state.videos.includes(id) ? "Remake" : "Make"} the video</button>
+          <span class="hint" id="daMakeStatus"></span>
+        </div>`;
+      loadVideo(id);
+    } catch (_) {
+      box.innerHTML = "";
+      $("daVideo").innerHTML = "";
+    }
+  }
+
+  async function loadVideo(id) {
+    const box = $("daVideo");
+    try {
+      const { body: v } = await api(`/api/darkarchives/stories/${id}/video/info`);
+      if (state.selected !== id) return;
+      const src = `/api/darkarchives/stories/${id}/video?t=${encodeURIComponent(v.created_at || "")}`;
+      const pics = (v.beats || []).map((b) => `<figure class="da-beat" title="${esc(b.label)}: ${esc(b.text)}">
+          <img src="/api/darkarchives/stories/${id}/video/pictures/${esc(b.picture)}" alt="" loading="lazy" />
+          <figcaption>${esc(b.label)} · ${b.duration ? b.duration.toFixed(1) : (b.end - b.start).toFixed(1)}s${b.picture_source === "wikipedia" ? " · 📷 photo" : ""}</figcaption>
+        </figure>`).join("");
+      box.innerHTML = `
+        <div class="da-video">
+          <div class="da-video-head"><b>🎬 ${esc(v.filename)}</b>
+            <span class="pill good">${v.duration_seconds}s</span>
+            <span class="pill">pictures: ${esc(v.pictures)}</span>
+            ${v.photos && v.photos.length ? `<span class="pill">${v.photos.length} photo${v.photos.length > 1 ? "s" : ""}</span>` : ""}
+            ${v.music ? `<span class="pill">🎵 ${esc(v.music.title)}</span>` : ""}
+            <span class="hint">made in ${v.seconds_to_make}s · ${esc(v.created_at || "")}</span>
+            <a class="btn-secondary" href="${src}" download="${esc(v.filename)}">Download</a></div>
+          <div class="da-video-body">
+            <video controls preload="metadata" src="${src}"></video>
+            <div>
+              <div class="da-beats">${pics}</div>
+              <div class="da-copy"><b>Description</b><pre class="da-desc">${esc(v.description || "")}</pre></div>
+            </div>
+          </div>
         </div>`;
     } catch (_) {
       box.innerHTML = "";
+    }
+  }
+
+  function showVideoJob(job) {
+    const btn = $("daMake");
+    const status = $("daMakeStatus");
+    if (!btn || !status) return;
+    const mine = job.story_id === state.selected;
+    btn.disabled = Boolean(job.running);
+    if (job.running) {
+      const pct = job.progress != null ? ` ${Math.round(job.progress * 100)}%` : "";
+      status.textContent = mine ? `${job.message || "Working"}…${pct} (${Math.round(Date.now() / 1000 - job.started_at)}s; a video takes a few minutes)`
+        : `Busy with story ${job.story_id}: ${job.message || ""}${pct}`;
+    } else if (mine && job.error) status.textContent = `❌ ${job.error}`;
+    else status.textContent = "";
+  }
+
+  async function pollVideo() {
+    try {
+      const { body } = await api("/api/darkarchives/video-job");
+      showVideoJob(body);
+      if (body.running) return setTimeout(pollVideo, 2500);
+      if (body.finished_at) {
+        await load();
+        if (state.selected === body.story_id) {
+          await open(body.story_id);
+          showVideoJob(body);
+        }
+      }
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  async function makeVideo() {
+    try {
+      const { body } = await api(`/api/darkarchives/stories/${state.selected}/video`, { method: "POST" });
+      showVideoJob(body);
+      setTimeout(pollVideo, 2500);
+    } catch (err) {
+      showError(err.message);
     }
   }
 
@@ -252,6 +337,7 @@
     const btn = e.target.closest("button[data-status]");
     if (btn) setStatus(btn.dataset.status);
     if (e.target.closest("#daWrite")) writeScript();
+    if (e.target.closest("#daMake")) makeVideo();
   });
   els.source.addEventListener("change", load);
   els.status.addEventListener("change", load);

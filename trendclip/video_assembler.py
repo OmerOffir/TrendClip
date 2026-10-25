@@ -333,6 +333,7 @@ def create_karaoke_ass_file(
     flashes: list | None = None,
     flash_y: float | None = None,
     title_pulse: bool = False,
+    flash_scale: float = 2.4,  # the Flash style's size as a multiple of the captions (1.0: a line of on-screen text)
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -357,7 +358,7 @@ Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour,
 Style: Karaoke,{font},{font_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,2,0,1,{outline},{shadow},2,70,70,{margin_v},1
 Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100,100,1,0,3,28,0,8,60,60,{top_margin},1
 Style: EndCard,{font},{round(title_size * 96 / 132)},{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,{top_margin},1
-Style: Flash,{font},{round(font_size * 2.4)},{hl},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,4,0,1,{round(outline * 1.8)},{shadow + 4},5,40,40,0,1
+Style: Flash,{font},{round(font_size * flash_scale)},{hl},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,4,0,1,{round(outline * 1.8)},{shadow + 4},5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

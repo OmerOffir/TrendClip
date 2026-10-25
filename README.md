@@ -802,16 +802,46 @@ already has the permission, so no App Review is needed. To switch:
 
 The token stays the same; the next read sees the comments.
 
-## DarkArchives (story bank and scripts)
+## DarkArchives (story bank, scripts and videos)
 
 The second channel tells real dark stories: obscure history, eerie true events, unsolved mysteries.
-Open it with the **DA** workspace button (or `?workspace=darkarchives`).
+Open it with the **DA** workspace button (or `?workspace=darkarchives`). The bank and the videos live
+on the Linux machine (the hub), where the dashboard runs; `db/content_bank.db` is git-ignored.
 
 ```bash
 python -m modules.fetcher            # fetch stories into db/content_bank.db
 python -m modules.fetcher --recheck  # apply the current filters to the NEW stories already saved
 python -m modules.script_gen         # Gemini writes the next story's Short: assets/generated_scripts/story_<id>.json
+python -m modules.video_gen --id 17  # the finished Short: output/darkarchives/story_17.mp4 (+ .json, story_17/pictures/)
 ```
+
+The tab does the same: pick a story → **Write the Shorts script** → **Make the video** (a few minutes;
+the tab shows the progress, then the video, its pictures and a description to copy). The story becomes
+USED. Uploading waits for the channel's own `channels/darkarchives/` folder (handle, YouTube login).
+
+**How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
+1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
+   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, −4%). The word
+   timings give every beat its start.
+2. **Pictures** (`modules/scene_images.py`): one 9:16 picture per beat from the scene's `image_prompt`.
+   `DA_IMAGE_BACKEND`: `auto` (default) = `local` when an NVIDIA GPU and diffusers are there, else `gemini`
+   when the key has image quota, else `placeholder`; a backend that fails hands over to the next.
+   - `local`: Stable Diffusion XL through diffusers, `DA_IMAGE_MODEL` (default RealVisXL V4.0 Lightning:
+     photoreal, 6 steps, 10-20 s a picture on the 8 GB card; the weights, ~7 GB, download on the first
+     video). Install with `requirements-gpu.txt`. The GPU voice is unloaded first: both don't fit at once.
+   - `gemini`: `DA_GEMINI_IMAGE_MODEL` (default `gemini-2.5-flash-image`). The free tier answers 429:
+     it needs a key with billing.
+   - A **Wikipedia story** also gets the article's real photos (`DA_ARCHIVE_PHOTOS=1`): the two best
+     Commons pictures (no maps, flags or icons) on scene 1 and the middle scene, laid over a blurred copy
+     of themselves, with the author and licence in the description.
+3. **Motion**: ffmpeg moves over every picture (a slow push-in or pull-out, alternating, with a slight
+   drift), dissolves 0.6 s between beats, and grades it dark: less saturation, a cold tint, vignette, grain.
+4. **Assembly**: the karaoke assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
+   scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), and a track from
+   `DA_MUSIC` (default `folder:dramatic` = `music/dramatic/`, `none` for silence) at `DA_MUSIC_VOLUME`.
+
+`output/darkarchives/story_<id>.json` keeps the title, description (source link, photo and music credits,
+hashtags), beats with their timing and picture, who drew the pictures and how long it took.
 
 **Content pillars**: every story belongs to one, and the next story to script comes from the pillar furthest below its share of the videos made so far:
 

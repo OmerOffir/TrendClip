@@ -49,6 +49,19 @@ def _load():
     return _model
 
 
+def unload() -> None:
+    """Drop the model from the GPU (the DarkArchives pictures need the memory); it loads again on the next voice."""
+    global _model
+    if _model is not None:
+        _model = None
+        try:
+            import torch
+
+            torch.cuda.empty_cache()
+        except Exception:  # noqa: BLE001 - no torch, no GPU: nothing to free
+            pass
+
+
 def _mp3(pcm: bytes, sample_rate: int) -> bytes:
     import subprocess
 

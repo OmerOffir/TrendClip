@@ -1,17 +1,22 @@
-"""DarkArchives tab: browse and test the story bank (db/content_bank.db) and fetch more stories."""
+"""DarkArchives tab: browse the story bank (db/content_bank.db), fetch stories, write scripts and make the videos."""
 
 from __future__ import annotations
 
 import json
+import logging
+import re
 import threading
 import time
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import repository
-from modules import fetcher, script_gen
+from modules import fetcher, script_gen, video_gen
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/darkarchives")
 Source = Literal["reddit", "wikipedia", "gemini", "rss"]
@@ -21,6 +26,7 @@ Pillar = Literal["mystery", "history", "outrage"]
 _lock = threading.Lock()
 _job: dict[str, Any] = {"running": False}
 _script_job: dict[str, Any] = {"running": False}
+_video_job: dict[str, Any] = {"running": False}
 
 
 @router.get("/stories")
@@ -35,6 +41,7 @@ def stories(status: Status | None = None, source: Source | None = None, pillar: 
         "pillar_labels": repository.PILLAR_LABELS,
         "next_id": (repository.get_next_story() or {}).get("id"),
         "next_pillar": repository.next_pillar(),
+        "videos": video_gen.existing_video_ids(),
     }
 
 
@@ -142,3 +149,72 @@ def start_script(story_id: int) -> dict[str, Any]:
 def script_status() -> dict[str, Any]:
     with _lock:
         return dict(_script_job)
+
+
+# --------------------------------------------------------------------------- videos
+
+
+def _make(story_id: int) -> None:
+    def progress(frac, msg):
+        with _lock:
+            _video_job.update(progress=frac, message=msg)
+
+    try:
+        info = video_gen.make_video(story_id, progress)
+        with _lock:
+            _video_job.update(result=info)
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        logger.exception("DarkArchives video for story %s failed", story_id)
+        with _lock:
+            _video_job.update(error=str(err)[:400])
+    finally:
+        with _lock:
+            _video_job.update(running=False, finished_at=time.time())
+
+
+@router.post("/stories/{story_id}/video", status_code=202)
+def start_video(story_id: int) -> dict[str, Any]:
+    """Make the Short in the background (voice, pictures, motion, captions: several minutes)."""
+    if not repository.get_story(story_id):
+        raise HTTPException(status_code=404, detail="No such story")
+    if not script_gen.script_path(story_id).is_file():
+        raise HTTPException(status_code=400, detail="Write the Shorts script first")
+    with _lock:
+        if _video_job.get("running"):
+            raise HTTPException(status_code=409, detail="A video is already being made")
+        _video_job.clear()
+        _video_job.update(running=True, story_id=story_id, started_at=time.time(), progress=0.0, message="Starting")
+    threading.Thread(target=_make, args=(story_id,), name="darkarchives-video", daemon=True).start()
+    return video_status()
+
+
+@router.get("/video-job")
+def video_status() -> dict[str, Any]:
+    with _lock:
+        return dict(_video_job)
+
+
+@router.get("/stories/{story_id}/video/info")
+def video_info(story_id: int) -> dict[str, Any]:
+    path = video_gen.info_path(story_id)
+    if not path.is_file() or not video_gen.video_path(story_id).is_file():
+        raise HTTPException(status_code=404, detail="No video for this story yet")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+@router.get("/stories/{story_id}/video")
+def video_file(story_id: int) -> FileResponse:
+    path = video_gen.video_path(story_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No video for this story yet")
+    return FileResponse(path, media_type="video/mp4", filename=path.name)
+
+
+@router.get("/stories/{story_id}/video/pictures/{name}")
+def video_picture(story_id: int, name: str) -> FileResponse:
+    if not re.fullmatch(r"(beat|photo)_\d{1,2}\.jpg", name):
+        raise HTTPException(status_code=404, detail="No such picture")
+    path = video_gen.OUTPUT_DIR / f"story_{story_id}" / "pictures" / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No such picture")
+    return FileResponse(path, media_type="image/jpeg")
