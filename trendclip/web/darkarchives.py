@@ -297,8 +297,15 @@ def upload_status() -> dict[str, Any]:
 def videos() -> dict[str, Any]:
     """Every finished video with where it is planned and whether it is on YouTube."""
     planned = da_plan.planned_dates()
-    return {"videos": [{**v, "planned": planned.get(v.get("story_id"), [])} for v in da_plan.videos()],
-            "slots": da_plan.slots()}
+    return {"videos": [{**v, "planned": planned.get(v.get("story_id"), []), "youtube": youtube_texts(v)}
+                       for v in da_plan.videos()],
+            "slots": da_plan.slots(), "privacy": da_plan.upload_privacy()}
+
+
+def youtube_texts(info: dict) -> dict[str, Any]:
+    """What the upload sends: the title (with #shorts), the description (with the follow line) and the tags."""
+    req = da_channel.upload_request(info)
+    return {"title": publish._yt_title(req.title, True), "description": req.description, "tags": publish._tags(req.tags)}
 
 
 @router.get("/plan")

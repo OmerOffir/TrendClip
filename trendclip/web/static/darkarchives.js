@@ -467,20 +467,31 @@
         const up = v.uploads && v.uploads.youtube;
         const first = (v.beats || [])[0];
         const pic = first ? `/api/darkarchives/stories/${v.story_id}/video/pictures/${esc(first.picture)}` : "";
+        const src = `/api/darkarchives/stories/${v.story_id}/video?t=${encodeURIComponent(v.created_at || "")}`;
+        const yt = v.youtube || {};
         return `<article class="da-vcard" data-story="${v.story_id}">
-          <a href="/api/darkarchives/stories/${v.story_id}/video" target="_blank" rel="noopener" title="Open the video">${pic ? `<img src="${pic}" alt="" loading="lazy" />` : ""}</a>
+          <div class="da-vcard-player">
+            <video controls preload="metadata" ${pic ? `poster="${pic}"` : ""} src="${src}"></video>
+            <a class="hint" href="${src}" download="${esc(v.filename)}">Download ${esc(v.filename)}</a>
+          </div>
           <div class="da-vcard-body">
             <b>${esc(v.title)}</b>
             <div class="pills"><span class="pill">${v.duration_seconds}s</span><span class="pill">story ${v.story_id}</span>
               ${up ? `<span class="pill good">▶️ YouTube · ${esc(up.privacy)}</span>` : '<span class="pill">not on YouTube</span>'}
               ${v.planned.length ? v.planned.map((p) => `<span class="pill">📅 ${esc(p)}</span>`).join("") : '<span class="pill">not planned</span>'}</div>
-            <span class="hint">made ${esc(fmtWhen(v.created_at))} · pictures: ${esc(v.pictures || "")}${v.photos && v.photos.length ? ` · ${v.photos.length} photo${v.photos.length > 1 ? "s" : ""}` : ""}</span>
-            ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a></span>` : ""}
+            <span class="hint">made ${esc(fmtWhen(v.created_at))} · pictures: ${esc(v.pictures || "")}${v.photos && v.photos.length ? ` · ${v.photos.length} photo${v.photos.length > 1 ? "s" : ""}` : ""}${v.music ? ` · 🎵 ${esc(v.music.title)}` : ""}</span>
+            ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a> · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a></span>` : ""}
+            <div class="da-yt-text">
+              <div class="da-yt-row"><span class="da-yt-label">YouTube title</span><span class="da-yt-title">${esc(yt.title || "")}</span></div>
+              <div class="da-yt-row"><span class="da-yt-label">Description</span><pre class="da-desc">${esc(yt.description || "")}</pre></div>
+              <div class="da-yt-row"><span class="da-yt-label">Tags</span><span class="pills">${(yt.tags || []).map((t) => `<span class="pill">${esc(t)}</span>`).join("")}</span></div>
+              <div class="da-yt-row"><span class="da-yt-label">Goes out as</span><span class="hint">${up ? "already uploaded" : `${esc(body.privacy)} · Short · Entertainment (DA_UPLOAD_PRIVACY)`}</span></div>
+            </div>
             <div class="da-vcard-actions">
               <input type="date" value="${todayIso()}" min="${todayIso()}" aria-label="Day" />
               <select aria-label="Time">${slotOptions(body.slots, body.slots[0])}</select>
               <button type="button" class="btn-secondary" data-plan="${v.story_id}">📅 Plan</button>
-              <button type="button" class="btn-secondary" data-open="${v.story_id}">Story</button>
+              <button type="button" class="btn-secondary" data-open="${v.story_id}">Story · pictures · upload now</button>
             </div>
           </div>
         </article>`;

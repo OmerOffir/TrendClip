@@ -15,7 +15,7 @@ def _video(out, story_id, title="The Ship", uploaded=False):
     out.mkdir(exist_ok=True)
     (out / f"story_{story_id}.mp4").write_bytes(b"\x00" * 16)
     info = {"story_id": story_id, "title": title, "filename": f"story_{story_id}.mp4", "duration_seconds": 60.5,
-            "created_at": f"2026-10-2{story_id}T10:00:00"}
+            "created_at": f"2026-10-2{story_id}T10:00:00", "hashtags": ["darkarchives", "shorts"], "description": "Hook.\n\nSource: x"}
     if uploaded:
         info["uploads"] = {"youtube": {"url": "https://youtube.com/shorts/x", "privacy": "public", "studio_url": "https://s/x"}}
     (out / f"story_{story_id}.json").write_text(json.dumps(info))
@@ -102,7 +102,10 @@ def test_plan_endpoints(tmp_path, monkeypatch):
     _video(out, 1)
     monkeypatch.setattr(video_gen, "OUTPUT_DIR", out)
     client = TestClient(web.app)
-    assert client.get("/api/darkarchives/videos").json() == {"videos": [{**json.loads((out / "story_1.json").read_text()), "planned": []}], "slots": ["14:30", "23:00"]}
+    listed = client.get("/api/darkarchives/videos").json()
+    assert listed["slots"] == ["14:30", "23:00"] and listed["privacy"] == "public" and listed["videos"][0]["planned"] == []
+    assert listed["videos"][0]["youtube"]["title"] == "The Ship #shorts" and "darkarchives" in listed["videos"][0]["youtube"]["tags"]
+    assert listed["videos"][0]["youtube"]["description"] == "Hook.\n\nSource: x"  # no handle in the test's channel.env
     assert client.post("/api/darkarchives/plan/items", json={"story_id": 1, "date": "2026-11-02"}).status_code == 201
     assert client.post("/api/darkarchives/plan/items", json={"story_id": 1, "date": "2026-11-02"}).json()["slot"] == "23:00"
     assert client.post("/api/darkarchives/plan/items", json={"story_id": 1, "date": "2026-11-02"}).status_code == 400  # the day is full
