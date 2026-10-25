@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import argparse
 import logging
+import math
 import random
+
 import re
 import sqlite3
 import statistics
@@ -200,10 +202,13 @@ def facts_from_short(settings: Settings, short: shorts.ShortVideo) -> VideoFacts
     if not video_id:
         return None
     published = _parse_ts(upload.get("scheduled_for")) or _parse_ts(upload.get("uploaded_at")) or short.created_at
-    hook = hook_of(short.script)
+    mode = mode_of(short)
+    # A math challenge opens on its on-screen dare ("ONLY 5% FINISH THIS") while the voice starts the chain
+    # ("Start with 18."), so the dare is its hook.
+    hook = short.title_card.strip() if mode == "math" and short.title_card.strip() else hook_of(short.script)
     return VideoFacts(
         video_id=video_id, filename=short.filename, title=short.title, published_at=published,
-        format=format_of(short), mode=mode_of(short), game=short.game, hook=hook, hook_style=hook_style(hook),
+        format=format_of(short), mode=mode, game=short.game, hook=hook, hook_style=hook_style(hook),
         length_seconds=short.duration_seconds, length_bucket=length_bucket(short.duration_seconds),
         slot=slot_label(settings, published), music_mood=short.music_mood or "", part=short.part, made_here=True,
     )
@@ -814,7 +819,21 @@ def describe_pick(pick: Pick) -> str:
 
 LESSON_MIN_VIDEOS = 3  # with fewer videos that have retention, there is nothing worth telling Gemini
 LESSON_RECENT_DAYS = 30  # titles of this period are listed as "already used"
+RETENTION_CAP = 120.0  # Shorts loop, so YouTube reports over 100% for replayed videos; averages use this cap
 _CTA_WORDS = re.compile(r"\b(subscribe|follow|sub to|hit that|part 2|tomorrow)\b", re.I)
+
+
+def _held(row: VideoRow) -> float:
+    return min(row.avg_view_pct or 0.0, RETENTION_CAP)
+
+
+def _pct_label(pct: float) -> str:
+    return f"{pct:.0f}% watched" + (" incl. replays" if pct > 100 else "")
+
+
+def _hook_score(pct: float, views: int) -> float:
+    """Retention first, but a hook seen by 100 people is not proof: views weigh in on a log scale."""
+    return min(pct, RETENTION_CAP) * math.log10(views + 10)
 
 
 class Lessons(BaseModel):
@@ -834,9 +853,9 @@ class Lessons(BaseModel):
 
 def _last_sentence(script: str) -> str:
     """The closing line of a voiceover without the follow / subscribe call to action."""
-    sentences = [s.strip() for s in _SENTENCE_END.split(" ".join(script.split())) if s.strip()]
+    sentences = [s.strip(" \"'“”‘’") for s in _SENTENCE_END.split(" ".join(script.split())) if s.strip()]
     for sentence in reversed(sentences):
-        if not _CTA_WORDS.search(sentence):
+        if sentence and not _CTA_WORDS.search(sentence):
             return sentence[:120]
     return ""
 
@@ -856,22 +875,31 @@ def lessons(settings: Settings, mode: str, days: int | None = None, report: Repo
     out.videos = len(with_ret)
     if len(with_ret) < LESSON_MIN_VIDEOS:
         return out
-    avg_pct = statistics.fmean(r.avg_view_pct for r in with_ret)  # type: ignore[misc]
-    by_hold = sorted(with_ret, key=lambda r: ((r.avg_view_pct or 0), r.views), reverse=True)
-    out.winners = [f"“{r.hook}” ({r.avg_view_pct:.0f}% watched, {_n(r.views)} views)" for r in by_hold[:5]]
-    out.weak = [f"“{r.hook}” ({r.avg_view_pct:.0f}% watched)" for r in reversed(by_hold[-3:])
-                if (r.avg_view_pct or 0) < avg_pct - 10]
+    avg_pct = statistics.fmean(_held(r) for r in with_ret)
+    # The same hook may open several videos: judge it once, on their combined numbers.
+    by_hook: dict[str, list[VideoRow]] = {}
+    for r in with_ret:
+        by_hook.setdefault(" ".join(r.hook.split()).lower(), []).append(r)
+    # (hook, retention as YouTube reports it, retention capped for judging, views)
+    hooks = [(rows[0].hook, statistics.fmean(r.avg_view_pct or 0 for r in rows), statistics.fmean(_held(r) for r in rows),
+              sum(r.views for r in rows)) for rows in by_hook.values()]
+    hooks.sort(key=lambda h: _hook_score(h[2], h[3]), reverse=True)
+    lost = [h for h in hooks if h[2] < avg_pct - 10]  # clearly below the average: never a winner
+    kept = [h for h in hooks if h[2] >= avg_pct - 10]
+    out.winners = [f"“{hook}” ({_pct_label(pct)}, {_n(views)} views)" for hook, pct, _, views in kept[:5]]
+    out.weak = [f"“{hook}” ({_pct_label(pct)})" for hook, pct, _, _ in sorted(lost, key=lambda h: h[2])[:3]]
+
     styles: dict[str, list[VideoRow]] = {}
     for r in with_ret:
         styles.setdefault(r.hook_style, []).append(r)
     judged = sorted(((k, v) for k, v in styles.items() if k and len(v) >= 2),
-                    key=lambda kv: statistics.fmean(r.avg_view_pct or 0 for r in kv[1]), reverse=True)
+                    key=lambda kv: statistics.fmean(_held(r) for r in kv[1]), reverse=True)
     for key, rows in judged:
-        pct = statistics.fmean(r.avg_view_pct or 0 for r in rows)
+        pct = statistics.fmean(_held(r) for r in rows)
         views = statistics.median(r.views for r in rows)
         label = HOOK_STYLES.get(key, key).split(" (")[0]
         verdict = "holds viewers" if pct >= avg_pct else "loses viewers"
-        line = f"{label} hooks: {pct:.0f}% watched over {len(rows)} videos, {_n(views)} views median ({verdict})"
+        line = f"{label} hooks: {_pct_label(pct)} over {len(rows)} videos, {_n(views)} views median ({verdict})"
         if key == "question" and pct < avg_pct:
             line += ": a question works only when its answer lands within the first 5 seconds"
         out.styles.append(line)
@@ -883,9 +911,10 @@ def lessons(settings: Settings, mode: str, days: int | None = None, report: Repo
     if len(solid) >= 2:
         best = max(solid, key=lambda k: statistics.median(r.views for r in solid[k]))
         worst = min(solid, key=lambda k: statistics.median(r.views for r in solid[k]))
-        held = [r.avg_view_pct for r in solid[best] if r.avg_view_pct is not None]
+        held = [_held(r) for r in solid[best] if r.avg_view_pct is not None]
         out.length = (f"{best} videos get {_n(statistics.median(r.views for r in solid[best]))} views median"
-                      + (f" and {statistics.fmean(held):.0f}% watched" if held else "")
+                      + (f" and {_pct_label(statistics.fmean(held))}" if held else "")
+
                       + f"; {worst} ones only {_n(statistics.median(r.views for r in solid[worst]))}")
     commented = []
     for r in pool:

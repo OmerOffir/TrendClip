@@ -478,3 +478,33 @@ def test_brief_endpoint(tmp_path, monkeypatch):
     assert body["enabled"] is True and body["mode"] == "math" and body["text"].startswith("WHAT WORKED")
     assert body["min_videos"] == 3 and len(body["winners"]) == 3
     assert client.get("/api/insights/brief?mode=poetry").status_code == 422
+
+
+def test_lessons_judge_each_hook_once_and_do_not_trust_tiny_replayed_videos(tmp_path, monkeypatch):
+    s = make_settings(tmp_path)
+    monkeypatch.setattr(publish, "has_scope", lambda scope: True)
+    specs = [("a", "Only 3% keep up without pausing.", 143, 202.0), ("b", "Start with 18.", 1200, 90.0),
+             ("c", "Start with 18.", 1100, 70.0), ("d", "No pausing allowed!", 400, 60.0), ("e", "Comment the \"REAL\" answer!", 500, 85.0)]
+    stats, rows = {}, {}
+    for vid, hook, views, pct in specs:
+        uploaded(s, f"{vid}.mp4", vid, 10, mode="math", script=f"{hook} Then more. \"Comment the REAL answer right now!\"")
+        stats[vid] = (views, 10, 5)
+        rows[vid] = [views, 1, 10, pct, 10, 5, 1, 0]
+    analytics.collect(s, youtube=FakeYouTube(stats), analytics=FakeAnalytics(rows), at=NOW)
+    les = analytics.lessons(s, "math", days=90, at=NOW)
+    # "Start with 18." opened two videos: one entry with their combined views and mean retention.
+    assert sum("Start with 18." in w for w in les.winners) == 1 and "80% watched, 2.3k views" in next(w for w in les.winners if "18" in w)
+    # 202% at 143 views is replays on a tiny video: labelled, and not ahead of a real 90% at 2.3k views.
+    assert les.winners[0].startswith("“Start with 18.”") and "202% watched incl. replays" in " ".join(les.winners)
+    assert all(not any(h in w for w in les.winners) for h in [x.split("”")[0].strip("“") for x in les.weak])  # never in both lists
+    assert les.endings[0].startswith("“Comment the REAL answer right now!” (")  # stray quotes stripped
+    assert "Command hooks:" in " ".join(les.styles) and "incl. replays" not in " ".join(les.styles)  # capped at 120
+
+
+def test_a_math_challenge_hook_is_its_dare_banner(tmp_path):
+    s = make_settings(tmp_path)
+    short = uploaded(s, "m.mp4", "m", 3, mode="math", script="Start with 18. Add 16.", title_card="ONLY 5% FINISH THIS")
+    facts = analytics.facts_from_short(s, short)
+    assert facts.hook == "ONLY 5% FINISH THIS" and facts.hook_style == "dare"
+    plain = uploaded(s, "r.mp4", "r", 3, mode="riddle", script="What has keys but no locks? A piano.", title_card="RIDDLE")
+    assert analytics.facts_from_short(s, plain).hook == "What has keys but no locks?"
