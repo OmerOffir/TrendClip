@@ -9,12 +9,13 @@ import threading
 import time
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import repository
-from modules import fetcher, script_gen, video_gen
+from modules import da_channel, fetcher, script_gen, video_gen
+from trendclip import publish
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +28,7 @@ _lock = threading.Lock()
 _job: dict[str, Any] = {"running": False}
 _script_job: dict[str, Any] = {"running": False}
 _video_job: dict[str, Any] = {"running": False}
+_upload_job: dict[str, Any] = {"running": False}
 
 
 @router.get("/stories")
@@ -218,3 +220,71 @@ def video_picture(story_id: int, name: str) -> FileResponse:
     if not path.is_file():
         raise HTTPException(status_code=404, detail="No such picture")
     return FileResponse(path, media_type="image/jpeg")
+
+
+# --------------------------------------------------------------------------- the YouTube channel
+
+
+@router.get("/youtube/status")
+def youtube_status() -> dict[str, Any]:
+    return da_channel.youtube_status()
+
+
+@router.post("/youtube/connect")
+def youtube_connect(request: Request) -> dict[str, Any]:
+    """The Google login for the DarkArchives channel; the shared callback saves its token in its folder."""
+    from .app import _callback_url
+
+    try:
+        return {"auth_url": da_channel.start_login(_callback_url(request))}
+    except publish.PublishError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/youtube/logout")
+def youtube_logout() -> dict[str, Any]:
+    da_channel.logout()
+    return {"connected": False}
+
+
+class UploadRequest(BaseModel):
+    privacy: publish.Privacy = "private"
+
+
+def _upload(story_id: int, privacy: str) -> None:
+    def progress(frac, msg):
+        with _lock:
+            _upload_job.update(progress=frac, message=msg)
+
+    try:
+        record = da_channel.upload(story_id, privacy, progress)
+        with _lock:
+            _upload_job.update(result=record)
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        logger.exception("DarkArchives upload of story %s failed", story_id)
+        with _lock:
+            _upload_job.update(error=str(err)[:400])
+    finally:
+        with _lock:
+            _upload_job.update(running=False, finished_at=time.time())
+
+
+@router.post("/stories/{story_id}/upload", status_code=202)
+def start_upload(story_id: int, body: UploadRequest) -> dict[str, Any]:
+    if not video_gen.video_path(story_id).is_file():
+        raise HTTPException(status_code=404, detail="No video for this story yet")
+    if not da_channel.connected():
+        raise HTTPException(status_code=400, detail="Connect the DarkArchives YouTube channel first")
+    with _lock:
+        if _upload_job.get("running"):
+            raise HTTPException(status_code=409, detail="An upload is already running")
+        _upload_job.clear()
+        _upload_job.update(running=True, story_id=story_id, started_at=time.time(), progress=0.0, message="Starting")
+    threading.Thread(target=_upload, args=(story_id, body.privacy), name="darkarchives-upload", daemon=True).start()
+    return upload_status()
+
+
+@router.get("/upload-job")
+def upload_status() -> dict[str, Any]:
+    with _lock:
+        return dict(_upload_job)

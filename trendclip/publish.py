@@ -319,12 +319,14 @@ _flows_lock = threading.Lock()
 FLOW_TTL = 600
 
 
-def youtube_status() -> dict[str, Any]:
+def youtube_status(token: Path | None = None) -> dict[str, Any]:
+    """`token`: another channel's login file (default: the active channel's TOKEN_FILE)."""
+    token = token or TOKEN_FILE
     status: dict[str, Any] = {"client_secret": CLIENT_SECRETS.is_file(), "connected": False, "channel": None}
-    if not status["client_secret"] or not TOKEN_FILE.is_file():
+    if not status["client_secret"] or not token.is_file():
         return status
     try:
-        youtube = _youtube()
+        youtube = _youtube(token)
         items = youtube.channels().list(part="snippet", mine=True).execute().get("items", [])
     except PublishError as err:
         status["error"] = str(err)
@@ -334,8 +336,8 @@ def youtube_status() -> dict[str, Any]:
         status["error"] = f"Could not reach YouTube: {err}"
         return status
     status["connected"] = True
-    status["can_comment"] = can_comment()
-    status["can_analytics"] = has_scope(ANALYTICS_SCOPE)
+    status["can_comment"] = has_scope(COMMENT_SCOPE, token)
+    status["can_analytics"] = has_scope(ANALYTICS_SCOPE, token)
     if items:
         snip = items[0]["snippet"]
         status["channel"] = {"id": items[0]["id"], "title": snip.get("title", ""),
@@ -343,7 +345,8 @@ def youtube_status() -> dict[str, Any]:
     return status
 
 
-def start_login(redirect_uri: str) -> str:
+def start_login(redirect_uri: str, token: Path | None = None) -> str:
+    """The Google login URL; the token lands in `token` (default: the active channel's TOKEN_FILE)."""
     if not CLIENT_SECRETS.is_file():
         raise PublishError(f"{CLIENT_SECRETS.name} not found: put it in the project folder (shared by every "
                            "channel) or in the channel's folder under channels/")
@@ -358,7 +361,7 @@ def start_login(redirect_uri: str) -> str:
     with _flows_lock:
         for key in [k for k, (t, _) in _flows.items() if now - t > FLOW_TTL]:
             _flows.pop(key, None)
-        _flows[state] = (now, flow)
+        _flows[state] = (now, flow, token or TOKEN_FILE)
     return url
 
 
@@ -367,34 +370,35 @@ def finish_login(state: str, code: str) -> None:
         entry = _flows.pop(state, None)
     if entry is None:
         raise PublishError("This login link expired; press Connect YouTube again")
-    flow = entry[1]
+    _, flow, token = entry
     try:
         flow.fetch_token(code=code)
     except Exception as err:  # noqa: BLE001 - oauthlib raises many types
         raise PublishError(f"Google login failed: {err}") from err
-    _save_token(flow.credentials.to_json())
+    _save_token(flow.credentials.to_json(), token)
 
 
-def _save_token(data: str) -> None:
-    TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
-    TOKEN_FILE.write_text(data, encoding="utf-8")
+def _save_token(data: str, token: Path | None = None) -> None:
+    token = token or TOKEN_FILE
+    token.parent.mkdir(parents=True, exist_ok=True)
+    token.write_text(data, encoding="utf-8")
     try:
-        TOKEN_FILE.chmod(0o600)
+        token.chmod(0o600)
     except OSError:
         pass
 
 
-def logout() -> None:
-    TOKEN_FILE.unlink(missing_ok=True)
+def logout(token: Path | None = None) -> None:
+    (token or TOKEN_FILE).unlink(missing_ok=True)
 
 
-def has_scope(scope: str) -> bool:
+def has_scope(scope: str, token: Path | None = None) -> bool:
     """Whether the saved login was granted `scope`. Tokens from before a feature existed lack its scope;
     reconnecting adds it."""
     import json
 
     try:
-        scopes = json.loads(TOKEN_FILE.read_text(encoding="utf-8")).get("scopes") or []
+        scopes = json.loads((token or TOKEN_FILE).read_text(encoding="utf-8")).get("scopes") or []
     except (OSError, ValueError):
         return False
     if isinstance(scopes, str):
@@ -407,14 +411,15 @@ def can_comment() -> bool:
 
 
 
-def _credentials():
+def _credentials(token: Path | None = None):
     from google.auth.transport.requests import Request
     from google.oauth2.credentials import Credentials
 
-    if not TOKEN_FILE.is_file():
+    token = token or TOKEN_FILE
+    if not token.is_file():
         raise PublishError("YouTube is not connected; press Connect YouTube first")
     # Keep the scopes stored in the token: asking for new ones on refresh fails with invalid_scope.
-    creds = Credentials.from_authorized_user_file(str(TOKEN_FILE))
+    creds = Credentials.from_authorized_user_file(str(token))
     if not creds.valid:
         if not creds.refresh_token:
             raise PublishError("YouTube login expired; connect again")
@@ -422,14 +427,14 @@ def _credentials():
             creds.refresh(Request())
         except Exception as err:  # noqa: BLE001 - RefreshError / transport errors
             raise PublishError(f"YouTube login expired or was revoked; connect again ({err})") from err
-        _save_token(creds.to_json())
+        _save_token(creds.to_json(), token)
     return creds
 
 
-def _youtube():
+def _youtube(token: Path | None = None):
     from googleapiclient.discovery import build
 
-    return build("youtube", "v3", credentials=_credentials(), cache_discovery=False)
+    return build("youtube", "v3", credentials=_credentials(token), cache_discovery=False)
 
 
 # --------------------------------------------------------------------------- YouTube upload
@@ -477,12 +482,22 @@ def _api_error_text(err: Exception) -> str:
 
 def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
                    progress: ProgressFn = lambda f, m: None, youtube=None) -> dict[str, Any]:
-    from googleapiclient.errors import HttpError, ResumableUploadError
-    from googleapiclient.http import MediaFileUpload
-
     path = shorts.short_path(settings, filename)
     can_be_short = is_short(shorts.get_short(settings, filename))
     as_short = can_be_short if req.as_short is None else req.as_short and can_be_short
+    record = upload_file(path, req, as_short, progress, youtube)
+    shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
+    progress(1.0, "Uploaded")
+    return record
+
+
+def upload_file(path: Path, req: YouTubeUploadRequest, as_short: bool = True,
+                progress: ProgressFn = lambda f, m: None, youtube=None) -> dict[str, Any]:
+    """Upload any MP4 (a Short here, or a DarkArchives video) and return the record: video id, url,
+    privacy, schedule. `youtube`: a client for another channel's token (default: the active channel)."""
+    from googleapiclient.errors import HttpError, ResumableUploadError
+    from googleapiclient.http import MediaFileUpload
+
     title = _yt_title(req.title, as_short)
     description = req.description if as_short else _SHORTS_TAG.sub("", req.description)
     privacy = "private" if req.publish_at else req.privacy  # YouTube only schedules private videos
@@ -533,8 +548,6 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
         "title": title,
         "uploaded_at": utcnow().isoformat(),
     }
-    shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
-    progress(1.0, "Uploaded")
     return record
 
 

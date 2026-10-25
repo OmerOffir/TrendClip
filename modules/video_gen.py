@@ -46,7 +46,8 @@ OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window move
 MIN_BEAT = 1.0
 DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
 HASHTAGS = ["darkarchives", "mystery", "unsolved", "truestory", "history", "shorts"]
-DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD)
+DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD); with a handle: "@handle · Follow for more"
+CHANNEL_DIR = PROJECT_ROOT / "channels" / "darkarchives"
 DEFAULT_CTA_LINE = "Follow for more dark stories."  # spoken after the last scene (DA_CTA_LINE)
 DEFAULT_CTA_STICKER = "subscribe"  # the red button from the spoken line to the end (DA_CTA_STICKER: subscribe / follow / none)
 ProgressFn = Callable[[float | None, str], None]
@@ -90,6 +91,20 @@ def beats_of(script: script_gen.Script, cta_line: str = "") -> list[Beat]:
     if cta_line.strip():
         beats[-1].text = f"{beats[-1].text.strip()} {cta_line.strip()}"
     return beats
+
+
+def channel_handle() -> str:
+    """The channel's @handle from channels/darkarchives/channel.env ("" until the folder exists)."""
+    from dotenv import dotenv_values
+
+    path = CHANNEL_DIR / "channel.env"
+    value = ((dotenv_values(path).get("CHANNEL_HANDLE") or "") if path.is_file() else "").strip()
+    return value if value.startswith("@") and len(value) > 1 else ""
+
+
+def default_end_card() -> str:
+    h = channel_handle()
+    return f"{h} · Follow for more" if h else DEFAULT_END_CARD
 
 
 def off(value: str) -> bool:
@@ -220,7 +235,8 @@ def photo_slots(n_beats: int, n_photos: int) -> list[int]:
 
 
 def description_for(script: script_gen.Script, story: dict, credits: list[str], music_credit: str = "") -> str:
-    lines = [script.hook_text.strip(), ""]
+    h = channel_handle()
+    lines = [script.hook_text.strip(), "", f"Follow {h} for more dark stories.", ""] if h else [script.hook_text.strip(), ""]
     source = story.get("url") or ""
     name = (story.get("source_name") or "").replace("/", " · ")
     lines.append(f"Source: {source}" if source else f"Source: {name}" if name else "")
@@ -331,7 +347,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     flashes = [TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
                for b in beats if b.overlay_text and b.duration > 1.0]
     title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
-    end_card = setting("DA_END_CARD", DEFAULT_END_CARD)  # "·" breaks the line; "none" for no card
+    end_card = setting("DA_END_CARD", default_end_card())  # "·" breaks the line; "none" for no card
     end_card = "" if off(end_card) else end_card
     overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
     progress(0.75, "Rendering the Short")

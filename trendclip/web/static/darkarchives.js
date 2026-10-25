@@ -185,11 +185,109 @@
             <div>
               <div class="da-beats">${pics}</div>
               <div class="da-copy"><b>Description</b><pre class="da-desc">${esc(v.description || "")}</pre></div>
+              <div class="da-youtube" id="daYouTube"></div>
             </div>
           </div>
         </div>`;
+      loadYouTube(v);
     } catch (_) {
       box.innerHTML = "";
+    }
+  }
+
+  function uploadedLine(up) {
+    if (!up) return "";
+    return `<div class="da-uploaded">✅ On YouTube (${esc(up.privacy)}): <a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a>
+      · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a></div>`;
+  }
+
+  async function loadYouTube(info) {
+    const box = $("daYouTube");
+    if (!box) return;
+    const up = info && info.uploads && info.uploads.youtube;
+    try {
+      const { body: yt } = await api("/api/darkarchives/youtube/status");
+      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "DarkArchives");
+      box.innerHTML = `
+        <b>YouTube</b>
+        ${!yt.folder ? '<span class="da-note">channels/darkarchives/channel.env is missing on the dashboard machine</span>' : ""}
+        ${!yt.client_secret ? '<span class="da-note">client_secret.json is missing (Upload tab → Connect YouTube explains)</span>' : ""}
+        <div class="da-actions">
+          ${yt.connected
+            ? `<span class="pill good">Connected: ${who}</span><button type="button" class="btn-secondary" id="daYtLogout">Disconnect</button>`
+            : `<button type="button" class="btn-secondary" id="daYtConnect" ${yt.client_secret ? "" : "disabled"}>Connect YouTube</button>
+               <span class="hint">Google opens in a new window: pick the <b>Dark Archives</b> channel there</span>`}
+          ${yt.error ? `<span class="da-note">${esc(yt.error)}</span>` : ""}
+        </div>
+        ${uploadedLine(up)}
+        <div class="da-actions">
+          <select id="daPrivacy"><option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option></select>
+          <button type="button" class="btn-primary" id="daUpload" ${yt.connected ? "" : "disabled"}>⬆️ ${up ? "Upload again" : "Upload to YouTube"}</button>
+          <span class="hint" id="daUploadStatus"></span>
+        </div>`;
+      api("/api/darkarchives/upload-job").then(({ body }) => {
+        showUploadJob(body);
+        if (body.running && body.story_id === state.selected) setTimeout(pollUpload, 2000);
+      }).catch(() => {});
+    } catch (err) {
+      box.innerHTML = `<span class="da-note">YouTube: ${esc(err.message)}</span>`;
+    }
+  }
+
+  async function connectYouTube() {
+    let popup = window.open("", "trendclip-youtube", "width=520,height=720");
+    try {
+      const { body } = await api("/api/darkarchives/youtube/connect", { method: "POST" });
+      if (popup) popup.location.href = body.auth_url;
+      else popup = window.open(body.auth_url, "_blank");
+    } catch (err) {
+      if (popup) popup.close();
+      return showError(`Could not start the Google login: ${err.message}`);
+    }
+    const timer = setInterval(() => {
+      if (!popup || popup.closed) {
+        clearInterval(timer);
+        reloadVideo();
+      }
+    }, 1000);
+  }
+
+  async function reloadVideo() {
+    if (state.selected) await loadVideo(state.selected);
+  }
+
+  function showUploadJob(job) {
+    const btn = $("daUpload");
+    const status = $("daUploadStatus");
+    if (!btn || !status) return;
+    const mine = job.story_id === state.selected;
+    btn.disabled = Boolean(job.running) || btn.dataset.off === "1";
+    if (job.running) status.textContent = mine ? `${job.message || "Uploading"}…` : `Busy with story ${job.story_id}`;
+    else if (mine && job.error) status.textContent = `❌ ${job.error}`;
+    else status.textContent = "";
+  }
+
+  async function pollUpload() {
+    try {
+      const { body } = await api("/api/darkarchives/upload-job");
+      showUploadJob(body);
+      if (body.running) return setTimeout(pollUpload, 2000);
+      if (body.finished_at && state.selected === body.story_id) await reloadVideo();
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  async function uploadVideo() {
+    const privacy = ($("daPrivacy") || {}).value || "private";
+    try {
+      const { body } = await api(`/api/darkarchives/stories/${state.selected}/upload`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ privacy }),
+      });
+      showUploadJob(body);
+      setTimeout(pollUpload, 2000);
+    } catch (err) {
+      showError(err.message);
     }
   }
 
@@ -338,7 +436,11 @@
     if (btn) setStatus(btn.dataset.status);
     if (e.target.closest("#daWrite")) writeScript();
     if (e.target.closest("#daMake")) makeVideo();
+    if (e.target.closest("#daYtConnect")) connectYouTube();
+    if (e.target.closest("#daYtLogout")) api("/api/darkarchives/youtube/logout", { method: "POST" }).then(reloadVideo).catch((err) => showError(err.message));
+    if (e.target.closest("#daUpload")) uploadVideo();
   });
+  window.addEventListener("message", (e) => { if (e.data === "trendclip:youtube") reloadVideo(); });
   els.source.addEventListener("change", load);
   els.status.addEventListener("change", load);
   els.pillar.addEventListener("change", load);

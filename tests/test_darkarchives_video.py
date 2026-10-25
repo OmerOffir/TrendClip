@@ -222,3 +222,72 @@ def test_video_api(tmp_path, monkeypatch):
     assert client.get("/api/darkarchives/stories").json()["videos"] == [1]
     assert client.get("/api/darkarchives/stories/1/video/pictures/beat_1.jpg").status_code == 404
     assert client.get("/api/darkarchives/stories/1/video/pictures/../x.jpg").status_code == 404
+
+
+def test_channel_handle_banner_and_description(tmp_path, monkeypatch):
+    monkeypatch.setattr(video_gen, "CHANNEL_DIR", tmp_path / "darkarchives")
+    assert video_gen.channel_handle() == "" and video_gen.default_end_card() == "Follow for more · dark stories"
+    (tmp_path / "darkarchives").mkdir()
+    (tmp_path / "darkarchives" / "channel.env").write_text("CHANNEL_HANDLE=@DarkArchives-j1l\nSTATS_YOUTUBE=\n")
+    assert video_gen.channel_handle() == "@DarkArchives-j1l"
+    assert video_gen.default_end_card() == "@DarkArchives-j1l · Follow for more"
+    text = video_gen.description_for(_script(), {"url": "https://x", "source_name": "s"}, [])
+    assert text.split("\n\n")[1] == "Follow @DarkArchives-j1l for more dark stories."
+
+
+def test_da_channel_upload_records_the_video(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from modules import da_channel
+
+    monkeypatch.setattr(video_gen, "CHANNEL_DIR", tmp_path / "darkarchives")
+    (tmp_path / "darkarchives").mkdir()
+    (tmp_path / "darkarchives" / "channel.env").write_text("CHANNEL_HANDLE=@DarkArchives-j1l\n")
+    out = tmp_path / "videos"
+    out.mkdir()
+    (out / "story_3.mp4").write_bytes(b"\x00" * 32)
+    (out / "story_3.json").write_text(json.dumps({"story_id": 3, "title": "The Ship", "description": "Hook.\n\nSource: x",
+                                                   "hashtags": ["darkarchives", "shorts"]}))
+
+    class Insert:
+        def __init__(self, body):
+            self.body = body
+
+        def next_chunk(self):
+            return None, {"id": "vid123", "status": {"privacyStatus": self.body["status"]["privacyStatus"]}}
+
+    bodies = []
+    youtube = SimpleNamespace(videos=lambda: SimpleNamespace(insert=lambda **kw: bodies.append(kw["body"]) or Insert(kw["body"])))
+    with pytest.raises(Exception, match="Connect the DarkArchives"):
+        da_channel.upload(3, out_dir=out)
+    record = da_channel.upload(3, "unlisted", youtube=youtube, out_dir=out)
+    assert record["video_id"] == "vid123" and record["url"] == "https://youtube.com/shorts/vid123" and record["privacy"] == "unlisted"
+    assert bodies[0]["snippet"]["categoryId"] == "24" and bodies[0]["snippet"]["title"] == "The Ship #shorts"
+    assert bodies[0]["snippet"]["description"] == "Hook.\n\nFollow @DarkArchives-j1l for more dark stories.\n\nSource: x"
+    assert json.loads((out / "story_3.json").read_text())["uploads"]["youtube"]["video_id"] == "vid123"
+
+
+def test_youtube_endpoints_for_darkarchives(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from modules import da_channel
+    from trendclip import publish
+    from trendclip.web import app as web
+
+    monkeypatch.setattr(publish, "CLIENT_SECRETS", tmp_path / "client_secret.json")
+    monkeypatch.setattr(da_channel, "TOKEN", tmp_path / "da" / "token_youtube.json")
+    monkeypatch.setattr(da_channel, "DIR", tmp_path / "da")
+    monkeypatch.setattr(video_gen, "CHANNEL_DIR", tmp_path / "da")
+    monkeypatch.setattr(video_gen, "OUTPUT_DIR", tmp_path / "videos")
+    client = TestClient(web.app)
+    status = client.get("/api/darkarchives/youtube/status").json()
+    assert status == {"client_secret": False, "connected": False, "channel": None, "handle": "", "folder": False}
+    assert client.post("/api/darkarchives/youtube/connect").status_code == 400
+    assert client.post("/api/darkarchives/stories/1/upload", json={"privacy": "private"}).status_code == 404
+    (tmp_path / "videos").mkdir()
+    (tmp_path / "videos" / "story_1.mp4").write_bytes(b"\x00")
+    resp = client.post("/api/darkarchives/stories/1/upload", json={"privacy": "private"})
+    assert resp.status_code == 400 and "Connect" in resp.json()["detail"]
+    assert client.post("/api/darkarchives/stories/1/upload", json={"privacy": "everyone"}).status_code == 422
+    assert client.post("/api/darkarchives/youtube/logout").json() == {"connected": False}
+    assert client.get("/api/darkarchives/upload-job").json() == {"running": False}

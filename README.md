@@ -827,7 +827,17 @@ python -m modules.video_gen --id 17  # the finished Short: output/darkarchives/s
 
 The tab does the same: pick a story → **Write the Shorts script** → **Make the video** (a few minutes;
 the tab shows the progress, then the video, its pictures and a description to copy). The story becomes
-USED. Uploading waits for the channel's own `channels/darkarchives/` folder (handle, YouTube login).
+USED.
+
+**Its YouTube channel** (`@DarkArchives-j1l`, a second channel on the same Google account) has its own
+folder, `channels/darkarchives/`, with `channel.env` (`CHANNEL_HANDLE`, `STATS_*`) and its own
+`token_youtube.json`; the OAuth client (`client_secret.json` in the project folder) is shared. Under a
+finished video the tab has **Connect YouTube** (Google asks which channel: pick Dark Archives) and
+**Upload to YouTube** with the privacy (private until the API audit, like the gameplay channel); the
+title, description (handle, source link, photo credits, hashtags) and tags come from `story_<id>.json`,
+where the upload (video id, url, Studio link) is recorded too. Category: Entertainment. The handle
+also goes into the end banner (`@handle · Follow for more`) and the descriptions. The dashboard's
+Upload and Plan tabs stay the gameplay channel's.
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
