@@ -64,11 +64,16 @@ def test_commons_file_picker_and_article_title():
         {"title": "File:Tiny.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 200, "height": 150}]},
         {"title": "File:Harbour.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 2000, "height": 1500, "thumburl": "https://u/h.jpg"}]},
         {"title": "File:Atlantic hurricanes 1851-2020.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 3000, "height": 1800,
-         "thumburl": "https://u/t.jpg", "extmetadata": {"Categories": {"value": "Atlantic hurricane tracks|Maps of the Atlantic Ocean"}}}]},
+         "thumburl": "https://u/t.jpg", "extmetadata": {"Categories": {"value": "Self-published work|Cumulative Atlantic hurricane trackmaps"}}}]},
+        {"title": "File:Routes.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 3000, "height": 1800, "thumburl": "https://u/r.jpg",
+         "extmetadata": {"ImageDescription": {"value": "This map shows the <b>routes</b> of the ships."}}}]},
+        {"title": "File:Deck.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 2200, "height": 1800, "thumburl": "https://u/d.jpg",
+         "extmetadata": {"Categories": {"value": "Photographs by John|Flagships of the Royal Navy|Charter boats"}}}]},
     ]
     picked = scene_images.pick_commons_files(pages, limit=2)
-    assert [f.title for f in picked] == ["File:Harbour.jpg", "File:Mary Celeste engraving.jpg"]
-    assert picked[1].credit == "Photo: Rudolph Ruzicka (Public domain), Wikimedia Commons"
+    assert [f.title for f in picked] == ["File:Deck.jpg", "File:Harbour.jpg"]
+    assert [f.title for f in scene_images.pick_commons_files(pages, limit=9)][-1] == "File:Mary Celeste engraving.jpg"
+    assert scene_images.pick_commons_files(pages, limit=9)[-1].credit == "Photo: Rudolph Ruzicka (Public domain), Wikimedia Commons"
     assert picked[0].credit == "Photo: Wikimedia Commons"
 
 
