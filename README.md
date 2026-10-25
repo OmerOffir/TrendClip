@@ -835,7 +835,8 @@ USED. Uploading waits for the channel's own `channels/darkarchives/` folder (han
      Commons pictures (no maps, flags or icons) on scene 1 and the middle scene, laid over a blurred copy
      of themselves, with the author and licence in the description.
 3. **Motion**: ffmpeg moves over every picture (a slow push-in or pull-out, alternating, with a slight
-   drift), dissolves 0.6 s between beats, and grades it dark: less saturation, a cold tint, vignette, grain.
+   drift) and dissolves 0.6 s between beats; each still was graded first (less saturation, a cold tint,
+   vignette). Moving grain is `DA_GRAIN=1` (it makes the file about ten times bigger).
 4. **Assembly**: the karaoke assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
    scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), and a track from
    `DA_MUSIC` (default `folder:dramatic` = `music/dramatic/`, `none` for silence) at `DA_MUSIC_VOLUME`.

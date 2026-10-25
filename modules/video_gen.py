@@ -10,7 +10,7 @@ The beats are the hook and every scene. Flow:
   3. pictures   one 9:16 picture per beat from scene_images (the GPU, Gemini or placeholders). A Wikipedia
                 story gets the article's real photos for scene 1 and the middle scene, with credits;
   4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
-                pull-out on each (alternating), 0.6 s dissolves between beats, film grain -> pictures/background.mp4;
+                pull-out on each (alternating), 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: karaoke captions (3 words, amber highlight), the scene's
                 overlay text flashing in above them, the title card for 3 s, dramatic music from
                 music/dramatic under the voice.
@@ -129,8 +129,9 @@ def kenburns_filter(index: int, beat_seconds: float, w: int, h: int, fps: int = 
             f"zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuv420p[v{index}]")
 
 
-# The colour grade and vignette are baked into the stills (scene_images.grade); only the grain moves.
-GRAIN = "noise=alls=9:allf=t,format=yuv420p"
+# The colour grade and vignette are baked into the stills (scene_images.grade). Moving film grain is
+# opt-in (DA_GRAIN=1): x264 cannot compress it, and a 70 s Short came out at 950 MB with it.
+GRAIN = "noise=alls=6:allf=t,"
 
 
 def build_background(pictures: list[Path], beats: list[Beat], output: Path, size: tuple[int, int] = scene_images.SIZE,
@@ -160,7 +161,8 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
         out = f"x{i}" if i < n - 1 else "mix"
         filters.append(f"[{current}][v{i}]xfade=transition=fade:duration={dissolve}:offset={max(offset, 0):.3f}[{out}]")
         current = out
-    filters.append(f"[{current}]{GRAIN}[out]")
+    grain = GRAIN if setting("DA_GRAIN", "0") in ("1", "true", "on") else ""
+    filters.append(f"[{current}]{grain}format=yuv420p[out]")
     output.parent.mkdir(parents=True, exist_ok=True)
     tmp = output.with_name(output.stem + ".rendering.mp4")
     cmd += ["-filter_complex", ";".join(filters), "-map", "[out]", "-an",
