@@ -192,6 +192,18 @@ def slot_time(settings, day: Day, slot: str) -> datetime:
     return datetime(day.year, day.month, day.day, hour, minute, tzinfo=settings.tz)
 
 
+def next_free_slot(settings, now: datetime | None = None, out_dir: Path | None = None, days: int = 30) -> tuple[Day, str] | None:
+    """The first slot from now on with nothing planned (today's passed slots are skipped)."""
+    now = (now or datetime.now(settings.tz)).astimezone(settings.tz)
+    plan = load(out_dir)
+    for n in range(days):
+        day = now.date() + timedelta(days=n)
+        for slot in slots():
+            if slot_time(settings, day, slot) > now and _taken(plan, day, slot) is None:
+                return day, slot
+    return None
+
+
 def planned_dates(out_dir: Path | None = None) -> dict[int, list[str]]:
     out: dict[int, list[str]] = {}
     for item in load(out_dir).items:

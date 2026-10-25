@@ -152,3 +152,40 @@ def test_delete_video_removes_files_plan_and_resets_the_story(tmp_path, monkeypa
     assert da_plan.load(out).items == [] and repository.get_story(1)["status"] == "SCRIPT_READY"
     assert client.delete("/api/darkarchives/stories/1/video").status_code == 404
     assert client.get("/api/darkarchives/videos").json()["videos"] == []
+
+
+def test_next_free_slot(tmp_path):
+    settings = get_settings()
+    out = tmp_path / "videos"
+    _video(out, 1)
+    now = datetime(2026, 11, 2, 15, 0, tzinfo=settings.tz)  # 14:30 passed
+    assert da_plan.next_free_slot(settings, now, out) == (Day(2026, 11, 2), "23:00")
+    da_plan.add_item(da_plan.ItemRequest(story_id=1, date=Day(2026, 11, 2), slot="23:00"), out)
+    assert da_plan.next_free_slot(settings, now, out) == (Day(2026, 11, 3), "14:30")
+
+
+def test_rest_post_sends_components(monkeypatch):
+    from trendclip import hub
+
+    calls = []
+
+    class Resp:
+        status_code = 200
+        content = b"{}"
+
+        def json(self):
+            return {"id": "m1"}
+
+    def fake_request(method, url, headers=None, timeout=None, **kw):
+        calls.append((method, url, kw))
+        return Resp()
+
+    import requests
+    monkeypatch.setattr(requests, "request", fake_request)
+    rest = hub.Rest(get_settings().model_copy(update={"discord_bot_token": __import__("pydantic").SecretStr("t")}))
+    rest.channel = 42
+    rows = [{"type": 1, "components": [{"type": 2, "style": 1, "label": "Go", "custom_id": "tc:daup:1"}]}]
+    assert rest.post("hi", components=rows) == "m1"
+    assert calls[-1][2]["json"] == {"content": "hi", "components": rows}
+    assert rest.post("hi", ("a.mp4", b"x"), rows) == "m1"
+    assert json.loads(calls[-1][2]["data"]["payload_json"])["components"] == rows

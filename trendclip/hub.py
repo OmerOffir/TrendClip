@@ -212,12 +212,17 @@ class Rest:
             return resp.json() if resp.content else None
         raise HubError("Discord kept rate limiting; try again in a minute", 429)
 
-    def post(self, content: str, file: tuple[str, bytes] | None = None) -> str:
+    def post(self, content: str, file: tuple[str, bytes] | None = None,
+             components: list[dict[str, Any]] | None = None) -> str:
+        """`components`: Discord message components (rows of buttons); a button whose custom_id is
+        `tc:<action>:<arg>` is answered by the bot like one it sent itself."""
         path = f"/channels/{self.channel}/messages"
+        payload: dict[str, Any] = {"content": content}
+        if components:
+            payload["components"] = components
         if file is None:
-            return self._call("POST", path, json={"content": content})["id"]
-        return self._call("POST", path, data={"payload_json": json.dumps({"content": content})},
-                          files={"files[0]": file})["id"]
+            return self._call("POST", path, json=payload)["id"]
+        return self._call("POST", path, data={"payload_json": json.dumps(payload)}, files={"files[0]": file})["id"]
 
     def after(self, message_id: str) -> list[dict[str, Any]]:
         return self._call("GET", f"/channels/{self.channel}/messages", params={"after": message_id, "limit": 50})

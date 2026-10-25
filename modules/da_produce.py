@@ -146,7 +146,8 @@ def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, 
 
                 da_channel.announce_video(story_id, info, settings, out_dir, note=(
                     f"Planned for {day.isoformat()} {slot}: it goes out by itself as {da_plan.upload_privacy()}. "
-                    "Don't want it? Take it off the plan in the DarkArchives tab."))
+                    "Don't want it? Press the button or take it off the plan in the DarkArchives tab."),
+                    components=da_channel.video_buttons(story_id, item_id=item.id))
             return {"status": "planned", "day": day.isoformat(), "slot": slot, "story_id": story_id,
                     "item": item.model_dump(mode="json"), "info": info, "tried": tried}
         progress(None, f"Not good enough ({'; '.join(problems)}): trying another story")

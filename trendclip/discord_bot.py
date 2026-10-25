@@ -643,7 +643,9 @@ class TrendClipBot(discord.Client):
                 + (f" · {len(info['photos'])} photo(s)" if info.get("photos") else "")
                 + (f" · 🎵 {info['music']['title']}" if info.get("music") else "") + note)
         await self.darkarchives_send_video(channel, result["story_id"], text,
-                                           view_of(button("daveto", item["id"], "🚫 Don't post this", discord.ButtonStyle.danger)))
+                                           view_of(button("daveto", item["id"], "🚫 Don't post this", discord.ButtonStyle.danger),
+                                                   button("daup", str(result["story_id"]), "⬆️ Upload to YouTube now", discord.ButtonStyle.primary),
+                                                   button("dadel", str(result["story_id"]), "🗑 Delete the video")))
 
     async def darkarchives_send_video(self, channel: discord.abc.Messageable, story_id: int, content: str,
                                       view: discord.ui.View | None = None) -> None:
@@ -1388,11 +1390,90 @@ async def act_da_produce(bot: TrendClipBot, interaction: discord.Interaction, ar
     task.add_done_callback(bot._job_done)
 
 
+def _da_info(story_id: int) -> dict | None:
+    from modules import da_plan
+
+    return da_plan.video_info(story_id)
+
+
+async def act_da_upload_confirm(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    from modules import da_channel, da_plan
+
+    info = _da_info(int(arg))
+    if info is None:
+        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+    if (info.get("uploads") or {}).get("youtube"):
+        return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
+    if not da_channel.connected():
+        return await reply(interaction, "The DarkArchives YouTube channel is not connected (DarkArchives tab → Videos → Connect YouTube).", ephemeral=True)
+    privacy = da_plan.upload_privacy()
+    await reply(interaction, f"Upload **{info['title']}** to the DarkArchives channel now, as **{privacy}**?",
+                view=view_of(button("daupgo", arg, f"Yes, upload as {privacy}", discord.ButtonStyle.danger),
+                             button("no", "-", "Cancel")), ephemeral=True)
+
+
+async def act_da_upload(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    from modules import da_channel, da_plan
+
+    story_id = int(arg)
+    info = _da_info(story_id)
+    if info is None:
+        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    try:
+        record = await asyncio.to_thread(da_channel.upload, story_id, da_plan.upload_privacy())
+    except Exception as err:  # noqa: BLE001
+        return await reply(interaction, f"❌ Upload failed: {err}")
+    for item in await asyncio.to_thread(lambda: [i for i in da_plan.load().items if i.story_id == story_id]):
+        await asyncio.to_thread(da_plan.set_posted, item.id, True)
+    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}")
+
+
+async def act_da_plan(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    from modules import da_plan
+
+    story_id = int(arg)
+    info = _da_info(story_id)
+    if info is None:
+        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+    settings = bot.settings
+    nxt = await asyncio.to_thread(da_plan.next_free_slot, settings, assistant.now(settings))
+    if nxt is None:
+        return await reply(interaction, "No free DarkArchives slot in the next 30 days.", ephemeral=True)
+    item = await asyncio.to_thread(da_plan.add_item, da_plan.ItemRequest(story_id=story_id, date=nxt[0], slot=nxt[1]))
+    await reply(interaction, f"📅 **{info['title']}** is planned for {day_label(settings, item.date)} at {item.slot} and goes "
+                             f"out by itself as {da_plan.upload_privacy()}.",
+                view=view_of(button("daveto", item.id, "🚫 Don't post this", discord.ButtonStyle.danger)))
+
+
+async def act_da_delete_confirm(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    info = _da_info(int(arg))
+    if info is None:
+        return await reply(interaction, "That DarkArchives video is already gone.", ephemeral=True)
+    await reply(interaction, f"Delete **{info['title']}** (the file, its pictures and its plan entries; the story can be "
+                             f"made again)?" + (" It stays on YouTube." if (info.get("uploads") or {}).get("youtube") else ""),
+                view=view_of(button("dadelgo", arg, "Yes, delete it", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
+                ephemeral=True)
+
+
+async def act_da_delete(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    from modules import video_gen
+
+    info = _da_info(int(arg))
+    if info is None:
+        return await reply(interaction, "That DarkArchives video is already gone.", ephemeral=True)
+    result = await asyncio.to_thread(video_gen.delete_video, int(arg))
+    await reply(interaction, f"🗑 **{info['title']}** is deleted ({result['plan_items']} plan entr{'y' if result['plan_items'] == 1 else 'ies'} "
+                             f"removed; the story is {result['status'] or 'kept'}).")
+
+
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
     "iggo": act_instagram, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
+    "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
+    "dadelgo": act_da_delete,
 }
 
 
@@ -1854,11 +1935,152 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
         "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours); "
         "`now:True` replies on quiz videos too, without the 10 h spoiler wait",
+        "",
+        "**DarkArchives** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
+        "`/da make` a video for the next empty slot now (`slots:` more, `fetch:True` refresh the bank first) · "
+        "`/da fetch` · `/da upload`. Every morning the bank is refreshed and each empty slot gets a video, posted "
+        "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
     ]), ephemeral=True)
 
 
+# --------------------------------------------------------------------------- DarkArchives
+
+
+da_group = app_commands.Group(name="da", description="DarkArchives: the dark-stories channel (its own plan, bank and YouTube)")
+
+
+def _da_video_line(v: dict, planned: dict[int, list[str]]) -> str:
+    up = (v.get("uploads") or {}).get("youtube")
+    where = f"▶️ {up.get('url', '')}" if up else (f"📅 {', '.join(planned.get(v['story_id'], []))}" if planned.get(v["story_id"]) else "not planned")
+    return f"• **{v['title']}** · {v.get('duration_seconds', 0):.0f} s · story {v['story_id']} · {where}"
+
+
+async def da_video_choices(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    from modules import da_plan
+
+    out = []
+    for v in await asyncio.to_thread(da_plan.videos):
+        label = f"{v['title']} ({v.get('duration_seconds', 0):.0f} s)"
+        if not current or current.lower() in label.lower():
+            out.append(app_commands.Choice(name=label[:100], value=str(v["story_id"])))
+    return out[:25]
+
+
+@da_group.command(name="plan", description="The DarkArchives plan for the next days")
+@app_commands.describe(days="How many days (default 3)")
+async def da_plan_cmd(interaction: discord.Interaction, days: app_commands.Range[int, 1, 14] = 3) -> None:
+    from modules import da_plan, da_produce
+
+    settings = _bot(interaction).settings
+    view = await asyncio.to_thread(da_plan.view)
+    by_key = {f"{i['date']} {i['slot']}": i for i in view["items"]}
+    lines = []
+    start = assistant.today(settings)
+    for n in range(days):
+        day = start + timedelta(days=n)
+        lines.append(f"**{day_label(settings, day)}**")
+        for slot in view["slots"]:
+            item = by_key.get(f"{day.isoformat()} {slot}")
+            if item is None:
+                lines.append(f"`{slot}` —")
+            else:
+                yt = item["youtube"]
+                state = f"▶️ on YouTube ({yt.get('privacy') or '?'}) {yt.get('url', '')}" if yt["done"] else "⏳ waits for its time"
+                lines.append(f"`{slot}` **{item['title']}** · {state}")
+    automation = f"every day at {da_produce.produce_time()}" if da_produce.auto_produce() else "off"
+    lines.append(f"\n🏭 Automation: {automation} · posts: {'on' if view['auto_post'] else 'off'} as {view['privacy']}")
+    await reply(interaction, "\n".join(lines))
+
+
+@da_group.command(name="videos", description="DarkArchives videos: made, planned, on YouTube")
+async def da_videos_cmd(interaction: discord.Interaction) -> None:
+    from modules import da_plan
+
+    videos = await asyncio.to_thread(da_plan.videos)
+    planned = await asyncio.to_thread(da_plan.planned_dates)
+    if not videos:
+        return await reply(interaction, "No DarkArchives videos yet: `/da make` makes one for the next empty slot.")
+    lines = [f"🎞️ **{len(videos)} DarkArchives video(s)**"] + [_da_video_line(v, planned) for v in videos[:15]]
+    waiting = [v for v in videos if not (v.get("uploads") or {}).get("youtube") and not planned.get(v["story_id"])][:4]
+    buttons = [button("daplan", str(v["story_id"]), f"📅 Plan: {clip_text(v['title'], 50)}", discord.ButtonStyle.success) for v in waiting]
+    await reply(interaction, "\n".join(lines), view=view_of(*buttons), suppress_embeds=True)
+
+
+@da_group.command(name="status", description="DarkArchives: YouTube connection, the story bank, the next empty slot")
+async def da_status_cmd(interaction: discord.Interaction) -> None:
+    from db import repository
+    from modules import da_channel, da_plan, da_produce
+
+    settings = _bot(interaction).settings
+    await interaction.response.defer(thinking=True)
+    yt = await asyncio.to_thread(da_channel.youtube_status)
+    yt_line = (f"✅ YouTube connected ({(yt.get('channel') or {}).get('title', 'channel')} {yt.get('handle', '')})" if yt.get("connected")
+               else f"❌ YouTube not connected{': ' + yt['error'] if yt.get('error') else ''} (DarkArchives tab → Videos → Connect YouTube)")
+    counts = await asyncio.to_thread(repository.counts)
+    mix = await asyncio.to_thread(repository.pillar_mix)
+    nxt = await asyncio.to_thread(da_plan.next_free_slot, settings, assistant.now(settings))
+    targets = await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
+    await reply(interaction, "\n".join([
+        yt_line,
+        f"📚 Bank: {counts.get('NEW', 0)} new · {counts.get('SCRIPT_READY', 0)} scripted · {counts.get('USED', 0)} used · {counts.get('REJECTED', 0)} rejected",
+        "🧭 Mix: " + " · ".join(f"{p} {m['produced']} made / {m['new']} new" for p, m in mix.items()),
+        f"🕒 Next free slot: {day_label(settings, nxt[0]) + ' ' + nxt[1] if nxt else 'none in 30 days'} · "
+        f"the morning run would fill: {', '.join(day_label(settings, d) + ' ' + s for d, s in targets) or 'nothing'}",
+        f"🏭 Automation: {'every day at ' + da_produce.produce_time() if da_produce.auto_produce() else 'off'} · "
+        f"posts {'on' if da_plan.auto_post() else 'off'} as {da_plan.upload_privacy()} at {', '.join(da_plan.slots())}",
+    ]))
+
+
+@da_group.command(name="make", description="Make a DarkArchives video now for the next empty slot (story → script → video → plan)")
+@app_commands.describe(slots="How many empty slots to fill (default 1)", fetch="Refresh the story bank first (default no)")
+async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Range[int, 1, 4] = 1, fetch: bool = False) -> None:
+    from modules import da_produce
+
+    bot = _bot(interaction)
+    settings = bot.settings
+    targets = await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
+    if not targets:
+        return await reply(interaction, "Every DarkArchives slot of today and tomorrow is planned; nothing to make.", ephemeral=True)
+    wanted = targets[:slots]
+    await reply(interaction, f"🏭 Making {len(wanted)} DarkArchives video(s): {', '.join(day_label(settings, d) + ' ' + s for d, s in wanted)}. "
+                             f"Progress in the DarkArchives channel.", ephemeral=True)
+
+    async def go() -> None:
+        if fetch:
+            channel = await bot.darkarchives_channel()
+            if channel is not None:
+                try:
+                    await bot.run_job(channel, "Refreshing the story bank", da_produce.refresh_bank, bot.render_lock)
+                except JobFailed:
+                    pass
+        for day, slot in wanted:
+            await bot.darkarchives_produce(only=(day, slot))
+
+    task = asyncio.create_task(go())
+    bot.jobs.add(task)
+    task.add_done_callback(bot._job_done)
+
+
+@da_group.command(name="fetch", description="Refresh the DarkArchives story bank now (Reddit, Wikipedia, Gemini, RSS)")
+async def da_fetch_cmd(interaction: discord.Interaction) -> None:
+    from modules import da_produce
+
+    await interaction.response.defer(thinking=True)
+    report = await asyncio.to_thread(da_produce.refresh_bank)
+    lines = [f"• {name}: " + (f"❌ {r['error']}" if "error" in r else f"{r['saved']} new ({r['fetched']} fetched, {r['duplicates']} known)")
+             for name, r in report.items()]
+    await reply(interaction, "📚 **Story bank refreshed**\n" + "\n".join(lines))
+
+
+@da_group.command(name="upload", description="Upload a DarkArchives video to YouTube now")
+@app_commands.describe(video="The video")
+@app_commands.autocomplete(video=da_video_choices)
+async def da_upload_cmd(interaction: discord.Interaction, video: str) -> None:
+    await act_da_upload_confirm(_bot(interaction), interaction, video)
+
+
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
-            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, help_cmd]
 
 
 

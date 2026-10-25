@@ -861,9 +861,14 @@ has Gemini write its script (a rejected story is marked and the next one tried),
 it (between `DA_MIN_SECONDS` and `DA_MAX_SECONDS` long, real pictures rather than placeholder cards, enough
 words; a video that fails is deleted and the next story tried, four stories per slot at most) and puts it
 on the plan. Each video is posted in the DarkArchives Discord channel with **Don't post this** (off the
-plan; the video stays in the tab; **Make another now** refills the slot) and goes out at its time. The Plan
-section shows the automation line with **Run it now**; the command line is `python -m modules.da_produce`
-(`--no-fetch`, `--slots N`).
+plan; the video stays in the tab; **Make another now** refills the slot), **Upload to YouTube now** and
+**Delete the video** buttons, and goes out at its time; a video made from the tab gets **Plan the next
+free slot** instead of the veto. The Plan section shows the automation line with **Run it now**; the command
+line is `python -m modules.da_produce` (`--no-fetch`, `--slots N`).
+
+**Discord commands** for this channel: `/da plan` (the next days), `/da videos`, `/da status` (YouTube,
+the bank, the mix, the next empty slot, the automation), `/da make` (a video for the next empty slot now;
+`slots:`, `fetch:True`), `/da fetch` (refresh the bank), `/da upload video:`.
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the

@@ -327,15 +327,20 @@ def test_discord_announcements(tmp_path, monkeypatch):
         def __init__(self, settings):
             self.channel = None
 
-        def post(self, content, file=None):
-            posts.append((self.channel, content, file))
+        def post(self, content, file=None, components=None):
+            posts.append((self.channel, content, file, components))
             return "msg1"
 
     monkeypatch.setattr(hub, "Rest", FakeRest)
     assert da_channel.announce_video(5, info, settings, out) == "msg1"
-    channel, content, file = posts[-1]
+    channel, content, file, components = posts[-1]
     assert channel == 1563997738666819707 and file == ("story_5.mp4", b"\x00" * 64)
     assert content.startswith("🎬 **The Ship** · 65 s · pictures: local · 2 photos · 🎵 Sombra\nStory 5:")
+    assert [b["custom_id"] for b in components[0]["components"]] == ["tc:daplan:5", "tc:daup:5", "tc:dadel:5"]
+    assert da_channel.video_buttons(5, item_id="abc")[0]["components"][0] == {"type": 2, "style": 4, "label": "🚫 Don't post this", "custom_id": "tc:daveto:abc"}
+    up = {"url": "https://youtube.com/shorts/x"}
+    assert [b.get("custom_id") or b.get("url") for b in da_channel.video_buttons(5, uploaded=up)[0]["components"]] == ["https://youtube.com/shorts/x", "tc:dadel:5"]
     assert da_channel.announce_upload(5, info, {"privacy": "private", "url": "https://youtube.com/shorts/x", "studio_url": "https://studio/x"}, settings) == "msg1"
-    assert posts[-1][1] == "⬆️ **The Ship** is on YouTube (private): https://youtube.com/shorts/x\nYouTube Studio: <https://studio/x>"
+    assert posts[-1][1] == "⬆️ **The Ship** is on YouTube (private): https://youtube.com/shorts/x"
+    assert [b["url"] for b in posts[-1][3][0]["components"]] == ["https://youtube.com/shorts/x", "https://studio/x"]
     assert da_channel.announce_video(5, info, settings.model_copy(update={"discord_bot_token": None}), out) is None

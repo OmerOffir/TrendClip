@@ -58,7 +58,41 @@ def _rest(settings=None):
     return rest
 
 
-def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None, note: str | None = None) -> str | None:
+STYLES = {"primary": 1, "secondary": 2, "success": 3, "danger": 4}
+
+
+def button(action: str, arg: str | int, label: str, style: str = "secondary") -> dict[str, Any]:
+    """A Discord button the bot answers (its custom id is `tc:<action>:<arg>`, like the bot's own)."""
+    return {"type": 2, "style": STYLES.get(style, 2), "label": label[:80], "custom_id": f"tc:{action}:{arg}"[:100]}
+
+
+def link_button(label: str, url: str) -> dict[str, Any]:
+    return {"type": 2, "style": 5, "label": label[:80], "url": url}
+
+
+def rows(*buttons: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Message components: up to 5 buttons a row."""
+    items = [b for b in buttons if b]
+    return [{"type": 1, "components": items[i:i + 5]} for i in range(0, len(items), 5)]
+
+
+def video_buttons(story_id: int, item_id: str | None = None, uploaded: dict | None = None) -> list[dict[str, Any]]:
+    """The buttons under a video post: veto when it is planned, plan when it is not, upload, delete."""
+    out = []
+    if item_id:
+        out.append(button("daveto", item_id, "🚫 Don't post this", "danger"))
+    elif not uploaded:
+        out.append(button("daplan", story_id, "📅 Plan the next free slot", "success"))
+    if uploaded:
+        out.append(link_button("▶️ Watch on YouTube", uploaded.get("url", "")) if uploaded.get("url") else None)
+    else:
+        out.append(button("daup", story_id, "⬆️ Upload to YouTube now", "primary"))
+    out.append(button("dadel", story_id, "🗑 Delete the video"))
+    return rows(*out)
+
+
+def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None, note: str | None = None,
+                   components: list[dict[str, Any]] | None = None) -> str | None:
     """Post the finished video (shrunk to Discord's 10 MB when needed) in the DarkArchives channel.
     `note` replaces the "upload it from the tab" line. Never raises: the video is made whether or not
     Discord takes it."""
@@ -73,7 +107,9 @@ def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | Non
                 f"pictures: {info.get('pictures', '?')}" + (f" · {photos} photo{'s' if photos != 1 else ''}" if photos else "")
                 + (f" · 🎵 {info['music']['title']}" if info.get("music") else "")
                 + "\n" + (note or f"Story {story_id}: upload it from the DarkArchives tab (Used → the story → Upload to YouTube)."))
-        return rest.post(text, (path.name, small.read_bytes()))
+        if components is None:
+            components = video_buttons(story_id, uploaded=(info.get("uploads") or {}).get("youtube"))
+        return rest.post(text, (path.name, small.read_bytes()), components)
     except Exception as err:  # noqa: BLE001
         logger.warning("Discord post for story %s failed: %s", story_id, err)
         return None
@@ -86,7 +122,9 @@ def announce_upload(story_id: int, info: dict, record: dict, settings=None) -> s
         if rest is None:
             return None
         return rest.post(f"⬆️ **{info.get('title', f'story {story_id}')}** is on YouTube ({record.get('privacy', '?')}): "
-                         f"{record.get('url', '')}\nYouTube Studio: <{record.get('studio_url', '')}>")
+                         f"{record.get('url', '')}",
+                         components=rows(link_button("▶️ Watch", record.get("url", "")) if record.get("url") else None,
+                                         link_button("🎬 YouTube Studio", record.get("studio_url", "")) if record.get("studio_url") else None))
     except Exception as err:  # noqa: BLE001
         logger.warning("Discord post for the upload of story %s failed: %s", story_id, err)
         return None
