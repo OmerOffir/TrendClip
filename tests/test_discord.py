@@ -139,6 +139,7 @@ def test_uploaded_shorts_are_not_in_the_backlog(settings):
 
 
 def test_reminders_fire_once_in_their_window(settings):
+    settings = settings.with_overrides(emergency_video=False)
     assert assistant.due_reminders(settings, at(settings, 9, 59), set()) == []
     morning = assistant.due_reminders(settings, at(settings, 10), set())
     assert [r.key for r in morning] == ["2026-10-07 morning"]
@@ -156,6 +157,137 @@ def test_reminders_fire_once_in_their_window(settings):
     quiet = settings.with_overrides(discord_reminder_minutes=0, auto_post=False)
     assert assistant.due_reminders(quiet, at(settings, 22, 45), {"2026-10-07 morning"}) == []
     assert assistant.due_reminders(quiet, at(settings, 23, 0), {"2026-10-07 morning"}) == []
+
+
+def test_an_empty_slot_gets_an_emergency_video_an_hour_before(settings):
+    seen = {"2026-10-07 morning"}
+    assert [r.kind for r in assistant.due_reminders(settings, at(settings, 13, 29), seen)] == []
+    due = assistant.due_reminders(settings, at(settings, 13, 30), seen)
+    assert [(r.kind, r.slot, r.key) for r in due] == [("emergency", "14:30", "2026-10-07 14:30 emergency")]
+    assert assistant.due_reminders(settings, at(settings, 13, 31), seen | {"2026-10-07 14:30 emergency"}) == []
+    assistant.plan_short(settings, add_short(settings, "a.mp4"), DAY, "23:00")
+    assert "emergency" not in [r.kind for r in assistant.due_reminders(settings, at(settings, 22), seen)]
+    off = settings.with_overrides(emergency_video=False)
+    assert assistant.due_reminders(off, at(settings, 13, 30), seen) == []
+
+
+def _emergency_bot(settings, made, posted):
+    import asyncio
+
+    from trendclip import discord_bot
+
+    class Channel:
+        def __init__(self):
+            self.sent = []
+
+        async def send(self, content="", **kw):
+            self.sent.append(content)
+
+    class Bot:
+        render_lock = asyncio.Lock()
+        emergency: set = set()
+        emergency_video = discord_bot.TrendClipBot.emergency_video
+
+        def __init__(self):
+            self.settings = settings
+            self.sent = assistant.SentLog(settings)
+
+        async def run_job(self, channel, title, fn, lock, attempts=1, give_up=lambda: False):
+            made.append(title)
+            assert attempts == discord_bot.EMERGENCY_ATTEMPTS and give_up() is False
+            return fn(lambda f, m: None)
+
+        async def send_video(self, channel, filename, content, view=None, followup=None):
+            channel.sent.append(content)
+
+        async def auto_post(self, channel, day, slot):
+            posted.append(slot)
+
+    return Bot(), Channel()
+
+
+def test_the_emergency_video_is_made_and_planned_in_the_empty_slot(settings, monkeypatch, clock):
+    import asyncio
+
+    from trendclip import discord_bot
+
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
+    monkeypatch.setattr(discord_bot.random, "choice", lambda seq: "math" if "math" in seq else seq[-1])
+    kinds = []
+
+    def create(s, game, progress, kind, only):
+        kinds.append((game, kind))
+        assert only == ("GTA V / Online", "Minecraft")
+        return shorts.get_short(s, add_short(s, "e.mp4"))
+
+    monkeypatch.setattr(assistant, "create_random_short", create)
+    made, posted = [], []
+    bot, channel = _emergency_bot(settings, made, posted)
+    clock[0] = at(settings, 13, 30, day=DAY)
+    asyncio.run(bot.emergency_video(channel, DAY, "14:30"))
+    assert kinds == [("Minecraft", "math")] and made == ["Emergency math challenge for 14:30"]
+    assert "with Minecraft gameplay" in channel.sent[0]
+    assert planner.slot_item(settings, DAY, "14:30").short == "e.mp4"
+    assert "goes out by itself at 14:30" in channel.sent[-1] and posted == []
+    assert not bot.emergency
+
+    clock[0] = at(settings, 23, 5, day=DAY)  # finished after its slot: posted right away, and only once
+    asyncio.run(bot.emergency_video(channel, DAY, "23:00"))
+    assert posted == ["23:00"] and assistant.post_key(DAY, "23:00") in bot.sent.load()
+
+    made.clear()
+    asyncio.run(bot.emergency_video(channel, DAY, "14:30"))  # the slot is taken now: nothing to make
+    assert made == []
+
+
+def test_a_failed_job_is_tried_again_until_it_works(monkeypatch):
+    import asyncio
+
+    from trendclip import discord_bot
+
+    monkeypatch.setattr(discord_bot, "RETRY_WAIT", 0)
+
+    class Msg:
+        def __init__(self, log):
+            self.log = log
+
+        async def edit(self, content):
+            self.log.append(content)
+
+    class Channel:
+        def __init__(self):
+            self.log = []
+
+        async def send(self, content):
+            self.log.append(content)
+            return Msg(self.log)
+
+    def flaky(fails):
+        calls = []
+
+        def fn(progress):
+            calls.append(1)
+            if len(calls) <= fails:
+                raise RuntimeError("ffmpeg exited with 1")
+            return "video.mp4"
+        return fn, calls
+
+    run = discord_bot.TrendClipBot.run_job
+    channel = Channel()
+    fn, calls = flaky(2)
+    assert asyncio.run(run(None, channel, "Creating a video", fn, asyncio.Lock(), attempts=3)) == "video.mp4"
+    assert len(calls) == 3 and "attempt 1 failed (ffmpeg exited with 1)" in channel.log[1]
+    assert channel.log[-1] == "✅ Creating a video: done (on attempt 3)"
+
+    fn, calls = flaky(5)
+    with pytest.raises(discord_bot.JobFailed):
+        asyncio.run(run(None, Channel(), "Creating a video", fn, asyncio.Lock(), attempts=3))
+    assert len(calls) == 3
+
+    fn, calls = flaky(5)  # the slot was filled meanwhile: stop trying
+    with pytest.raises(discord_bot.JobFailed):
+        asyncio.run(run(None, Channel(), "Emergency", fn, asyncio.Lock(), attempts=10, give_up=lambda: True))
+    assert len(calls) == 1
 
 
 def test_sent_log_survives_restarts_and_forgets_old_days(settings):
@@ -214,6 +346,11 @@ def test_fresh_clip_falls_back_to_downloaded_clips(settings, monkeypatch):
 
     monkeypatch.setattr(video_downloader, "download_background", fail)
     assert assistant.fresh_clip(settings, "Minecraft").filename == old.filename
+    other = _clip(settings, "Fortnite")
+    only = ("GTA V / Online", "Minecraft")
+    assert {assistant.fresh_clip(settings, "GTA V / Online", only=only).filename for _ in range(10)} == {old.filename}
+    Path(other.path).unlink()
+    Path(other.path).with_suffix(".json").unlink()
     old_path = Path(old.path)
     old_path.unlink()
     old_path.with_suffix(".json").unlink()

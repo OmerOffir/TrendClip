@@ -22,6 +22,10 @@
           <span class="ws-mark" aria-hidden="true">SQ</span>
           <span><b>SideQuestLogic</b><small>Gameplay storytime Shorts</small></span>
         </button>
+        <button type="button" role="tab" class="workspace" data-workspace="darkarchives" aria-selected="false">
+          <span class="ws-mark ws-mark-dark" aria-hidden="true">DA</span>
+          <span><b>DarkArchives</b><small>Real dark stories &amp; mysteries</small></span>
+        </button>
         <button type="button" class="workspace ws-new" disabled title="More channels for other kinds of videos are coming">+ New channel</button>
       </nav>
       <div class="status" id="status" aria-live="polite"></div>
@@ -35,7 +39,73 @@
         <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
       </nav>
     </div>
+    <div class="subbar" data-workspace-panel="darkarchives" hidden>
+      <span class="subbar-label">DarkArchives</span>
+      <nav class="nav" role="tablist" aria-label="DarkArchives sections">
+        <button type="button" role="tab" class="active">Stories <span class="nav-count" id="daNavCount" hidden></span></button>
+      </nav>
+    </div>
   </header>
+
+  <main class="container da-view" id="viewDarkStories" data-workspace-panel="darkarchives" hidden>
+    <div id="daError" class="banner banner-error" hidden></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Story bank</h2>
+          <span class="hint">Raw stories from Reddit, Wikipedia, Gemini and RSS feeds (Atlas Obscura, Listverse), saved once each (a story is never fetched or told twice). Only 200-3,500 character stories are kept; promos, fiction and off-topic posts are filtered out</span>
+        </div>
+      </div>
+      <div class="da-sources" id="daSources"></div>
+      <div class="da-mix" id="daMix"></div>
+      <div class="da-fetch">
+        <label class="da-check"><input type="checkbox" value="reddit" checked /> Reddit <input type="number" id="daNReddit" min="1" max="100" value="25" title="Posts per subreddit feed" /></label>
+        <label class="da-check"><input type="checkbox" value="wikipedia" checked /> Wikipedia <input type="number" id="daNWiki" min="1" max="50" value="10" title="New articles" /></label>
+        <label class="da-check"><input type="checkbox" value="gemini" checked /> Gemini <input type="number" id="daNGemini" min="1" max="20" value="5" title="New cases" /></label>
+        <label class="da-check"><input type="checkbox" value="rss" checked /> RSS <input type="number" id="daNRss" min="1" max="50" value="10" title="New stories per feed" /></label>
+        <button type="button" class="btn-primary" id="daFetch">Fetch new stories</button>
+        <span class="hint" id="daFetchStatus"></span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Stories <span class="hint" id="daShown"></span></h2>
+          <span class="hint">Best score first. <span class="pill good">NEXT</span> = what <code>get_next_story()</code> returns now: the best story of the pillar furthest below its share</span>
+        </div>
+        <div class="da-filters">
+          <select id="daPillar">
+            <option value="">All pillars</option>
+            <option value="mystery">Mysteries &amp; cold cases</option>
+            <option value="history">Creepy history</option>
+            <option value="outrage">Disturbing true events</option>
+          </select>
+          <select id="daSource">
+            <option value="">All sources</option>
+            <option value="reddit">Reddit</option>
+            <option value="wikipedia">Wikipedia</option>
+            <option value="gemini">Gemini</option>
+            <option value="rss">RSS feeds</option>
+          </select>
+          <select id="daStatus">
+            <option value="">All statuses</option>
+            <option value="NEW" selected>New</option>
+            <option value="PROCESSING">Processing</option>
+            <option value="SCRIPT_READY">Script ready</option>
+            <option value="USED">Used</option>
+            <option value="REJECTED">Rejected</option>
+          </select>
+          <input type="search" id="daQuery" maxlength="100" placeholder="Search title or text" />
+        </div>
+      </div>
+      <div class="da-layout">
+        <div class="da-list" id="daList"></div>
+        <article class="da-detail" id="daDetail"><div class="empty">Pick a story to read it</div></article>
+      </div>
+    </section>
+  </main>
 
   <main class="container view" id="viewCreate" hidden>
     <div id="createBanner" class="banner banner-warn" hidden></div>
@@ -727,5 +797,6 @@
   <script src="/static/upload.js"></script>
   <script src="/static/plan.js"></script>
   <script src="/static/find.js"></script>
+  <script src="/static/darkarchives.js"></script>
 </body>
 </html>

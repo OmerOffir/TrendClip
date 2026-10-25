@@ -817,7 +817,7 @@
     const btn = e.target.closest("button[data-workspace]:not(:disabled)");
     if (btn) showWorkspace(btn.dataset.workspace);
   });
-  showWorkspace(localStorage.getItem("trendclip.workspace"));
+  showWorkspace(new URLSearchParams(location.search).get("workspace") || localStorage.getItem("trendclip.workspace"));
 
   window.TrendClip = {
     api,

@@ -52,6 +52,7 @@ _ENV_MAP: dict[str, str] = {
     "discord_morning_time": "DISCORD_MORNING_TIME",
     "discord_reminder_minutes": "DISCORD_REMINDER_MINUTES",
     "auto_post": "AUTO_POST",
+    "emergency_video": "EMERGENCY_VIDEO",
     "discord_leaderboard_time": "DISCORD_LEADERBOARD_TIME",
     "youtube_auto_replies": "YOUTUBE_AUTO_REPLIES",
     "youtube_reply_daily_max": "YOUTUBE_REPLY_DAILY_MAX",
@@ -135,6 +136,8 @@ class Settings(BaseModel):
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
     # At 14:30 / 23:00 the bot posts the planned Short on YouTube and Instagram itself (its plan platforms).
     auto_post: bool = True
+    # An hour before 14:30 / 23:00 with nothing planned, the bot makes a random video and plans it there.
+    emergency_video: bool = True
     # The leaderboard picture + a post caption to copy to YouTube; empty = off.
     discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
     # Reply on YouTube to every fan's comment (they get a notification); see leaderboard.py.

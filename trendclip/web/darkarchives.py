@@ -1,0 +1,144 @@
+"""DarkArchives tab: browse and test the story bank (db/content_bank.db) and fetch more stories."""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from typing import Any, Literal
+
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from db import repository
+from modules import fetcher, script_gen
+
+router = APIRouter(prefix="/api/darkarchives")
+Source = Literal["reddit", "wikipedia", "gemini", "rss"]
+Status = Literal["NEW", "PROCESSING", "SCRIPT_READY", "USED", "REJECTED"]
+Pillar = Literal["mystery", "history", "outrage"]
+
+_lock = threading.Lock()
+_job: dict[str, Any] = {"running": False}
+_script_job: dict[str, Any] = {"running": False}
+
+
+@router.get("/stories")
+def stories(status: Status | None = None, source: Source | None = None, pillar: Pillar | None = None,
+            q: str = Query("", max_length=100), limit: int = Query(200, ge=1, le=1000)) -> dict[str, Any]:
+    repository.init_db()
+    return {
+        "stories": repository.list_stories(status, source, q, limit, pillar),
+        "counts": repository.counts(),
+        "sources": repository.source_counts(),
+        "mix": repository.pillar_mix(),
+        "pillar_labels": repository.PILLAR_LABELS,
+        "next_id": (repository.get_next_story() or {}).get("id"),
+        "next_pillar": repository.next_pillar(),
+    }
+
+
+@router.get("/stories/{story_id}")
+def story(story_id: int) -> dict[str, Any]:
+    found = repository.get_story(story_id)
+    if not found:
+        raise HTTPException(status_code=404, detail="No such story")
+    return found
+
+
+class StatusUpdate(BaseModel):
+    status: Status
+
+
+@router.post("/stories/{story_id}/status")
+def set_status(story_id: int, body: StatusUpdate) -> dict[str, Any]:
+    if not repository.get_story(story_id):
+        raise HTTPException(status_code=404, detail="No such story")
+    repository.set_status(story_id, body.status)
+    return repository.get_story(story_id)
+
+
+class FetchRequest(BaseModel):
+    sources: list[Source] = Field(default_factory=lambda: list(fetcher.SOURCES), min_length=1)
+    reddit: int = Field(25, ge=1, le=100)
+    wikipedia: int = Field(10, ge=1, le=50)
+    gemini: int = Field(5, ge=1, le=20)
+    rss: int = Field(10, ge=1, le=50)
+
+
+def _run(req: FetchRequest) -> None:
+    def progress(name, report):
+        with _lock:
+            _job.update(current=name, report=dict(report))
+
+    try:
+        report = fetcher.run(req.sources, req.reddit, req.wikipedia, req.gemini, req.rss, progress=progress)
+        with _lock:
+            _job.update(report=report)
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        with _lock:
+            _job.update(error=str(err)[:300])
+    finally:
+        with _lock:
+            _job.update(running=False, current=None, finished_at=time.time())
+
+
+@router.post("/fetch", status_code=202)
+def start_fetch(req: FetchRequest) -> dict[str, Any]:
+    with _lock:
+        if _job.get("running"):
+            raise HTTPException(status_code=409, detail="A fetch is already running")
+        _job.clear()
+        _job.update(running=True, sources=list(req.sources), started_at=time.time(), report={}, current=None)
+    threading.Thread(target=_run, args=(req,), name="darkarchives-fetch", daemon=True).start()
+    return fetch_status()
+
+
+@router.get("/fetch")
+def fetch_status() -> dict[str, Any]:
+    with _lock:
+        return dict(_job)
+
+
+@router.get("/stories/{story_id}/script")
+def get_script(story_id: int) -> dict[str, Any]:
+    path = script_gen.script_path(story_id)
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No script for this story yet")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _write(story_id: int) -> None:
+    try:
+        result = script_gen.process(story_id)
+        with _lock:
+            _script_job.update(status=result["status"], reason=result.get("reason", ""))
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        with _lock:
+            _script_job.update(error=str(err)[:300])
+    finally:
+        with _lock:
+            _script_job.update(running=False, finished_at=time.time())
+
+
+@router.post("/stories/{story_id}/script", status_code=202)
+def start_script(story_id: int) -> dict[str, Any]:
+    """Gemini writes the Shorts script in the background (it can take a minute or more)."""
+    story = repository.get_story(story_id)
+    if not story:
+        raise HTTPException(status_code=404, detail="No such story")
+    if story["status"] == "USED":
+        raise HTTPException(status_code=400, detail="This story was already used in a video")
+    with _lock:
+        if _script_job.get("running"):
+            raise HTTPException(status_code=409, detail="A script is already being written")
+        _script_job.clear()
+        _script_job.update(running=True, story_id=story_id, started_at=time.time())
+    threading.Thread(target=_write, args=(story_id,), name="darkarchives-script", daemon=True).start()
+    return script_status()
+
+
+@router.get("/script-job")
+def script_status() -> dict[str, Any]:
+    with _lock:
+        return dict(_script_job)

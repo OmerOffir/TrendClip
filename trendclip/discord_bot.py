@@ -30,6 +30,10 @@ OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
 PENDING_TEXTS = 30
 NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap",
          "movie": "movie quiz"}
+EMERGENCY_GAMES = ("GTA V / Online", "Minecraft")  # names from games.py
+CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini busy) is made again from scratch
+EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
+RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 SlotChoice = Literal["14:30", "23:00"]
 REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
@@ -293,6 +297,7 @@ class TrendClipBot(discord.Client):
         self.comments_lock = asyncio.Lock()  # one YouTube comments read at a time
         self.ig_lock = asyncio.Lock()  # one Instagram comments read at a time
         self.jobs: set[asyncio.Task] = set()  # background posts (a task nobody holds can be dropped)
+        self.emergency: set[str] = set()  # "day slot" whose emergency video is being made
         self.sent = assistant.SentLog(settings)
         self._games: list[str] | None = None
         self.texts: dict[str, tuple[str, str | None]] = {}  # remember_text
@@ -340,8 +345,9 @@ class TrendClipBot(discord.Client):
     # ---- shared work ------------------------------------------------------------------
 
     async def run_job(self, channel: discord.abc.Messageable, title: str, fn: Callable[[assistant.ProgressFn], Any],
-                      lock: asyncio.Lock) -> Any:
-        """Run `fn(progress)` on a thread, keeping one message up to date with its progress."""
+                      lock: asyncio.Lock, attempts: int = 1, give_up: Callable[[], bool] = lambda: False) -> Any:
+        """Run `fn(progress)` on a thread, keeping one message up to date with its progress. A failure is
+        tried again from scratch, up to `attempts` times in all, unless `give_up()` says it is no longer needed."""
         msg = await channel.send(f"⏳ {title}: " + ("waiting for the current job" if lock.locked() else "starting"))
         state: dict[str, Any] = {"text": "Starting", "frac": None, "dirty": False}
 
@@ -362,14 +368,23 @@ class TrendClipBot(discord.Client):
         async with lock:
             task = asyncio.create_task(ticker())
             try:
-                result = await asyncio.to_thread(fn, progress)
-            except Exception as err:  # noqa: BLE001 - shown in the channel
-                logger.exception("%s failed", title)
-                await msg.edit(content=clip_text(f"❌ {title} failed: {err}"))
-                raise JobFailed(str(err)) from err
+                for attempt in range(1, attempts + 1):
+                    try:
+                        result = await asyncio.to_thread(fn, progress)
+                        break
+                    except Exception as err:  # noqa: BLE001 - shown in the channel
+                        logger.exception("%s failed (attempt %d/%d)", title, attempt, attempts)
+                        if attempt == attempts or await asyncio.to_thread(give_up):
+                            await msg.edit(content=clip_text(f"❌ {title} failed: {err}"
+                                                             + (f" ({attempt} attempts)" if attempt > 1 else "")))
+                            raise JobFailed(str(err)) from err
+                        state["dirty"] = False
+                        await msg.edit(content=clip_text(f"⚠️ {title}: attempt {attempt} failed ({err}). "
+                                                         f"Trying again ({attempt + 1}/{attempts})…"))
+                        await asyncio.sleep(RETRY_WAIT)
             finally:
                 task.cancel()
-        await msg.edit(content=f"✅ {title}: done")
+        await msg.edit(content=f"✅ {title}: done" + (f" (on attempt {attempt})" if attempt > 1 else ""))
         return result
 
     async def send_video(self, channel: discord.abc.Messageable, filename: str, content: str,
@@ -426,7 +441,8 @@ class TrendClipBot(discord.Client):
                 return assistant.create_from_text(self.settings, text, game, p, kind)
             return assistant.create_random_short(self.settings, game, p, kind)
 
-        short = await self.run_job(interaction.channel, f"Creating {what}", job, self.render_lock)
+        short = await self.run_job(interaction.channel, f"Creating {what}", job, self.render_lock,
+                                   attempts=CREATE_ATTEMPTS)
         answer = f"\nAnswer (spoiler): ||{short.answer}||" if short.answer else ""
         await self.send_video(interaction.channel, short.filename,
                               f"🎬 New video: **{short.title}**\n{short_meta(short)}{answer}\nWhat should I do with it?",
@@ -500,10 +516,11 @@ class TrendClipBot(discord.Client):
                 elif reminder.kind == "leaderboard":
                     if publish.TOKEN_FILE.is_file():
                         await self.leaderboard_post(channel)
-                elif reminder.kind == "post":
-                    # Marked sent first: an upload takes minutes and must never start twice.
+                elif reminder.kind in ("post", "emergency"):
+                    # Marked sent first: an upload or a render takes minutes and must never start twice.
                     self.sent.add(reminder.key, at.date())
-                    task = asyncio.create_task(self.auto_post(channel, reminder.day, reminder.slot))
+                    work = self.auto_post if reminder.kind == "post" else self.emergency_video
+                    task = asyncio.create_task(work(channel, reminder.day, reminder.slot))
                     self.jobs.add(task)
                     task.add_done_callback(self._job_done)
                     continue
@@ -517,7 +534,7 @@ class TrendClipBot(discord.Client):
     def _job_done(self, task: asyncio.Task) -> None:
         self.jobs.discard(task)
         if not task.cancelled() and task.exception():
-            logger.error("Automatic post failed", exc_info=task.exception())
+            logger.error("Background job failed", exc_info=task.exception())
 
     @reminders.before_loop
     async def _before_reminders(self) -> None:
@@ -818,9 +835,63 @@ class TrendClipBot(discord.Client):
         await channel.send(clip_text(f"{head} **{short.title}** ({slot})\n" + "\n".join(lines + notes)),
                            view=view_of(*retry), suppress_embeds=True)
 
+    async def emergency_video(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
+        """EMERGENCY_VIDEO: a slot still empty an hour before it gets a random video (a random type over
+        GTA V or Minecraft gameplay), planned there so it goes out at its time."""
+        settings = self.settings
+        if await asyncio.to_thread(planner.slot_item, settings, day, slot):
+            return
+        if script_writer.gemini_api_key(settings) is None:
+            await channel.send(f"🚨 Nothing is planned for {slot}, and I can't make a video without GEMINI_API_KEY.")
+            return
+        kind = random.choice(list(KINDS))
+        game = random.choice(EMERGENCY_GAMES)
+        noun = NOUNS.get(kind, "story")
+        busy = f"{day.isoformat()} {slot}"
+        self.emergency.add(busy)
+        try:
+            await channel.send(f"🚨 **Emergency:** nothing is planned for {slot}. Making a random {noun} "
+                               f"with {game} gameplay for it now.")
+            try:
+                short = await self.run_job(channel, f"Emergency {noun} for {slot}",
+                                           lambda p: assistant.create_random_short(settings, game, p, kind,
+                                                                                   EMERGENCY_GAMES),
+                                           self.render_lock, attempts=EMERGENCY_ATTEMPTS,
+                                           give_up=lambda: planner.slot_item(settings, day, slot) is not None)
+            except JobFailed:
+                await channel.send(f"🚨 The emergency video for {slot} couldn't be made, so {slot} has nothing planned.",
+                                   view=view_of(button("mk", "-", "Create a random video", discord.ButtonStyle.success)))
+                return
+            if await asyncio.to_thread(planner.slot_item, settings, day, slot):
+                await self.send_video(channel, short.filename,
+                                      f"🎬 **{short.title}** is ready, but {slot} got a video meanwhile, so it "
+                                      f"waits in /videos.\n{short_meta(short)}", view_of(*video_buttons(self, short)))
+                return
+            await asyncio.to_thread(assistant.plan_short, settings, short.filename, day, slot)
+        finally:
+            self.emergency.discard(busy)
+        when = planner.slot_time(settings, day, slot)
+        late = assistant.now(settings) >= when
+        if not settings.auto_post:
+            going = f"upload it at {slot}"
+        elif late:
+            going = "it's past the slot time, so it goes out now"
+        else:
+            going = f"it goes out by itself at {slot}"
+        await self.send_video(channel, short.filename,
+                              f"🚨 Planned for {slot}: **{short.title}** ({going}).\n{short_meta(short)}",
+                              view_of(*video_buttons(self, short)))
+        if settings.auto_post and late and assistant.now(settings) < when + assistant.POST_WINDOW:
+            # The slot's own post already found it empty (or would post it a second time): post it from here.
+            self.sent.add(assistant.post_key(day, slot), day)
+            await self.auto_post(channel, day, slot)
+
     async def slot_reminder(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
         minutes = self.settings.discord_reminder_minutes
         entry = next(e for e in assistant.day_slots(self.settings, day) if e.slot == slot)
+        if entry.item is None and f"{day.isoformat()} {slot}" in self.emergency:
+            await channel.send(f"⏰ {slot} is in {minutes} minutes: its emergency video is still being made.")
+            return
         if entry.item is None:
             await channel.send(f"⏰ {slot} is in {minutes} minutes and nothing is planned for it.",
                                view=view_of(button("mk", "-", "Create a random video", discord.ButtonStyle.success)))

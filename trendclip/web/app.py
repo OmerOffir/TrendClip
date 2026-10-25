@@ -24,6 +24,7 @@ from .. import (__version__, hub, instagram, music, planner, publish, script_wri
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
+from . import darkarchives
 
 logger = logging.getLogger(__name__)
 
@@ -102,6 +103,7 @@ async def _lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="TrendClipper", version=__version__, lifespan=_lifespan)
+app.include_router(darkarchives.router)
 _cache = _TTLCache()
 _downloads = video_downloader.DownloadManager()
 _create = shorts.CreateManager()

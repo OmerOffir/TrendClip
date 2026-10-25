@@ -576,7 +576,15 @@ On its own the bot posts to `DISCORD_CHANNEL_ID`:
   progress, then the links. If a platform fails, you get the error and a **Retry** button. A
   platform it's already on is skipped. TikTok has no upload API, so the message reminds you to post
   it there. If the bot was off at the slot time, it still posts when it's back, up to 2 h late.
-  Items made outside TrendClip, and videos no longer on the machine, are only reported.
+  Items made outside TrendClip, and videos no longer on the machine, are only reported;
+- **an emergency video for an empty slot** (`EMERGENCY_VIDEO=true`): if 14:30 or 23:00 still has
+  nothing planned an hour before, the bot makes a video over GTA V or Minecraft gameplay (never
+  another game, even when the download fails and it falls back to a downloaded clip) with a random
+  type (math, trivia, riddle, movie, paradox or story), plans it in that slot, and it goes out at its
+  time. If it finishes after the slot time, it's posted right away. If you fill the slot yourself
+  meanwhile, the emergency video waits in `/videos` instead. A failed attempt (an ffmpeg error, a bad
+  clip, Gemini busy) is made again from scratch until it works (up to 10 attempts), unless the slot gets
+  a video meanwhile. "Create a random video" tries up to 3 times the same way.
 
 Setup:
 
@@ -731,6 +739,47 @@ already has the permission, so no App Review is needed. To switch:
 3. At the top of the dashboard, switch **App Mode** from Development to **Live**.
 
 The token stays the same; the next read sees the comments.
+
+## DarkArchives (story bank and scripts)
+
+The second channel tells real dark stories: obscure history, eerie true events, unsolved mysteries.
+Open it with the **DA** workspace button (or `?workspace=darkarchives`).
+
+```bash
+python -m modules.fetcher            # fetch stories into db/content_bank.db
+python -m modules.fetcher --recheck  # apply the current filters to the NEW stories already saved
+python -m modules.script_gen         # Gemini writes the next story's Short: assets/generated_scripts/story_<id>.json
+```
+
+**Content pillars**: every story belongs to one, and the next story to script comes from the pillar furthest below its share of the videos made so far:
+
+| Pillar | Target | Sources |
+|---|---|---|
+| Unresolved mysteries & cold cases | 40% | r/UnresolvedMysteries, r/ColdCases, Wikipedia (disappearances, unsolved deaths, ghost ships…) |
+| Creepy history & obscure anomalies | 40% | r/CreepyWikipedia, r/DarkHistory, r/todayilearned (filtered), Wikipedia (urban legends, mass psychogenic illness, human experiments) |
+| Disturbing true events & outrage cases | 20% | r/TrueCrime, Atlas Obscura and Listverse RSS, Wikipedia (medical scandals) |
+
+Gemini also adds documented cases, split by the same mix.
+
+**Filters when fetching**:
+- **Length:** stories must be 200–3,500 characters. Wikipedia articles are cut to their opening paragraphs.
+- **Link posts:** a Reddit link post that points to Wikipedia becomes that article. The article is saved once, whichever source finds it first.
+- **Promos, meta posts and fiction** are rejected by their title.
+- **Mixed-topic sources** (r/todayilearned, Atlas Obscura, Listverse) need a keyword: mystery, unexplained, vanished, strange, bizarre, creepy, classified, incident or cold case. It must be in the title, or two different keywords must appear in the text. A Listverse entry counts as on topic when its list article is.
+- **Upvotes:** posts need at least 100, but only when Reddit shows them, which takes a free app login. Put `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from a "script" app at reddit.com/prefs/apps in `.env`. Without them the public RSS feed is used, which has no votes and is rate-limited (HTTP 429 for some subreddits on a run).
+
+**Script rules** (Gemini, checked in code and sent back up to 3 times):
+- **Length:** 110–140 words, about 35–50 s.
+- **Hook:** a suspense statement or paradox of at most 12 words.
+- **Sentences:** at most 12 words each.
+- **Pacing:** tension escalates through scenes 1–5. The last scene is an open question, an eerie twist or a provoking thought.
+- **Tone:** documentary and eerie, using only facts from the source. A living person is never called guilty of a crime they weren't convicted of.
+
+Gemini rejects a story (status REJECTED, with the reason shown in the tab) if it is any of these:
+- gore without a story;
+- fiction (unless it is framed as an internet urban legend);
+- a recent political controversy or ongoing news;
+- not a story at all.
 
 ## Video assembly (karaoke Shorts)
 

@@ -14,3 +14,5 @@ __pycache__/
 .pytest_cache/
 output/
 assets/
+# DarkArchives content bank (local data)
+db/*.db

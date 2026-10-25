@@ -26,6 +26,7 @@ ProgressFn = Callable[[float | None, str], None]
 DISCORD_FILE_LIMIT = 10 * 1024 * 1024  # servers without boosts
 MORNING_WINDOW = timedelta(hours=6)  # a summary missed by more than this (bot was off) is skipped
 POST_WINDOW = timedelta(hours=2)  # a slot's automatic post missed by more than this (bot was off) is skipped
+EMERGENCY_LEAD = timedelta(hours=1)  # an empty slot gets its emergency video this long before it
 
 
 def _noop(_frac: float | None, _msg: str) -> None:
@@ -141,8 +142,10 @@ def random_game(settings: Settings) -> str:
     return random.choice(names)
 
 
-def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn = _noop) -> BackgroundClip:
-    """A newly downloaded random clip; one of the downloaded clips when downloading fails."""
+def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
+               only: tuple[str, ...] = ()) -> BackgroundClip:
+    """A newly downloaded random clip; one of the downloaded clips when downloading fails (only of the
+    `only` games when given)."""
     try:
         game = game or random_game(settings)
         progress(None, f"Downloading random {game} gameplay")
@@ -150,22 +153,26 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
     except Exception as err:  # noqa: BLE001 - any download problem falls back to the library
         logger.warning("Fresh clip download failed (%s); using a downloaded clip", err)
         clips = video_downloader.list_backgrounds(settings)
+        if only:
+            clips = [c for c in clips if c.game in only]
         same_game = [c for c in clips if game and c.game == game]
         if not clips:
-            raise DownloadError(f"Could not download gameplay ({err}) and no clips are downloaded yet") from err
+            what = f"no {' / '.join(only)} clips" if only else "no clips"
+            raise DownloadError(f"Could not download gameplay ({err}) and {what} are downloaded yet") from err
         progress(None, "Download failed; using one of the downloaded clips")
         return random.choice(same_game or clips)
 
 
 def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
-                        mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> shorts.ShortVideo:
+                        mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story",
+                        only: tuple[str, ...] = ()) -> shorts.ShortVideo:
     """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
-    pop-ups and stickers."""
+    pop-ups and stickers. `only`: if the download fails, fall back only to clips of these games."""
     if script_writer.gemini_api_key(settings) is None:
         raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed to write the story)")
     if mode in quiz.QUIZ_MODES and not game:
         return _themed_quiz(settings, mode, progress)
-    clip = fresh_clip(settings, game, progress)
+    clip = fresh_clip(settings, game, progress, only)
     path = Path(clip.path)
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
@@ -297,14 +304,19 @@ def discord_copy(settings: Settings, filename: str, limit: int = DISCORD_FILE_LI
 
 class Reminder(BaseModel):
     key: str
-    kind: Literal["morning", "slot", "leaderboard", "post"]
+    kind: Literal["morning", "slot", "leaderboard", "post", "emergency"]
     day: Day
     slot: Slot | None = None
 
 
+def post_key(day: Day, slot: Slot) -> str:
+    return f"{day.isoformat()} {slot} post"
+
+
 def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Reminder]:
-    """The morning plan summary, the leaderboard post, each slot's video DISCORD_REMINDER_MINUTES before it,
-    and (AUTO_POST) each slot's automatic post at its time."""
+    """The morning plan summary, the leaderboard post, (EMERGENCY_VIDEO) a video for a slot still empty an
+    hour before it, each slot's video DISCORD_REMINDER_MINUTES before it, and (AUTO_POST) each slot's
+    automatic post at its time."""
     at = at.astimezone(settings.tz)
     day = at.date()
     out = []
@@ -316,6 +328,13 @@ def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Remi
         key = f"{day.isoformat()} {kind}"
         if key not in sent and start <= at < start + MORNING_WINDOW:
             out.append(Reminder(key=key, kind=kind, day=day))
+    if settings.emergency_video:
+        for slot in planner.SLOTS:
+            when = planner.slot_time(settings, day, slot)
+            key = f"{day.isoformat()} {slot} emergency"
+            if (key not in sent and when - EMERGENCY_LEAD <= at < when
+                    and planner.slot_item(settings, day, slot) is None):
+                out.append(Reminder(key=key, kind="emergency", day=day, slot=slot))
     if settings.discord_reminder_minutes:
         lead = timedelta(minutes=settings.discord_reminder_minutes)
         for slot in planner.SLOTS:
@@ -326,7 +345,7 @@ def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Remi
     if settings.auto_post:
         for slot in planner.SLOTS:
             when = planner.slot_time(settings, day, slot)
-            key = f"{day.isoformat()} {slot} post"
+            key = post_key(day, slot)
             if key not in sent and when <= at < when + POST_WINDOW:
                 out.append(Reminder(key=key, kind="post", day=day, slot=slot))
     return out
