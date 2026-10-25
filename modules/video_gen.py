@@ -12,8 +12,8 @@ The beats are the hook and every scene. Flow:
   4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
                 pull-out on each (alternating), 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: karaoke captions (3 words, amber highlight), the scene's
-                overlay text flashing in above them, the title card for 3 s, dramatic music from
-                music/dramatic under the voice.
+                overlay text flashing in above them, the title card for 3 s, a "Follow for more" card over
+                the last seconds, dramatic music from music/dramatic under the voice.
 The story becomes USED and story_<id>.json next to the video holds the title, description (source and
 credits), hashtags, beats and what drew the pictures.
 """
@@ -45,6 +45,7 @@ OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window move
 MIN_BEAT = 1.0
 DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
 HASHTAGS = ["darkarchives", "mystery", "unsolved", "truestory", "history", "shorts"]
+DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD)
 ProgressFn = Callable[[float | None, str], None]
 
 
@@ -292,6 +293,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     flashes = [TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
                for b in beats if b.overlay_text and b.duration > 1.0]
     title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
+    end_card = setting("DA_END_CARD", DEFAULT_END_CARD)  # "·" breaks the line; "none" for no card
     progress(0.75, "Rendering the Short")
     output = assemble_video(
         background, work / "voice.mp3", words, video_path(story_id, out_dir), fit="crop",
@@ -300,6 +302,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
         highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
         title_card=title_card, title_chars=16, title_size=104, flashes=flashes, flash_scale=1.0,
+        end_card="" if end_card.lower() in ("none", "off", "0") else end_card,
         preset=setting("DA_X264_PRESET", "fast"),
     )
 

@@ -838,7 +838,8 @@ USED. Uploading waits for the channel's own `channels/darkarchives/` folder (han
    drift) and dissolves 0.6 s between beats; each still was graded first (less saturation, a cold tint,
    vignette). Moving grain is `DA_GRAIN=1` (it makes the file about ten times bigger).
 4. **Assembly**: the karaoke assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
-   scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), and a track from
+   scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), the "Follow for more"
+   banner over the last 3.5 s (`DA_END_CARD`, `·` breaks the line, `none` = off), and a track from
    `DA_MUSIC` (default `folder:dramatic` = `music/dramatic/`, `none` for silence) at `DA_MUSIC_VOLUME`.
 
 `output/darkarchives/story_<id>.json` keeps the title, description (source link, photo and music credits,

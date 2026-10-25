@@ -150,6 +150,8 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert (tmp_path / "out" / "story_1" / "pictures" / "graded_beat_4.jpg").is_file()
     assert (tmp_path / "out" / "story_1" / "pictures" / "background.mp4").is_file()
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
+    ass = (tmp_path / "out" / "story_1.ass").read_text()
+    assert ",EndCard," in ass and "Follow for more\\Ndark stories" in ass and ",Title," in ass and "BEAT 3" in ass
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
     assert any("Drawing picture 4 of 4" in m for m in messages) and messages[-1] == "Done"
     assert video_gen.existing_video_ids(tmp_path / "out") == [1]
