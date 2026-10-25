@@ -655,7 +655,12 @@ The channel only grows from what the numbers say, so every published video is tr
   choice's chance is its median views against the channel median, moved up to ±30% by its retention and
   shrunk toward average by 3 pseudo-videos, so one lucky video doesn't take over; no choice drops below
   15% of an average one. `AUTO_PICK_EXPLORE` (default 0.2) of the time a dimension is drawn at random,
-  so untried kinds and games get their turn; `AUTO_PICK_DAYS` (default 60) is the window. The bot says
+  so untried kinds and games get their turn; `AUTO_PICK_DAYS` (default 60) is the window. For the game,
+  the channel's proven games are the main pool (and get up to +50% when they are trending on YouTube
+  right now), while the exploration share goes to games never published, weighted by their current
+  momentum from the trend pipeline (`AUTO_PICK_TRENDS`, `YT_REGIONS`; `output/latest.json` is reused
+  for 12 hours), so a new game is tried when people are watching it, not at random. The bot says
+
   what it picked and why ("Math challenge (1.6× the channel median over 9 videos, 93% watched) on
   Minecraft (trying it out)"), and the Insights tab shows the current chances under **What the bot
   picks next**.
@@ -839,7 +844,9 @@ USED. Uploading waits for the channel's own `channels/darkarchives/` folder (han
    vignette). Moving grain is `DA_GRAIN=1` (it makes the file about ten times bigger).
 4. **Assembly**: the karaoke assembler adds the captions (3 words, `DA_HIGHLIGHT`, default orange), the
    scene's `overlay_text` flashing in above them, the title for 3 s (`DA_TITLE_CARD`), the "Follow for more"
-   banner over the last 3.5 s (`DA_END_CARD`, `·` breaks the line, `none` = off), and a track from
+   banner over the last 3.5 s (`DA_END_CARD`, `·` breaks the line, `none` = off), the spoken closing line
+   (`DA_CTA_LINE`, default "Follow for more dark stories.") with the red SUBSCRIBE button from that line to
+   the end (`DA_CTA_STICKER`: subscribe / follow / none), and a track from
    `DA_MUSIC` (default `folder:dramatic` = `music/dramatic/`, `none` for silence) at `DA_MUSIC_VOLUME`.
 
 `output/darkarchives/story_<id>.json` keeps the title, description (source link, photo and music credits,

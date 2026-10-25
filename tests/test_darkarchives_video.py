@@ -41,6 +41,13 @@ def test_split_beats_uses_spoken_words_and_pads_short_beats():
     assert timed[0].end == video_gen.MIN_BEAT == timed[1].start  # the 0.6 s hook is stretched to a visible beat
 
 
+def test_cta_line_joins_the_last_beat():
+    beats = video_gen.beats_of(_script(scenes=2), "Follow for more dark stories.")
+    assert beats[-1].text.endswith("ship. Follow for more dark stories.") and beats[0].text == _script().hook_text
+    assert video_gen.beats_of(_script(scenes=2), "")[-1].text.endswith("ship.")
+    assert video_gen.off("none") and video_gen.off(" ") and not video_gen.off("Follow")
+
+
 def test_photo_slots_and_description():
     assert video_gen.photo_slots(9, 2) == [1, 5] and video_gen.photo_slots(9, 1) == [1]
     assert video_gen.photo_slots(1, 2) == [] and video_gen.photo_slots(3, 2) == [1]
@@ -145,6 +152,9 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     video = tmp_path / "out" / "story_1.mp4"
     assert video.is_file() and info["filename"] == "story_1.mp4" and 5.5 <= media_duration(video) <= 7.0
     assert [b["label"] for b in info["beats"]] == ["hook", "scene 1", "scene 2", "scene 3"]
+    assert info["beats"][-1]["text"].endswith("Follow for more dark stories.") and info["cta_line"] == "Follow for more dark stories."
+    assert info["stickers"] == ["built-in subscribe button"] and info["end_card"] == "Follow for more · dark stories"
+    assert json.loads((tmp_path / "out" / "story_1" / "voice.words.json").read_text())[-1]["word"] == "stories."
     assert info["pictures"] == "placeholder" and info["photos"] == [] and info["music"] is None
     assert (tmp_path / "out" / "story_1" / "pictures" / "beat_4.jpg").is_file()
     assert (tmp_path / "out" / "story_1" / "pictures" / "graded_beat_4.jpg").is_file()

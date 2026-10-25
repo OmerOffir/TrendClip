@@ -12,8 +12,9 @@ The beats are the hook and every scene. Flow:
   4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
                 pull-out on each (alternating), 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: karaoke captions (3 words, amber highlight), the scene's
-                overlay text flashing in above them, the title card for 3 s, a "Follow for more" card over
-                the last seconds, dramatic music from music/dramatic under the voice.
+                overlay text flashing in above them, the title card for 3 s, the spoken "Follow for more dark
+                stories." with the red SUBSCRIBE button and the "Follow for more" banner over the last
+                seconds, dramatic music from music/dramatic under the voice.
 The story becomes USED and story_<id>.json next to the video holds the title, description (source and
 credits), hashtags, beats and what drew the pictures.
 """
@@ -46,6 +47,8 @@ MIN_BEAT = 1.0
 DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
 HASHTAGS = ["darkarchives", "mystery", "unsolved", "truestory", "history", "shorts"]
 DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD)
+DEFAULT_CTA_LINE = "Follow for more dark stories."  # spoken after the last scene (DA_CTA_LINE)
+DEFAULT_CTA_STICKER = "subscribe"  # the red button from the spoken line to the end (DA_CTA_STICKER: subscribe / follow / none)
 ProgressFn = Callable[[float | None, str], None]
 
 
@@ -79,11 +82,18 @@ def spoken_text(script: script_gen.Script) -> str:
     return " ".join(part.strip() for part in [script.hook_text, *(s.narration for s in script.scenes)] if part.strip())
 
 
-def beats_of(script: script_gen.Script) -> list[Beat]:
+def beats_of(script: script_gen.Script, cta_line: str = "") -> list[Beat]:
+    """The hook, then every scene; a spoken call to action belongs to the last beat (same picture)."""
     hook_prompt = (script.scenes[0].image_prompt if script.scenes else script.title) + ", wide establishing shot"
     beats = [Beat(0, "hook", script.hook_text, "", hook_prompt)]
     beats += [Beat(s.scene_id, f"scene {s.scene_id}", s.narration, s.overlay_text, s.image_prompt) for s in script.scenes]
+    if cta_line.strip():
+        beats[-1].text = f"{beats[-1].text.strip()} {cta_line.strip()}"
     return beats
+
+
+def off(value: str) -> bool:
+    return value.strip().lower() in ("", "none", "off", "0", "false")
 
 
 def split_beats(beats: list[Beat], words: list, tail: float) -> list[Beat]:
@@ -221,6 +231,26 @@ def description_for(script: script_gen.Script, story: dict, credits: list[str], 
     return "\n".join(line for line in lines if line is not None).strip()
 
 
+def cta_sticker(settings, words: list, flashes: list, title: bool, end_card: bool) -> tuple[list, list[str]]:
+    """The red SUBSCRIBE (or FOLLOW) button from the spoken call to action to the end: the gameplay
+    channel's own sticker planner, with no reaction stickers. Never fails the video."""
+    from trendclip import stickers
+
+    kind = setting("DA_CTA_STICKER", DEFAULT_CTA_STICKER).strip().lower()
+    if off(kind):
+        return [], []
+    if kind not in stickers.CTA_KINDS:
+        raise VideoGenError(f"DA_CTA_STICKER must be one of {', '.join(stickers.CTA_KINDS)} or none, not '{kind}'")
+    try:
+        overlays, used = stickers.plan(settings, [], words, [], cta=kind, auto=False, pace=False,
+                                       title_seconds=3.0 if title else 0.0, end_seconds=3.5 if end_card else 0.0,
+                                       flashes=flashes, flash_y=0.3)
+        return overlays, used or [f"built-in {kind} button"]
+    except Exception:  # noqa: BLE001
+        logger.exception("The call-to-action sticker failed; rendering without it")
+        return [], []
+
+
 def _music(settings, progress: ProgressFn):
     from trendclip import music
 
@@ -258,10 +288,12 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
 
     voice = setting("DA_TTS_VOICE", settings.tts_voice)
     rate = setting("DA_TTS_RATE", DEFAULT_RATE)
+    cta_line = setting("DA_CTA_LINE", DEFAULT_CTA_LINE)
+    cta_line = "" if off(cta_line) else cta_line.strip()
     progress(0.02, f"Recording the narration ({voice})")
-    text = spoken_text(script)
+    text = f"{spoken_text(script)} {cta_line}".strip()
     words = voiceover.synthesize(text, work / "voice.mp3", voice, rate, local_rate=rate)
-    beats = split_beats(beats_of(script), words, TAIL_SECONDS)
+    beats = split_beats(beats_of(script, cta_line), words, TAIL_SECONDS)
 
     # The GPU voice and the GPU pictures do not fit on an 8 GB card together.
     from trendclip import local_voice
@@ -294,6 +326,8 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
                for b in beats if b.overlay_text and b.duration > 1.0]
     title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
     end_card = setting("DA_END_CARD", DEFAULT_END_CARD)  # "·" breaks the line; "none" for no card
+    end_card = "" if off(end_card) else end_card
+    overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
     progress(0.75, "Rendering the Short")
     output = assemble_video(
         background, work / "voice.mp3", words, video_path(story_id, out_dir), fit="crop",
@@ -302,7 +336,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
         highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
         title_card=title_card, title_chars=16, title_size=104, flashes=flashes, flash_scale=1.0,
-        end_card="" if end_card.lower() in ("none", "off", "0") else end_card,
+        end_card=end_card, overlays=overlays,
         preset=setting("DA_X264_PRESET", "fast"),
     )
 
@@ -314,6 +348,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         "voice": voice, "rate": rate, "pictures": backend_used,
         "photos": [p.credit for p in pictures if p.source == "wikipedia"],
         "music": {"title": track.title, "credit": track.credit} if track else None,
+        "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used,
         "beats": [{**asdict(b), "picture": pictures[i].path.name, "picture_source": pictures[i].source}
                   for i, b in enumerate(beats)],
         "words": len(words), "seconds_to_make": round(time.time() - started),
