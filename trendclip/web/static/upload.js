@@ -620,7 +620,9 @@
           <span>Uploading to <b>${esc(ch.title || "your channel")}</b></span>
           <button type="button" class="dl-copy" id="ytLogout">Disconnect</button>
         </div>
-        ${yt.can_comment === false ? '<div class="hint">To post the Part 1/Part 2 comments from here, Disconnect and Connect once more (adds comment permission).</div>' : ""}`;
+        ${yt.can_comment === false ? '<div class="hint">To post the Part 1/Part 2 comments from here, Disconnect and Connect once more (adds comment permission).</div>' : ""}
+        ${yt.can_analytics === false ? '<div class="hint">For retention numbers in the Insights tab, Disconnect and Connect once more (adds the YouTube Analytics permission).</div>' : ""}`;
+
       return;
     }
     els.ytAccount.innerHTML = `

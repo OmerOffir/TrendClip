@@ -39,6 +39,7 @@ class ShortVideo(BaseModel):
     filename: str
     game: str
     aspect: Aspect = "vertical"
+    mode: str = ""  # story / math / riddle / trivia / paradox / movie (insights group videos by it)
     title: str
     description: str
     hashtags: list[str]
@@ -87,6 +88,7 @@ class RenderRequest(BaseModel):
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
     aspect: Aspect = "vertical"  # "landscape": 16:9 for long videos
+    mode: str = Field("", pattern=r"^(|clip|story|math|riddle|trivia|paradox|movie)$")  # the script kind, for insights
     max_words: int = Field(3, ge=1, le=6)
     # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
     music_source: str = Field("none", max_length=200)  # see music.pick ("mood", "folder:dramatic", "local:…")
@@ -353,7 +355,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     if credit and credit not in description:
         description = f"{description}\n\n{credit}".strip()
     short = ShortVideo(
-        filename=output.name, game=req.game, aspect=req.aspect,
+        filename=output.name, game=req.game, aspect=req.aspect, mode="story" if req.mode == "clip" else req.mode,
+
         title=req.title.strip() or (req.game if req.aspect == "landscape" else f"{req.game} #shorts"),
         description=description, hashtags=req.hashtags, script=req.script, voice=voice,
         duration_seconds=round(video_assembler.media_duration(output), 2),
@@ -392,9 +395,10 @@ def edit_settings(settings: Settings, short: ShortVideo) -> tuple[dict[str, Any]
         music_track=track.group(1) if track else None, title_card=short.title_card, end_card=short.end_card,
         popups=[Popup(word=w[:40], query=w[:60]) for w in short.popups], series_id=short.series_id,
         story_name=short.story_name, part=short.part, parts_total=short.parts_total,
-        pinned_comment=short.pinned_comment, channel_handle=short.channel_handle,
+        pinned_comment=short.pinned_comment, channel_handle=short.channel_handle, mode=short.mode,
     )
     return req.model_dump(mode="json"), True
+
 
 
 def rerender_short(settings: Settings, filename: str, req: RenderRequest, progress: ProgressFn) -> ShortVideo:
@@ -480,7 +484,7 @@ def render_series(settings: Settings, req: SeriesRenderRequest, progress: Progre
             background_start=offset * req.background_speed, background_speed=req.background_speed,
             music_start=offset, output_name=f"{name}_Part{n}",
             series_id=series_id, story_name=req.story_name, part=n, parts_total=total,
-            pinned_comment=req.pinned_comment if n == 1 else "", channel_handle=handle,
+            pinned_comment=req.pinned_comment if n == 1 else "", channel_handle=handle, mode="story",
         ), scaled)
         offset += short.duration_seconds or 0.0
         shorts.append(short)

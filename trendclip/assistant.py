@@ -177,7 +177,7 @@ def create_random_short(settings: Settings, game: str | None = None, progress: P
     clip_seconds = video_downloader.probe_video(path).get("duration_seconds")
     script = script_writer.write_script(settings, clip.game, path, mode=mode, watch_clip=False,
                                         max_seconds=clip_seconds, progress=progress)
-    return _render_script(settings, clip, script, progress)
+    return _render_script(settings, clip, script, progress, mode)
 
 
 def _themed_quiz(settings: Settings, mode: str, progress: ProgressFn) -> shorts.ShortVideo:
@@ -195,7 +195,7 @@ def _themed_quiz(settings: Settings, mode: str, progress: ProgressFn) -> shorts.
     if themed and themed != first:
         progress(None, f"Background that fits the quiz: {themed}")
     clip = fresh_clip(settings, themed, progress)
-    return _render_script(settings, clip, script.model_copy(update={"game": clip.game or script.game}), progress)
+    return _render_script(settings, clip, script.model_copy(update={"game": clip.game or script.game}), progress, mode)
 
 
 OWN_TEXT_MAX_SECONDS = 170  # stays a Short (YouTube: up to 3 minutes)
@@ -216,13 +216,14 @@ def create_from_text(settings: Settings, text: str, game: str | None = None, pro
     target = min(max(wanted, settings.short_target_seconds), OWN_TEXT_MAX_SECONDS)
     script = script_writer.describe_script(settings, clip.game, text, mode=mode, target_seconds=target,
                                            max_seconds=clip_seconds, progress=progress)
-    return _render_script(settings, clip, script, progress)
+    return _render_script(settings, clip, script, progress, mode)
 
 
 def _render_script(settings: Settings, clip: video_downloader.BackgroundClip, script: script_writer.ShortScript,
-                   progress: ProgressFn) -> shorts.ShortVideo:
+                   progress: ProgressFn, mode: str = "story") -> shorts.ShortVideo:
     req = shorts.RenderRequest(
-        clip=clip.filename, game=clip.game[:80] or "Gameplay", script=script.script, title=script.title,
+        clip=clip.filename, game=clip.game[:80] or "Gameplay", script=script.script, title=script.title, mode=mode,
+
         description=script.description, hashtags=script.hashtags, title_card=script.title_card,
         popups=script.popups[:20], reactions=script.reactions[:10], end_card=script.end_card,
         pinned_comment=script.pinned_comment, music_source="mood", music_mood=script.music_mood,

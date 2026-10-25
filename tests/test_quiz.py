@@ -471,7 +471,8 @@ def test_a_random_quiz_downloads_the_gameplay_that_fits(tmp_path, monkeypatch):
                         lambda s, script, games, **kw: seen.setdefault("games", games) and "Fall Guys")
     monkeypatch.setattr(assistant, "fresh_clip", lambda s, game, progress: SimpleNamespace(
         filename="fg.mp4", game=seen.setdefault("downloaded", game), path="fg.mp4"))
-    monkeypatch.setattr(assistant, "_render_script", lambda s, clip, script, progress: script)
+    monkeypatch.setattr(assistant, "_render_script", lambda s, clip, script, progress, mode="story": script)
+
     result = assistant.create_random_short(settings, mode="movie")
     assert seen["games"] == ["Minecraft", "Fall Guys"] and seen["downloaded"] == "Fall Guys"
     assert result.game == "Fall Guys" and result.script == written.script

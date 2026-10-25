@@ -953,6 +953,8 @@
     return {
       clip: state.clip,
       game: els.game.value.trim() || (selectedClip() || {}).game || "Gameplay",
+      mode: els.mode.value === "clip" ? "story" : els.mode.value,
+
       voice: els.voice.value || null,
       rate: els.rate.value,
       highlight: els.highlight.value,

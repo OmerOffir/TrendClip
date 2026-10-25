@@ -36,8 +36,10 @@ SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",  # show which channel is connected
     "https://www.googleapis.com/auth/youtube.force-ssl",  # post the Part 1 comment (pinning is manual)
+    "https://www.googleapis.com/auth/yt-analytics.readonly",  # insights: retention per video (analytics.py)
 ]
 COMMENT_SCOPE = SCOPES[2]
+ANALYTICS_SCOPE = SCOPES[3]
 GAMING_CATEGORY = "20"
 YT_TITLE_MAX, YT_TAGS_MAX_CHARS, CAPTION_MAX = 100, 450, 2200
 INSTAGRAM_MAX_HASHTAGS = 5  # Instagram allows at most 5 hashtags per post
@@ -333,6 +335,7 @@ def youtube_status() -> dict[str, Any]:
         return status
     status["connected"] = True
     status["can_comment"] = can_comment()
+    status["can_analytics"] = has_scope(ANALYTICS_SCOPE)
     if items:
         snip = items[0]["snippet"]
         status["channel"] = {"id": items[0]["id"], "title": snip.get("title", ""),
@@ -385,8 +388,9 @@ def logout() -> None:
     TOKEN_FILE.unlink(missing_ok=True)
 
 
-def can_comment() -> bool:
-    """Tokens from before comment posting existed lack the scope; reconnecting adds it."""
+def has_scope(scope: str) -> bool:
+    """Whether the saved login was granted `scope`. Tokens from before a feature existed lack its scope;
+    reconnecting adds it."""
     import json
 
     try:
@@ -395,7 +399,12 @@ def can_comment() -> bool:
         return False
     if isinstance(scopes, str):
         scopes = scopes.split()
-    return COMMENT_SCOPE in scopes
+    return scope in scopes
+
+
+def can_comment() -> bool:
+    return has_scope(COMMENT_SCOPE)
+
 
 
 def _credentials():

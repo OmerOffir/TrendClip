@@ -101,6 +101,7 @@ Exit codes: `0` ok, `2` config error, `3` YouTube quota/credential error.
 | `trendclip/aggregator.py` | Keyword extraction, emerging-topic clustering, ranking |
 | `trendclip/main.py` | Orchestration + CLI |
 | `trendclip/planner.py` | Plan tab: upload calendar, goals, per-platform "posted" status |
+| `trendclip/analytics.py` | Insights tab: every published video's numbers (YouTube Data + Analytics API) grouped by format, kind, game, hook style, length and slot |
 | `trendclip/web/app.py` | FastAPI app: JSON API + cached results |
 | `trendclip/web/static/` | Dashboard UI (plain HTML/CSS/JS, no build step) |
 
@@ -558,6 +559,8 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 |---------|--------------|
 | `/today` | Today's 14:30 and 23:00 videos, with **Show** and **Upload** buttons, plus a copy-ready caption (text and hashtags) for YouTube, TikTok and Instagram |
 | `/slot time:14:30` | Sends the video planned for that slot (`day:` for another day) |
+| `/insights days:30` | Which kinds of video, games, hook styles, lengths and upload times get the most views (and retention), see **Insights** below |
+
 | `/create` | Makes a random video: fresh random no-copyright gameplay, a random Gemini story, voice, music by mood, pop-ups and stickers. Then it posts the video with **Plan today 14:30 / 23:00**, **Plan next free slot**, **Upload to YouTube now** and **Delete** buttons. It first asks with buttons: **📖 Story**, **🧮 Math challenge**, **🧩 Riddle**, **🌍 Trivia trap**, **🌀 Paradox trap** or **🎬 Movie quiz** (quizzes show the answer as a spoiler); `type:` skips the question and `game:` picks the gameplay. The **Create a random video** buttons in reminders ask the same. **Your own text:** paste it as `text:` (one line, up to 3,000 characters) or press **✍️ Use my own text** for a multi-line box. Then pick story, math, riddle or trivia. Like **Fill the rest** in the dashboard, your words are the voiceover and Gemini writes the title, hashtags, banner and pinned comment; quizzes get their numbers or options flashed on screen and no subscribe line. |
 | `/plan show` · `/plan add` · `/plan remove` · `/plan move` | The upload plan. `add` without a day takes the next free slot |
 | `/upload` | Publishes a video **publicly** on YouTube now, after a confirmation button (default: the next video planned today). Afterwards, **Post the pinned comment** posts the comment (pin it in YouTube) |
@@ -607,6 +610,35 @@ cached in `output/discord/`. Your original file is never changed.
 
 Which reminders have already gone out is stored in `output/discord_state.json`, so restarting the bot
 doesn't send them again.
+
+### Insights (what works)
+
+The channel only grows from what the numbers say, so every published video is tracked in
+`output/analytics.db` together with how it was made, and the numbers are read from YouTube once a day
+(the morning summary) or on demand (**Insights** tab → **Read YouTube now**, `/insights`,
+`python -m trendclip.analytics --refresh`).
+
+- **What is tracked:** for every Short uploaded from here, its format (Short / Multi-part / Long 16:9),
+  kind of script (story, math challenge, riddle, trivia trap, paradox trap, movie quiz — recorded on new
+  Shorts, read from the rendered flashes and title for older ones), game, the **hook** (the first spoken
+  sentence) and its style (dare "Only 5% finish this", question, number, quote, command, first person,
+  bold claim), length bucket, upload slot (14:30 / 23:00 or the hour) and music mood. Videos the channel
+  published without TrendClip (by hand, or from the other machine before its sidecar arrived) are tracked
+  too, with their title and time only, so the channel totals are complete.
+- **Numbers:** views, likes and comments from the Data API every day (1 quota unit per 50 videos), kept
+  as a daily snapshot per video, so the report can show **day 1 → day 7** views once a video has been
+  tracked from its first day. With the **YouTube Analytics** permission, each video also gets its watch
+  time, **average view duration / percentage** (retention: the number Shorts live and die by), shares
+  and subscribers gained. Analytics numbers run about two days behind. Logins made before this existed
+  lack the permission: Upload tab → **Disconnect** → **Connect YouTube** once more (the Upload tab says
+  so), and enable **YouTube Analytics API** in the Google Cloud project if the refresh says it is off.
+- **The report** (`/insights days:30`, the Insights tab with 30 / 90 / 365 days): the videos of the
+  window, grouped by each attribute and ranked by **median views** (so one viral hit doesn't crown a
+  group), each with its views per day since upload, average view %, likes and comments per 1,000 views,
+  how it compares to the channel median (1.4× / 0.6×) and its best video. Then the top videos, the top
+  retention, and the **hooks that pulled the most views** with their style, to reuse. Videos younger
+  than 2 days are listed but not ranked. The morning summary posts the best kind, game and hook style of
+  the last 30 days; `/insights` posts the whole report.
 
 ### Channel report
 

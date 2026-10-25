@@ -19,7 +19,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (__version__, hub, instagram, music, planner, publish, script_writer, shorts, stickers,
+from .. import (__version__, analytics, hub, instagram, music, planner, publish, script_writer, shorts, stickers,
                 video_downloader, voiceover)
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
@@ -751,6 +751,40 @@ def _hub_http(err: hub.HubError) -> HTTPException:
     return HTTPException(status_code=err.status, detail={"message": str(err), "free": err.free})
 
 
+# --------------------------------------------------------------------------- insights
+
+
+_insights_lock = threading.Lock()
+
+
+@app.get("/api/insights")
+def get_insights(days: int = Query(90, ge=7, le=730)) -> dict[str, Any]:
+    """How the channel's videos performed, grouped by format / kind / game / hook style / length / slot."""
+    settings = _base_settings()
+    report = analytics.build_report(settings, days=days)
+    return {**report.model_dump(mode="json"), "youtube": publish.youtube_status()}
+
+
+@app.post("/api/insights/refresh")
+def refresh_insights(days: int = Query(90, ge=7, le=730)) -> dict[str, Any]:
+    """Read today's numbers from YouTube (Data API + Analytics API), then return the report."""
+    settings = _base_settings()
+    if not _insights_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Already reading YouTube; try again in a moment")
+    try:
+        result = analytics.collect(settings)
+    except analytics.AnalyticsError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001 - HttpError from Google, network
+        logger.exception("Insights refresh failed")
+        raise HTTPException(status_code=502, detail=f"Could not read YouTube: {err}") from err
+    finally:
+        _insights_lock.release()
+    report = analytics.build_report(settings, days=days)
+    return {**report.model_dump(mode="json"), "collected": result.model_dump(mode="json"),
+            "youtube": publish.youtube_status()}
+
+
 @app.get("/api/hub/status")
 def hub_status() -> dict[str, Any]:
     settings = _base_settings()
@@ -912,6 +946,7 @@ def _asset_version() -> str:
 def index() -> HTMLResponse:
     html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     version = _asset_version()
-    for asset in ("styles.css", "app.js", "create.js", "upload.js"):
+    for asset in ("styles.css", "app.js", "create.js", "upload.js", "plan.js", "find.js", "insights.js"):
+
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     return HTMLResponse(html)

@@ -18,8 +18,8 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import (assistant, channel_stats, hub, ig_replies, instagram, leaderboard, leaderboard_card, planner, publish, script_writer,
-               shorts, video_downloader)
+from . import (analytics, assistant, channel_stats, hub, ig_replies, instagram, leaderboard, leaderboard_card, planner, publish,
+               script_writer, shorts, video_downloader)
 from .config import ConfigError, Settings, get_settings
 
 logger = logging.getLogger(__name__)
@@ -592,7 +592,31 @@ class TrendClipBot(discord.Client):
         await channel.send(clip_text(text), view=view_of(*buttons))
         await self.send_stats(channel)
         if publish.TOKEN_FILE.is_file():
+            await self.send_insights(channel, brief=True)
             await self.send_comments(channel)
+
+    async def send_insights(self, channel: discord.abc.Messageable, days: int = 30, brief: bool = False) -> None:
+        """Read today's numbers of every published video (the daily snapshot), then what works best: a few
+        lines in the morning summary (`brief`), the whole report for /insights. A failure is only reported."""
+        try:
+            collected = await asyncio.to_thread(analytics.collect, self.settings)
+            report = await asyncio.to_thread(analytics.build_report, self.settings, days)
+        except Exception as err:  # noqa: BLE001 - shown in the channel
+            logger.exception("Insights failed")
+            await channel.send(clip_text(f"📈 Couldn't read the video insights: {err}"))
+            return
+        if brief:
+            lines = analytics.insight_lines(report)
+            if not lines:
+                return
+            head = f"📈 **What works (last {days} days, {report.ranked} videos)** — /insights for the whole picture"
+            await channel.send(clip_text("\n".join([head, *lines])), suppress_embeds=True)
+            return
+        messages = analytics.format_report(report)
+        if collected.warnings:
+            messages.append("\n".join(f"⚠️ {w}" for w in collected.warnings))
+        for text in messages:
+            await channel.send(clip_text(text), suppress_embeds=True)
 
     async def send_comments(self, channel: discord.abc.Messageable) -> None:
         """Yesterday's new YouTube comments with their points, and the top 10; a failure is only reported."""
@@ -1253,6 +1277,13 @@ async def stats_cmd(interaction: discord.Interaction) -> None:
     await _bot(interaction).send_stats(interaction.channel)
 
 
+@app_commands.command(name="insights", description="Which formats, games and hooks get the most views")
+@app_commands.describe(days="How far back to look (default 30 days)")
+async def insights_cmd(interaction: discord.Interaction, days: app_commands.Range[int, 7, 730] = 30) -> None:
+    await reply(interaction, "📈 Reading every video's numbers from YouTube…")
+    await _bot(interaction).send_insights(interaction.channel, days)
+
+
 async def _board(interaction: discord.Interaction, fresh: bool = False) -> leaderboard.Board | None:
     """The stored comments (read from YouTube when asked, or the first time)."""
     settings = _bot(interaction).settings
@@ -1515,6 +1546,8 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "button under a video posts it as a Reel",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
+        "`/insights` which kinds of video, games, hook styles, lengths and upload times get the most views, "
+        "with retention when YouTube Analytics is allowed (`days:` how far back; the best of each in the morning summary)",
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
         "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
@@ -1523,8 +1556,9 @@ async def help_cmd(interaction: discord.Interaction) -> None:
     ]), ephemeral=True)
 
 
-COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, leaderboard_cmd,
+COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
             comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, help_cmd]
+
 
 
 def main(argv: list[str] | None = None) -> int:

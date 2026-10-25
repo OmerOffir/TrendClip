@@ -37,6 +37,7 @@
         <button type="button" role="tab" data-view="create">Create</button>
         <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
         <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
+        <button type="button" role="tab" data-view="insights">Insights</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="darkarchives" hidden>
@@ -598,6 +599,63 @@
     </dialog>
   </main>
 
+  <main class="container view" id="viewInsights" hidden>
+    <div id="inError" class="banner banner-error" hidden></div>
+    <div id="inNotes"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>What works</h2>
+          <span class="hint">Your published videos grouped by how they were made, ranked by median views. Views, likes and comments come from YouTube daily; watch time and retention need the YouTube Analytics permission (reconnect YouTube once in Upload). Analytics numbers run about two days behind.</span>
+        </div>
+        <div class="week-nav">
+          <select id="inDays" class="dl-copy">
+            <option value="30">Last 30 days</option>
+            <option value="90" selected>Last 90 days</option>
+            <option value="365">Last year</option>
+          </select>
+          <button type="button" class="btn-primary" id="inRefresh">↻ Read YouTube now</button>
+        </div>
+      </div>
+      <div class="stats" id="inStats"></div>
+    </section>
+
+    <div class="insights-grid" id="inDimensions"></div>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Hooks that pulled the most views</h2>
+          <span class="hint">The first spoken sentence of each video. Reuse what works: the same style, stakes and rhythm.</span>
+        </div>
+      </div>
+      <div id="inHooks" class="in-hooks"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Every video</h2>
+          <span class="hint">Newest first. Videos younger than 2 days are shown but not ranked. Day 1 / day 7 views appear once a daily snapshot was taken then.</span>
+        </div>
+        <label class="check"><input type="checkbox" id="inMadeHere" checked /> Only videos made with TrendClip</label>
+      </div>
+      <div class="table-wrap">
+        <table class="videos insights-table">
+          <thead>
+            <tr>
+              <th>Video</th><th>Kind</th><th>Game</th><th>Hook style</th><th>Length</th><th>Slot</th>
+              <th class="metric">Views</th><th class="metric">Views/day</th><th class="metric">Watched</th>
+              <th class="metric">Likes /1k</th><th class="metric">Comments /1k</th><th class="metric">Day 1 → 7</th>
+            </tr>
+          </thead>
+          <tbody id="inRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
   <main class="container view" id="viewTrends">
     <section class="card controls" aria-label="Filters">
       <label class="field field-wide">
@@ -796,6 +854,7 @@
   <script src="/static/create.js"></script>
   <script src="/static/upload.js"></script>
   <script src="/static/plan.js"></script>
+  <script src="/static/insights.js"></script>
   <script src="/static/find.js"></script>
   <script src="/static/darkarchives.js"></script>
 </body>
