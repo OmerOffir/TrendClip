@@ -353,6 +353,7 @@ def test_dropped_connection_is_retried(monkeypatch, tmp_path):
 
     monkeypatch.setattr(vd, "_yt_dlp", lambda: FakeModule)
     monkeypatch.setattr(vd, "ffmpeg_path", lambda: "ffmpeg")
+    monkeypatch.setattr(vd, "probe_video", lambda p: {"width": 1920, "height": 1080})  # b"video" is not a video
     monkeypatch.setattr(vd.time, "sleep", lambda s: None)
     vd._download_from_youtube("https://youtu.be/x", tmp_path / "x.mp4", clip_seconds=60, start_seconds=10)
     assert calls["n"] == 3 and (tmp_path / "x.mp4").read_bytes() == b"video"
@@ -372,3 +373,45 @@ def test_jobs_download_room_for_the_fastest_gameplay_speed(tmp_path, monkeypatch
     manager._executor.shutdown(wait=True)
     assert [j.clip_seconds for j in jobs] == [45, 90, 0]
     assert sorted(seen) == [0, 45, 90]
+
+
+def _fake_yt_dlp(tmp_path, produce: bytes):
+    class Err(Exception):
+        pass
+
+    class FakeYDL:
+        def __init__(self, opts): self.opts = opts
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def extract_info(self, url, download=False): return {"duration": 600, "width": 1920, "height": 1080}
+        def download(self, urls): (tmp_path / "x.dl.mp4").write_bytes(produce)
+
+    class FakeModule:
+        YoutubeDL = FakeYDL
+        class utils:
+            DownloadError = Err
+            @staticmethod
+            def download_range_func(a, b): return b
+
+    return FakeModule
+
+
+def test_audio_only_download_is_rejected_and_removed(monkeypatch, tmp_path):
+    """YouTube sometimes hands yt-dlp a section with no video stream (a 1 MB AAC-only "mp4");
+    rendering it fails with "[0:v] matches no streams", so refuse it and move on to the next pick."""
+    monkeypatch.setattr(vd, "_yt_dlp", lambda: _fake_yt_dlp(tmp_path, b"audio"))
+    monkeypatch.setattr(vd, "ffmpeg_path", lambda: "ffmpeg")
+    monkeypatch.setattr(vd, "probe_video", lambda p: {"duration_seconds": 60.0})  # no Video: line
+    with pytest.raises(vd.DownloadError, match="no video stream"):
+        vd._download_from_youtube("https://youtu.be/x", tmp_path / "x.mp4", clip_seconds=60, start_seconds=10)
+    assert not (tmp_path / "x.mp4").exists() and not list(tmp_path.glob("x.dl.*"))
+
+
+def test_save_clip_refuses_a_file_without_video(monkeypatch, tmp_path):
+    target = tmp_path / "g_pexels_1.mp4"
+    target.write_bytes(b"audio")
+    monkeypatch.setattr(vd, "ffmpeg_path", lambda: "ffmpeg")
+    monkeypatch.setattr(vd, "probe_video", lambda p: {})
+    with pytest.raises(vd.DownloadError, match="no video stream"):
+        vd._save_clip(target, {}, "pexels", "G", "q", "landscape", vd._noop)
+    assert not target.exists() and not target.with_suffix(".json").exists()

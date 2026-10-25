@@ -124,6 +124,14 @@ def probe_video(path: Path) -> dict:
     return out
 
 
+def _require_video(path: Path) -> None:
+    """Delete `path` and raise when it has no video stream: a YouTube section download sometimes comes
+    back as an AAC-only ~1 MB "mp4", and rendering it fails with "[0:v] ... matches no streams"."""
+    if ffmpeg_path() and "width" not in probe_video(path):
+        path.unlink(missing_ok=True)
+        raise DownloadError(f"the downloaded clip has no video stream (audio only): {path.name}")
+
+
 # --------------------------------------------------------------------------- Method A: Pexels
 
 
@@ -447,6 +455,7 @@ def _download_from_youtube(
     os.replace(produced[0], output_path)
     for leftover in output_path.parent.glob(tmp_base.name + ".*"):
         leftover.unlink(missing_ok=True)
+    _require_video(output_path)  # the next pick is tried instead
     if slack:
         progress(None, "Picking the busiest opening")
         start_seconds += _open_on_motion(output_path, clip_seconds, slack)
@@ -912,6 +921,7 @@ def download_background(
 def _save_clip(target: Path, meta: dict, source: Source, game: str, query: str, orientation: Orientation,
                progress: ProgressFn) -> BackgroundClip:
     """Crop to 9:16 if asked, write the sidecar and refresh latest_gameplay.mp4."""
+    _require_video(target)
     size = probe_video(target)
     # Few no-copyright uploads are vertical, so a landscape pick is cropped instead.
     crop = orientation == "portrait" and (size.get("width") or 0) > (size.get("height") or 0)

@@ -149,3 +149,29 @@ def test_render_request_background_speed():
     assert RenderRequest(clip="a.mp4", game="G", script="Hi.", background_speed=1.25).background_speed == 1.25
     with pytest.raises(ValidationError):
         RenderRequest(clip="a.mp4", game="G", script="Hi.", background_speed=2)
+
+
+def test_assemble_rejects_an_audio_only_background(tmp_path):
+    """The bot saved YouTube downloads that had only an AAC stream; ffmpeg then died on the whole
+    filtergraph with "[0:v] ... matches no streams" and the 600-char tail of stderr hid the cause."""
+    import subprocess
+
+    try:
+        ffmpeg = va.ffmpeg_with_libass()
+    except va.AssemblyError:
+        pytest.skip("no ffmpeg with libass")
+    gen = [ffmpeg, "-y", "-loglevel", "error", "-f", "lavfi", "-i"]
+    subprocess.run(gen + ["sine=frequency=300:duration=3", "-c:a", "aac", str(tmp_path / "bg.mp4")], check=True)
+    subprocess.run(gen + ["sine=frequency=300:duration=2", "-ac", "1", str(tmp_path / "voice.mp3")], check=True)
+    with pytest.raises(va.AssemblyError, match="no video stream"):
+        va.assemble_video(tmp_path / "bg.mp4", tmp_path / "voice.mp3", [{"word": "hello", "start": 0, "end": 1.0}],
+                          tmp_path / "out.mp4", preset="ultrafast")
+
+
+def test_ffmpeg_error_excerpt_keeps_both_ends_of_a_long_line():
+    graph = "[0:v]scale=1080:1920[base];" * 80
+    stderr = f"Stream specifier ':v' in filtergraph description {graph} matches no streams.\n" \
+             "Error initializing complex filters: Invalid argument\n"
+    excerpt = va._ffmpeg_error_excerpt(stderr)
+    assert excerpt.startswith("Stream specifier ':v'") and "matches no streams." in excerpt
+    assert "Error initializing complex filters" in excerpt and len(excerpt) < 600

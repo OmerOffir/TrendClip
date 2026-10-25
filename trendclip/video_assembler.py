@@ -433,16 +433,38 @@ def ffmpeg_with_libass() -> str:
 
 
 _DURATION_RE = re.compile(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)")
+_VIDEO_STREAM_RE = re.compile(r"Stream #\d+:\d+.*?: Video:")
+
+
+def _media_info(path: Path) -> str:
+    """`ffmpeg -i` banner: duration and the streams of the file."""
+    proc = subprocess.run([ffmpeg_with_libass(), "-hide_banner", "-i", str(path)],
+                          capture_output=True, text=True, timeout=30)
+    return proc.stderr
 
 
 def media_duration(path: Path) -> float:
-    proc = subprocess.run([ffmpeg_with_libass(), "-hide_banner", "-i", str(path)],
-                          capture_output=True, text=True, timeout=30)
-    m = _DURATION_RE.search(proc.stderr)
+    m = _DURATION_RE.search(_media_info(path))
     if not m:
         raise AssemblyError(f"Could not read the duration of {path.name}")
     h, mnt, s = m.groups()
     return int(h) * 3600 + int(mnt) * 60 + float(s)
+
+
+def has_video_stream(path: Path) -> bool:
+    return bool(_VIDEO_STREAM_RE.search(_media_info(path)))
+
+
+def _ffmpeg_error_excerpt(stderr: str, lines: int = 6, width: int = 360) -> str:
+    """The last error lines. ffmpeg repeats the whole filtergraph in one line ("Stream specifier ':v' in
+    filtergraph description <graph> matches no streams"), so a long line keeps its head and tail,
+    where the subject and the reason are, instead of the tail of the graph."""
+    out = []
+    for line in stderr.strip().splitlines()[-lines:]:
+        if len(line) > width:
+            line = f"{line[: width // 2]} … {line[-width // 2:]}"
+        out.append(line)
+    return "\n".join(out)
 
 
 def find_font_file(preferred: str | None = None) -> tuple[str, Path | None]:
@@ -678,6 +700,10 @@ def assemble_video(
     ffmpeg = ffmpeg_with_libass()
     # Long silence after the voice is cut; a voice that stops right on its last word gets the tail added.
     voice_len = load_word_timings(timestamps_data)[-1].end + TAIL_SECONDS
+    if not has_video_stream(background):
+        # A YouTube section download can come back as an AAC-only "mp4"; ffmpeg would reject the whole
+        # filtergraph with "[0:v] ... matches no streams", which hides the cause.
+        raise AssemblyError(f"Background video has no video stream (audio only): {background}")
     bg_len = media_duration(background)
     if bg_len > 1:
         background_start %= bg_len  # seeking past the end of a looped input fails, so wrap around
@@ -740,7 +766,7 @@ def assemble_video(
             stderr = err_log.read()
         if proc.returncode != 0 or not tmp_out.exists():
             tmp_out.unlink(missing_ok=True)
-            raise AssemblyError(f"ffmpeg failed: {stderr.strip()[-600:]}")
+            raise AssemblyError(f"ffmpeg failed: {_ffmpeg_error_excerpt(stderr)}")
         os.replace(tmp_out, output)
         if keep_ass:
             shutil.copyfile(ass_path, output.with_suffix(".ass"))
