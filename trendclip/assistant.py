@@ -272,10 +272,13 @@ def pinned_comment(settings: Settings, filename: str) -> str:
 
 def discord_copy(settings: Settings, filename: str, limit: int = DISCORD_FILE_LIMIT) -> Path:
     """The Short itself when it fits the upload limit, else a smaller re-encode (cached)."""
-    path = shorts.short_path(settings, filename)
+    return fit_for_discord(shorts.short_path(settings, filename), settings.output_dir / "discord" / filename, limit)
+
+
+def fit_for_discord(path: Path, out: Path, limit: int = DISCORD_FILE_LIMIT) -> Path:
+    """`path` itself when it fits the upload limit, else a smaller re-encode at `out` (cached)."""
     if path.stat().st_size <= limit:
         return path
-    out = settings.output_dir / "discord" / filename
     if out.is_file() and out.stat().st_mtime >= path.stat().st_mtime and out.stat().st_size <= limit:
         return out
     ffmpeg = video_downloader.ffmpeg_path()

@@ -837,7 +837,11 @@ finished video the tab has **Connect YouTube** (Google asks which channel: pick 
 title, description (handle, source link, photo credits, hashtags) and tags come from `story_<id>.json`,
 where the upload (video id, url, Studio link) is recorded too. Category: Entertainment. The handle
 also goes into the end banner (`@handle · Follow for more`) and the descriptions. The dashboard's
-Upload and Plan tabs stay the gameplay channel's.
+Upload and Plan tabs stay the gameplay channel's. No TikTok or Instagram for this channel yet.
+
+**Its Discord channel** (`DISCORD_CHANNEL_ID` in `channels/darkarchives/channel.env`, same bot token):
+every finished video is posted there (shrunk under 10 MB when needed) and every upload with its YouTube
+link. `python -m modules.video_gen --id 17 --quiet` skips the post.
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the

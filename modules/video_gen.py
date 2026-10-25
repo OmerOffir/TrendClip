@@ -15,8 +15,9 @@ The beats are the hook and every scene. Flow:
                 overlay text flashing in above them, the title card for 3 s, the spoken "Follow for more dark
                 stories." with the red SUBSCRIBE button and the "Follow for more" banner over the last
                 seconds, dramatic music from music/dramatic under the voice.
-The story becomes USED and story_<id>.json next to the video holds the title, description (source and
-credits), hashtags, beats and what drew the pictures.
+The story becomes USED, the video is posted in the channel's Discord channel (DISCORD_CHANNEL_ID in
+channels/darkarchives/channel.env; --quiet skips it) and story_<id>.json next to the video holds the
+title, description (source and credits), hashtags, beats and what drew the pictures.
 """
 
 from __future__ import annotations
@@ -288,10 +289,10 @@ def _music(settings, progress: ProgressFn):
 
 def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: str | None = None,
                photos: bool | None = None, out_dir: Path | None = None, scripts_dir: Path | None = None,
-               db_path=None, settings=None) -> dict:
-    """Build output/darkarchives/story_<id>.mp4 from its script; the story becomes USED.
-    `images`: a scene_images backend (None = DA_IMAGE_BACKEND / auto); `photos`: Wikipedia photos
-    (None = DA_ARCHIVE_PHOTOS, default on)."""
+               db_path=None, settings=None, announce: bool = True) -> dict:
+    """Build output/darkarchives/story_<id>.mp4 from its script; the story becomes USED and the video is
+    posted in the channel's Discord channel (`announce`). `images`: a scene_images backend (None =
+    DA_IMAGE_BACKEND / auto); `photos`: Wikipedia photos (None = DA_ARCHIVE_PHOTOS, default on)."""
     from trendclip import voiceover
     from trendclip.config import get_settings
     from trendclip.quiz import TimedFlash
@@ -379,6 +380,11 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     info_path(story_id, out_dir).write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     if repository.get_story(story_id, db_path):
         repository.set_status(story_id, "USED", db_path, note=f"video {output.name}")
+    if announce:
+        progress(0.99, "Posting to Discord")
+        from modules import da_channel
+
+        info["discord_message"] = da_channel.announce_video(story_id, info, settings, out_dir)
     progress(1.0, "Done")
     return info
 
@@ -388,6 +394,7 @@ def main() -> None:
     parser.add_argument("--id", type=int, required=True, help="a SCRIPT_READY story (its story_<id>.json)")
     parser.add_argument("--images", choices=["auto", "local", "gemini", "placeholder"], help="who draws the pictures")
     parser.add_argument("--no-photos", action="store_true", help="no Wikipedia photos even for a Wikipedia story")
+    parser.add_argument("--quiet", action="store_true", help="don't post the video in the Discord channel")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -396,7 +403,8 @@ def main() -> None:
         print(f"[{'' if frac is None else f'{frac:4.0%}'}] {msg}")
 
     try:
-        info = make_video(args.id, show, images=args.images, photos=False if args.no_photos else None)
+        info = make_video(args.id, show, images=args.images, photos=False if args.no_photos else None,
+                          announce=not args.quiet)
     except (VideoGenError, scene_images.ImageError) as err:
         raise SystemExit(f"error: {err}") from None
     print(f"\n{info['filename']}: {info['duration_seconds']}s, pictures by {info['pictures']}, "

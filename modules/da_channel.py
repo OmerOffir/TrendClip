@@ -1,4 +1,5 @@
-"""The DarkArchives channel: its folder under channels/, its YouTube login and the upload of its videos.
+"""The DarkArchives channel: its folder under channels/, its YouTube login, the upload of its videos and
+its Discord channel (DISCORD_CHANNEL_ID in channel.env), where every finished video and upload is posted.
 
 The dashboard process serves one active channel (CHANNEL in .env, the gameplay channel); DarkArchives
 keeps its own channel.env and token_youtube.json in channels/darkarchives/ and goes through the same
@@ -15,7 +16,7 @@ from typing import Any
 from dotenv import dotenv_values
 
 from modules import video_gen
-from trendclip import publish
+from trendclip import assistant, hub, publish
 from trendclip.config import CHANNELS_DIR, CHANNEL_ENV
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,57 @@ def channel_env() -> dict[str, str]:
 def handle() -> str:
     """The channel's @handle from channel.env ("" until it is set)."""
     return video_gen.channel_handle()
+
+
+def discord_channel_id() -> int | None:
+    value = channel_env().get("DISCORD_CHANNEL_ID", "")
+    return int(value) if value.isdigit() else None
+
+
+def _rest(settings=None):
+    """Discord's REST API as the bot, aimed at the DarkArchives channel; None when either is not set."""
+    from trendclip.config import get_settings
+
+    settings = settings or get_settings()
+    channel = discord_channel_id()
+    if not channel or not settings.discord_bot_token:
+        return None
+    rest = hub.Rest(settings)
+    rest.channel = channel
+    return rest
+
+
+def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None) -> str | None:
+    """Post the finished video (shrunk to Discord's 10 MB when needed) in the DarkArchives channel.
+    Never raises: the video is made whether or not Discord takes it."""
+    try:
+        rest = _rest(settings)
+        if rest is None:
+            return None
+        path = video_gen.video_path(story_id, out_dir)
+        small = assistant.fit_for_discord(path, path.parent / "discord" / path.name)
+        photos = len(info.get("photos") or [])
+        text = (f"🎬 **{info.get('title', path.stem)}** · {info.get('duration_seconds', 0):.0f} s · "
+                f"pictures: {info.get('pictures', '?')}" + (f" · {photos} photo{'s' if photos != 1 else ''}" if photos else "")
+                + (f" · 🎵 {info['music']['title']}" if info.get("music") else "")
+                + f"\nStory {story_id}: upload it from the DarkArchives tab (Used → the story → Upload to YouTube).")
+        return rest.post(text, (path.name, small.read_bytes()))
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Discord post for story %s failed: %s", story_id, err)
+        return None
+
+
+def announce_upload(story_id: int, info: dict, record: dict, settings=None) -> str | None:
+    """Post the YouTube link in the DarkArchives channel once a video is uploaded. Never raises."""
+    try:
+        rest = _rest(settings)
+        if rest is None:
+            return None
+        return rest.post(f"⬆️ **{info.get('title', f'story {story_id}')}** is on YouTube ({record.get('privacy', '?')}): "
+                         f"{record.get('url', '')}\nYouTube Studio: <{record.get('studio_url', '')}>")
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Discord post for the upload of story %s failed: %s", story_id, err)
+        return None
 
 
 def youtube_status() -> dict[str, Any]:
@@ -88,4 +140,5 @@ def upload(story_id: int, privacy: str = "private", progress=lambda f, m: None, 
     info.setdefault("uploads", {})["youtube"] = record
     info_file.write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(1.0, "Uploaded")
+    announce_upload(story_id, info, record)
     return record

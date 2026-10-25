@@ -157,7 +157,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     messages = []
 
     info = video_gen.make_video(1, lambda f, m: messages.append(m), out_dir=tmp_path / "out", scripts_dir=scripts,
-                                db_path=db, settings=get_settings())
+                                db_path=db, settings=get_settings(), announce=False)
     video = tmp_path / "out" / "story_1.mp4"
     assert video.is_file() and info["filename"] == "story_1.mp4" and 5.5 <= media_duration(video) <= 7.0
     assert [b["label"] for b in info["beats"]] == ["hook", "scene 1", "scene 2", "scene 3"]
@@ -176,7 +176,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert video_gen.existing_video_ids(tmp_path / "out") == [1]
 
     with pytest.raises(video_gen.VideoGenError, match="No script"):
-        video_gen.make_video(2, out_dir=tmp_path / "out", scripts_dir=scripts, db_path=db, settings=get_settings())
+        video_gen.make_video(2, out_dir=tmp_path / "out", scripts_dir=scripts, db_path=db, settings=get_settings(), announce=False)
 
 
 def test_video_api(tmp_path, monkeypatch):
@@ -291,3 +291,40 @@ def test_youtube_endpoints_for_darkarchives(tmp_path, monkeypatch):
     assert client.post("/api/darkarchives/stories/1/upload", json={"privacy": "everyone"}).status_code == 422
     assert client.post("/api/darkarchives/youtube/logout").json() == {"connected": False}
     assert client.get("/api/darkarchives/upload-job").json() == {"running": False}
+
+
+def test_discord_announcements(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from modules import da_channel
+    from trendclip import hub
+    from trendclip.config import get_settings
+
+    monkeypatch.setattr(da_channel, "DIR", tmp_path / "da")
+    settings = get_settings().with_overrides(discord_bot_token="tok")
+    out = tmp_path / "videos"
+    out.mkdir()
+    (out / "story_5.mp4").write_bytes(b"\x00" * 64)
+    info = {"title": "The Ship", "duration_seconds": 64.9, "pictures": "local", "photos": ["a", "b"], "music": {"title": "Sombra"}}
+    assert da_channel.announce_video(5, info, settings, out) is None  # no channel folder: nothing to post to
+
+    (tmp_path / "da").mkdir()
+    (tmp_path / "da" / "channel.env").write_text("CHANNEL_HANDLE=@DarkArchives-j1l\nDISCORD_CHANNEL_ID=1563997738666819707\n")
+    posts = []
+
+    class FakeRest:
+        def __init__(self, settings):
+            self.channel = None
+
+        def post(self, content, file=None):
+            posts.append((self.channel, content, file))
+            return "msg1"
+
+    monkeypatch.setattr(hub, "Rest", FakeRest)
+    assert da_channel.announce_video(5, info, settings, out) == "msg1"
+    channel, content, file = posts[-1]
+    assert channel == 1563997738666819707 and file == ("story_5.mp4", b"\x00" * 64)
+    assert content.startswith("🎬 **The Ship** · 65 s · pictures: local · 2 photos · 🎵 Sombra\nStory 5:")
+    assert da_channel.announce_upload(5, info, {"privacy": "private", "url": "https://youtube.com/shorts/x", "studio_url": "https://studio/x"}, settings) == "msg1"
+    assert posts[-1][1] == "⬆️ **The Ship** is on YouTube (private): https://youtube.com/shorts/x\nYouTube Studio: <https://studio/x>"
+    assert da_channel.announce_video(5, info, settings.model_copy(update={"discord_bot_token": None}), out) is None
