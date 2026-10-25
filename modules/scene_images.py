@@ -45,6 +45,8 @@ WIKI_API = "https://{lang}.wikipedia.org/w/api.php"
 # Commons file names that are never a photo of the story: maps, flags, icons, logos, signatures, charts.
 SKIP_FILE = re.compile(r"(icon|logo|flag|map|seal|coat[ _]of[ _]arms|emblem|symbol|wiki|commons|edit|ambox|question"
                        r"|crystal|nuvola|disambig|star|padlock|signature|chart|graph|diagram|locator|arms\b|stub)", re.I)
+# ...and files whose Commons categories say so (a hurricane-tracks map is named after the hurricanes).
+SKIP_CATEGORY = re.compile(r"\b(maps?|diagrams?|charts?|graphs?|tracks?|logos?|flags?|infographics?|drawings?|screenshots?)\b", re.I)
 MIN_PHOTO_WIDTH = 500
 Progress = Callable[[str], None]
 
@@ -306,6 +308,8 @@ def pick_commons_files(pages: list[dict], limit: int = 2) -> list[CommonsFile]:
         if width < MIN_PHOTO_WIDTH or height < 300:
             continue
         meta = info.get("extmetadata") or {}
+        if SKIP_CATEGORY.search(_strip_html((meta.get("Categories") or {}).get("value", ""))):
+            continue
         out.append(CommonsFile(
             title=title, url=info.get("thumburl") or info.get("url", ""), width=width, height=height,
             artist=_strip_html((meta.get("Artist") or {}).get("value", ""))[:80],
@@ -335,7 +339,7 @@ def commons_files(url: str, limit: int = 2, timeout: float = 20) -> list[Commons
         return []
     r = requests.get(api, params={"action": "query", "prop": "imageinfo", "titles": "|".join(names[:40]),
                                   "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1600,
-                                  "iiextmetadatafilter": "Artist|LicenseShortName", "format": "json"},
+                                  "iiextmetadatafilter": "Artist|LicenseShortName|Categories", "format": "json"},
                      headers=headers, timeout=timeout)
     r.raise_for_status()
     return pick_commons_files(list(r.json().get("query", {}).get("pages", {}).values()), limit)
