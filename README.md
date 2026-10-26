@@ -870,9 +870,29 @@ plan; the video stays in the tab; **Make another now** refills the slot), **Uplo
 free slot** instead of the veto. The Plan section shows the automation line with **Run it now**; the command
 line is `python -m modules.da_produce` (`--no-fetch`, `--slots N`).
 
+**The channel learns from its own numbers** (`modules/da_insights.py`), apart from the gameplay channel's
+insights: every video on YouTube (`uploads.youtube.video_id` in its `story_<id>.json`) gets, with the
+channel's own login, its views, likes and comments (Data API) and, with the analytics permission, its
+average view duration / percentage and the views of its first day and first week (YouTube Analytics, about
+two days behind), next to what it was made of: the pillar (from the bank), the hook and its style
+(question / number-led / statement), the thumbnail headline and its length, the video's length and the slot
+it went out in. The numbers are cached in `output/darkarchives/insights.json` and read again at most every
+`DA_INSIGHTS_HOURS` (default 4). From them come the **Insights** card in the Plan section (top videos, who
+held viewers, the best group of each dimension, the lessons; **Refresh** reads YouTube now),
+`GET /api/darkarchives/insights` (`?refresh=true`), `/da insights` in Discord and one line of the best lesson
+when the morning run starts. Once **5 videos** are measured: (1) every script prompt ends with a short
+"WHAT WORKED ON DARK OUTLIERS" block (which pillar, hook style, headline length, video length and slot got
+the most views and held viewers, the best and the weakest titles, what was already published), like the
+gameplay channel's brief (`DA_SCRIPT_LEARNING=1`, default on; a cache that cannot be read never stops a
+script); (2) the mix leans towards a pillar whose median views beat the channel's: its target share moves by
+up to `DA_PILLAR_BIAS` (default 0.15, 0 turns it off; a pillar needs two measured videos to move), the
+shares are renormalised and the next story is still picked by the usual rule (`python -m modules.da_insights
+[--refresh]` prints the report and the biased mix).
+
 **Discord commands** for this channel: `/da plan` (the next days), `/da videos`, `/da status` (YouTube,
 the bank, the mix, the next empty slot, the automation), `/da make` (a video for the next empty slot now;
-`slots:`, `fetch:True`), `/da fetch` (refresh the bank), `/da upload video:`.
+`slots:`, `fetch:True`), `/da fetch` (refresh the bank), `/da upload video:`, `/da insights` (the numbers
+and the lessons; `refresh:True` reads YouTube now).
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the

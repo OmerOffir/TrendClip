@@ -14,6 +14,8 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
        MAX_STORY_TRIES stories per slot in all;
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
   The bot shows each video in the Dark Outliers Discord channel with a "Don't post this" button.
+  The channel learns from its own numbers (modules.da_insights): the mix leans towards a pillar whose
+  videos get more views (DA_PILLAR_BIAS caps it) and the script prompt ends with what worked.
 """
 
 from __future__ import annotations
@@ -101,16 +103,30 @@ def check_video(info: dict, min_words: int = 70) -> list[str]:
     return problems
 
 
+def mix_targets() -> dict[str, float] | None:
+    """The pillar shares the run aims at: repository.PILLARS leaning towards a pillar whose videos get more
+    views (modules.da_insights.pillar_bias, capped by DA_PILLAR_BIAS); None = the plain targets."""
+    try:
+        from modules import da_insights
+
+        bias = da_insights.pillar_bias()
+        return da_insights.biased_targets(bias) if bias else None
+    except Exception as err:  # noqa: BLE001 - the insights never stop production
+        logger.warning("Pillar bias unavailable: %s", err)
+        return None
+
+
 def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None,
                 skip: set[int] | None = None, tries: int = MAX_STORY_TRIES) -> dict:
     """Script the best NEW story; a story Gemini rejects is marked REJECTED and the next one is tried.
     Returns script_gen.process's result (status SCRIPT_READY)."""
     skip = set(skip or ())
+    targets = mix_targets()
     for _ in range(tries):
-        story = repository.get_next_story(db_path)
+        story = repository.get_next_story(db_path, targets)
         while story and story["id"] in skip:
             repository.set_status(story["id"], "REJECTED", db_path, note="production run: skipped")
-            story = repository.get_next_story(db_path)
+            story = repository.get_next_story(db_path, targets)
         if story is None:
             raise ProduceError("No NEW stories left in the bank (fetch more)")
         if story["score"] >= fetcher.ANNIVERSARY_SCORE and not fetcher.anniversary_soon(story["raw_text"]):

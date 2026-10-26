@@ -608,6 +608,10 @@ class TrendClipBot(discord.Client):
         await channel.send(clip_text(f"🏭 **Making the Dark Outliers videos for {labels}**: the best story of the pillar "
                                      "the mix needs, its script, the video, a check, then the slot. Each goes out at "
                                      "its time by itself; press **Don't post this** under any you don't like."))
+        if not only:
+            lesson = await self.darkarchives_lesson()
+            if lesson:
+                await channel.send(clip_text(f"📈 {lesson} — /da insights for the whole picture"), suppress_embeds=True)
         if not only and da_produce.daily_fetch():
             try:
                 report = await self.run_job(channel, "Refreshing the story bank", da_produce.refresh_bank, self.render_lock)
@@ -617,6 +621,18 @@ class TrendClipBot(discord.Client):
                 pass
         for day, slot in wanted:
             await self.darkarchives_produce_one(channel, day, slot)
+
+    async def darkarchives_lesson(self) -> str:
+        """The best lesson of the channel's own numbers (read again when the cache is old), "" when there is
+        none or they cannot be read: the morning run never waits on it."""
+        from modules import da_insights
+
+        try:
+            data = await asyncio.to_thread(da_insights.refresh, self.settings)
+            return da_insights.best_lesson(data)
+        except Exception as err:  # noqa: BLE001
+            logger.warning("Dark Outliers lesson unavailable: %s", err)
+            return ""
 
     async def darkarchives_produce_one(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
         from modules import da_plan, da_produce
@@ -1940,7 +1956,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "",
         "**Dark Outliers** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
         "`/da make` a video for the next empty slot now (`slots:` more, `fetch:True` refresh the bank first) · "
-        "`/da fetch` · `/da upload`. Every morning the bank is refreshed and each empty slot gets a video, posted "
+        "`/da fetch` · `/da upload` · `/da insights` what the channel's own numbers say. Every morning the bank is refreshed and each empty slot gets a video, posted "
         "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
     ]), ephemeral=True)
 
@@ -2072,6 +2088,19 @@ async def da_fetch_cmd(interaction: discord.Interaction) -> None:
     lines = [f"• {name}: " + (f"❌ {r['error']}" if "error" in r else f"{r['saved']} new ({r['fetched']} fetched, {r['duplicates']} known)")
              for name, r in report.items()]
     await reply(interaction, "📚 **Story bank refreshed**\n" + "\n".join(lines))
+
+
+@da_group.command(name="insights", description="Dark Outliers: which videos, pillars and hooks get the views, and what the scripts learn")
+@app_commands.describe(refresh="Read YouTube now instead of the last few hours' numbers (default no)")
+async def da_insights_cmd(interaction: discord.Interaction, refresh: bool = False) -> None:
+    from modules import da_insights
+
+    await interaction.response.defer(thinking=True)
+    try:
+        data = await asyncio.to_thread(da_insights.refresh, _bot(interaction).settings, force=refresh)
+    except Exception as err:  # noqa: BLE001 - shown to you
+        return await reply(interaction, clip_text(f"📈 Couldn't read the Dark Outliers insights: {err}"))
+    await reply(interaction, "\n".join(da_insights.format_report(da_insights.report(data))), suppress_embeds=True)
 
 
 @da_group.command(name="upload", description="Upload a Dark Outliers video to YouTube now")

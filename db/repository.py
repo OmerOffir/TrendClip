@@ -88,18 +88,20 @@ def pillar_mix(db_path: Path | str | None = None) -> dict[str, dict]:
     return mix
 
 
-def next_pillar(db_path: Path | str | None = None) -> str | None:
-    """The pillar furthest below its target share (counting the next video), among those with NEW stories."""
+def next_pillar(db_path: Path | str | None = None, targets: dict[str, float] | None = None) -> str | None:
+    """The pillar furthest below its target share (counting the next video), among those with NEW stories.
+    `targets`: other shares than PILLARS (the insights' biased mix, modules.da_insights.biased_targets)."""
     mix = pillar_mix(db_path)
     total = sum(m["produced"] for m in mix.values()) + 1
     waiting = [p for p in PILLARS if mix[p]["new"]]
-    return max(waiting, key=lambda p: mix[p]["target"] * total - mix[p]["produced"], default=None)
+    share = {p: (targets or {}).get(p, PILLARS[p]) for p in PILLARS}
+    return max(waiting, key=lambda p: share[p] * total - mix[p]["produced"], default=None)
 
 
-def get_next_story(db_path: Path | str | None = None) -> dict | None:
+def get_next_story(db_path: Path | str | None = None, targets: dict[str, float] | None = None) -> dict | None:
     """The top-rated NEW story of the pillar the mix needs most (oldest first on a tie); stories without
     a pillar only when no pillar has any. None when the bank has no NEW story."""
-    pillar = next_pillar(db_path)
+    pillar = next_pillar(db_path, targets)
     with closing(_connect(db_path)) as conn:
         row = conn.execute(
             "SELECT * FROM raw_stories WHERE status = 'NEW' AND (pillar = ? OR ? IS NULL) "

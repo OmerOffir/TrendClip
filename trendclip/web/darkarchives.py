@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from db import repository
-from modules import da_channel, da_plan, da_produce, fetcher, script_gen, video_gen
+from modules import da_channel, da_insights, da_plan, da_produce, fetcher, script_gen, video_gen
 from trendclip import publish
 
 logger = logging.getLogger(__name__)
@@ -423,6 +423,18 @@ def _now():
 def produce_status() -> dict[str, Any]:
     with _lock:
         return dict(_produce_job)
+
+
+@router.get("/insights")
+def insights(refresh: bool = False) -> dict[str, Any]:
+    """The channel's learning loop: every uploaded video's numbers (cached a few hours; `refresh` reads YouTube
+    now), the best and worst, what each pillar / hook style / length / slot gets, and the lessons the script
+    prompts end with. Without the channel's login the report carries the error instead of failing."""
+    try:
+        data = da_insights.refresh(_settings_for_targets(), force=refresh)
+    except da_insights.InsightsError as err:
+        return {**da_insights.report({}), "error": str(err)}
+    return da_insights.report(data)
 
 
 @router.get("/produce/targets")

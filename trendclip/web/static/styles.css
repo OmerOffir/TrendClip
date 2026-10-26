@@ -803,6 +803,18 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .da-vcard-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: auto; }
 .da-vcard-actions input[type=date] { padding: 6px 8px; }
 .da-vcard-actions select { padding: 6px 8px; }
+.da-insights { display: grid; gap: 10px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); font-size: 13px; }
+.da-insights:empty { display: none; }
+.da-insights-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.da-insights-head b { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.4px; }
+.da-insights-head .btn-secondary { margin: 0 0 0 auto; width: auto; }
+.da-insights-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.da-insights-list { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.da-insights-list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: baseline; }
+.da-insights-list li span:last-child { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.da-insights pre { margin: 0; padding: 8px 10px; border-radius: 10px; background: var(--card); border: 1px solid var(--border); font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+.da-insights-groups { display: flex; flex-wrap: wrap; gap: 4px; }
+@media (max-width: 900px) { .da-insights-grid { grid-template-columns: 1fr; } }
 .da-plan { display: grid; gap: 8px; }
 .da-plan-day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px; align-items: start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); }
 .da-plan-day.today { border-color: var(--accent); }

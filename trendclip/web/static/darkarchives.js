@@ -691,6 +691,38 @@
     }
   });
 
+  // ---- Insights: the channel's own numbers and what the script prompts learn from them
+  const fmtN = (n) => (n == null ? "–" : n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+  const pct = (v) => (v == null ? "" : ` · ${Math.round(v)}% watched`);
+
+  async function renderInsights(refresh = false) {
+    const box = $("daInsights");
+    if (refresh) box.innerHTML = `<div class="da-insights-head"><b>Insights</b><span class="hint">Reading YouTube…</span></div>`;
+    try {
+      const { body: r } = await api(`/api/darkarchives/insights${refresh ? "?refresh=true" : ""}`);
+      const when = r.fetched_at ? new Date(r.fetched_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "never";
+      const head = `<div class="da-insights-head"><b>Insights</b>
+        <span class="hint">${r.videos ? `${r.measured} of ${r.videos} videos on YouTube measured${r.with_retention ? `, ${r.with_retention} with retention` : ""} · ${fmtN(r.totals.views)} views in all${r.avg_view_pct != null ? `, ${Math.round(r.avg_view_pct)}% watched on average` : ""}` : "No video on YouTube yet: the channel learns from its first uploads"} · read ${esc(when)}</span>
+        <button type="button" class="btn-secondary" id="daInsightsRefresh" title="Read YouTube now">↻ Refresh</button></div>`;
+      if (r.error) { box.innerHTML = head + `<span class="da-note">${esc(r.error)}</span>`; return; }
+      if (!r.videos) { box.innerHTML = head; return; }
+      const video = (v) => `<li><span>${v.url ? `<a href="${esc(v.url)}" target="_blank" rel="noopener">${esc(v.title)}</a>` : esc(v.title)}${v.pillar ? ` ${pillarPill(v.pillar)}` : ""}</span><span>${fmtN(v.views)} views${pct(v.avg_view_pct)}${v.views_day1 != null ? ` · ${fmtN(v.views_day1)} day 1` : ""}</span></li>`;
+      const groups = Object.values(r.dimensions).flatMap((d) => d.groups.filter((g) => g.n >= 2).slice(0, 1).map((g) => `<span class="pill" title="${esc(d.label)}: ${g.n} videos">${esc(g.label)} · ${fmtN(g.views_median)} median${g.avg_view_pct != null ? ` · ${Math.round(g.avg_view_pct)}%` : ""}</span>`));
+      box.innerHTML = head + `<div class="da-insights-grid">
+        <div><div class="hint"><b>Top videos</b></div><ul class="da-insights-list">${r.top.map(video).join("")}</ul>
+          ${r.retention_best.length ? `<div class="hint" style="margin-top:8px"><b>Held viewers best</b></div><ul class="da-insights-list">${r.retention_best.slice(0, 3).map(video).join("")}</ul>` : ""}</div>
+        <div>${r.lessons ? `<div class="hint"><b>What the script prompts learn</b>${Object.keys(r.pillar_bias || {}).length ? ` · mix bias ${esc(Object.entries(r.pillar_bias).map(([p, b]) => `${p} ${b > 0 ? "+" : ""}${Math.round(b * 100)}%`).join(", "))}` : ""}</div><pre>${esc(r.lessons)}</pre>`
+            : `<div class="hint">${esc(r.best_lesson || "")}${r.best_lesson ? "<br>" : ""}The lessons go into the script prompts once ${r.min_videos} videos are measured (${r.measured} so far)</div>`}
+          ${groups.length ? `<div class="da-insights-groups" style="margin-top:8px">${groups.join("")}</div>` : ""}</div></div>
+        ${r.warnings.length ? `<span class="da-note">${r.warnings.map(esc).join(" · ")}</span>` : ""}`;
+    } catch (err) {
+      box.innerHTML = `<div class="da-insights-head"><b>Insights</b><span class="da-note">${esc(err.message)}</span></div>`;
+    }
+  }
+  $("daInsights").addEventListener("click", (e) => {
+    if (e.target.closest("#daInsightsRefresh")) renderInsights(true);
+  });
+
   async function loadPlan() {
     try {
       const { body } = await api("/api/darkarchives/plan");
@@ -698,6 +730,7 @@
       plan.error.hidden = true;
       renderPlan();
       renderProduce();
+      renderInsights();
     } catch (err) {
       plan.error.textContent = `Couldn't load the plan: ${err.message}`;
       plan.error.hidden = false;

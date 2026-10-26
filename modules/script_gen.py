@@ -223,12 +223,19 @@ def _ask(client, model: str, prompt: str) -> ScriptDraft:
     return ScriptDraft.model_validate_json(response.text)
 
 
-def build_prompt(story: dict, today: dt.date | None = None) -> str:
+def build_prompt(story: dict, today: dt.date | None = None, brief: str | None = None) -> str:
+    """`brief`: what worked on the channel lately, appended after the source (modules.da_insights.learned():
+    the lessons once the channel has enough measured videos, "" before; None = ask it)."""
     pillar = story.get("pillar")
-    return PROMPT.format(
+    text = PROMPT.format(
         min_words=MIN_WORDS, max_words=MAX_WORDS, source_name=story["source_name"], title=story["title"],
         text=story["raw_text"][:SOURCE_CHARS], today=(today or dt.date.today()).isoformat(),
         pillar=repository.PILLAR_LABELS.get(pillar, "dark history") if pillar else "dark history")
+    if brief is None:
+        from modules import da_insights
+
+        brief = da_insights.learned()
+    return text + brief if brief else text
 
 
 def write_script(story: dict, client=None) -> tuple[Script | None, str]:
