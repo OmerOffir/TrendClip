@@ -29,6 +29,7 @@ Scores are 0-100 on every source so get_next_story() compares them fairly:
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import html
 import logging
 import math
@@ -468,6 +469,10 @@ For each case:
   facts; write "reportedly" where sources disagree. Never invent names, quotes or details.
 - hook_score: 1-100, how gripping this case is for a 45-second Short.
 
+Today is {today}. At least {anniversaries} of the cases must be events whose anniversary (same month
+and day, any year) falls within the next {window} days: for those, begin the story with
+"Anniversary: <Month day, year>" (the date of the event), then the facts. Timely stories get shown more.
+
 Prefer lesser-known cases over the most famous ones. Never: fiction or creepypastas (unless it is
 an internet urban legend, framed as one), gore without a story, recent political controversies or
 ongoing news (open trials, cases from the last two years). Do NOT use any of these cases:
@@ -494,7 +499,38 @@ def pillar_split(count: int) -> dict[str, int]:
     return out
 
 
-def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None) -> list[Story]:
+ANNIVERSARY_WINDOW = 10  # days: an "Anniversary:" story is the top pick while its date is this close
+ANNIVERSARY_SCORE = 100
+ANNIVERSARY = re.compile(r"^\s*Anniversary:\s*([A-Za-z]+)\s+(\d{1,2})(?:st|nd|rd|th)?,?\s*(\d{4})?", re.I)
+
+
+def anniversary_date(text: str, today: dt.date | None = None) -> dt.date | None:
+    """The next occurrence (from today) of the "Anniversary: Month day, year" a story starts with, or None."""
+    m = ANNIVERSARY.match(text or "")
+    if not m:
+        return None
+    try:
+        month = dt.datetime.strptime(m.group(1)[:3], "%b").month
+        day = int(m.group(2))
+    except ValueError:
+        return None
+    today = today or dt.date.today()
+    for year in (today.year, today.year + 1):
+        try:
+            when = dt.date(year, month, day)
+        except ValueError:
+            continue
+        if when >= today - dt.timedelta(days=1):
+            return when
+    return None
+
+
+def anniversary_soon(text: str, today: dt.date | None = None, window: int = ANNIVERSARY_WINDOW) -> bool:
+    when = anniversary_date(text, today)
+    return when is not None and (when - (today or dt.date.today())).days <= window
+
+
+def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, today: dt.date | None = None) -> list[Story]:
     from google import genai
     from google.genai import errors, types
 
@@ -508,7 +544,9 @@ def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None) ->
     client = client or genai.Client(api_key=api_key)
     model = script_writer.gemini_model(settings)
     mix = "\n".join(f"- {n} {p} ({repository.PILLAR_LABELS[p].lower()})" for p, n in pillar_split(count).items() if n)
-    prompt = GEMINI_PROMPT.format(count=count, mix=mix,
+    today = today or dt.date.today()
+    prompt = GEMINI_PROMPT.format(count=count, mix=mix, today=today.isoformat(), anniversaries=max(1, count // 2),
+                                  window=ANNIVERSARY_WINDOW,
                                   avoid="\n".join(f"- {t}" for t in (avoid or [])[:200]) or "- (none yet)")
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=GeminiCases,
                                          temperature=0.9)
@@ -520,7 +558,9 @@ def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None) ->
     parsed = response.parsed if isinstance(response.parsed, GeminiCases) else GeminiCases.model_validate_json(response.text)
     return [{
         "source_id": f"gemini_{slug(c.title)}", "source_name": "gemini", "title": c.title.strip(),
-        "raw_text": c.story.strip(), "url": "", "score": min(c.hook_score, GEMINI_MAX_SCORE), "pillar": c.pillar,
+        "raw_text": c.story.strip(), "url": "",
+        "score": ANNIVERSARY_SCORE if anniversary_soon(c.story, today) else min(c.hook_score, GEMINI_MAX_SCORE),
+        "pillar": c.pillar,
     } for c in parsed.cases if c.title.strip() and c.story.strip()]
 
 

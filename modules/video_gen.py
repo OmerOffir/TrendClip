@@ -47,7 +47,8 @@ DISSOLVE = 0.6  # seconds of cross-fade between beats
 ZOOM = 0.12  # push in / pull out by 12% over a beat
 OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window moves over it (less jitter)
 MIN_BEAT = 1.0
-DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
+DEFAULT_RATE = "+10%"  # F5 (the Linux voice) is slow at its "normal"; 105 words should take about 46 s
+TAIL = 1.2  # seconds after the last word (the assembler's default 2 s drags for a Short)
 HASHTAGS = ["darkoutliers", "mystery", "unsolved", "truestory", "history", "shorts"]
 DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD); with a handle: "@handle · Follow for more"
 CHANNEL_DIR = PROJECT_ROOT / "channels" / "darkarchives"
@@ -303,13 +304,11 @@ def cta_sticker(settings, words: list, flashes: list, title: bool, end_card: boo
     try:
         from dataclasses import replace
 
-        from trendclip.video_assembler import TAIL_SECONDS
-
         overlays, used = stickers.plan(settings, [], words, [], cta=kind, auto=False, pace=False,
                                        title_seconds=3.0 if title else 0.0, end_seconds=3.5 if end_card else 0.0,
                                        flashes=flashes, flash_y=0.3)
         # The planner ends the button 0.3 s after the last word; here it stays through the video's tail.
-        overlays = [replace(o, end=words[-1].end + TAIL_SECONDS) for o in overlays]
+        overlays = [replace(o, end=words[-1].end + TAIL) for o in overlays]
         return overlays, used or [f"built-in {kind} button"]
     except Exception:  # noqa: BLE001
         logger.exception("The call-to-action sticker failed; rendering without it")
@@ -338,7 +337,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     from trendclip import voiceover
     from trendclip.config import get_settings
     from trendclip.quiz import TimedFlash
-    from trendclip.video_assembler import TAIL_SECONDS, assemble_video, media_duration
+    from trendclip.video_assembler import assemble_video, media_duration
 
     settings = settings or get_settings()
     path = script_gen.script_path(story_id, scripts_dir)
@@ -358,7 +357,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     progress(0.02, f"Recording the narration ({voice})")
     text = f"{spoken_text(script)} {cta_line}".strip()
     words = voiceover.synthesize(text, work / "voice.mp3", voice, rate, local_rate=rate)
-    beats = split_beats(beats_of(script, cta_line), words, TAIL_SECONDS)
+    beats = split_beats(beats_of(script, cta_line), words, TAIL)
 
     # The GPU voice and the GPU pictures do not fit on an 8 GB card together.
     from trendclip import local_voice
@@ -405,6 +404,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         title_card=title_card, title_chars=18, title_lines=4, title_size=88, flashes=flashes, flash_scale=1.0,
         end_card=end_card, overlays=overlays,
         title_pop=False, cover_text=cover, cover_seconds=0.8,  # frame 0 is the thumbnail: everything at full strength
+        tail_seconds=TAIL,
         preset=setting("DA_X264_PRESET", "fast"),
     )
 

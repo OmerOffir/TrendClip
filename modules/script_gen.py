@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "assets" / "generated_scripts"
-MIN_WORDS, MAX_WORDS = 110, 140
+MIN_WORDS, MAX_WORDS = 95, 120  # Shorts live on retention: about 45-50 s with the channel's voice
 MAX_SENTENCE_WORDS = 12  # short, rhythmic sentences for text-to-speech
-WORDS_PER_SECOND = 2.8  # a calm, dark narrator: 125 words ~ 45 s
+WORDS_PER_SECOND = 2.3  # the channel's narrator (F5-TTS at +10%): 105 words ~ 46 s
 ATTEMPTS = 3
 SOURCE_CHARS = 12000  # long Wikipedia articles are cut to this before going to Gemini
 
@@ -80,7 +80,9 @@ eerie true events, unsolved mysteries and disturbing historical anomalies, narra
 TONE: documentary-style, atmospheric, suspenseful, authoritative and eerie. A calm narrator who knows
 the files, never a hype voice. No slang, no "guys", no exclamation marks.
 
-Turn the SOURCE below into one Short of 35-50 seconds. Content pillar: {pillar}.
+Turn the SOURCE below into one Short of 40-50 seconds. Content pillar: {pillar}.
+If the SOURCE starts with "Anniversary:", the video goes out around that date: open with how many years ago
+this week it happened ("Eighty years ago this week, ...") and keep the date in the first scene.
 
 STRUCTURE (high retention):
 - hook_text (0-3 s): ONE high-suspense statement or paradox, at most 12 words, that stops the scroll
@@ -94,7 +96,8 @@ STRUCTURE (high retention):
 - The LAST scene (40-50 s) is the conclusion: an open-ended question, an eerie twist, or a provoking
   thought that makes viewers argue in the comments (e.g. "So what really happened on that mountain?").
 
-LENGTH: hook_text + every narration together = {min_words} to {max_words} words. Aim for 125.
+LENGTH: hook_text + every narration together = {min_words} to {max_words} words. Aim for 105: every
+second a viewer stays counts, so cut anything that is not a new fact or the twist.
 
 TRUTH: use only facts that are in the SOURCE. Never invent names, dates, numbers or quotes. If the
 source is uncertain, say "reportedly". Never state as fact that a living person committed a crime

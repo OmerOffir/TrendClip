@@ -837,7 +837,9 @@ folder, `channels/darkarchives/`, with `channel.env` (`CHANNEL_HANDLE`, `STATS_*
 finished video the tab has **Connect YouTube** (Google asks which channel: pick Dark Outliers) and
 **Upload to YouTube** with the privacy (private until the API audit, like the gameplay channel); the
 title, description (handle, source link, photo credits, hashtags) and tags come from `story_<id>.json`,
-where the upload (video id, url, Studio link) is recorded too. Category: Entertainment. The handle
+where the upload (video id, url, Studio link) is recorded too. Category: Entertainment. After a public
+upload the channel posts its own first comment, the script's closing question plus the follow line
+(`DA_FIRST_COMMENT`): comments are an engagement signal and the question invites them. The handle
 also goes into the end banner (`@handle · Follow for more`) and the descriptions. The dashboard's
 Upload and Plan tabs stay the gameplay channel's. No TikTok or Instagram for this channel yet.
 
@@ -874,7 +876,7 @@ the bank, the mix, the next empty slot, the automation), `/da make` (a video for
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
 1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
-   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +6%). The word
+   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +10%). The word
    timings give every beat its start.
 2. **Pictures** (`modules/scene_images.py`): one 9:16 picture per beat from the scene's `image_prompt`.
    `DA_IMAGE_BACKEND`: `auto` (default) = `local` when an NVIDIA GPU and diffusers are there, else `gemini`
@@ -912,7 +914,10 @@ hashtags), beats with their timing and picture, who drew the pictures and how lo
 | Creepy history & obscure anomalies | 40% | r/CreepyWikipedia, r/DarkHistory, r/todayilearned (filtered), Wikipedia (urban legends, mass psychogenic illness, human experiments) |
 | Disturbing true events & outrage cases | 20% | r/TrueCrime, Atlas Obscura and Listverse RSS, Wikipedia (medical scandals) |
 
-Gemini also adds documented cases, split by the same mix.
+Gemini also adds documented cases, split by the same mix, and at least half of them are **anniversaries**:
+events whose date falls within the next 10 days (the story starts with `Anniversary: <date>`). Those score
+100, so the production run takes them first while the date is near (timely Shorts get shown more), and the
+script opens with "N years ago this week"; once the date has passed they become ordinary stories again.
 
 **Filters when fetching**:
 - **Length:** stories must be 200–3,500 characters. Wikipedia articles are cut to their opening paragraphs.
@@ -922,7 +927,7 @@ Gemini also adds documented cases, split by the same mix.
 - **Upvotes:** posts need at least 100, but only when Reddit shows them, which takes a free app login. Put `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from a "script" app at reddit.com/prefs/apps in `.env`. Without them the public RSS feed is used, which has no votes and is rate-limited (HTTP 429 for some subreddits on a run).
 
 **Script rules** (Gemini, checked in code and sent back up to 3 times):
-- **Length:** 110–140 words, about 35–50 s.
+- **Length:** 95–120 words, about 40–50 s (Shorts live on retention).
 - **Hook:** a suspense statement or paradox of at most 12 words.
 - **Sentences:** at most 12 words each.
 - **Pacing:** tension escalates through scenes 1–5. The last scene is an open question, an eerie twist or a provoking thought.

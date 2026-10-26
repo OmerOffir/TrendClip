@@ -113,6 +113,9 @@ def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_
             story = repository.get_next_story(db_path)
         if story is None:
             raise ProduceError("No NEW stories left in the bank (fetch more)")
+        if story["score"] >= fetcher.ANNIVERSARY_SCORE and not fetcher.anniversary_soon(story["raw_text"]):
+            repository.update_story(story["id"], db_path, score=fetcher.GEMINI_MAX_SCORE)  # its date passed: a normal story again
+            continue
         progress(None, f"Writing the script: {story['title'][:60]}")
         result = script_gen.process(story["id"], out_dir=scripts_dir, db_path=db_path)
         if result["status"] == "SCRIPT_READY":

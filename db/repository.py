@@ -118,8 +118,8 @@ def set_status(story_id: int, status: str, db_path: Path | str | None = None, no
 
 
 def update_story(story_id: int, db_path: Path | str | None = None, **fields) -> None:
-    """Set raw_text, pillar and/or note."""
-    allowed = {"raw_text", "pillar", "note"}
+    """Set raw_text, pillar, note and/or score."""
+    allowed = {"raw_text", "pillar", "note", "score"}
     if not fields or set(fields) - allowed:
         raise ValueError(f"can only update {', '.join(sorted(allowed))}")
     if "pillar" in fields:

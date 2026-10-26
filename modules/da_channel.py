@@ -16,6 +16,7 @@ from typing import Any
 from dotenv import dotenv_values
 
 from modules import video_gen
+from modules.scene_images import setting
 from trendclip import assistant, hub, publish
 from trendclip.config import CHANNELS_DIR, CHANNEL_ENV
 
@@ -151,6 +152,50 @@ def follow_line() -> str:
     return f"Follow {h} for more dark stories." if h else ""
 
 
+def comment_text(story_id: int, info: dict | None = None) -> str:
+    """The channel's own first comment: the script's closing question (it invites answers, and comments
+    are an engagement signal), then the follow line."""
+    import re
+
+    question = ""
+    from modules import script_gen
+
+    path = script_gen.script_path(story_id)
+    if path.is_file():
+        try:
+            scenes = json.loads(path.read_text(encoding="utf-8")).get("scenes") or []
+            last = (scenes[-1].get("narration") or "") if scenes else ""
+            sentences = [t.strip() for t in re.split(r"(?<=[.!?])\s+", last) if t.strip()]
+            question = next((t for t in reversed(sentences) if t.endswith("?")), "")
+        except ValueError:
+            question = ""
+    question = question or "What do you think really happened? Tell me below."
+    line = follow_line() or "Follow for more dark stories."
+    return f"{question}\n\n{line}"
+
+
+def post_comment(story_id: int, text: str, youtube=None) -> dict[str, Any]:
+    """Comment on the uploaded video as the channel (YouTube only takes comments on public or unlisted videos)."""
+    from googleapiclient.errors import HttpError
+
+    info_file = video_gen.info_path(story_id)
+    info = json.loads(info_file.read_text(encoding="utf-8"))
+    video_id = ((info.get("uploads") or {}).get("youtube") or {}).get("video_id")
+    if not video_id:
+        raise publish.PublishError("Upload the video first")
+    youtube = youtube or publish._youtube(TOKEN)
+    body = {"snippet": {"videoId": video_id, "topLevelComment": {"snippet": {"textOriginal": text.strip()}}}}
+    try:
+        response = youtube.commentThreads().insert(part="snippet", body=body).execute()
+    except HttpError as err:
+        raise publish.PublishError(publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment")) from err
+    record = {"comment_id": response.get("id", ""), "text": text.strip(),
+              "url": f"https://www.youtube.com/watch?v={video_id}&lc={response.get('id', '')}"}
+    info["uploads"]["youtube"]["comment"] = record
+    info_file.write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return record
+
+
 def upload_request(info: dict, privacy: str = "private") -> publish.YouTubeUploadRequest:
     """Title, description and tags from story_<id>.json; the follow line is added when it is missing."""
     description = info.get("description", "")
@@ -178,6 +223,12 @@ def upload(story_id: int, privacy: str = "private", progress=lambda f, m: None, 
     record = publish.upload_file(path, req, True, progress, youtube or publish._youtube(TOKEN))
     info.setdefault("uploads", {})["youtube"] = record
     info_file.write_text(json.dumps(info, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    if record.get("privacy") in ("public", "unlisted") and setting("DA_FIRST_COMMENT", "1") not in ("0", "false", "off"):
+        try:
+            progress(None, "Posting the channel's comment")
+            record["comment"] = post_comment(story_id, comment_text(story_id, info), youtube)
+        except Exception as err:  # noqa: BLE001 - the video is up; the comment is a bonus
+            logger.warning("Comment on story %s failed: %s", story_id, err)
     progress(1.0, "Uploaded")
     announce_upload(story_id, info, record)
     return record
