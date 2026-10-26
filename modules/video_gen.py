@@ -179,11 +179,13 @@ GRAIN = "noise=alls=6:allf=t,"
 
 def build_background(pictures: list[Path], beats: list[Beat], output: Path, size: tuple[int, int] = scene_images.SIZE,
                      fps: int = FPS, dissolve: float = DISSOLVE, progress: ProgressFn = lambda f, m: None,
-                     crf: int = 18, preset: str = "veryfast", zoom: float = ZOOM) -> Path:
+                     crf: int = 18, preset: str = "veryfast", zoom: float | list[float] = ZOOM) -> Path:
     """The moving background: every picture for its beat, dissolves centred on the beat changes
     (clip i runs its beat plus the dissolve; the first one plus half), with film grain. It is an
     intermediate the assembler encodes again, so a fast x264 preset is enough. `zoom`: how far each
-    picture pushes in or pulls out (After Market's chart cards move less, so their edges stay in)."""
+    picture pushes in or pulls out, one value or one per beat (After Market's chart cards move less, so
+    their edges stay in). A picture may also be a short .mp4 (After Market's chart that draws itself): it
+    plays as it is, so it must be at least as long as its beat plus the dissolve."""
     from trendclip.video_assembler import ffmpeg_with_libass
 
     if len(pictures) != len(beats) or not beats:
@@ -193,12 +195,19 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
     total = beats[-1].end
     cmd = [ffmpeg_with_libass(), "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1"]
     filters = []
+    zooms = list(zoom) if isinstance(zoom, (list, tuple)) else [zoom] * n
     for i, (pic, beat) in enumerate(zip(pictures, beats)):
         extra = dissolve / 2 if i == 0 else dissolve
         if i == n - 1:
             extra += 1.0  # a little spare at the end; the assembler cuts at the voice
+        if pic.suffix.lower() == ".mp4":
+            cmd += ["-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
+            filters.append(f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={fps},setsar=1,"
+                           f"tpad=stop_mode=clone:stop_duration={beat.duration + extra:.3f},trim=duration={beat.duration + extra:.3f},"
+                           f"format=yuv420p[v{i}]")
+            continue
         cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
-        filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps, zoom=zoom))
+        filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps, zoom=zooms[i]))
     current = "v0"
     for i in range(1, n):
         offset = beats[i - 1].end - dissolve / 2

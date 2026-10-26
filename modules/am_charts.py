@@ -122,12 +122,14 @@ def header(draw: ImageDraw.ImageDraw, kicker: str, title: str, sub: str = "", ac
 
 
 def line_chart(draw: ImageDraw.ImageDraw, img: Image.Image, values: list[float], box=CHART_BOX, reference: float | None = None,
-               up: bool | None = None, labels: bool = True, line_width: int = 7) -> None:
+               up: bool | None = None, labels: bool = True, line_width: int = 7, fraction: float = 1.0) -> None:
     """A filled line over `box`; `reference` draws a dashed level (the previous close); the colour follows
-    `up` (None: the last value against the first or the reference)."""
+    `up` (None: the last value against the first or the reference). `fraction` < 1 draws only the first
+    part of the line (the frames of the draw animation keep the scale of the whole)."""
     x0, y0, x1, y1 = box
     draw.rounded_rectangle(box, radius=28, fill=PANEL)
     vals = [v for v in values if v is not None]
+    shown = max(2, int(round(len(vals) * min(max(fraction, 0.0), 1.0)))) if vals else 0
     if len(vals) < 2:
         text(draw, ((x0 + x1) // 2, (y0 + y1) // 2), "no chart data", 40, MUTED, anchor="mm")
         return
@@ -152,10 +154,10 @@ def line_chart(draw: ImageDraw.ImageDraw, img: Image.Image, values: list[float],
         base = reference if reference else vals[0]
         up = vals[-1] >= base
     col = GREEN if up else RED
-    points = [(X(i), Y(v)) for i, v in enumerate(vals)]
+    points = [(X(i), Y(v)) for i, v in enumerate(vals[:shown])]
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     od = ImageDraw.Draw(overlay)
-    od.polygon([(ix0, iy1), *points, (ix1, iy1)], fill=(*col, 48))
+    od.polygon([(ix0, iy1), *points, (points[-1][0], iy1)], fill=(*col, 48))
     img.paste(Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB"))
     draw = ImageDraw.Draw(img)
     ref_y = Y(reference) if reference else None
@@ -184,6 +186,34 @@ def sparkline(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], values:
         hi = lo + 1
     pts = [(x0 + (x1 - x0) * i / (len(vals) - 1), y1 - (y1 - y0) * (v - lo) / (hi - lo)) for i, v in enumerate(vals)]
     draw.line(pts, fill=colour(vals[-1] - vals[0]), width=5, joint="curve")
+
+
+def logo_tile(img: Image.Image, symbol: str, xy: tuple[int, int], size: int, logos: bool = True) -> None:
+    """The company's logo on a white rounded tile at `xy`, or a lettered badge when there is none."""
+    from modules import am_logos
+
+    x, y = xy
+    draw = ImageDraw.Draw(img)
+    path = am_logos.fetch(symbol) if logos else None
+    if path:
+        try:
+            logo = Image.open(path).convert("RGBA")
+            # A logo drawn for a dark site is white: it goes on a dark tile.
+            pixels = [px for px in logo.getdata() if px[3] > 40]
+            bright = pixels and sum(sum(px[:3]) for px in pixels) / (3 * len(pixels)) > 185
+            draw.rounded_rectangle((x, y, x + size, y + size), radius=size // 5, fill=(30, 38, 56) if bright else (250, 250, 252))
+            inner = int(size * 0.78)
+            logo.thumbnail((inner, inner))
+            img.paste(logo, (x + (size - logo.width) // 2, y + (size - logo.height) // 2), logo)
+            return
+        except Exception:  # noqa: BLE001 - a broken file: the badge
+            logger.info("Logo %s could not be drawn", symbol)
+    hue = sum(ord(c) for c in symbol) % 360
+    from colorsys import hls_to_rgb
+
+    r, g, b = hls_to_rgb(hue / 360, 0.42, 0.55)
+    draw.rounded_rectangle((x, y, x + size, y + size), radius=size // 5, fill=(int(r * 255), int(g * 255), int(b * 255)))
+    text(draw, (x + size // 2, y + size // 2), symbol[:4], int(size * (0.42 if len(symbol) <= 2 else 0.3)), TEXT, anchor="mm")
 
 
 def footer(draw: ImageDraw.ImageDraw, s: str) -> None:
@@ -242,22 +272,25 @@ def session_label(mover: dict, slot: str) -> tuple[str, float | None, float | No
     return ("TODAY" if slot != "weekend" else "THIS WEEK"), mover.get("price"), mover.get("change_pct")
 
 
-def ticker(mover: dict, slot: str, path: Path, facts: dict | None = None) -> Path:
-    """One stock: symbol, name, the price and move that matter now, the intraday line (or the week)."""
+def ticker(mover: dict, slot: str, path: Path, facts: dict | None = None, fraction: float = 1.0, logos: bool = True) -> Path:
+    """One stock: logo, symbol, name, the price and move that matter now, the intraday line (or the week).
+    `fraction`: how much of the line is drawn (the animation's frames)."""
     img, draw = canvas()
     label, price, move = session_label(mover, slot)
     pill(draw, (80, 120), label, 34, colour(move))
     text(draw, (80, 200), mover.get("symbol", ""), 120)
     text(draw, (80, 340), (mover.get("name") or "")[:34], 38, MUTED, bold=False)
+    logo_tile(img, mover.get("symbol", ""), (1000 - 170, 190), 170, logos)
+    draw = ImageDraw.Draw(img)
     text(draw, (80, 530), f"${money(price)}", 96)
     pill(draw, (1000, 548), signed(move), 44, colour(move), anchor_right=True)
     series = [c for _, c in mover.get("series") or []]
     if len(series) >= 10:
-        line_chart(draw, img, series, reference=mover.get("previous_close"), up=(move or 0) >= 0)
+        line_chart(draw, img, series, reference=mover.get("previous_close"), up=(move or 0) >= 0, fraction=fraction)
         draw = ImageDraw.Draw(img)
         text(draw, (CHART_BOX[0] + 30, CHART_BOX[1] + 22), "today, 5-minute", 28, MUTED, bold=False, anchor="lm")
     elif mover.get("week"):
-        line_chart(draw, img, mover["week"], up=(move or 0) >= 0)
+        line_chart(draw, img, mover["week"], up=(move or 0) >= 0, fraction=fraction)
         draw = ImageDraw.Draw(img)
         text(draw, (CHART_BOX[0] + 30, CHART_BOX[1] + 22), "last 5 sessions", 28, MUTED, bold=False, anchor="lm")
     else:
@@ -278,7 +311,7 @@ def ticker(mover: dict, slot: str, path: Path, facts: dict | None = None) -> Pat
     return save(img, path)
 
 
-def crypto(facts: dict, path: Path) -> Path:
+def crypto(facts: dict, path: Path, fraction: float = 1.0) -> Path:
     """Bitcoin's day as the line, the coins as rows, the fear & greed index as a bar."""
     img, draw = canvas()
     coins = facts.get("crypto") or []
@@ -286,7 +319,7 @@ def crypto(facts: dict, path: Path) -> Path:
     header(draw, "CRYPTO · 24H", "Bitcoin" if btc else "Crypto",
            f"${money(btc['price'])}  {signed(btc.get('change_24h_pct'))}" if btc else nice_date(facts), accent=AMBER)
     series = [c for _, c in facts.get("btc_series") or []]
-    line_chart(draw, img, series, up=(btc or {}).get("change_24h_pct", 0) >= 0 if btc else None, labels=True)
+    line_chart(draw, img, series, up=(btc or {}).get("change_24h_pct", 0) >= 0 if btc else None, labels=True, fraction=fraction)
     draw = ImageDraw.Draw(img)
     text(draw, (CHART_BOX[0] + 30, CHART_BOX[1] + 22), "BTC-USD today, 15-minute", 28, MUTED, bold=False, anchor="lm")
     y = 1370
@@ -307,7 +340,7 @@ def crypto(facts: dict, path: Path) -> Path:
     return save(img, path)
 
 
-def calendar(facts: dict, path: Path) -> Path:
+def calendar(facts: dict, path: Path, logos: bool = True) -> Path:
     """What is due: earnings (before/after the bell) and the macro events of the session that matters."""
     img, draw = canvas()
     slot = facts.get("slot", "close")
@@ -320,8 +353,10 @@ def calendar(facts: dict, path: Path) -> Path:
     y = 540
     for e in rows[:5]:
         draw.rounded_rectangle((80, y, 1000, y + 116), radius=22, fill=PANEL)
-        text(draw, (110, y + 24), e.get("symbol", ""), 44)
-        text(draw, (110, y + 78), (e.get("name") or "")[:30], 28, MUTED, bold=False)
+        logo_tile(img, e.get("symbol", ""), (100, y + 14), 88, logos)
+        draw = ImageDraw.Draw(img)
+        text(draw, (210, y + 24), e.get("symbol", ""), 44)
+        text(draw, (210, y + 78), (e.get("name") or "")[:26], 28, MUTED, bold=False)
         tag = "TONIGHT" if e.get("when") == "tonight" else {"pre": "BEFORE THE BELL", "post": "AFTER THE BELL"}.get(e.get("time"), "TIME TBA")
         pill(draw, (980, y + 20), tag, 24, AMBER if e.get("time") == "pre" else RED if e.get("when") == "tonight" else BLUE, anchor_right=True)
         if e.get("eps_forecast"):
@@ -348,13 +383,35 @@ def calendar(facts: dict, path: Path) -> Path:
     return save(img, path)
 
 
-def render(facts: dict, out_dir: Path) -> dict[str, Path]:
+def render(facts: dict, out_dir: Path, logos: bool = True) -> dict[str, Path]:
     """Every card the facts allow, keyed like the script's visuals: board, crypto, calendar, ticker:<SYM>."""
     out = {"board": board(facts, out_dir / "board.jpg"), "crypto": crypto(facts, out_dir / "crypto.jpg"),
-           "calendar": calendar(facts, out_dir / "calendar.jpg")}
+           "calendar": calendar(facts, out_dir / "calendar.jpg", logos)}
     for m in facts.get("movers") or []:
-        out[f"ticker:{m['symbol']}"] = ticker(m, facts.get("slot", "close"), out_dir / f"ticker_{m['symbol']}.jpg", facts)
+        out[f"ticker:{m['symbol']}"] = ticker(m, facts.get("slot", "close"), out_dir / f"ticker_{m['symbol']}.jpg", facts, logos=logos)
     return out
+
+
+ANIMATED = ("crypto", "ticker:")  # the cards whose line draws itself
+
+
+def frames(facts: dict, visual: str, out_dir: Path, count: int = 30, logos: bool = True) -> list[Path]:
+    """The draw animation of one card as `count` frames (frame_001.jpg …): the line grows from its first
+    point to the last. [] for a card that does not animate."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    paths = []
+    mover = next((m for m in facts.get("movers") or [] if visual == f"ticker:{m['symbol']}"), None)
+    if visual != "crypto" and mover is None:
+        return []
+    for i in range(1, count + 1):
+        fraction = i / count
+        path = out_dir / f"frame_{i:03d}.jpg"
+        if visual == "crypto":
+            crypto(facts, path, fraction=fraction)
+        else:
+            ticker(mover, facts.get("slot", "close"), path, facts, fraction=fraction, logos=logos)
+        paths.append(path)
+    return paths
 
 
 def main() -> None:

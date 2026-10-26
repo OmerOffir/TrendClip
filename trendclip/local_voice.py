@@ -97,13 +97,20 @@ def trim_silence(audio, sample_rate: int, lead: float = 0.1, tail: float = 0.25)
     return audio[start:end]
 
 
-def speak(text: str, rate: str = "+0%") -> tuple[bytes, list[Word]]:
-    """MP3 bytes and estimated word timings for `text`."""
+def speak(text: str, rate: str = "+0%", ref_wav: Path | None = None, ref_text: str | None = None) -> tuple[bytes, list[Word]]:
+    """MP3 bytes and estimated word timings for `text`. `ref_wav` / `ref_text`: another reference clip
+    and its transcript (After Market's energetic reader); default: voices/ref.wav."""
     import numpy as np
 
+    ref_wav = ref_wav or REF_WAV
+    if not ref_wav.is_file():
+        raise RuntimeError(f"Missing the reference voice {ref_wav}")
+    if ref_text is None:
+        text_file = ref_wav.with_suffix(".txt")
+        ref_text = text_file.read_text(encoding="utf-8").strip() if text_file.is_file() else REF_TEXT
     wav, sample_rate, _spec = _load().infer(
-        ref_file=str(REF_WAV),
-        ref_text=REF_TEXT,
+        ref_file=str(ref_wav),
+        ref_text=ref_text,
         gen_text=text,
         speed=speed(rate),
         seed=42,

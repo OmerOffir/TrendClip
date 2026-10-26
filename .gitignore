@@ -16,3 +16,5 @@ output/
 assets/
 # DarkArchives content bank (local data)
 db/*.db
+assets/logos/
+assets/sfx/

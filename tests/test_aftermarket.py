@@ -89,8 +89,10 @@ def test_parse_earnings_macro_and_rss():
 
     xml = ("<rss><channel><item><title>Tesla jumps - CNBC</title><link>https://x</link></item>"
            "<item><title>Second</title><source url='u'>Reuters</source></item></channel></rss>")
-    assert am_data.parse_rss(xml) == [{"title": "Tesla jumps", "source": "CNBC", "url": "https://x"},
-                                      {"title": "Second", "source": "Reuters", "url": ""}]
+    assert am_data.parse_rss(xml) == [{"title": "Tesla jumps", "source": "CNBC", "url": "https://x", "snippet": ""},
+                                      {"title": "Second", "source": "Reuters", "url": "", "snippet": ""}]
+    xml = "<rss><channel><item><title>T</title><description>&lt;ol&gt;&lt;li&gt;Why Tesla jumped&lt;/li&gt;&lt;/ol&gt;</description></item></channel></rss>"
+    assert am_data.parse_rss(xml)[0]["snippet"] == "Why Tesla jumped"
     assert am_data.parse_rss("<not xml") == []
 
 
@@ -137,7 +139,10 @@ def test_build_survives_a_dead_source(monkeypatch):
 # --------------------------------------------------------------------------- charts
 
 
-def test_chart_cards(tmp_path):
+def test_chart_cards(tmp_path, monkeypatch):
+    from modules import am_logos
+
+    monkeypatch.setattr(am_logos, "fetch", lambda symbol, cache_dir=None, session=None: None)
     cards = am_charts.render(facts_fixture(), tmp_path)
     assert set(cards) == {"board", "crypto", "calendar", "ticker:TSLA", "ticker:NVDA"}
     from PIL import Image
@@ -152,6 +157,38 @@ def test_chart_cards(tmp_path):
     pre["movers"][0]["series"] = []
     am_charts.render(pre, tmp_path / "pre")
     am_charts.ticker({"symbol": "Z", "name": "Z", "price": None, "change_pct": None}, "close", tmp_path / "empty.jpg")
+    frames = am_charts.frames(facts_fixture(), "ticker:TSLA", tmp_path / "frames", count=5)
+    assert [f.name for f in frames] == [f"frame_{i:03d}.jpg" for i in range(1, 6)]
+    assert am_charts.frames(facts_fixture(), "board", tmp_path / "frames2") == [] and am_charts.frames(facts_fixture(), "ticker:ZZZ", tmp_path / "f3") == []
+
+
+def test_logo_cache_and_badge(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from modules import am_logos
+
+    class Answer:
+        def __init__(self, content, status=200):
+            self.content, self.status_code = content, status
+
+    buf = __import__("io").BytesIO()
+    Image.new("RGBA", (120, 120), (255, 255, 255, 255)).save(buf, format="PNG")
+    answers = {"TSLA": Answer(buf.getvalue()), "NOPE": Answer(b"", 404), "TINY": Answer(b"not an image")}
+
+    class Session:
+        def get(self, url, timeout=0, headers=None):
+            return answers[url.split("/")[-1].split("?")[0].replace(".png", "")]
+
+    assert am_logos.fetch("TSLA", tmp_path, Session()) == tmp_path / "TSLA.png" and (tmp_path / "TSLA.png").is_file()
+    assert am_logos.fetch("tsla", tmp_path, None) == tmp_path / "TSLA.png"  # cached: no session needed
+    assert am_logos.fetch("NOPE", tmp_path, Session()) is None and am_logos.fetch("TINY", tmp_path, Session()) is None
+    assert am_logos.fetch("^GSPC", tmp_path, Session()) is None
+    monkeypatch.setattr(am_logos, "CACHE_DIR", tmp_path)
+    img = Image.new("RGB", (400, 400), (0, 0, 0))
+    am_charts.logo_tile(img, "TSLA", (10, 10), 100)  # a white logo lands on the dark tile
+    assert img.getpixel((60, 15)) == (30, 38, 56)
+    am_charts.logo_tile(img, "ZZ", (200, 200), 100)  # no logo: the badge
+    assert img.getpixel((250, 205)) != (0, 0, 0)
 
 
 # --------------------------------------------------------------------------- script
@@ -181,17 +218,21 @@ def test_template_script_tells_the_session():
     facts = facts_fixture()
     script = am_script.template_script(facts)
     assert script.writer == "template" and script.slot == "close"
-    assert script.hook_text == "TSLA moved 6.0 percent in one session. That decides the next session."
+    assert script.hook_text == "The market just closed, and TSLA just moved 6.0 percent. That decides the next session."
     assert [s.visual for s in script.scenes] == ["board", "ticker:TSLA", "ticker:NVDA", "calendar", "crypto", "broll"]
-    assert script.scenes[0].narration.startswith("Monday, October 26th. Your closing report. The big picture. S&P 500 up 0.7 percent")
+    assert script.scenes[0].narration == ("Monday, October 26th. Your closing report. A broad rally. The S&P 500 up 0.7 percent "
+                                          "and the Nasdaq up 0.9 percent. Volatility eased.")
+    assert script.scenes[1].narration == "TSLA up 6 percent. The press says: Tesla jumps after a record delivery report."
+    assert script.scenes[2].narration == "NVDA down 2.4 percent. No news behind it yet."
+    assert script.scenes[4].narration == "Bitcoin is down 0.7 percent over the day. Ethereum down 1.6 percent. Crypto fear and greed reads neutral."
     assert script.scenes[3].narration == ("On deck. V report after the bell tonight. KO report before the bell tomorrow. "
                                           "CB Consumer Confidence lands at 10:00 Eastern.")
     assert [e["symbol"] for e in am_script.due_earnings(facts)] == ["V", "KO"] and am_script.due_earnings(facts)[0]["when"] == "tonight"
     assert [e["symbol"] for e in am_script.due_earnings(facts_fixture("premarket"))] == ["V"]
     assert script.thumbnail_text == "TSLA +6.0%" and am_script.MIN_WORDS <= script.total_word_count <= am_script.MAX_WORDS
     pre = am_script.template_script(facts_fixture("premarket"))
-    assert pre.hook_text == "TSLA moved 6.0 percent before the open. That decides the next session."
-    assert pre.scenes[0].narration.startswith("Monday, October 26th. Your pre-market report. The big picture. The S&P 500 futures up 0.7 percent")
+    assert pre.hook_text == "The bell rings in 90 minutes, and TSLA just moved 6.0 percent. That decides the next session."
+    assert pre.scenes[0].narration.startswith("Monday, October 26th. Your pre-market report. A broad rally. The S&P 500 futures up 0.7 percent")
     assert "Follow" not in am_script.spoken(pre)
     compact = am_script.compact_facts(facts)
     assert "series" not in compact["movers"][0] and compact["movers"][0]["why"] == ["Tesla jumps after a record delivery report - CNBC"]
@@ -205,14 +246,20 @@ def test_hooks_with_a_stake():
     assert am_script.hook_problems("XP Inc. plunged 49 percent. Here is your close report.") == [
         "the hook opens like a newsreader (\"Here is\"): lead with the shock, no framing"]
     assert "no number" in am_script.hook_problems("Tesla had a wild day on Wall Street.")[0]
-    assert any("words" in p for p in am_script.hook_problems("The S&P 500 index closed up zero point seven percent on a quiet day for stocks."))
+    assert am_script.hook_problems("The market just closed, and one stock completely crashed by 50 percent today!") == []
+    assert any("words" in p for p in am_script.hook_problems(
+        "The S&P 500 index closed up zero point seven percent on a very quiet day for stocks everywhere."))
     assert am_script.hook_problems("") == ["no hook"]
     spx = {"change_pct": 0.72}
-    assert am_script.template_hook({"symbol": "XP"}, -49.3, spx, "close") == "XP lost half its value in one session."
-    assert am_script.template_hook({"symbol": "SGRY"}, 47.2, spx, "close").startswith("SGRY gained 47 percent in one session.")
-    assert am_script.template_hook({"symbol": "NVDA"}, -18.0, spx, "premarket") == "NVDA crashed 18 percent before the open. Someone was very wrong."
-    assert am_script.template_hook({"symbol": "NVDA"}, -2.4, spx, "close") == "The S&P up 0.7 percent. NVDA went the other way, down 2.4 percent."
-    assert am_script.template_hook({"symbol": "NVDA"}, None, spx, "weekend") == "NVDA is the name every desk is watching this week."
+    assert am_script.template_hook({"symbol": "XP"}, -49.3, spx, "close") == "The market just closed, and one stock lost half its value today!"
+    assert am_script.template_hook({"symbol": "SGRY"}, 47.2, spx, "close") == "The market just closed, and one stock gained 47 percent today!"
+    assert am_script.template_hook({"symbol": "NVDA"}, -18.0, spx, "premarket") == "The bell rings in 90 minutes, and one stock crashed 18 percent today!"
+    assert am_script.template_hook({"symbol": "NVDA"}, -2.4, spx, "close") == "The market just closed, and NVDA is fighting the tape, down 2.4 percent!"
+    assert am_script.template_hook({"symbol": "NVDA"}, None, spx, "weekend") == "The week is over, and NVDA is the name every desk is watching."
+    for hook in (am_script.template_hook({"symbol": "XP"}, -49.3, spx, "close"), am_script.template_hook({"symbol": "NVDA"}, -2.4, spx, "close")):
+        assert am_script.hook_problems(hook) == []
+    many = am_script.ScriptDraft(hook_text="x", scenes=[am_script.SceneDraft(narration="Up 1.5 percent to 394 dollars from 372.", visual="board", overlay_text="X")])
+    assert any("reads 3 numbers" in p for p in am_script.check(many, facts_fixture()))
     assert am_script.slate({"date": "2026-10-23", "slot": "premarket"}) == "Friday, October 23rd. Your pre-market report."
     assert am_script.slate({"date": "2026-11-11", "slot": "weekend"}) == "Wednesday, November 11th. Your weekend review."
     assert am_script.slate({"date": "bad", "slot": "close"}) == "Your closing report."
@@ -248,7 +295,7 @@ def _silent_voice(text, output_mp3, voice, rate, **kwargs):
     from trendclip.video_assembler import ffmpeg_with_libass
     import subprocess
 
-    words = estimate_word_timings(text, 14.0)
+    words = estimate_word_timings(text, 24.0)
     subprocess.run([ffmpeg_with_libass(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono", "-t",
                     f"{words[-1].end + 0.3:.2f}", "-q:a", "9", str(output_mp3)], check=True)
     Path(str(output_mp3).replace(".mp3", ".words.json")).write_text(json.dumps([{"word": w.text, "start": w.start, "end": w.end} for w in words]))
@@ -259,8 +306,12 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     from trendclip import voiceover
     from trendclip.config import get_settings
 
+    from modules import am_logos
+
+    monkeypatch.setattr(am_logos, "fetch", lambda symbol, cache_dir=None, session=None: None)  # no network: the badges
     monkeypatch.setattr(voiceover, "synthesize", _silent_voice)
     monkeypatch.setenv("AM_TTS_ENGINE", "edge")
+    monkeypatch.setattr(am_video, "SFX_DIR", tmp_path / "sfx")
     monkeypatch.setenv("AM_MUSIC", "none")
     monkeypatch.setattr(video_gen, "FPS", 12)
     facts = facts_fixture()
@@ -269,9 +320,14 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     info = am_video.make_video(facts, script, lambda f, m: messages.append(m), images="placeholder", out_dir=tmp_path,
                                settings=get_settings())
     work = tmp_path / "2026-10-26_close"
-    assert (work / "video.mp4").is_file() and info["filename"] == "video.mp4" and 13.5 <= media_duration(work / "video.mp4") <= 17.0
+    assert (work / "video.mp4").is_file() and info["filename"] == "video.mp4" and 23.0 <= media_duration(work / "video.mp4") <= 27.0
     assert [b["visual"] for b in info["beats"]] == ["board", "board", "ticker:TSLA", "ticker:NVDA", "calendar", "crypto", "broll"]
-    assert [b["picture"] for b in info["beats"]][:3] == ["board.jpg", "board.jpg", "ticker_TSLA.jpg"]
+    assert [b["picture"] for b in info["beats"]][:4] == ["board.jpg", "board.jpg", "ticker_TSLA.mp4", "ticker_NVDA.mp4"]
+    assert [b["picture_source"] for b in info["beats"]][2:6] == ["chart-animated", "chart-animated", "chart", "chart-animated"]
+    assert info["animated"] == ["crypto", "ticker:NVDA", "ticker:TSLA"] and info["sfx"] is True
+    assert (work / "voice_fx.mp3").is_file() and (work / "pictures" / "frames_crypto" / "frame_030.jpg").is_file()
+    assert (tmp_path / "sfx" / "whoosh.wav").is_file() and (tmp_path / "sfx" / "tick.wav").is_file()
+    assert 3.5 <= media_duration(work / "pictures" / "crypto.mp4") <= 6.0
     assert info["beats"][-1]["picture"].startswith("graded_beat_") and info["beats"][-1]["picture_source"] == "placeholder"
     assert info["pictures"] == "cards + placeholder" and info["writer"] == "template" and info["music"] is None
     assert info["beats"][-1]["text"].endswith("Follow for tomorrow's open.") and info["cover_text"] == "TSLA +6.0%"

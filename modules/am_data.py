@@ -61,7 +61,7 @@ COINS = [("bitcoin", "BTC", "Bitcoin"), ("ethereum", "ETH", "Ethereum"), ("solan
 DEFAULT_WATCHLIST = "TSLA,NVDA,AAPL,MSFT,AMZN,META,GOOGL,AMD,NFLX,PLTR"
 MAX_MOVERS = 5
 MAX_NEWS = 8
-MAX_WHY = 2  # headlines per mover
+MAX_WHY = 4  # headlines per mover (the catalyst, when the press has one)
 SLOTS = ("premarket", "close", "weekend")
 # Market holidays (NYSE): the weekend slot covers them too.
 HOLIDAYS_2026 = {"2026-01-01", "2026-01-19", "2026-02-16", "2026-04-03", "2026-05-25", "2026-06-19", "2026-07-03",
@@ -283,7 +283,9 @@ def parse_rss(xml_text: str, limit: int = 10) -> list[dict]:
         source = (item.findtext("source") or "").strip()
         if not source and " - " in title:
             title, source = title.rsplit(" - ", 1)
-        items.append({"title": title.strip(), "source": source, "url": (item.findtext("link") or "").strip()})
+        snippet = re.sub(r"<[^>]+>", " ", item.findtext("description") or "")
+        snippet = re.sub(r"\s+", " ", snippet).strip()[:240]
+        items.append({"title": title.strip(), "source": source, "url": (item.findtext("link") or "").strip(), "snippet": snippet})
         if len(items) >= limit:
             break
     return items
@@ -331,6 +333,21 @@ def movers_for(session: requests.Session, slot: str, candidates: list[str], limi
     quotes = [q for q in quotes if q.get("move_pct") is not None]
     quotes.sort(key=lambda q: -abs(q["move_pct"]))
     return quotes[:limit]
+
+
+def why_for(session: requests.Session, mover: dict, limit: int = MAX_WHY) -> list[dict]:
+    """Headlines that may hold the catalyst: by ticker, then by the company's name ("Tesla, Inc." -> "Tesla")."""
+    name = re.split(r",| Inc\b| Corp\b| Ltd\b| plc\b| Company\b| Holdings\b", mover.get("name") or "")[0].strip()
+    items = google_news(session, f"{mover['symbol']} stock", limit)
+    if name and name.upper() != mover["symbol"]:
+        items += google_news(session, f"{name} shares why", limit)
+    seen, out = set(), []
+    for it in items:
+        key = it["title"].lower()[:60]
+        if key not in seen:
+            seen.add(key)
+            out.append(it)
+    return out[:limit]
 
 
 def build(slot: str | None = None, now: dt.datetime | None = None, session: requests.Session | None = None,
@@ -401,7 +418,7 @@ def build(slot: str | None = None, now: dt.datetime | None = None, session: requ
     facts["movers"] = movers_for(session, slot, candidates, progress=progress)
     for m in facts["movers"]:
         m["week"] = week_closes(session, m["symbol"])
-        m["why"] = google_news(session, f"{m['symbol']} stock", MAX_WHY) if news else []
+        m["why"] = why_for(session, m) if news else []
         m["reported"] = m["symbol"] in reported
 
     progress("Crypto")

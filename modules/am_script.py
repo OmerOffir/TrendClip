@@ -33,7 +33,9 @@ ATTEMPTS = 3
 MIN_SCENES, MAX_SCENES = 5, 8
 VISUALS = ("board", "crypto", "calendar", "broll")
 FREE_NUMBERS = set(range(0, 32)) | {40, 50, 60, 70, 80, 90, 100, 200, 500, 1000} | set(range(1990, 2031))  # counts, days, years
-MAX_HOOK_WORDS = 14
+MAX_HOOK_WORDS = 16
+MAX_SCENE_NUMBERS = 2  # the chart shows the numbers; the voice says what they mean
+INDEX_NAME = re.compile(r"\b(S&P 500|S and P 500|Russell 2000|Nasdaq 100|Dow 30)\b", re.I)  # a name, not a number read out
 # A hook that opens like a newsreader loses the scroll: these never appear in it.
 WEAK_HOOK = re.compile(r"\b(here is|here's|welcome|let's|lets|in this video|today's|report|update|recap|wrap|brief|"
                        r"good morning|good evening|hey|stay tuned|the picture)\b", re.I)
@@ -95,7 +97,8 @@ def compact_facts(facts: dict[str, Any]) -> dict[str, Any]:
         "indices": [q(r) for r in facts.get("indices") or []],
         "futures": [q(r) for r in facts.get("futures") or []],
         "vix": q(facts["vix"]) if facts.get("vix") else None,
-        "movers": [{**q(m), "why": [h["title"] for h in (m.get("why") or [])]} for m in facts.get("movers") or []],
+        "movers": [{**q(m), "why": [f"{h['title']}: {h['snippet']}" if h.get("snippet") else h["title"] for h in (m.get("why") or [])]}
+                   for m in facts.get("movers") or []],
         "earnings": {k: [{kk: e[kk] for kk in ("symbol", "name", "time", "eps_forecast") if e.get(kk)} for e in v[:6]]
                      for k, v in (facts.get("earnings") or {}).items()},
         "macro": [{k: ev[k] for k in ("title", "time_et", "impact", "forecast", "previous") if ev.get(k)} for ev in facts.get("macro") or []],
@@ -239,6 +242,9 @@ def check(draft: ScriptDraft, facts: dict[str, Any]) -> list[str]:
         problems.append("numbers not in the facts: " + ", ".join(bad[:6]))
     known = visuals_for(facts)
     for i, s in enumerate(draft.scenes, 1):
+        n_numbers = len(numbers_in(INDEX_NAME.sub("", s.narration)))
+        if n_numbers > MAX_SCENE_NUMBERS:
+            problems.append(f"scene {i} reads {n_numbers} numbers: at most {MAX_SCENE_NUMBERS}; the card shows them, say what they mean")
         if s.visual.strip() not in known:
             problems.append(f"scene {i} visual '{s.visual}' is not one of {', '.join(known)}")
         if s.visual.strip() == "broll" and not s.image_prompt.strip():
@@ -269,36 +275,45 @@ def finalize(draft: ScriptDraft, facts: dict[str, Any], writer: str = "gemini") 
 PROMPT = """You write scripts for After Market, a YouTube Shorts channel (9:16, 45-60 seconds) for traders:
 a sharp daily brief before the New York open and at the close, over charts.
 
-TONE: a fast, confident market desk voice. Concrete, no hype, no advice ("buy", "sell", "you should" are
-banned), no "guys", no exclamation marks. Short sentences for text-to-speech, 8-14 words each, never more
-than {max_sentence} words. Numbers are said the way a trader says them: prices rounded to the dollar
+TONE: an energetic market desk voice telling a story, not a ticker tape. Concrete, no advice ("buy",
+"sell", "you should" are banned), no "guys". Short sentences for text-to-speech, 6-14 words each, never
+more than {max_sentence} words. Exclamation marks are welcome where the move earns one (one per scene
+at most): the voice reads them with energy. Numbers are said the way a trader says them: prices rounded to the dollar
 unless under 20 dollars, percentages with at most one decimal ("up 6 percent", "down 2.4 percent").
 Write "percent", not "%". Write index levels with the thousands ("7,679", "26,198").
 
 THIS VIDEO: slot = {slot}. {slot_brief}
 
 STRUCTURE:
-- hook_text (0-3 s): the line that stops the scroll, spoken first. At most {max_hook} words, one or two
-  sentences, ALWAYS with a number, and it must carry a stake or a surprise, not just a quote:
-    * the shock and its consequence: "XP lost half its value in one session."
-    * the contrast: "The S&P closed at a record. Three stocks lost 30 percent."
-    * the clock and the stake: "Visa reports in 3 hours. 728 billion dollars on the line."
-    * what it means for tomorrow: "Nvidia fell 2.4 percent. Its earnings are 5 days away."
+- hook_text (0-3 s): the line that stops the scroll, spoken first with energy. At most {max_hook} words,
+  one or two sentences, ALWAYS with a number, and it is an EVENT with a stake, told like news breaking:
+    * the moment and the shock: "The market just closed, and one stock crashed 49 percent today!"
+    * the clock and the stake: "The bell rings in 90 minutes, and Tesla is already up 6 percent!"
+    * the contrast: "The S&P closed at a record, while three stocks lost a third of their value."
+    * what it means next: "Nvidia fell 2.4 percent, and its earnings are five days away."
   Pick the most surprising fact in FACTS (the biggest move, a record, a huge name reporting), not the
-  index tally. NEVER open with framing or a greeting: no "here is", "welcome", "let's", "today's",
+  index tally. Do not name the ticker in the hook when the move is the story ("one stock"): the next
+  scene reveals it. NEVER open with framing or a greeting: no "here is", "welcome", "let's", "today's",
   "report", "update", "recap", "the picture". No questions.
 - Right after the hook the video says the date and which report it is by itself ("{slate}"): do not
   repeat the date or the words "pre-market report" / "closing report" anywhere.
 - scenes: {min_scenes} to {max_scenes} scenes, each 1-2 sentences of narration, in this order of priority:
-  1. the big picture (visual "board"): indices or futures, with their moves;
-  2. two or three movers (visual "ticker:<SYMBOL>", one scene each, only symbols from FACTS.movers): the
-     move, and why if the "why" headlines say so, else say what the stock is reacting to is unclear;
+  1. the big picture (visual "board"): the mood of the session in words ("a broad rally", "tech led,
+     the Dow lagged", "a quiet day until the last hour"), with at most ONE number;
+  2. two or three movers (visual "ticker:<SYMBOL>", one scene each, only symbols from FACTS.movers):
+     the viewer SEES the price and the percentage on the card, so do not read them out one after the
+     other. Say the move once, then the CATALYST: what the "why" headlines say the stock reacted to
+     (earnings, guidance, a downgrade, a deal, a lawsuit, a product). Prefer a mover whose catalyst
+     the headlines give. When no headline explains the move, say so in a few words ("no news behind
+     it yet") and move on; never invent a reason;
   3. what is due (visual "calendar"): the earnings and macro events that matter next;
   4. crypto (visual "crypto") in one scene: Bitcoin's move, the fear & greed reading;
   5. the last scene is a one-line takeaway on what traders watch next (visual "broll" or "board").
   A "broll" scene also has image_prompt: a photoreal prompt with no text, no logos, no faces
   ("a trading floor at dawn, screens glowing, cinematic").
-- overlay_text per scene: 2-5 words in CAPITALS, the number of the scene ("S&P +0.7%", "VISA REPORTS 4PM").
+- overlay_text per scene: 2-5 words in CAPITALS, the number or the catalyst of the scene ("S&P +0.7%",
+  "GUIDANCE CUT", "VISA REPORTS 4PM").
+- Every narration has at most {max_scene_numbers} numbers: the cards carry the figures.
 
 LENGTH: hook_text + every narration = {min_words} to {max_words} words. Every second counts.
 
@@ -334,7 +349,7 @@ Your script:
 def build_prompt(facts: dict[str, Any]) -> str:
     slot = facts.get("slot", "close")
     return PROMPT.format(slot=slot, slot_brief=SLOT_BRIEF.get(slot, SLOT_BRIEF["close"]), min_words=MIN_WORDS, slate=slate(facts),
-                         max_hook=MAX_HOOK_WORDS,
+                         max_hook=MAX_HOOK_WORDS, max_scene_numbers=MAX_SCENE_NUMBERS,
                          max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS, min_scenes=MIN_SCENES,
                          max_scenes=MAX_SCENES, facts=json.dumps(compact_facts(facts), ensure_ascii=False))
 
@@ -413,17 +428,18 @@ def due_earnings(facts: dict[str, Any]) -> list[dict]:
 def template_hook(lead: dict, move: float | None, spx: dict | None, slot: str) -> str:
     """The template's hook: the lead mover's shock with a stake, in a trader's words."""
     sym = lead["symbol"]
-    when = {"premarket": "before the open", "close": "in one session", "weekend": "this week"}[slot]
+    opening = {"premarket": "The bell rings in 90 minutes, and", "close": "The market just closed, and",
+               "weekend": "The week is over, and"}[slot]
     if move is None:
-        return f"{sym} is the name every desk is watching {when}."
+        return f"{opening} {sym} is the name every desk is watching."
     size = abs(move)
     if size >= 40:
-        return f"{sym} lost half its value {when}." if move < 0 else f"{sym} gained {size:.0f} percent {when}. Half the float changed hands."
+        return f"{opening} one stock {'lost half its value' if move < 0 else f'gained {size:.0f} percent'} today!"
     if size >= 15:
-        return f"{sym} {'crashed' if move < 0 else 'exploded'} {size:.0f} percent {when}. Someone was very wrong."
+        return f"{opening} one stock {'crashed' if move < 0 else 'exploded'} {size:.0f} percent today!"
     if spx and spx.get("change_pct") is not None and (move < 0) != (spx["change_pct"] < 0):
-        return (f"The S&P {_pct_words(spx['change_pct'], 1)}. {sym} went the other way, {_pct_words(move, 1)}.")
-    return f"{sym} moved {size:.1f} percent {when}. That decides the next session."
+        return f"{opening} {sym} is fighting the tape, {_pct_words(move, 1)}!"
+    return f"{opening} {sym} just moved {size:.1f} percent. That decides the next session."
 
 
 def template_script(facts: dict[str, Any]) -> Script:
@@ -445,22 +461,23 @@ def template_script(facts: dict[str, Any]) -> Script:
     else:
         hook = f"The S and P 500 {_pct_words(spx['change_pct'] if spx else None)} {label}. One number decides tomorrow."
         thumb = f"S&P {spx['change_pct']:+.1f}%" if spx and spx.get("change_pct") is not None else "MARKETS"
-    board_rows = (futures[:2] + indices[:2]) if slot == "premarket" and futures else indices[:3]
+    board_rows = (futures[:1] + indices[:1]) if slot == "premarket" and futures else indices[:2]
     if board_rows:
-        parts = [f"{'The ' if 'futures' in r['name'] else ''}{r['name']} {_pct_words(r['change_pct'])}" for r in board_rows]
+        moves = [r.get("change_pct") for r in indices if r.get("change_pct") is not None]
+        mood = ("A broad rally" if moves and min(moves) > 0.3 else "Red across the board" if moves and max(moves) < -0.3
+                else "A mixed session" if moves and min(moves) < 0 < max(moves) else "A quiet session")
+        parts = [f"the {r['name']} {_pct_words(r['change_pct'])}" for r in board_rows]
         vix = facts.get("vix")
-        if vix and vix.get("price") is not None:
-            parts.append(f"The VIX at {vix['price']:.1f}, {_pct_words(vix.get('change_pct'))}")
-        scenes.append(SceneDraft(narration="The big picture. " + ". ".join(parts) + ".", visual="board",
+        fear = (" Volatility eased." if vix and (vix.get("change_pct") or 0) < -3 else " Volatility jumped." if vix and (vix.get("change_pct") or 0) > 3 else "")
+        joined = " and ".join(parts)
+        scenes.append(SceneDraft(narration=f"{mood}. {joined[0].upper() + joined[1:]}.{fear}", visual="board",
                                  overlay_text=f"{board_rows[0]['name'].upper()} {board_rows[0]['change_pct']:+.1f}%"))
     for m in movers[:3]:
         move = m.get("extended_change_pct") if slot == "premarket" and m.get("extended_change_pct") is not None else m.get("change_pct")
         price = m.get("extended_price") if slot == "premarket" and m.get("extended_price") is not None else m.get("price")
         headline = (m["why"][0]["title"].split(" - ")[0].strip() if m.get("why") else "")
-        why = f" {headline.rstrip('.')}." if headline and len(headline) < 70 and not headline.endswith("?") else ""
-        if not why and m.get("day_low") is not None and m.get("day_high") is not None and slot != "premarket":
-            why = f" Its day ran from {_price_words(m['day_low'])} to {_price_words(m['day_high'])}."
-        scenes.append(SceneDraft(narration=f"{m['symbol']} {_pct_words(move)} to {_price_words(price)}.{why}",
+        why = f" The press says: {headline.rstrip('.')}." if headline and len(headline) < 70 and not headline.endswith("?") else " No news behind it yet."
+        scenes.append(SceneDraft(narration=f"{m['symbol']} {_pct_words(move)}.{why}",
                                  visual=f"ticker:{m['symbol']}", overlay_text=f"{m['symbol']} {move:+.1f}%" if move is not None else m["symbol"]))
     due = due_earnings(facts)
     macro = facts.get("macro") or []
@@ -485,8 +502,8 @@ def template_script(facts: dict[str, Any]) -> Script:
         fg = facts.get("crypto_fear_greed")
         eth = next((c for c in crypto if c["symbol"] == "ETH"), None)
         extra = f" Ethereum {_pct_words(eth['change_24h_pct'])}." if eth else ""
-        extra += f" Crypto fear and greed reads {fg['value']}, {fg['label'].lower()}." if fg else ""
-        scenes.append(SceneDraft(narration=f"Bitcoin is {_pct_words(btc['change_24h_pct'])} at {_price_words(btc['price'])}.{extra}",
+        extra += f" Crypto fear and greed reads {fg['label'].lower()}." if fg else ""
+        scenes.append(SceneDraft(narration=f"Bitcoin is {_pct_words(btc['change_24h_pct'])} over the day.{extra}",
                                  visual="crypto", overlay_text=f"BTC {btc['change_24h_pct']:+.1f}%"))
     scenes.append(SceneDraft(narration="That is the picture. Watch the open, and the names that reported." if slot == "premarket"
                              else "That is the close. Tomorrow's open starts with the names reporting tonight.",
