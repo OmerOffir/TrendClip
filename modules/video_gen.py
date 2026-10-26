@@ -10,8 +10,10 @@ The beats are the hook and every scene. Flow:
   2. timing     each beat starts when its first word is spoken (split_beats);
   3. pictures   one 9:16 picture per beat from scene_images (the GPU, Gemini or placeholders). A Wikipedia
                 story gets the article's real photos for scene 1 and the middle scene, with credits;
-  4. motion     every picture graded once (less colour, cold tint, vignette), then ffmpeg: a slow push-in or
-                pull-out on each (alternating), 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
+  4. motion     every picture graded once (less colour, cold tint, vignette), then the depth camera
+                (modules.scene_motion: a depth map per picture, the camera pushes in or pulls out with
+                parallax, fog and dust -> pictures/clip_<n>.mp4; DA_MOTION=off for the plain zoom), then
+                ffmpeg: 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: frame 0 is the thumbnail (YouTube takes it for a video uploaded
                 through the API), so the title card is at full size there with the thumbnail headline
                 (Gemini's thumbnail_text, DA_COVER) over the middle for a second; karaoke captions (3 words, amber highlight), the scene's
@@ -236,6 +238,28 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
     return output
 
 
+def moving_pictures(graded: list[Path], beats: list[Beat], out_dir: Path, seed: int = 0,
+                    progress: ProgressFn = lambda f, m: None) -> tuple[list[Path], str]:
+    """The stills as clips of the depth camera (modules.scene_motion), each long enough for its beat, the
+    dissolve and the spare at the end; the stills themselves (zoom-and-pan) when DA_MOTION is off, the
+    model is not installed, or the camera fails. Returns (pictures for build_background, what moved them)."""
+    from modules import scene_motion
+
+    if not scene_motion.enabled():
+        return graded, "zoom"
+    if not scene_motion.available():
+        logger.warning("The depth camera needs torch and transformers (requirements-gpu.txt); zooming the stills instead")
+        return graded, "zoom"
+    seconds = [b.duration + DISSOLVE + (1.5 if i == len(beats) - 1 else 0.2) for i, b in enumerate(beats)]
+    try:
+        clips = scene_motion.animate_all(graded, seconds, out_dir, fps=FPS, size=scene_images.SIZE, seed=seed, progress=progress)
+        return clips, "depth"
+    except Exception as err:  # noqa: BLE001 - a still that only zooms is better than no video
+        logger.exception("The depth camera failed; zooming the stills instead")
+        progress(None, f"The depth camera failed ({str(err)[:80]}); zooming the stills instead")
+        return graded, "zoom"
+
+
 # --------------------------------------------------------------------------- the video
 
 
@@ -400,8 +424,10 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
 
     progress(0.55, "Grading the pictures")
     graded = [scene_images.graded_copy(p.path) for p in pictures]
-    background = build_background(graded, beats, work / "pictures" / "background.mp4",
-                                  progress=lambda f, m: progress(0.55 + 0.2 * (f or 0), m))
+    moving, motion = moving_pictures(graded, beats, work / "pictures", story_id,
+                                     progress=lambda f, m: progress(0.55 + 0.12 * (f or 0), m))
+    background = build_background(moving, beats, work / "pictures" / "background.mp4",
+                                  progress=lambda f, m: progress(0.67 + 0.08 * (f or 0), m))
 
     track = _music(settings, progress)
     from trendclip import music as music_mod
@@ -433,7 +459,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         "story_id": story_id, "title": script.title, "filename": output.name,
         "description": description_for(script, story, credits, track.credit if track else ""),
         "hashtags": HASHTAGS, "duration_seconds": round(media_duration(output), 2),
-        "voice": voice, "rate": rate, "engine": engine, "pictures": backend_used,
+        "voice": voice, "rate": rate, "engine": engine, "pictures": backend_used, "motion": motion,
         "photos": [p.credit for p in pictures if p.source == "wikipedia"],
         "music": {"title": track.title, "credit": track.credit} if track else None,
         "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used, "cover_text": cover,
