@@ -179,10 +179,11 @@ GRAIN = "noise=alls=6:allf=t,"
 
 def build_background(pictures: list[Path], beats: list[Beat], output: Path, size: tuple[int, int] = scene_images.SIZE,
                      fps: int = FPS, dissolve: float = DISSOLVE, progress: ProgressFn = lambda f, m: None,
-                     crf: int = 18, preset: str = "veryfast") -> Path:
+                     crf: int = 18, preset: str = "veryfast", zoom: float = ZOOM) -> Path:
     """The moving background: every picture for its beat, dissolves centred on the beat changes
     (clip i runs its beat plus the dissolve; the first one plus half), with film grain. It is an
-    intermediate the assembler encodes again, so a fast x264 preset is enough."""
+    intermediate the assembler encodes again, so a fast x264 preset is enough. `zoom`: how far each
+    picture pushes in or pulls out (After Market's chart cards move less, so their edges stay in)."""
     from trendclip.video_assembler import ffmpeg_with_libass
 
     if len(pictures) != len(beats) or not beats:
@@ -197,7 +198,7 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
         if i == n - 1:
             extra += 1.0  # a little spare at the end; the assembler cuts at the voice
         cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
-        filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps))
+        filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps, zoom=zoom))
     current = "v0"
     for i in range(1, n):
         offset = beats[i - 1].end - dissolve / 2
