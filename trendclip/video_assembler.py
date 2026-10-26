@@ -307,13 +307,72 @@ def cover_event(text: str, seconds: float, max_chars: int = 14, max_lines: int =
     return f"Dialogue: 3,{_ass_time(0)},{_ass_time(seconds)},Cover,,0,0,0,,{{\\fad(0,160)}}" + r"\N".join(lines)
 
 
-def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None, color: str = "") -> str:
+FLASH_POP = 1.18  # the flash pops to 118% for a moment: it has to fit the frame at that size too
+FLASH_MARGIN = 40  # the Flash style's side margins
+_CHAR_WIDTH = 0.62  # of the font size, for a bold condensed display font, when the font file can't be measured
+ONE_LINE_SHRINK = 0.65  # a flash that fits on one line at this share of its size stays on one line
+
+
+
+
+def text_width(text: str, font_size: int, font_file: Path | None) -> float:
+    """Rendered width of `text` in pixels: measured with the font file when there is one, else estimated."""
+    if font_file is not None:
+        try:
+            from PIL import ImageFont
+
+            return float(ImageFont.truetype(str(font_file), font_size).getlength(text))
+        except Exception:  # noqa: BLE001 - a font PIL can't read: estimate
+            pass
+    return len(text) * font_size * _CHAR_WIDTH
+
+
+def fit_flash(text: str, font_size: int, max_width: float, font_file: Path | None = None,
+              max_lines: int = 2) -> tuple[int, list[str]]:
+    """(font size, lines) so a flash never runs off the frame: a word wider than `max_width` shrinks the
+    size (libass can't break inside a word), and text wider than one line wraps onto `max_lines` lines,
+    shrinking only when the longest line still doesn't fit."""
+    words = text.split()
+    if not words:
+        return font_size, [text]
+    size = font_size
+    widest = max(words, key=lambda w: text_width(w, font_size, font_file))
+    width = text_width(widest, font_size, font_file)
+    if width > max_width:
+        size = max(int(font_size * max_width / width), 24)
+    lines = [" ".join(words)]
+    whole = text_width(lines[0], size, font_file)
+    if whole > max_width and len(words) > 1 and max_width / whole >= ONE_LINE_SHRINK:
+        return max(int(size * max_width / whole), 24), lines  # "GOT IT?": a little smaller beats two lines
+    if whole > max_width and len(words) > 1:
+        # Greedy wrap at `size`, up to max_lines; a line that is still too wide shrinks the size once more.
+        lines = []
+        for word in words:
+            if lines and len(lines) < max_lines and text_width(f"{lines[-1]} {word}", size, font_file) <= max_width \
+                    or (lines and len(lines) == max_lines):
+                lines[-1] = f"{lines[-1]} {word}"
+            elif lines and text_width(f"{lines[-1]} {word}", size, font_file) <= max_width:
+                lines[-1] = f"{lines[-1]} {word}"
+            else:
+                lines.append(word)
+        widest_line = max(lines, key=lambda l: text_width(l, size, font_file))
+        width = text_width(widest_line, size, font_file)
+        if width > max_width:
+            size = max(int(size * max_width / width), 24)
+    return size, lines
+
+
+def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None, color: str = "",
+                size: int | None = None, lines: list[str] | None = None) -> str:
     """Quiz step ('+18', 'CLUE 1', '?') that slams in big in the middle of the screen (or at `pos`), in the
-    caption highlight colour or `color`."""
+    caption highlight colour or `color`. `size` / `lines` (fit_flash): a smaller font and explicit line
+    breaks for text that would run off the frame."""
     at = rf"\pos({pos[0]},{pos[1]})" if pos else ""
     tint = rf"\1c{_resolve_color(color)}&" if color else ""
-    anim = rf"{{{at}{tint}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
-    return f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},Flash,,0,0,0,,{anim}{_ass_text(text, True)}"
+    shrink = rf"\fs{size}" if size else ""
+    anim = rf"{{{at}{tint}{shrink}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
+    body = r"\N".join(_ass_text(line, True) for line in (lines or [text]))
+    return f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},Flash,,0,0,0,,{anim}{body}"
 
 
 def create_karaoke_ass_file(
@@ -349,6 +408,7 @@ def create_karaoke_ass_file(
     cover_seconds: float = 1.0,
     cover_size: int = 140,
     cover_y: float = 0.5,  # its centre, as a share of the height
+    tail_seconds: float = TAIL_SECONDS,  # how long the video runs after the last word
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -389,11 +449,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         # A quiz's end card waits for its last flash (the closing line), so it never covers the countdown.
         closing = flashes[-1].start if flashes else 0.0
         start = max(last - end_seconds, title_seconds if title_card.strip() else 0.0, min(closing, last))
-        events.append(end_card_event(end_card, start, last + TAIL_SECONDS))
+        events.append(end_card_event(end_card, start, last + tail_seconds))
+    flash_size = round(font_size * flash_scale)
+    _, font_file = find_font_file(font)
+    max_flash_width = (size[0] - 2 * FLASH_MARGIN) / FLASH_POP
+    # The title card's box: a flash shown while it is up goes below it instead of over it.
+    title_bottom = 0.0
+    if title_card.strip():
+        n_title = len(wrap_title(title_card, max_chars=title_chars, max_lines=title_lines))
+        title_bottom = top_margin + n_title * title_size * 1.15 + 60
     for f in flashes or []:
+        fs, lines = fit_flash(f.text, flash_size, max_flash_width, font_file)
         y = getattr(f, "y", None) or flash_y
-        pos = (size[0] // 2, round(size[1] * y)) if y else None
-        events.append(flash_event(f.text, f.start, f.end, pos, getattr(f, "color", "")))
+        pos = None
+        if y:
+            centre = size[1] * y
+            if title_bottom and f.start < title_seconds:
+                centre = max(centre, title_bottom + len(lines) * fs * 1.1 / 2 + 20)
+            pos = (size[0] // 2, round(centre))
+        events.append(flash_event(f.text, f.start, f.end, pos, getattr(f, "color", ""),
+                                  fs if fs < flash_size else None, lines if len(lines) > 1 else None))
+
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds
@@ -699,6 +775,7 @@ def assemble_video(
     music_fade_in: float = 0.8,
     overlays: list[Overlay] | None = None,
     landscape: bool = False,
+    tail_seconds: float = TAIL_SECONDS,
     **subtitle_style: Any,
 ) -> Path:
     """Render the final Short: 9:16 background + pop-up images + karaoke subtitles (+ title card via
@@ -720,7 +797,7 @@ def assemble_video(
 
     ffmpeg = ffmpeg_with_libass()
     # Long silence after the voice is cut; a voice that stops right on its last word gets the tail added.
-    voice_len = load_word_timings(timestamps_data)[-1].end + TAIL_SECONDS
+    voice_len = load_word_timings(timestamps_data)[-1].end + tail_seconds
     if not has_video_stream(background):
         # A YouTube section download can come back as an AAC-only "mp4"; ffmpeg would reject the whole
         # filtergraph with "[0:v] ... matches no streams", which hides the cause.
@@ -741,7 +818,8 @@ def assemble_video(
         fonts_dir.mkdir()
         if font_file:
             shutil.copyfile(font_file, fonts_dir / font_file.name)
-        ass_path = create_karaoke_ass_file(timestamps_data, work_dir / "subs.ass", font=font_name, **subtitle_style)
+        ass_path = create_karaoke_ass_file(timestamps_data, work_dir / "subs.ass", font=font_name, tail_seconds=tail_seconds,
+                                           **subtitle_style)
 
         tmp_out = output.with_name(output.stem + ".rendering.mp4")
         cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1"]

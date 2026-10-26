@@ -146,3 +146,27 @@ def test_produce_endpoint(tmp_path, monkeypatch):
         time.sleep(0.05)
     assert job["result"]["slots"][0]["error"] == "no stories" and job["finished_at"]
     assert client.post("/api/darkarchives/produce", json={"max_slots": 0}).status_code == 422
+
+
+def test_a_passed_anniversary_loses_its_priority(tmp_path, monkeypatch):
+    from modules import fetcher
+
+    db = tmp_path / "bank.db"
+    repository.init_db(db)
+    repository.save_story("gemini_old", "gemini", "Old date", "Anniversary: January 2, 1900. Long ago.", "", 100, pillar="mystery", db_path=db)
+    repository.save_story("gemini_plain", "gemini", "Plain", "text " * 50, "", 80, pillar="mystery", db_path=db)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    seen = []
+
+    def fake_process(story_id=None, client=None, out_dir=None, db_path=None):
+        seen.append(story_id)
+        story = repository.get_story(story_id, db_path)
+        repository.set_status(story_id, "SCRIPT_READY", db_path)
+        return {"story": story, "script": script_gen.Script(story_id=story_id, title="T", hook_text="h", estimated_duration_seconds=40,
+                                                             total_word_count=100, scenes=[]), "path": None, "status": "SCRIPT_READY", "reason": ""}
+
+    monkeypatch.setattr(script_gen, "process", fake_process)
+    result = da_produce.next_script(db_path=db, scripts_dir=scripts)
+    assert seen == [2] and result["story"]["title"] == "Plain"  # the stale anniversary was demoted, not scripted
+    assert repository.get_story(1, db)["score"] == fetcher.GEMINI_MAX_SCORE and repository.get_story(1, db)["status"] == "NEW"

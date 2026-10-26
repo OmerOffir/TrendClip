@@ -63,7 +63,7 @@ def test_cta_sticker_stays_until_the_end():
     words = estimate_word_timings("One fact. Another fact here. Follow for more dark stories.", 6.0)
     overlays, used = video_gen.cta_sticker(get_settings(), words, [], True, True)
     assert used == ["built-in subscribe button"] and len(overlays) == 1
-    assert overlays[0].start < words[-4].start + 0.01 and overlays[0].end == words[-1].end + 2.0
+    assert overlays[0].start < words[-4].start + 0.01 and overlays[0].end == words[-1].end + 1.2
 
 
 def test_photo_slots_and_description():
@@ -168,7 +168,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     info = video_gen.make_video(1, lambda f, m: messages.append(m), out_dir=tmp_path / "out", scripts_dir=scripts,
                                 db_path=db, settings=get_settings(), announce=False)
     video = tmp_path / "out" / "story_1.mp4"
-    assert video.is_file() and info["filename"] == "story_1.mp4" and 5.5 <= media_duration(video) <= 7.0
+    assert video.is_file() and info["filename"] == "story_1.mp4" and 4.8 <= media_duration(video) <= 6.5
     assert [b["label"] for b in info["beats"]] == ["hook", "scene 1", "scene 2", "scene 3"]
     assert info["beats"][-1]["text"].endswith("Follow for more dark stories.") and info["cta_line"] == "Follow for more dark stories."
     assert info["stickers"] == ["built-in subscribe button"] and info["end_card"] == "Follow for more · dark stories"
@@ -344,3 +344,47 @@ def test_discord_announcements(tmp_path, monkeypatch):
     assert posts[-1][1] == "⬆️ **The Ship** is on YouTube (private): https://youtube.com/shorts/x"
     assert [b["url"] for b in posts[-1][3][0]["components"]] == ["https://youtube.com/shorts/x", "https://studio/x"]
     assert da_channel.announce_video(5, info, settings.model_copy(update={"discord_bot_token": None}), out) is None
+
+
+def test_first_comment_after_a_public_upload(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from modules import da_channel
+
+    monkeypatch.setattr(video_gen, "CHANNEL_DIR", tmp_path / "darkarchives")
+    (tmp_path / "darkarchives").mkdir()
+    (tmp_path / "darkarchives" / "channel.env").write_text("CHANNEL_HANDLE=@DarkOutliersOfficial\n")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    monkeypatch.setattr(script_gen, "OUTPUT_DIR", scripts)
+    out = tmp_path / "videos"
+    out.mkdir()
+    monkeypatch.setattr(video_gen, "OUTPUT_DIR", out)
+    sc = _script(story_id=3)
+    sc.scenes[-1].narration = "Not one was found. So who steered her for ten days?"
+    (scripts / "story_3.json").write_text(sc.model_dump_json())
+    (out / "story_3.mp4").write_bytes(b"\x00" * 32)
+    (out / "story_3.json").write_text(json.dumps({"story_id": 3, "title": "The Ship", "description": "Hook.", "hashtags": ["shorts"]}))
+    assert da_channel.comment_text(3) == "So who steered her for ten days?\n\nFollow @DarkOutliersOfficial for more dark stories."
+    assert da_channel.comment_text(99).startswith("What do you think really happened?")
+
+    class Insert:
+        def __init__(self, body):
+            self.body = body
+
+        def next_chunk(self):
+            return None, {"id": "vid9", "status": {"privacyStatus": self.body["status"]["privacyStatus"]}}
+
+        def execute(self):
+            return {"id": "cmt1"}
+
+    bodies = []
+    threads = SimpleNamespace(insert=lambda **kw: bodies.append(kw["body"]) or Insert(kw["body"]))
+    youtube = SimpleNamespace(videos=lambda: SimpleNamespace(insert=lambda **kw: Insert(kw["body"])), commentThreads=lambda: threads)
+    record = da_channel.upload(3, "public", youtube=youtube, out_dir=out)
+    assert record["comment"]["comment_id"] == "cmt1" and bodies[0]["snippet"]["videoId"] == "vid9"
+    assert bodies[0]["snippet"]["topLevelComment"]["snippet"]["textOriginal"].startswith("So who steered her")
+    assert json.loads((out / "story_3.json").read_text())["uploads"]["youtube"]["comment"]["comment_id"] == "cmt1"
+    bodies.clear()
+    (out / "story_3.json").write_text(json.dumps({"story_id": 3, "title": "The Ship", "description": "Hook.", "hashtags": ["shorts"]}))
+    assert "comment" not in da_channel.upload(3, "private", youtube=youtube, out_dir=out) and bodies == []

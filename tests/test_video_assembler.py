@@ -175,3 +175,41 @@ def test_ffmpeg_error_excerpt_keeps_both_ends_of_a_long_line():
     excerpt = va._ffmpeg_error_excerpt(stderr)
     assert excerpt.startswith("Stream specifier ':v'") and "matches no streams." in excerpt
     assert "Error initializing complex filters" in excerpt and len(excerpt) < 600
+
+
+def test_flashes_never_run_off_the_frame(tmp_path):
+    from trendclip.quiz import TimedFlash as Flash
+    from trendclip.video_assembler import FLASH_MARGIN, FLASH_POP, fit_flash, text_width
+
+    # Estimated widths (no font file): 0.62 × size per character.
+    assert text_width("+18", 288, None) == 3 * 288 * 0.62
+    limit = (1080 - 2 * FLASH_MARGIN) / FLASH_POP
+    assert fit_flash("+18", 288, limit) == (288, ["+18"])  # fits: untouched
+    size, lines = fit_flash("B) SURVIVAL", 288, limit)  # "SURVIVAL" alone is 1428 px at 288: shrink
+    assert lines == ["B)", "SURVIVAL"] or lines == ["B) SURVIVAL"]
+    assert size < 288 and text_width(max(lines, key=len), size, None) <= limit + 1
+    size, lines = fit_flash("MOVIE LOGIC", 288, limit)  # two words, far too wide for one line: wrapped
+    assert lines == ["MOVIE", "LOGIC"] and 250 < size <= 288  # "MOVIE" alone is a touch wide in the estimate
+    size, lines = fit_flash("GOT IT?", 288, limit)  # nearly fits: a little smaller beats two lines
+    assert lines == ["GOT IT?"] and size < 288 and text_width("GOT IT?", size, None) <= limit + 1
+
+    size, lines = fit_flash("COMMENT YOUR ANSWER NOW", 288, limit)  # three or more words: two lines, shrunk if needed
+    assert len(lines) == 2 and all(text_width(l, size, None) <= limit + 1 for l in lines)
+
+    words = [{"word": w, "start": i * 0.5, "end": i * 0.5 + 0.4} for i, w in enumerate("Which hero wins A or B comment".split())]
+    ass = tmp_path / "s.ass"
+    va.create_karaoke_ass_file(words, ass, title_card="99% FAIL THIS BATMAN MOVIE LOGIC", title_chars=16, title_size=148,
+                               flash_y=0.39, flashes=[
+                                   Flash(text="MOVIE LOGIC", start=0.2, end=1.5),
+                                   Flash(text="B) SURVIVAL", start=6.0, end=7.0),
+                                   Flash(text="?", start=7.0, end=8.0)])
+
+    text = ass.read_text()
+    first, second, third = [l for l in text.splitlines() if ",Flash,," in l]
+    # During the title card (3 lines of 148 px) the first flash sits below the card, not over it.
+    assert "MOVIE\\NLOGIC" in first and int(first.split("\\pos(540,")[1].split(")")[0]) > 749
+    import re
+
+    assert re.search(r"\\fs\d", second) and "SURVIVAL" in second and "\\pos(540,749)" in second  # shrunk, usual spot
+    assert not re.search(r"\\fs\d", third) and third.endswith("?")
+

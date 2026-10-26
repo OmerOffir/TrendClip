@@ -288,7 +288,7 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     db = tmp_path / "bank.db"
     repository.init_db(db)
     repository.save_story("wikipedia_9", "wikipedia/Ghost ships", "Ghost ship", "raw " * 300, "u", 90, db_path=db)
-    replies = [_draft(150), _draft(125)]  # too long first: sent back with the count
+    replies = [_draft(150), _draft(110)]  # too long first: sent back with the count
     prompts = []
     monkeypatch.setattr(sg, "_gemini", lambda client=None: (None, "m"))
     monkeypatch.setattr(sg, "_ask", lambda client, model, prompt: prompts.append(prompt) or replies.pop(0))
@@ -298,7 +298,7 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     assert "150 words" in prompts[1] and "Cut words" in prompts[1]
     data = json.loads((tmp_path / "scripts" / "story_1.json").read_text())
     assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text"]
-    assert data["story_id"] == 1 and data["total_word_count"] == 125 and data["estimated_duration_seconds"] == 45
+    assert data["story_id"] == 1 and data["total_word_count"] == 110 and data["estimated_duration_seconds"] == 48
     assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 9))
     assert list(data["scenes"][0]) == ["scene_id", "narration", "visual_keywords", "image_prompt", "overlay_text"]
     assert data["scenes"][0]["overlay_text"] == "NO TRACE" and data["thumbnail_text"] == "NO TRACE LEFT"
@@ -330,7 +330,7 @@ def test_script_rules_long_sentences_and_prompt():
 
     from modules import script_gen as sg
 
-    draft = _draft(125)
+    draft = _draft(110)
     assert sg.check(draft) == []
     draft.scenes[2].narration = "One two three four five six seven eight nine ten eleven twelve thirteen. Short one."
     problems = sg.check(draft)
@@ -340,3 +340,32 @@ def test_script_rules_long_sentences_and_prompt():
                              today=dt.date(2026, 10, 24))
     assert "today is 2026-10-24" in prompt and "Creepy history & obscure anomalies" in prompt
     assert "never more than 12" in prompt and "creepypasta" in prompt and "ongoing" in prompt and "thumbnail_text" in prompt
+
+
+def test_anniversary_stories_come_first_while_their_date_is_near(monkeypatch):
+    import datetime as dt
+    from types import SimpleNamespace
+
+    from modules import fetcher
+    from trendclip import script_writer
+
+    today = dt.date(2026, 10, 26)
+    assert fetcher.anniversary_date("Anniversary: November 2, 1945. Five bombers...", today) == dt.date(2026, 11, 2)
+    assert fetcher.anniversary_date("Anniversary: Oct 25th, 1900", today) == dt.date(2026, 10, 25)  # yesterday still counts
+    assert fetcher.anniversary_date("Anniversary: January 3, 1888", today) == dt.date(2027, 1, 3)
+    assert fetcher.anniversary_date("Just a story", today) is None
+    assert fetcher.anniversary_soon("Anniversary: November 2, 1945", today) and not fetcher.anniversary_soon("Anniversary: December 2, 1945", today)
+
+    cases = fetcher.GeminiCases(cases=[
+        fetcher.GeminiCase(title="Flight 19", pillar="mystery", story="Anniversary: December 5, 1945. Five bombers vanished.", hook_score=90),
+        fetcher.GeminiCase(title="Mary Celeste", pillar="mystery", story="Anniversary: November 4, 1872. A ship was found.", hook_score=60),
+        fetcher.GeminiCase(title="Other", pillar="history", story="A plain case.", hook_score=95),
+    ])
+    prompts = []
+    monkeypatch.setattr(fetcher.script_writer if hasattr(fetcher, "script_writer") else script_writer, "_generate_with_fallback",
+                        lambda client, model, parts, config, cb, err: (prompts.append(parts[0]) or (SimpleNamespace(parsed=cases, text=""), model)))
+    monkeypatch.setattr(script_writer, "_generate_with_fallback",
+                        lambda client, model, parts, config, cb, err: (prompts.append(parts[0]) or (SimpleNamespace(parsed=cases, text=""), model)))
+    stories = fetcher.fetch_gemini(5, ["Dyatlov"], client=object(), today=today)
+    assert "Today is 2026-10-26" in prompts[0] and "At least 2 of the cases" in prompts[0] and "- Dyatlov" in prompts[0]
+    assert [(s["title"], s["score"]) for s in stories] == [("Flight 19", 70), ("Mary Celeste", 100), ("Other", 70)]

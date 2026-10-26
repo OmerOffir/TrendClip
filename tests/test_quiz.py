@@ -427,7 +427,7 @@ def test_the_payoff_flash_is_green_and_the_end_card_waits_for_it(tmp_path):
     text = va.create_karaoke_ass_file(words, tmp_path / "s.ass", end_card=quiz.LOOP_CARD, flashes=flashes,
                                       flash_y=quiz.FLASH_Y).read_text(encoding="utf-8")
     assert rf"\pos(540,{round(1920 * quiz.TOP_FLASH_Y)})" in text  # the countdown above the emoji row
-    got = next(line for line in text.splitlines() if "GOT IT?" in line)
+    got = next(line for line in text.splitlines() if "GOT" in line and "IT?" in line)
     assert rf"\pos(540,{round(1920 * quiz.FLASH_Y)})" in got and r"\1c&H0000FF00&" in got
     card = next(line for line in text.splitlines() if ",EndCard," in line)
     assert card.split(",")[1] == va._ass_time(flashes[-1].start)  # not over the countdown
