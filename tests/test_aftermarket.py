@@ -169,30 +169,53 @@ def test_numbers_are_checked_against_the_facts():
     assert am_script.check(am_script.ScriptDraft(title=ok.title, hook_text=ok.hook_text, scenes=[
         am_script.SceneDraft(narration=s.narration, visual=s.visual, overlay_text=s.overlay_text, image_prompt=s.image_prompt)
         for s in ok.scenes]), facts) == []
-    bad = am_script.ScriptDraft(title="t", hook_text="Tesla soared 9 percent to 450 dollars.", scenes=[
+    bad = am_script.ScriptDraft(title="t", hook_text="Here is why Tesla soared 9 percent to 450 dollars.", scenes=[
         am_script.SceneDraft(narration="x " * 20 + ".", visual="ticker:AMZN", overlay_text="AMZN"),
         am_script.SceneDraft(narration="A trading floor.", visual="broll", overlay_text="NEXT")])
     problems = am_script.check(bad, facts)
-    assert any("450" in p for p in problems) and any("ticker:AMZN" in p for p in problems)
+    assert any("450" in p for p in problems) and any("ticker:AMZN" in p for p in problems) and any("newsreader" in p for p in problems)
     assert any("broll without" in p for p in problems) and any("scenes" in p for p in problems) and any("over 14" in p for p in problems)
 
 
 def test_template_script_tells_the_session():
     facts = facts_fixture()
     script = am_script.template_script(facts)
-    assert script.writer == "template" and script.slot == "close" and script.hook_text.startswith("TSLA is up 6 percent at the close")
+    assert script.writer == "template" and script.slot == "close"
+    assert script.hook_text == "TSLA moved 6.0 percent in one session. That decides the next session."
     assert [s.visual for s in script.scenes] == ["board", "ticker:TSLA", "ticker:NVDA", "calendar", "crypto", "broll"]
+    assert script.scenes[0].narration.startswith("Monday, October 26th. Your closing report. The big picture. S&P 500 up 0.7 percent")
     assert script.scenes[3].narration == ("On deck. V report after the bell tonight. KO report before the bell tomorrow. "
                                           "CB Consumer Confidence lands at 10:00 Eastern.")
     assert [e["symbol"] for e in am_script.due_earnings(facts)] == ["V", "KO"] and am_script.due_earnings(facts)[0]["when"] == "tonight"
     assert [e["symbol"] for e in am_script.due_earnings(facts_fixture("premarket"))] == ["V"]
     assert script.thumbnail_text == "TSLA +6.0%" and am_script.MIN_WORDS <= script.total_word_count <= am_script.MAX_WORDS
     pre = am_script.template_script(facts_fixture("premarket"))
-    assert "before the bell" in pre.hook_text and pre.scenes[0].narration.startswith("The big picture. The S&P 500 futures up 0.7 percent")
+    assert pre.hook_text == "TSLA moved 6.0 percent before the open. That decides the next session."
+    assert pre.scenes[0].narration.startswith("Monday, October 26th. Your pre-market report. The big picture. The S&P 500 futures up 0.7 percent")
     assert "Follow" not in am_script.spoken(pre)
     compact = am_script.compact_facts(facts)
     assert "series" not in compact["movers"][0] and compact["movers"][0]["why"] == ["Tesla jumps after a record delivery report - CNBC"]
     assert "FACTS (JSON)" in am_script.build_prompt(facts) and "closing bell" in am_script.build_prompt(facts)
+    assert "Monday, October 26th. Your closing report." in am_script.build_prompt(facts)
+
+
+def test_hooks_with_a_stake():
+    assert am_script.hook_problems("XP lost half its value in one session.") == []
+    assert am_script.hook_problems("Visa reports in 3 hours. 728 billion dollars on the line.") == []
+    assert am_script.hook_problems("XP Inc. plunged 49 percent. Here is your close report.") == [
+        "the hook opens like a newsreader (\"Here is\"): lead with the shock, no framing"]
+    assert "no number" in am_script.hook_problems("Tesla had a wild day on Wall Street.")[0]
+    assert any("words" in p for p in am_script.hook_problems("The S&P 500 index closed up zero point seven percent on a quiet day for stocks."))
+    assert am_script.hook_problems("") == ["no hook"]
+    spx = {"change_pct": 0.72}
+    assert am_script.template_hook({"symbol": "XP"}, -49.3, spx, "close") == "XP lost half its value in one session."
+    assert am_script.template_hook({"symbol": "SGRY"}, 47.2, spx, "close").startswith("SGRY gained 47 percent in one session.")
+    assert am_script.template_hook({"symbol": "NVDA"}, -18.0, spx, "premarket") == "NVDA crashed 18 percent before the open. Someone was very wrong."
+    assert am_script.template_hook({"symbol": "NVDA"}, -2.4, spx, "close") == "The S&P up 0.7 percent. NVDA went the other way, down 2.4 percent."
+    assert am_script.template_hook({"symbol": "NVDA"}, None, spx, "weekend") == "NVDA is the name every desk is watching this week."
+    assert am_script.slate({"date": "2026-10-23", "slot": "premarket"}) == "Friday, October 23rd. Your pre-market report."
+    assert am_script.slate({"date": "2026-11-11", "slot": "weekend"}) == "Wednesday, November 11th. Your weekend review."
+    assert am_script.slate({"date": "bad", "slot": "close"}) == "Your closing report."
 
 
 def test_write_script_retries_then_gives_up(monkeypatch):
@@ -200,7 +223,7 @@ def test_write_script_retries_then_gives_up(monkeypatch):
     good = am_script.template_script(facts)
     good_draft = am_script.ScriptDraft(title=good.title, hook_text=good.hook_text, thumbnail_text=good.thumbnail_text, scenes=[
         am_script.SceneDraft(narration=s.narration, visual=s.visual, overlay_text=s.overlay_text, image_prompt=s.image_prompt) for s in good.scenes])
-    bad_draft = good_draft.model_copy(update={"hook_text": "Tesla soared to 999 dollars."})
+    bad_draft = good_draft.model_copy(update={"hook_text": "Tesla soared to 999 dollars in one session."})
     drafts = [bad_draft, good_draft]
     prompts = []
 
@@ -252,6 +275,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert info["beats"][-1]["picture"].startswith("graded_beat_") and info["beats"][-1]["picture_source"] == "placeholder"
     assert info["pictures"] == "cards + placeholder" and info["writer"] == "template" and info["music"] is None
     assert info["beats"][-1]["text"].endswith("Follow for tomorrow's open.") and info["cover_text"] == "TSLA +6.0%"
+    assert info["beats"][1]["text"].startswith("Monday, October 26th. Your closing report.")
     assert info["end_card"] == "Follow for the next session" and info["stickers"] == ["built-in subscribe button"]
     assert "Not financial advice" in info["description"] and "TSLA +6.02%" in info["description"] and "#premarket" in info["description"]
     assert json.loads((work / "script.json").read_text())["writer"] == "template"

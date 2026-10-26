@@ -15,6 +15,7 @@ with the problems, ATTEMPTS times; `template_script` is the fallback that needs 
 from __future__ import annotations
 
 import argparse
+import datetime as dt
 import json
 import logging
 import re
@@ -31,7 +32,12 @@ WORDS_PER_SECOND = 2.5
 ATTEMPTS = 3
 MIN_SCENES, MAX_SCENES = 5, 8
 VISUALS = ("board", "crypto", "calendar", "broll")
-FREE_NUMBERS = set(range(0, 25)) | {30, 40, 50, 60, 70, 80, 90, 100, 200, 500, 1000} | set(range(1990, 2031))  # counts, years
+FREE_NUMBERS = set(range(0, 32)) | {40, 50, 60, 70, 80, 90, 100, 200, 500, 1000} | set(range(1990, 2031))  # counts, days, years
+MAX_HOOK_WORDS = 14
+# A hook that opens like a newsreader loses the scroll: these never appear in it.
+WEAK_HOOK = re.compile(r"\b(here is|here's|welcome|let's|lets|in this video|today's|report|update|recap|wrap|brief|"
+                       r"good morning|good evening|hey|stay tuned|the picture)\b", re.I)
+SLATE_WHAT = {"premarket": "Your pre-market report.", "close": "Your closing report.", "weekend": "Your weekend review."}
 CHANNEL_NAME = "After Market"
 
 
@@ -166,7 +172,12 @@ def spoken(draft: ScriptDraft | Script) -> str:
     return " ".join(p.strip() for p in [draft.hook_text, *(s.narration for s in draft.scenes)] if p.strip())
 
 
+ABBREVIATION = re.compile(r"\b(Inc|Corp|Ltd|Co|Mr|Mrs|Dr|vs|St|Jr|Sr|S|P|U|A|E|F)\.", re.I)
+
+
 def sentences(text: str) -> list[str]:
+    """Split at sentence ends; a company suffix ("XP Inc.") is not one."""
+    text = ABBREVIATION.sub(lambda m: m.group(1), text)
     return [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
 
 
@@ -174,19 +185,49 @@ def long_sentences(draft: ScriptDraft | Script) -> list[str]:
     return [s for s in sentences(spoken(draft)) if words(s) > MAX_SENTENCE_WORDS]
 
 
+def slate(facts: dict[str, Any]) -> str:
+    """The spoken slate right after the hook: the weekday and date, and which report this is
+    ("Monday, October 26th. Your closing report.")."""
+    try:
+        day = dt.date.fromisoformat(facts.get("date", ""))
+    except ValueError:
+        return SLATE_WHAT.get(facts.get("slot", ""), "")
+    n = day.day
+    suffix = "th" if 11 <= n <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{day.strftime('%A, %B')} {n}{suffix}. {SLATE_WHAT.get(facts.get('slot', ''), '')}".strip()
+
+
+def hook_problems(hook: str) -> list[str]:
+    """What makes a hook weak: no number, a newsreader opener, too long, a question."""
+    hook = hook.strip()
+    problems = []
+    if not hook:
+        return ["no hook"]
+    if not re.search(r"\d", hook) and not re.search(r"\b(half|double|triple|record|all-time)\b", hook, re.I):
+        problems.append("the hook has no number")
+    weak = WEAK_HOOK.search(hook)
+    if weak:
+        problems.append(f"the hook opens like a newsreader (\"{weak.group()}\"): lead with the shock, no framing")
+    if words(hook) > MAX_HOOK_WORDS:
+        problems.append(f"the hook is {words(hook)} words (at most {MAX_HOOK_WORDS})")
+    if len(sentences(hook)) > 2:
+        problems.append("the hook is more than two sentences")
+    return problems
+
+
 def visuals_for(facts: dict[str, Any]) -> list[str]:
     return list(VISUALS) + [f"ticker:{m['symbol']}" for m in facts.get("movers") or []]
 
 
 def check(draft: ScriptDraft, facts: dict[str, Any]) -> list[str]:
+    """The rules, counted with the slate that finalize() adds after the hook."""
     problems = []
-    n = words(spoken(draft))
+    n = words(spoken(draft)) + words(slate(facts))
     if n < MIN_WORDS:
         problems.append(f"only {n} words (at least {MIN_WORDS})")
     if n > MAX_WORDS:
         problems.append(f"{n} words (at most {MAX_WORDS})")
-    if not draft.hook_text.strip():
-        problems.append("no hook")
+    problems += hook_problems(draft.hook_text)
     if not (MIN_SCENES <= len(draft.scenes) <= MAX_SCENES):
         problems.append(f"{len(draft.scenes)} scenes ({MIN_SCENES}-{MAX_SCENES})")
     long = long_sentences(draft)
@@ -206,6 +247,12 @@ def check(draft: ScriptDraft, facts: dict[str, Any]) -> list[str]:
 
 
 def finalize(draft: ScriptDraft, facts: dict[str, Any], writer: str = "gemini") -> Script:
+    """The Script, with the slate (date, which report) spoken first thing after the hook."""
+    opening = slate(facts)
+    if opening and draft.scenes:
+        first = draft.scenes[0]
+        draft = draft.model_copy(update={"scenes": [first.model_copy(update={"narration": f"{opening} {first.narration.strip()}"}),
+                                                    *draft.scenes[1:]]})
     n = words(spoken(draft))
     return Script(
         slot=facts.get("slot", ""), date=facts.get("date", ""), title=draft.title.strip()[:100],
@@ -231,8 +278,17 @@ Write "percent", not "%". Write index levels with the thousands ("7,679", "26,19
 THIS VIDEO: slot = {slot}. {slot_brief}
 
 STRUCTURE:
-- hook_text (0-3 s): ONE punchy sentence with the single biggest number of the session, at most 12 words
-  ("Tesla jumped 6 percent before the bell. Here is why."). It is spoken first, over the first scene.
+- hook_text (0-3 s): the line that stops the scroll, spoken first. At most {max_hook} words, one or two
+  sentences, ALWAYS with a number, and it must carry a stake or a surprise, not just a quote:
+    * the shock and its consequence: "XP lost half its value in one session."
+    * the contrast: "The S&P closed at a record. Three stocks lost 30 percent."
+    * the clock and the stake: "Visa reports in 3 hours. 728 billion dollars on the line."
+    * what it means for tomorrow: "Nvidia fell 2.4 percent. Its earnings are 5 days away."
+  Pick the most surprising fact in FACTS (the biggest move, a record, a huge name reporting), not the
+  index tally. NEVER open with framing or a greeting: no "here is", "welcome", "let's", "today's",
+  "report", "update", "recap", "the picture". No questions.
+- Right after the hook the video says the date and which report it is by itself ("{slate}"): do not
+  repeat the date or the words "pre-market report" / "closing report" anywhere.
 - scenes: {min_scenes} to {max_scenes} scenes, each 1-2 sentences of narration, in this order of priority:
   1. the big picture (visual "board"): indices or futures, with their moves;
   2. two or three movers (visual "ticker:<SYMBOL>", one scene each, only symbols from FACTS.movers): the
@@ -277,7 +333,8 @@ Your script:
 
 def build_prompt(facts: dict[str, Any]) -> str:
     slot = facts.get("slot", "close")
-    return PROMPT.format(slot=slot, slot_brief=SLOT_BRIEF.get(slot, SLOT_BRIEF["close"]), min_words=MIN_WORDS,
+    return PROMPT.format(slot=slot, slot_brief=SLOT_BRIEF.get(slot, SLOT_BRIEF["close"]), min_words=MIN_WORDS, slate=slate(facts),
+                         max_hook=MAX_HOOK_WORDS,
                          max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS, min_scenes=MIN_SCENES,
                          max_scenes=MAX_SCENES, facts=json.dumps(compact_facts(facts), ensure_ascii=False))
 
@@ -353,6 +410,22 @@ def due_earnings(facts: dict[str, Any]) -> list[dict]:
     return list(earnings.get("today" if facts.get("slot") == "premarket" else "next") or [])
 
 
+def template_hook(lead: dict, move: float | None, spx: dict | None, slot: str) -> str:
+    """The template's hook: the lead mover's shock with a stake, in a trader's words."""
+    sym = lead["symbol"]
+    when = {"premarket": "before the open", "close": "in one session", "weekend": "this week"}[slot]
+    if move is None:
+        return f"{sym} is the name every desk is watching {when}."
+    size = abs(move)
+    if size >= 40:
+        return f"{sym} lost half its value {when}." if move < 0 else f"{sym} gained {size:.0f} percent {when}. Half the float changed hands."
+    if size >= 15:
+        return f"{sym} {'crashed' if move < 0 else 'exploded'} {size:.0f} percent {when}. Someone was very wrong."
+    if spx and spx.get("change_pct") is not None and (move < 0) != (spx["change_pct"] < 0):
+        return (f"The S&P {_pct_words(spx['change_pct'], 1)}. {sym} went the other way, {_pct_words(move, 1)}.")
+    return f"{sym} moved {size:.1f} percent {when}. That decides the next session."
+
+
 def template_script(facts: dict[str, Any]) -> Script:
     """A plain script from the facts alone: the fallback when Gemini is out, and the tests' script."""
     slot = facts.get("slot", "close")
@@ -364,13 +437,13 @@ def template_script(facts: dict[str, Any]) -> Script:
     lead = movers[0] if movers else None
     label = {"premarket": "before the bell", "close": "at the close", "weekend": "this week"}[slot]
     scenes: list[SceneDraft] = []
+    spx = indices[0] if indices else None
     if lead:
         move = lead.get("extended_change_pct") if slot == "premarket" and lead.get("extended_change_pct") is not None else lead.get("change_pct")
-        hook = f"{lead['symbol']} is {_pct_words(move)} {label}. Here is the picture."
+        hook = template_hook(lead, move, spx, slot)
         thumb = f"{lead['symbol']} {move:+.1f}%" if move is not None else lead["symbol"]
     else:
-        spx = indices[0] if indices else None
-        hook = f"The S and P 500 is {_pct_words(spx['change_pct'] if spx else None)} {label}. Here is the picture."
+        hook = f"The S and P 500 {_pct_words(spx['change_pct'] if spx else None)} {label}. One number decides tomorrow."
         thumb = f"S&P {spx['change_pct']:+.1f}%" if spx and spx.get("change_pct") is not None else "MARKETS"
     board_rows = (futures[:2] + indices[:2]) if slot == "premarket" and futures else indices[:3]
     if board_rows:
