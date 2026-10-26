@@ -1,4 +1,4 @@
-"""DarkArchives tab: browse the story bank (db/content_bank.db), fetch stories, write scripts and make the videos."""
+"""Dark Outliers tab: browse the story bank (db/content_bank.db), fetch stories, write scripts and make the videos."""
 
 from __future__ import annotations
 
@@ -167,7 +167,7 @@ def _make(story_id: int) -> None:
         with _lock:
             _video_job.update(result=info)
     except Exception as err:  # noqa: BLE001 - shown in the tab
-        logger.exception("DarkArchives video for story %s failed", story_id)
+        logger.exception("Dark Outliers video for story %s failed", story_id)
         with _lock:
             _video_job.update(error=str(err)[:400])
     finally:
@@ -246,7 +246,7 @@ def youtube_status() -> dict[str, Any]:
 
 @router.post("/youtube/connect")
 def youtube_connect(request: Request) -> dict[str, Any]:
-    """The Google login for the DarkArchives channel; the shared callback saves its token in its folder."""
+    """The Google login for the Dark Outliers channel; the shared callback saves its token in its folder."""
     from .app import _callback_url
 
     try:
@@ -275,7 +275,7 @@ def _upload(story_id: int, privacy: str) -> None:
         with _lock:
             _upload_job.update(result=record)
     except Exception as err:  # noqa: BLE001 - shown in the tab
-        logger.exception("DarkArchives upload of story %s failed", story_id)
+        logger.exception("Dark Outliers upload of story %s failed", story_id)
         with _lock:
             _upload_job.update(error=str(err)[:400])
     finally:
@@ -288,7 +288,7 @@ def start_upload(story_id: int, body: UploadRequest) -> dict[str, Any]:
     if not video_gen.video_path(story_id).is_file():
         raise HTTPException(status_code=404, detail="No video for this story yet")
     if not da_channel.connected():
-        raise HTTPException(status_code=400, detail="Connect the DarkArchives YouTube channel first")
+        raise HTTPException(status_code=400, detail="Connect the Dark Outliers YouTube channel first")
     with _lock:
         if _upload_job.get("running"):
             raise HTTPException(status_code=409, detail="An upload is already running")
@@ -381,7 +381,7 @@ def _produce(fetch: bool, max_slots: int | None) -> None:
                 {k: v for k, v in r.items() if k != "info"} | ({"title": r["info"]["title"]} if r.get("info") else {})
                 for r in result["slots"]]})
     except Exception as err:  # noqa: BLE001
-        logger.exception("DarkArchives production run failed")
+        logger.exception("Dark Outliers production run failed")
         with _lock:
             _produce_job.update(error=str(err)[:400])
     finally:

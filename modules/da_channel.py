@@ -1,7 +1,7 @@
-"""The DarkArchives channel: its folder under channels/, its YouTube login, the upload of its videos and
+"""The Dark Outliers channel: its folder under channels/, its YouTube login, the upload of its videos and
 its Discord channel (DISCORD_CHANNEL_ID in channel.env), where every finished video and upload is posted.
 
-The dashboard process serves one active channel (CHANNEL in .env, the gameplay channel); DarkArchives
+The dashboard process serves one active channel (CHANNEL in .env, the gameplay channel); Dark Outliers
 keeps its own channel.env and token_youtube.json in channels/darkarchives/ and goes through the same
 OAuth client (client_secret.json) and the same upload code, just with its own token file.
 """
@@ -46,7 +46,7 @@ def discord_channel_id() -> int | None:
 
 
 def _rest(settings=None):
-    """Discord's REST API as the bot, aimed at the DarkArchives channel; None when either is not set."""
+    """Discord's REST API as the bot, aimed at the Dark Outliers channel; None when either is not set."""
     from trendclip.config import get_settings
 
     settings = settings or get_settings()
@@ -93,7 +93,7 @@ def video_buttons(story_id: int, item_id: str | None = None, uploaded: dict | No
 
 def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | None = None, note: str | None = None,
                    components: list[dict[str, Any]] | None = None) -> str | None:
-    """Post the finished video (shrunk to Discord's 10 MB when needed) in the DarkArchives channel.
+    """Post the finished video (shrunk to Discord's 10 MB when needed) in the Dark Outliers channel.
     `note` replaces the "upload it from the tab" line. Never raises: the video is made whether or not
     Discord takes it."""
     try:
@@ -106,7 +106,7 @@ def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | Non
         text = (f"🎬 **{info.get('title', path.stem)}** · {info.get('duration_seconds', 0):.0f} s · "
                 f"pictures: {info.get('pictures', '?')}" + (f" · {photos} photo{'s' if photos != 1 else ''}" if photos else "")
                 + (f" · 🎵 {info['music']['title']}" if info.get("music") else "")
-                + "\n" + (note or f"Story {story_id}: upload it from the DarkArchives tab (Used → the story → Upload to YouTube)."))
+                + "\n" + (note or f"Story {story_id}: upload it from the Dark Outliers tab (Used → the story → Upload to YouTube)."))
         if components is None:
             components = video_buttons(story_id, uploaded=(info.get("uploads") or {}).get("youtube"))
         return rest.post(text, (path.name, small.read_bytes()), components)
@@ -116,7 +116,7 @@ def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | Non
 
 
 def announce_upload(story_id: int, info: dict, record: dict, settings=None) -> str | None:
-    """Post the YouTube link in the DarkArchives channel once a video is uploaded. Never raises."""
+    """Post the YouTube link in the Dark Outliers channel once a video is uploaded. Never raises."""
     try:
         rest = _rest(settings)
         if rest is None:
@@ -166,13 +166,13 @@ def upload_request(info: dict, privacy: str = "private") -> publish.YouTubeUploa
 
 def upload(story_id: int, privacy: str = "private", progress=lambda f, m: None, youtube=None,
            out_dir: Path | None = None) -> dict[str, Any]:
-    """Upload output/darkarchives/story_<id>.mp4 to the DarkArchives channel and record it in its JSON."""
+    """Upload output/darkarchives/story_<id>.mp4 to the Dark Outliers channel and record it in its JSON."""
     path = video_gen.video_path(story_id, out_dir)
     info_file = video_gen.info_path(story_id, out_dir)
     if not path.is_file() or not info_file.is_file():
         raise publish.PublishError(f"No video for story {story_id} yet")
     if youtube is None and not connected():
-        raise publish.PublishError("Connect the DarkArchives YouTube channel first")
+        raise publish.PublishError("Connect the Dark Outliers YouTube channel first")
     info = json.loads(info_file.read_text(encoding="utf-8"))
     req = upload_request(info, privacy)
     record = publish.upload_file(path, req, True, progress, youtube or publish._youtube(TOKEN))

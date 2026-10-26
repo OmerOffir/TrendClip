@@ -1,4 +1,4 @@
-"""DarkArchives production run: targets, story -> script -> video -> check -> plan, and the endpoint."""
+"""Dark Outliers production run: targets, story -> script -> video -> check -> plan, and the endpoint."""
 
 from __future__ import annotations
 

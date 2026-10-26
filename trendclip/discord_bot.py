@@ -548,7 +548,7 @@ class TrendClipBot(discord.Client):
             self.sent.add(reminder.key, at.date())
 
     def darkarchives_posts(self, at: datetime) -> None:
-        """DarkArchives (its own plan, channel and token): the slot's planned video goes to its YouTube
+        """Dark Outliers (its own plan, channel and token): the slot's planned video goes to its YouTube
         channel at its time, reported in its Discord channel; and once a day (DA_AUTO_PRODUCE_TIME) the
         production run fills the empty slots."""
         from modules import da_plan, da_produce
@@ -562,7 +562,7 @@ class TrendClipBot(discord.Client):
             key = da_produce.produce_key(local.date())
             produce = (da_produce.auto_produce() and key not in sent and start <= local < start + assistant.MORNING_WINDOW)
         except Exception:  # noqa: BLE001 - never let the second channel stop the first one's reminders
-            logger.exception("DarkArchives plan check failed")
+            logger.exception("Dark Outliers plan check failed")
             return
         for key_post, day, slot in due:
             self.sent.add(key_post, at.date())  # marked first: an upload takes minutes and must never start twice
@@ -584,7 +584,7 @@ class TrendClipBot(discord.Client):
         try:
             return self.get_channel(channel_id) or await self.fetch_channel(channel_id)
         except discord.HTTPException:
-            logger.exception("DarkArchives Discord channel %s is not reachable", channel_id)
+            logger.exception("Dark Outliers Discord channel %s is not reachable", channel_id)
             return None
 
     async def darkarchives_produce(self, only: tuple[Day, str] | None = None) -> None:
@@ -595,17 +595,17 @@ class TrendClipBot(discord.Client):
         settings = self.settings
         channel = await self.darkarchives_channel()
         if channel is None:
-            logger.warning("DarkArchives production: no Discord channel (DISCORD_CHANNEL_ID in channels/darkarchives/channel.env)")
+            logger.warning("Dark Outliers production: no Discord channel (DISCORD_CHANNEL_ID in channels/darkarchives/channel.env)")
             return
         wanted = [only] if only else await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
         if not wanted:
-            await channel.send("🏭 Every DarkArchives slot of today and tomorrow is planned; nothing to make.")
+            await channel.send("🏭 Every Dark Outliers slot of today and tomorrow is planned; nothing to make.")
             return
         if script_writer.gemini_api_key(settings) is None:
             await channel.send("🏭 Can't write the scripts without GEMINI_API_KEY.")
             return
         labels = ", ".join(f"{day_label(settings, d)} {s}" for d, s in wanted)
-        await channel.send(clip_text(f"🏭 **Making the DarkArchives videos for {labels}**: the best story of the pillar "
+        await channel.send(clip_text(f"🏭 **Making the Dark Outliers videos for {labels}**: the best story of the pillar "
                                      "the mix needs, its script, the video, a check, then the slot. Each goes out at "
                                      "its time by itself; press **Don't post this** under any you don't like."))
         if not only and da_produce.daily_fetch():
@@ -673,15 +673,15 @@ class TrendClipBot(discord.Client):
         rest = da_channel._rest(self.settings)
         try:
             record = await asyncio.to_thread(da_plan.post_now, item)
-            logger.info("DarkArchives %s %s: %s is on YouTube (%s)", day, slot, item.title, record.get("url"))
+            logger.info("Dark Outliers %s %s: %s is on YouTube (%s)", day, slot, item.title, record.get("url"))
         except Exception as err:  # noqa: BLE001 - reported in the channel
-            logger.exception("DarkArchives post for %s %s failed", day, slot)
+            logger.exception("Dark Outliers post for %s %s failed", day, slot)
             if rest is not None:
                 try:
                     await asyncio.to_thread(rest.post, clip_text(
-                        f"❌ {slot}: **{item.title}** did not go out: {err}\nUpload it from the DarkArchives tab."))
+                        f"❌ {slot}: **{item.title}** did not go out: {err}\nUpload it from the Dark Outliers tab."))
                 except Exception:  # noqa: BLE001
-                    logger.exception("Could not report the failure in the DarkArchives channel")
+                    logger.exception("Could not report the failure in the Dark Outliers channel")
 
     def _job_done(self, task: asyncio.Task) -> None:
         self.jobs.discard(task)
@@ -1362,29 +1362,29 @@ async def act_make_from_text(bot: TrendClipBot, interaction: discord.Interaction
 
 
 async def act_da_veto(bot: TrendClipBot, interaction: discord.Interaction, item_id: str) -> None:
-    """DarkArchives "Don't post this": off its plan; the video stays in the tab; the slot can be refilled."""
+    """Dark Outliers "Don't post this": off its plan; the video stays in the tab; the slot can be refilled."""
     from modules import da_plan
 
     try:
         item = await asyncio.to_thread(da_plan.update_item, item_id, da_plan.ItemUpdate())
     except KeyError:
-        return await reply(interaction, "That video is no longer on the DarkArchives plan.", ephemeral=True)
+        return await reply(interaction, "That video is no longer on the Dark Outliers plan.", ephemeral=True)
     await asyncio.to_thread(da_plan.delete_item, item_id)
     label = f"{day_label(bot.settings, item.date)} {item.slot}"
     await reply(interaction, f"🚫 **{item.title}** won't be posted: it's off {label} (the video stays in the "
-                             f"DarkArchives tab). The slot is empty again.",
+                             f"Dark Outliers tab). The slot is empty again.",
                 view=view_of(button("daprod", f"{item.date.isoformat()} {item.slot}", "🎬 Make another now",
                                     discord.ButtonStyle.success)))
 
 
 async def act_da_produce(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
-    """DarkArchives "Make another now" / "Try again now": the production run for that one slot."""
+    """Dark Outliers "Make another now" / "Try again now": the production run for that one slot."""
     try:
         date_text, slot = arg.split()
         day = Day.fromisoformat(date_text)
     except ValueError as err:
         return await reply(interaction, f"Couldn't read the slot: {err}", ephemeral=True)
-    await reply(interaction, f"🏭 Making a DarkArchives video for {day_label(bot.settings, day)} {slot}…", ephemeral=True)
+    await reply(interaction, f"🏭 Making a Dark Outliers video for {day_label(bot.settings, day)} {slot}…", ephemeral=True)
     task = asyncio.create_task(bot.darkarchives_produce(only=(day, slot)))
     bot.jobs.add(task)
     task.add_done_callback(bot._job_done)
@@ -1401,13 +1401,13 @@ async def act_da_upload_confirm(bot: TrendClipBot, interaction: discord.Interact
 
     info = _da_info(int(arg))
     if info is None:
-        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+        return await reply(interaction, "That Dark Outliers video is gone.", ephemeral=True)
     if (info.get("uploads") or {}).get("youtube"):
         return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
     if not da_channel.connected():
-        return await reply(interaction, "The DarkArchives YouTube channel is not connected (DarkArchives tab → Videos → Connect YouTube).", ephemeral=True)
+        return await reply(interaction, "The Dark Outliers YouTube channel is not connected (Dark Outliers tab → Videos → Connect YouTube).", ephemeral=True)
     privacy = da_plan.upload_privacy()
-    await reply(interaction, f"Upload **{info['title']}** to the DarkArchives channel now, as **{privacy}**?",
+    await reply(interaction, f"Upload **{info['title']}** to the Dark Outliers channel now, as **{privacy}**?",
                 view=view_of(button("daupgo", arg, f"Yes, upload as {privacy}", discord.ButtonStyle.danger),
                              button("no", "-", "Cancel")), ephemeral=True)
 
@@ -1418,7 +1418,7 @@ async def act_da_upload(bot: TrendClipBot, interaction: discord.Interaction, arg
     story_id = int(arg)
     info = _da_info(story_id)
     if info is None:
-        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+        return await reply(interaction, "That Dark Outliers video is gone.", ephemeral=True)
     await interaction.response.defer(thinking=True)
     try:
         record = await asyncio.to_thread(da_channel.upload, story_id, da_plan.upload_privacy())
@@ -1435,11 +1435,11 @@ async def act_da_plan(bot: TrendClipBot, interaction: discord.Interaction, arg: 
     story_id = int(arg)
     info = _da_info(story_id)
     if info is None:
-        return await reply(interaction, "That DarkArchives video is gone.", ephemeral=True)
+        return await reply(interaction, "That Dark Outliers video is gone.", ephemeral=True)
     settings = bot.settings
     nxt = await asyncio.to_thread(da_plan.next_free_slot, settings, assistant.now(settings))
     if nxt is None:
-        return await reply(interaction, "No free DarkArchives slot in the next 30 days.", ephemeral=True)
+        return await reply(interaction, "No free Dark Outliers slot in the next 30 days.", ephemeral=True)
     item = await asyncio.to_thread(da_plan.add_item, da_plan.ItemRequest(story_id=story_id, date=nxt[0], slot=nxt[1]))
     await reply(interaction, f"📅 **{info['title']}** is planned for {day_label(settings, item.date)} at {item.slot} and goes "
                              f"out by itself as {da_plan.upload_privacy()}.",
@@ -1449,7 +1449,7 @@ async def act_da_plan(bot: TrendClipBot, interaction: discord.Interaction, arg: 
 async def act_da_delete_confirm(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
     info = _da_info(int(arg))
     if info is None:
-        return await reply(interaction, "That DarkArchives video is already gone.", ephemeral=True)
+        return await reply(interaction, "That Dark Outliers video is already gone.", ephemeral=True)
     await reply(interaction, f"Delete **{info['title']}** (the file, its pictures and its plan entries; the story can be "
                              f"made again)?" + (" It stays on YouTube." if (info.get("uploads") or {}).get("youtube") else ""),
                 view=view_of(button("dadelgo", arg, "Yes, delete it", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
@@ -1461,7 +1461,7 @@ async def act_da_delete(bot: TrendClipBot, interaction: discord.Interaction, arg
 
     info = _da_info(int(arg))
     if info is None:
-        return await reply(interaction, "That DarkArchives video is already gone.", ephemeral=True)
+        return await reply(interaction, "That Dark Outliers video is already gone.", ephemeral=True)
     result = await asyncio.to_thread(video_gen.delete_video, int(arg))
     await reply(interaction, f"🗑 **{info['title']}** is deleted ({result['plan_items']} plan entr{'y' if result['plan_items'] == 1 else 'ies'} "
                              f"removed; the story is {result['status'] or 'kept'}).")
@@ -1936,17 +1936,17 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours); "
         "`now:True` replies on quiz videos too, without the 10 h spoiler wait",
         "",
-        "**DarkArchives** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
+        "**Dark Outliers** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
         "`/da make` a video for the next empty slot now (`slots:` more, `fetch:True` refresh the bank first) · "
         "`/da fetch` · `/da upload`. Every morning the bank is refreshed and each empty slot gets a video, posted "
         "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
     ]), ephemeral=True)
 
 
-# --------------------------------------------------------------------------- DarkArchives
+# --------------------------------------------------------------------------- Dark Outliers
 
 
-da_group = app_commands.Group(name="da", description="DarkArchives: the dark-stories channel (its own plan, bank and YouTube)")
+da_group = app_commands.Group(name="da", description="Dark Outliers: the dark-stories channel (its own plan, bank and YouTube)")
 
 
 def _da_video_line(v: dict, planned: dict[int, list[str]]) -> str:
@@ -1966,7 +1966,7 @@ async def da_video_choices(interaction: discord.Interaction, current: str) -> li
     return out[:25]
 
 
-@da_group.command(name="plan", description="The DarkArchives plan for the next days")
+@da_group.command(name="plan", description="The Dark Outliers plan for the next days")
 @app_commands.describe(days="How many days (default 3)")
 async def da_plan_cmd(interaction: discord.Interaction, days: app_commands.Range[int, 1, 14] = 3) -> None:
     from modules import da_plan, da_produce
@@ -1992,21 +1992,21 @@ async def da_plan_cmd(interaction: discord.Interaction, days: app_commands.Range
     await reply(interaction, "\n".join(lines))
 
 
-@da_group.command(name="videos", description="DarkArchives videos: made, planned, on YouTube")
+@da_group.command(name="videos", description="Dark Outliers videos: made, planned, on YouTube")
 async def da_videos_cmd(interaction: discord.Interaction) -> None:
     from modules import da_plan
 
     videos = await asyncio.to_thread(da_plan.videos)
     planned = await asyncio.to_thread(da_plan.planned_dates)
     if not videos:
-        return await reply(interaction, "No DarkArchives videos yet: `/da make` makes one for the next empty slot.")
-    lines = [f"🎞️ **{len(videos)} DarkArchives video(s)**"] + [_da_video_line(v, planned) for v in videos[:15]]
+        return await reply(interaction, "No Dark Outliers videos yet: `/da make` makes one for the next empty slot.")
+    lines = [f"🎞️ **{len(videos)} Dark Outliers video(s)**"] + [_da_video_line(v, planned) for v in videos[:15]]
     waiting = [v for v in videos if not (v.get("uploads") or {}).get("youtube") and not planned.get(v["story_id"])][:4]
     buttons = [button("daplan", str(v["story_id"]), f"📅 Plan: {clip_text(v['title'], 50)}", discord.ButtonStyle.success) for v in waiting]
     await reply(interaction, "\n".join(lines), view=view_of(*buttons), suppress_embeds=True)
 
 
-@da_group.command(name="status", description="DarkArchives: YouTube connection, the story bank, the next empty slot")
+@da_group.command(name="status", description="Dark Outliers: YouTube connection, the story bank, the next empty slot")
 async def da_status_cmd(interaction: discord.Interaction) -> None:
     from db import repository
     from modules import da_channel, da_plan, da_produce
@@ -2015,7 +2015,7 @@ async def da_status_cmd(interaction: discord.Interaction) -> None:
     await interaction.response.defer(thinking=True)
     yt = await asyncio.to_thread(da_channel.youtube_status)
     yt_line = (f"✅ YouTube connected ({(yt.get('channel') or {}).get('title', 'channel')} {yt.get('handle', '')})" if yt.get("connected")
-               else f"❌ YouTube not connected{': ' + yt['error'] if yt.get('error') else ''} (DarkArchives tab → Videos → Connect YouTube)")
+               else f"❌ YouTube not connected{': ' + yt['error'] if yt.get('error') else ''} (Dark Outliers tab → Videos → Connect YouTube)")
     counts = await asyncio.to_thread(repository.counts)
     mix = await asyncio.to_thread(repository.pillar_mix)
     nxt = await asyncio.to_thread(da_plan.next_free_slot, settings, assistant.now(settings))
@@ -2031,7 +2031,7 @@ async def da_status_cmd(interaction: discord.Interaction) -> None:
     ]))
 
 
-@da_group.command(name="make", description="Make a DarkArchives video now for the next empty slot (story → script → video → plan)")
+@da_group.command(name="make", description="Make a Dark Outliers video now for the next empty slot (story → script → video → plan)")
 @app_commands.describe(slots="How many empty slots to fill (default 1)", fetch="Refresh the story bank first (default no)")
 async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Range[int, 1, 4] = 1, fetch: bool = False) -> None:
     from modules import da_produce
@@ -2040,10 +2040,10 @@ async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Rang
     settings = bot.settings
     targets = await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
     if not targets:
-        return await reply(interaction, "Every DarkArchives slot of today and tomorrow is planned; nothing to make.", ephemeral=True)
+        return await reply(interaction, "Every Dark Outliers slot of today and tomorrow is planned; nothing to make.", ephemeral=True)
     wanted = targets[:slots]
-    await reply(interaction, f"🏭 Making {len(wanted)} DarkArchives video(s): {', '.join(day_label(settings, d) + ' ' + s for d, s in wanted)}. "
-                             f"Progress in the DarkArchives channel.", ephemeral=True)
+    await reply(interaction, f"🏭 Making {len(wanted)} Dark Outliers video(s): {', '.join(day_label(settings, d) + ' ' + s for d, s in wanted)}. "
+                             f"Progress in the Dark Outliers channel.", ephemeral=True)
 
     async def go() -> None:
         if fetch:
@@ -2061,7 +2061,7 @@ async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Rang
     task.add_done_callback(bot._job_done)
 
 
-@da_group.command(name="fetch", description="Refresh the DarkArchives story bank now (Reddit, Wikipedia, Gemini, RSS)")
+@da_group.command(name="fetch", description="Refresh the Dark Outliers story bank now (Reddit, Wikipedia, Gemini, RSS)")
 async def da_fetch_cmd(interaction: discord.Interaction) -> None:
     from modules import da_produce
 
@@ -2072,7 +2072,7 @@ async def da_fetch_cmd(interaction: discord.Interaction) -> None:
     await reply(interaction, "📚 **Story bank refreshed**\n" + "\n".join(lines))
 
 
-@da_group.command(name="upload", description="Upload a DarkArchives video to YouTube now")
+@da_group.command(name="upload", description="Upload a Dark Outliers video to YouTube now")
 @app_commands.describe(video="The video")
 @app_commands.autocomplete(video=da_video_choices)
 async def da_upload_cmd(interaction: discord.Interaction, video: str) -> None:

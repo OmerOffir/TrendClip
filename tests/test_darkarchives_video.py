@@ -1,4 +1,4 @@
-"""DarkArchives video: beat timing, the Ken Burns background, the whole build (placeholder pictures, a silent
+"""Dark Outliers video: beat timing, the Ken Burns background, the whole build (placeholder pictures, a silent
 voice) and the tab's video endpoints."""
 
 from __future__ import annotations
@@ -269,7 +269,7 @@ def test_da_channel_upload_records_the_video(tmp_path, monkeypatch):
 
     bodies = []
     youtube = SimpleNamespace(videos=lambda: SimpleNamespace(insert=lambda **kw: bodies.append(kw["body"]) or Insert(kw["body"])))
-    with pytest.raises(Exception, match="Connect the DarkArchives"):
+    with pytest.raises(Exception, match="Connect the Dark Outliers"):
         da_channel.upload(3, out_dir=out)
     record = da_channel.upload(3, "unlisted", youtube=youtube, out_dir=out)
     assert record["video_id"] == "vid123" and record["url"] == "https://youtube.com/shorts/vid123" and record["privacy"] == "unlisted"

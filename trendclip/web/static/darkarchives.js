@@ -1,4 +1,4 @@
-// DarkArchives tab: the story bank (Reddit / Wikipedia / Gemini), reading, status, fetching, scripts and videos.
+// Dark Outliers tab: the story bank (Reddit / Wikipedia / Gemini), reading, status, fetching, scripts and videos.
 (() => {
   const { api, esc } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
@@ -80,7 +80,7 @@
       state.loaded = true;
     } catch (err) {
       showError(err.message === "Not Found"
-        ? "The dashboard server is older than this page: restart the dashboard to load the DarkArchives story bank."
+        ? "The dashboard server is older than this page: restart the dashboard to load the Dark Outliers story bank."
         : `Couldn't load the story bank: ${err.message}`);
     }
   }
@@ -207,7 +207,7 @@
     const up = info && info.uploads && info.uploads.youtube;
     try {
       const { body: yt } = await api("/api/darkarchives/youtube/status");
-      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "DarkArchives");
+      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "Dark Outliers");
       box.innerHTML = `
         <b>YouTube</b>
         ${!yt.folder ? '<span class="da-note">channels/darkarchives/channel.env is missing on the dashboard machine</span>' : ""}
@@ -216,7 +216,7 @@
           ${yt.connected
             ? `<span class="pill good">Connected: ${who}</span><button type="button" class="btn-secondary" id="daYtLogout">Disconnect</button>`
             : `<button type="button" class="btn-secondary" id="daYtConnect" ${yt.client_secret ? "" : "disabled"}>Connect YouTube</button>
-               <span class="hint">Google opens in a new window: pick the <b>Dark Archives</b> channel there</span>`}
+               <span class="hint">Google opens in a new window: pick the <b>Dark Outliers</b> channel there</span>`}
           ${yt.error ? `<span class="da-note">${esc(yt.error)}</span>` : ""}
         </div>
         ${uploadedLine(up)}
@@ -463,13 +463,13 @@
     try {
       const { body: yt } = await api("/api/darkarchives/youtube/status");
       vids.yt = yt;
-      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "DarkArchives");
+      const who = yt.channel ? `${esc(yt.channel.title)}${yt.handle ? ` (${esc(yt.handle)})` : ""}` : esc(yt.handle || "Dark Outliers");
       bar.innerHTML = `<b>YouTube</b>
         ${yt.connected
           ? `<span class="pill good">Connected: ${who}</span><button type="button" class="btn-secondary" id="daVidYtLogout">Disconnect</button>
              <span class="hint">Planned videos go out by themselves; <b>Upload now</b> on a card sends it right away</span>`
           : `<span class="pill">Not connected</span><button type="button" class="btn-primary" id="daVidYtConnect" ${yt.client_secret ? "" : "disabled"}>Connect YouTube</button>
-             <span class="hint">Google opens in a new window: pick the <b>Dark Archives</b> channel there. Until then nothing can be uploaded, planned slots included</span>`}
+             <span class="hint">Google opens in a new window: pick the <b>Dark Outliers</b> channel there. Until then nothing can be uploaded, planned slots included</span>`}
         ${!yt.folder ? '<span class="da-note">channels/darkarchives/channel.env is missing on the dashboard machine</span>' : ""}
         ${!yt.client_secret ? '<span class="da-note">client_secret.json is missing (Upload tab → Connect YouTube explains)</span>' : ""}
         ${yt.error ? `<span class="da-note">${esc(yt.error)}</span>` : ""}`;
@@ -628,7 +628,7 @@
     plan.nav.textContent = pending.length;
     plan.nav.hidden = !pending.length;
     plan.hint.textContent = d.auto_post
-      ? `The Discord bot uploads each slot's video to the DarkArchives channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
+      ? `The Discord bot uploads each slot's video to the Dark Outliers channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
       : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`;
     const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube));
     const byKey = {};

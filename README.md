@@ -812,7 +812,7 @@ already has the permission, so no App Review is needed. To switch:
 
 The token stays the same; the next read sees the comments.
 
-## DarkArchives (story bank, scripts and videos)
+## Dark Outliers (story bank, scripts and videos)
 
 The second channel tells real dark stories: obscure history, eerie true events, unsolved mysteries.
 Open it with the **DA** workspace button (or `?workspace=darkarchives`). The bank and the videos live
@@ -832,7 +832,7 @@ USED.
 **Its YouTube channel** (`@DarkArchives-j1l`, a second channel on the same Google account) has its own
 folder, `channels/darkarchives/`, with `channel.env` (`CHANNEL_HANDLE`, `STATS_*`) and its own
 `token_youtube.json`; the OAuth client (`client_secret.json` in the project folder) is shared. Under a
-finished video the tab has **Connect YouTube** (Google asks which channel: pick Dark Archives) and
+finished video the tab has **Connect YouTube** (Google asks which channel: pick Dark Outliers) and
 **Upload to YouTube** with the privacy (private until the API audit, like the gameplay channel); the
 title, description (handle, source link, photo credits, hashtags) and tags come from `story_<id>.json`,
 where the upload (video id, url, Studio link) is recorded too. Category: Entertainment. The handle
@@ -850,7 +850,7 @@ plan entries; the story goes back to script-ready and can be made again; a copy 
 there). The YouTube bar above the cards is where the channel is connected (Connect YouTube) or disconnected. *Plan* is the
 next two weeks: every day has the slots of `DA_SLOTS` (default `14:30,23:00`, in `TIMEZONE`), each
 holding one video; the plan lives in `output/darkarchives/plan.json`, apart from the gameplay channel's.
-With `DA_AUTO_POST=1` the Discord bot uploads the slot's video to the DarkArchives channel at its time as
+With `DA_AUTO_POST=1` the Discord bot uploads the slot's video to the Dark Outliers channel at its time as
 `DA_UPLOAD_PRIVACY` (default public) and reports the link, or the failure, in its Discord channel; a slot
 missed by more than two hours (bot off) is skipped. A video already on YouTube counts as posted.
 
@@ -860,7 +860,7 @@ slot of tomorrow and of today still 3 h away: takes the best NEW story of the pi
 has Gemini write its script (a rejected story is marked and the next one tried), makes the video, checks
 it (between `DA_MIN_SECONDS` and `DA_MAX_SECONDS` long, real pictures rather than placeholder cards, enough
 words; a video that fails is deleted and the next story tried, four stories per slot at most) and puts it
-on the plan. Each video is posted in the DarkArchives Discord channel with **Don't post this** (off the
+on the plan. Each video is posted in the Dark Outliers Discord channel with **Don't post this** (off the
 plan; the video stays in the tab; **Make another now** refills the slot), **Upload to YouTube now** and
 **Delete the video** buttons, and goes out at its time; a video made from the tab gets **Plan the next
 free slot** instead of the veto. The Plan section shows the automation line with **Run it now**; the command

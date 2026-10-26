@@ -1,4 +1,4 @@
-"""DarkArchives production run: the channel fills its own plan, like the gameplay channel's morning run.
+"""Dark Outliers production run: the channel fills its own plan, like the gameplay channel's morning run.
 
     python -m modules.da_produce              # fetch stories, then a video for every empty slot (see below)
     python -m modules.da_produce --no-fetch --slots 1
@@ -13,7 +13,7 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
        placeholder cards), enough words; a video that fails is deleted and the next story is tried,
        MAX_STORY_TRIES stories per slot in all;
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
-  The bot shows each video in the DarkArchives Discord channel with a "Don't post this" button.
+  The bot shows each video in the Dark Outliers Discord channel with a "Don't post this" button.
 """
 
 from __future__ import annotations
@@ -146,7 +146,7 @@ def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, 
 
                 da_channel.announce_video(story_id, info, settings, out_dir, note=(
                     f"Planned for {day.isoformat()} {slot}: it goes out by itself as {da_plan.upload_privacy()}. "
-                    "Don't want it? Press the button or take it off the plan in the DarkArchives tab."),
+                    "Don't want it? Press the button or take it off the plan in the Dark Outliers tab."),
                     components=da_channel.video_buttons(story_id, item_id=item.id))
             return {"status": "planned", "day": day.isoformat(), "slot": slot, "story_id": story_id,
                     "item": item.model_dump(mode="json"), "info": info, "tried": tried}

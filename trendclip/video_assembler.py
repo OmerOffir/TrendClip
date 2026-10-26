@@ -344,7 +344,7 @@ def create_karaoke_ass_file(
     title_pulse: bool = False,
     flash_scale: float = 2.4,  # the Flash style's size as a multiple of the captions (1.0: a line of on-screen text)
     title_pop: bool = True,  # False: the title card is at full size on frame 0
-    title_lines: int = 3,  # a long title (DarkArchives: up to 60 characters) needs 4
+    title_lines: int = 3,  # a long title (Dark Outliers: up to 60 characters) needs 4
     cover_text: str = "",  # a headline over the middle of frame 0 (the thumbnail), gone after cover_seconds
     cover_seconds: float = 1.0,
     cover_size: int = 140,

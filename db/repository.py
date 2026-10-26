@@ -1,4 +1,4 @@
-"""DarkArchives content bank: raw stories from Reddit, Wikipedia, Gemini and RSS feeds in a local SQLite file.
+"""Dark Outliers content bank: raw stories from Reddit, Wikipedia, Gemini and RSS feeds in a local SQLite file.
 
 `source_id` is UNIQUE (reddit_<post id>, wikipedia_<page id>, gemini_<slug>, rss_<feed>_<slug>), so a
 story that was fetched before is never saved twice and never told in two different videos.

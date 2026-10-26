@@ -493,7 +493,7 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
 
 def upload_file(path: Path, req: YouTubeUploadRequest, as_short: bool = True,
                 progress: ProgressFn = lambda f, m: None, youtube=None) -> dict[str, Any]:
-    """Upload any MP4 (a Short here, or a DarkArchives video) and return the record: video id, url,
+    """Upload any MP4 (a Short here, or a Dark Outliers video) and return the record: video id, url,
     privacy, schedule. `youtube`: a client for another channel's token (default: the active channel)."""
     from googleapiclient.errors import HttpError, ResumableUploadError
     from googleapiclient.http import MediaFileUpload

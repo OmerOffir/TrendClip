@@ -1,8 +1,8 @@
-"""DarkArchives plan: which video goes out on which day and time, and the bot's post at that time.
+"""Dark Outliers plan: which video goes out on which day and time, and the bot's post at that time.
 
 The plan lives in output/darkarchives/plan.json, apart from the gameplay channel's planner. Every day
 has the slots of DA_SLOTS (default 14:30 and 23:00, in Settings.timezone); a slot holds one video. With
-DA_AUTO_POST the Discord bot uploads the slot's video to the DarkArchives YouTube channel at its time
+DA_AUTO_POST the Discord bot uploads the slot's video to the Dark Outliers YouTube channel at its time
 (DA_UPLOAD_PRIVACY, default public) and reports in the channel's Discord channel. A video already on
 YouTube counts as posted.
 """

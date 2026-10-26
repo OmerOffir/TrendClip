@@ -50,7 +50,7 @@ def _load():
 
 
 def unload() -> None:
-    """Drop the model from the GPU (the DarkArchives pictures need the memory); it loads again on the next voice."""
+    """Drop the model from the GPU (the Dark Outliers pictures need the memory); it loads again on the next voice."""
     global _model
     if _model is not None:
         _model = None

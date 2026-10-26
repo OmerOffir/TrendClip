@@ -89,9 +89,9 @@ def test_reddit_upvotes_keywords_exclusions_and_wikipedia_links():
 def test_screen_and_fit():
     assert fetcher.screen("A", "x" * 199) == "too short (199 chars)"
     assert fetcher.screen("A", "x" * 3501).startswith("too long")
-    assert fetcher.screen("A", "a quiet town " * 20, keywords=True) == "no DarkArchives keyword"
+    assert fetcher.screen("A", "a quiet town " * 20, keywords=True) == "no Dark Outliers keyword"
     assert fetcher.screen("A strange town", "a quiet town " * 20, keywords=True) == ""
-    assert fetcher.screen("A flag", "a quiet town " * 20 + "a mystery", keywords=True) == "no DarkArchives keyword"
+    assert fetcher.screen("A flag", "a quiet town " * 20 + "a mystery", keywords=True) == "no Dark Outliers keyword"
     assert fetcher.screen("A flag", "a quiet town " * 20 + "a bizarre mystery", keywords=True) == ""
     assert fetcher.screen("List of hoaxes", "a quiet town " * 20) == "a list, not a story"
     text = "\n\n".join(["p" * 1000] * 5)

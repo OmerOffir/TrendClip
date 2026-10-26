@@ -1,4 +1,4 @@
-"""Pictures for a DarkArchives Short: one 9:16 picture per beat (the hook and every scene).
+"""Pictures for a Dark Outliers Short: one 9:16 picture per beat (the hook and every scene).
 
 Where they come from (DA_IMAGE_BACKEND in .env):
   auto         (default) `local` when an NVIDIA GPU and diffusers are there, else `gemini` when the key can
@@ -268,7 +268,7 @@ def make_pictures(prompts: list[str], out_dir: Path, backend: str | None = None,
 
 def grade(img, saturation: float = 0.78, contrast: float = 1.06, brightness: float = 0.96, cold: float = 0.05,
           vignette: float = 0.55):
-    """The DarkArchives look on a still: less colour, a little more contrast, a cold tint and a vignette.
+    """The Dark Outliers look on a still: less colour, a little more contrast, a cold tint and a vignette.
     Done once per picture here (Pillow) instead of on every frame in ffmpeg, which is far slower."""
     from PIL import Image, ImageEnhance
 

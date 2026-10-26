@@ -1,9 +1,9 @@
-"""DarkArchives script generator: turns the top NEW raw story into a 35-50 s Shorts script (strict JSON).
+"""Dark Outliers script generator: turns the top NEW raw story into a 35-50 s Shorts script (strict JSON).
 
     python -m modules.script_gen            # the top-rated NEW story
     python -m modules.script_gen --id 12    # a specific story (any status but USED)
 
-Structure (the DarkArchives guidelines): a suspense / paradox hook (0-3 s), tension escalating through
+Structure (the Dark Outliers guidelines): a suspense / paradox hook (0-3 s), tension escalating through
 scenes 1-5, and a conclusion (40-50 s) that is an open question, an eerie twist or a provoking thought
 for the comments. Documentary tone. The spoken script is hook_text followed by every scene's narration;
 110-140 words in total and no sentence over MAX_SENTENCE_WORDS, both checked here (not trusted from
@@ -74,7 +74,7 @@ class ScriptGenError(RuntimeError):
     pass
 
 
-PROMPT = """You write scripts for Dark Archives, a YouTube Shorts channel (9:16) about obscure history,
+PROMPT = """You write scripts for Dark Outliers, a YouTube Shorts channel (9:16) about obscure history,
 eerie true events, unsolved mysteries and disturbing historical anomalies, narrated over moody visuals.
 
 TONE: documentary-style, atmospheric, suspenseful, authoritative and eerie. A calm narrator who knows

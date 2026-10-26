@@ -1,4 +1,4 @@
-"""DarkArchives story fetcher: pulls raw dark / mystery stories from Reddit, Wikipedia, Gemini and RSS
+"""Dark Outliers story fetcher: pulls raw dark / mystery stories from Reddit, Wikipedia, Gemini and RSS
 feeds (Atlas Obscura, Listverse) into the content bank (db/content_bank.db). Already-fetched stories are
 skipped by source_id.
 
@@ -7,7 +7,7 @@ skipped by source_id.
     python -m modules.fetcher --reddit 25 --wikipedia 10 --gemini 5 --rss 10
     python -m modules.fetcher --recheck             # apply the current filters to the NEW stories in the bank
 
-Curation (the DarkArchives content guidelines):
+Curation (the Dark Outliers content guidelines):
   pillars     mystery 40% (r/UnresolvedMysteries, r/ColdCases), history 40% (r/CreepyWikipedia,
               r/DarkHistory, r/todayilearned), outrage 20% (r/TrueCrime, Atlas Obscura, Listverse);
               see repository.PILLARS
@@ -143,7 +143,7 @@ def screen(title: str, text: str, keywords: bool = False) -> str:
     if title.startswith(("List of", "Lists of")):
         return "a list, not a story"
     if keywords and not on_topic(title, text):
-        return "no DarkArchives keyword"
+        return "no Dark Outliers keyword"
     return ""
 
 
@@ -453,7 +453,7 @@ def fetch_rss(limit: int = 10, feeds: dict[str, str] | None = None, session: req
 
 # --------------------------------------------------------------------------- Gemini
 
-GEMINI_PROMPT = """You research stories for Dark Archives, a documentary-style YouTube channel about obscure
+GEMINI_PROMPT = """You research stories for Dark Outliers, a documentary-style YouTube channel about obscure
 history, eerie true events, unsolved mysteries and disturbing historical anomalies. Give {count}
 different REAL, well-documented cases:
 {mix}

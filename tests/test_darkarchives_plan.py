@@ -1,4 +1,4 @@
-"""DarkArchives plan: slots, items, the bot's due posts and the tab's endpoints."""
+"""Dark Outliers plan: slots, items, the bot's due posts and the tab's endpoints."""
 
 from __future__ import annotations
 

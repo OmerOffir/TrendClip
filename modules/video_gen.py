@@ -1,4 +1,4 @@
-"""DarkArchives video: a scripted story (assets/generated_scripts/story_<id>.json) becomes a finished Short.
+"""Dark Outliers video: a scripted story (assets/generated_scripts/story_<id>.json) becomes a finished Short.
 
     python -m modules.video_gen --id 12                 # output/darkarchives/story_12.mp4 (+ .json, pictures/)
     python -m modules.video_gen --id 12 --images placeholder --no-photos
@@ -48,7 +48,7 @@ ZOOM = 0.12  # push in / pull out by 12% over a beat
 OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window moves over it (less jitter)
 MIN_BEAT = 1.0
 DEFAULT_RATE = "+6%"  # F5 (the Linux voice) is slow at its "normal"; 130 words should take about 50 s
-HASHTAGS = ["darkarchives", "mystery", "unsolved", "truestory", "history", "shorts"]
+HASHTAGS = ["darkoutliers", "mystery", "unsolved", "truestory", "history", "shorts"]
 DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD); with a handle: "@handle · Follow for more"
 CHANNEL_DIR = PROJECT_ROOT / "channels" / "darkarchives"
 DEFAULT_CTA_LINE = "Follow for more dark stories."  # spoken after the last scene (DA_CTA_LINE)
