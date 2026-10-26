@@ -13,12 +13,10 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from dotenv import dotenv_values
-
-from modules import video_gen
+from modules import channel_common, video_gen
 from modules.scene_images import setting
-from trendclip import assistant, hub, publish
-from trendclip.config import CHANNELS_DIR, CHANNEL_ENV
+from trendclip import assistant, publish
+from trendclip.config import CHANNELS_DIR
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +28,7 @@ CATEGORY = "24"  # Entertainment (the gameplay channel uploads as Gaming)
 
 def channel_env() -> dict[str, str]:
     """channels/darkarchives/channel.env (handle, stats links…); {} until the folder exists."""
-    path = DIR / CHANNEL_ENV
-    if not path.is_file():
-        return {}
-    return {k: (v or "").strip() for k, v in dotenv_values(path).items() if k}
+    return channel_common.channel_env(DIR)
 
 
 def handle() -> str:
@@ -42,39 +37,15 @@ def handle() -> str:
 
 
 def discord_channel_id() -> int | None:
-    value = channel_env().get("DISCORD_CHANNEL_ID", "")
-    return int(value) if value.isdigit() else None
+    return channel_common.discord_channel_id(DIR)
 
 
 def _rest(settings=None):
     """Discord's REST API as the bot, aimed at the Dark Outliers channel; None when either is not set."""
-    from trendclip.config import get_settings
-
-    settings = settings or get_settings()
-    channel = discord_channel_id()
-    if not channel or not settings.discord_bot_token:
-        return None
-    rest = hub.Rest(settings)
-    rest.channel = channel
-    return rest
+    return channel_common.rest(DIR, settings)
 
 
-STYLES = {"primary": 1, "secondary": 2, "success": 3, "danger": 4}
-
-
-def button(action: str, arg: str | int, label: str, style: str = "secondary") -> dict[str, Any]:
-    """A Discord button the bot answers (its custom id is `tc:<action>:<arg>`, like the bot's own)."""
-    return {"type": 2, "style": STYLES.get(style, 2), "label": label[:80], "custom_id": f"tc:{action}:{arg}"[:100]}
-
-
-def link_button(label: str, url: str) -> dict[str, Any]:
-    return {"type": 2, "style": 5, "label": label[:80], "url": url}
-
-
-def rows(*buttons: dict[str, Any] | None) -> list[dict[str, Any]]:
-    """Message components: up to 5 buttons a row."""
-    items = [b for b in buttons if b]
-    return [{"type": 1, "components": items[i:i + 5]} for i in range(0, len(items), 5)]
+button, link_button, rows = channel_common.button, channel_common.link_button, channel_common.rows
 
 
 def video_buttons(story_id: int, item_id: str | None = None, uploaded: dict | None = None) -> list[dict[str, Any]]:
@@ -132,19 +103,19 @@ def announce_upload(story_id: int, info: dict, record: dict, settings=None) -> s
 
 
 def youtube_status() -> dict[str, Any]:
-    return {**publish.youtube_status(TOKEN), "handle": handle(), "folder": DIR.is_dir()}
+    return channel_common.youtube_status(DIR)
 
 
 def start_login(redirect_uri: str) -> str:
-    return publish.start_login(redirect_uri, TOKEN)
+    return channel_common.start_login(DIR, redirect_uri)
 
 
 def logout() -> None:
-    publish.logout(TOKEN)
+    channel_common.logout(DIR)
 
 
 def connected() -> bool:
-    return TOKEN.is_file()
+    return channel_common.connected(DIR)
 
 
 def follow_line() -> str:

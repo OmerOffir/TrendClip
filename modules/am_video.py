@@ -77,11 +77,10 @@ class AmBeat(Beat):
 
 
 def channel_handle() -> str:
-    from dotenv import dotenv_values
+    """The channel's @handle from channels/aftermarket/channel.env ("" until it is set)."""
+    from modules import channel_common
 
-    path = am_data.PROJECT_ROOT / "channels" / "aftermarket" / "channel.env"
-    value = ((dotenv_values(path).get("CHANNEL_HANDLE") or "") if path.is_file() else "").strip()
-    return value if value.startswith("@") and len(value) > 1 else ""
+    return channel_common.handle("aftermarket")
 
 
 def beats_of(script: am_script.Script, cta_line: str = "") -> list[Beat]:

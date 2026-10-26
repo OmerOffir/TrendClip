@@ -355,7 +355,10 @@ Your script:
 
 def build_prompt(facts: dict[str, Any]) -> str:
     slot = facts.get("slot", "close")
-    return PROMPT.format(slot=slot, slot_brief=SLOT_BRIEF.get(slot, SLOT_BRIEF["close"]), min_words=MIN_WORDS, slate=slate(facts),
+    brief = SLOT_BRIEF.get(slot, SLOT_BRIEF["close"])
+    if facts.get("focus"):  # the weekend videos: Saturday looks back, Sunday looks ahead
+        brief += f" This video is {facts['focus']}: make that its spine."
+    return PROMPT.format(slot=slot, slot_brief=brief, min_words=MIN_WORDS, slate=slate(facts),
                          max_hook=MAX_HOOK_WORDS, max_scene_numbers=MAX_SCENE_NUMBERS,
                          max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS, min_scenes=MIN_SCENES,
                          max_scenes=MAX_SCENES, facts=json.dumps(compact_facts(facts), ensure_ascii=False))
@@ -517,6 +520,8 @@ def template_script(facts: dict[str, Any]) -> Script:
                              visual="broll", overlay_text="WATCH THE OPEN" if slot == "premarket" else "SEE YOU AT THE OPEN",
                              image_prompt="a trading floor at dusk, rows of glowing monitors with charts, cinematic, photoreal, no text"))
     title = f"{lead['symbol']} {_pct_words(lead.get('change_pct')).replace(' percent', '%')} {label}".strip() if lead else f"Markets {label}"
+    if facts.get("focus"):
+        title = f"{title}: {facts['focus']}"
     draft = ScriptDraft(title=title[:60].title(), hook_text=hook, thumbnail_text=thumb.upper(), scenes=scenes[:MAX_SCENES])
     return finalize(draft, facts, writer="template")
 

@@ -26,6 +26,10 @@
           <span class="ws-mark ws-mark-dark" aria-hidden="true">DA</span>
           <span><b>Dark Outliers</b><small>Real dark stories &amp; mysteries</small></span>
         </button>
+        <button type="button" role="tab" class="workspace" data-workspace="aftermarket" aria-selected="false">
+          <span class="ws-mark ws-mark-am" aria-hidden="true">AM</span>
+          <span><b>After Market</b><small>The trader's brief, twice a day</small></span>
+        </button>
         <button type="button" class="workspace ws-new" disabled title="More channels for other kinds of videos are coming">+ New channel</button>
       </nav>
       <div class="status" id="status" aria-live="polite"></div>
@@ -48,7 +52,58 @@
         <button type="button" role="tab" data-da-view="plan">Plan <span class="nav-count todo" id="daNavPlan" hidden title="Planned videos not yet on YouTube"></span></button>
       </nav>
     </div>
+    <div class="subbar" data-workspace-panel="aftermarket" hidden>
+      <span class="subbar-label">After Market</span>
+      <span class="hint" id="amSubHint">Before the New York open and at the close: the facts, the script, the Short, YouTube, by itself</span>
+    </div>
   </header>
+
+  <main class="container da-view" id="viewAfterMarket" data-workspace-panel="aftermarket" hidden>
+    <div id="amError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Today</h2>
+          <span class="hint" id="amAutoHint">Loading…</span>
+        </div>
+        <button type="button" class="btn-secondary" id="amRefresh">Refresh</button>
+      </div>
+      <div class="da-ytbar" id="amYouTube"></div>
+      <div class="am-jobs" id="amJobs"></div>
+      <div class="am-run">
+        <label>Run now
+          <select id="amRunKind" aria-label="Which brief">
+            <option value="auto">the brief that fits the clock</option>
+            <option value="premarket">pre-market</option>
+            <option value="close">close</option>
+            <option value="weekend">weekend</option>
+          </select>
+        </label>
+        <label class="da-check"><input type="checkbox" id="amRunUpload" checked /> upload when done</label>
+        <label class="da-check"><input type="checkbox" id="amRunTemplate" /> template script (no Gemini)</label>
+        <button type="button" class="btn-primary" id="amRun">🎬 Make the video now</button>
+        <span class="hint" id="amRunStatus"></span>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Last session read <span class="hint" id="amFactsWhen"></span></h2>
+          <span class="hint">The facts behind the latest video: the indices, the movers with their catalyst, crypto, what is due</span>
+        </div>
+      </div>
+      <div class="am-facts" id="amFacts"><div class="empty">No session read yet.</div></div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Videos <span class="hint" id="amVideosCount"></span></h2>
+          <span class="hint">Every After Market Short, newest first, with what went to YouTube</span>
+        </div>
+      </div>
+      <div class="da-videos" id="amVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
 
   <main class="container da-view" id="viewDarkStories" data-workspace-panel="darkarchives" data-da-panel="stories" hidden>
     <div id="daError" class="banner banner-error" hidden></div>
@@ -918,5 +973,6 @@
   <script src="/static/insights.js"></script>
   <script src="/static/find.js"></script>
   <script src="/static/darkarchives.js"></script>
+  <script src="/static/aftermarket.js"></script>
 </body>
 </html>
