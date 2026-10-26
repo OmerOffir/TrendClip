@@ -380,19 +380,6 @@
     updateButtons();
   }
 
-  const IDEAS = {
-    funny: "Funny story: a relatable, awkward everyday mishap told in first person, getting more embarrassing "
-      + "at every step, with a punchline twist at the end.",
-    mystery: "Mystery story: something strange and unexplained happens; build suspense with small clues "
-      + "and end on a surprising or creepy reveal.",
-    drama: "Drama story: a family, friendship or relationship conflict like a Reddit AITA post, with "
-      + "escalating tension and a satisfying twist at the end.",
-    adventure: "Adventure story: a wild trip or quest full of danger and close calls, ending in triumph "
-      + "or total chaos.",
-    science: "Not a story: 3-4 surprising but true science facts, explained simply and fast, each one more "
-      + "mind-blowing than the last. Open with the craziest one as the hook.",
-  };
-
   const QUIZ = ["math", "riddle", "trivia", "paradox", "movie"];
   // The movie quiz picks its shape from the notes ("emoji" = guess the movie from 3 emojis).
   const EMOJI_NOTES = "Guess the movie from 3 emojis";
@@ -400,28 +387,16 @@
 
   function renderIdeas() {
     const notes = els.notes.value.trim();
-    for (const b of els.ideas.querySelectorAll("[data-idea]")) {
-      b.classList.toggle("active", !isQuiz() && notes === IDEAS[b.dataset.idea]);
-    }
     for (const b of els.ideas.querySelectorAll("[data-quiz]")) {
       const emoji = notes === EMOJI_NOTES;
       b.classList.toggle("active", els.mode.value === b.dataset.quiz && (b.dataset.shape === "emoji") === emoji);
     }
   }
 
-  function pickIdea(key) {
-    if (!IDEAS[key]) return;
-    els.notes.value = IDEAS[key];
-    els.mode.value = "story"; // these aren't about the footage
-    renderIdeas();
-    saveDraft();
-    updateButtons();
-  }
-
   function pickQuiz(kind, shape) {
     if (!QUIZ.includes(kind)) return;
     const notes = els.notes.value.trim();
-    if (Object.values(IDEAS).includes(notes) || notes === EMOJI_NOTES) els.notes.value = "";
+    if (notes === EMOJI_NOTES) els.notes.value = "";
     if (shape === "emoji" && !els.notes.value.trim()) els.notes.value = EMOJI_NOTES;
     els.mode.value = kind;
     if (state.format === "multi") setFormat("short");
@@ -1345,8 +1320,6 @@
       if (e.target.closest("[data-cancel-edit]")) stopEdit(true);
     });
     els.ideas.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-idea]");
-      if (b) pickIdea(b.dataset.idea);
       const q = e.target.closest("[data-quiz]");
       if (q) pickQuiz(q.dataset.quiz, q.dataset.shape);
     });
