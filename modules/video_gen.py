@@ -4,8 +4,9 @@
     python -m modules.video_gen --id 12 --images placeholder --no-photos
 
 The beats are the hook and every scene. Flow:
-  1. voice      hook + narrations spoken by trendclip.voiceover (Edge; F5-TTS on the GPU when Microsoft
-                refuses), which gives the word timings;
+  1. voice      hook + narrations spoken by Kokoro (trendclip.kokoro_voice: a narration voice on the GPU that
+                stops where the sentences stop and times every word; DA_TTS_ENGINE=edge for the gameplay
+                channel's Edge / F5 voice instead), which gives the word timings;
   2. timing     each beat starts when its first word is spoken (split_beats);
   3. pictures   one 9:16 picture per beat from scene_images (the GPU, Gemini or placeholders). A Wikipedia
                 story gets the article's real photos for scene 1 and the middle scene, with credits;
@@ -47,7 +48,8 @@ DISSOLVE = 0.6  # seconds of cross-fade between beats
 ZOOM = 0.12  # push in / pull out by 12% over a beat
 OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window moves over it (less jitter)
 MIN_BEAT = 1.0
-DEFAULT_RATE = "+10%"  # F5 (the Linux voice) is slow at its "normal"; 105 words should take about 46 s
+DEFAULT_ENGINE = "kokoro"  # DA_TTS_ENGINE: kokoro (narration voice with word timestamps) or edge (the gameplay channel's)
+DEFAULT_RATE = "+10%"  # the edge engine: F5 (the Linux voice) is slow at its "normal"; 105 words should take about 46 s
 TAIL = 1.2  # seconds after the last word (the assembler's default 2 s drags for a Short)
 HASHTAGS = ["darkoutliers", "mystery", "unsolved", "truestory", "history", "shorts"]
 DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD); with a handle: "@handle · Follow for more"
@@ -350,19 +352,27 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     work.mkdir(parents=True, exist_ok=True)
     started = time.time()
 
-    voice = setting("DA_TTS_VOICE", settings.tts_voice)
-    rate = setting("DA_TTS_RATE", DEFAULT_RATE)
     cta_line = setting("DA_CTA_LINE", DEFAULT_CTA_LINE)
     cta_line = "" if off(cta_line) else cta_line.strip()
-    progress(0.02, f"Recording the narration ({voice})")
+    engine = setting("DA_TTS_ENGINE", DEFAULT_ENGINE).strip().lower()
     text = f"{spoken_text(script)} {cta_line}".strip()
-    words = voiceover.synthesize(text, work / "voice.mp3", voice, rate, local_rate=rate)
+    if engine == "kokoro":
+        from trendclip import kokoro_voice
+
+        voice = setting("DA_TTS_VOICE", kokoro_voice.DEFAULT_VOICE)
+        rate = setting("DA_TTS_SPEED", str(kokoro_voice.DEFAULT_SPEED))
+        progress(0.02, f"Recording the narration (Kokoro {voice})")
+        words = kokoro_voice.synthesize(text, work / "voice.mp3", voice, float(rate))
+        kokoro_voice.unload()
+    else:  # the gameplay channel's voice: Edge, or F5-TTS on the GPU when Microsoft refuses
+        voice = setting("DA_TTS_VOICE", settings.tts_voice)
+        rate = setting("DA_TTS_RATE", DEFAULT_RATE)
+        progress(0.02, f"Recording the narration ({voice})")
+        words = voiceover.synthesize(text, work / "voice.mp3", voice, rate, local_rate=rate)
+        from trendclip import local_voice
+
+        local_voice.unload()  # the GPU voice and the GPU pictures do not fit on an 8 GB card together
     beats = split_beats(beats_of(script, cta_line), words, TAIL)
-
-    # The GPU voice and the GPU pictures do not fit on an 8 GB card together.
-    from trendclip import local_voice
-
-    local_voice.unload()
 
     want_photos = photos if photos is not None else setting("DA_ARCHIVE_PHOTOS", "1") not in ("0", "false", "off")
     photo_list: list[Picture] = []
@@ -413,7 +423,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         "story_id": story_id, "title": script.title, "filename": output.name,
         "description": description_for(script, story, credits, track.credit if track else ""),
         "hashtags": HASHTAGS, "duration_seconds": round(media_duration(output), 2),
-        "voice": voice, "rate": rate, "pictures": backend_used,
+        "voice": voice, "rate": rate, "engine": engine, "pictures": backend_used,
         "photos": [p.credit for p in pictures if p.source == "wikipedia"],
         "music": {"title": track.title, "credit": track.credit} if track else None,
         "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used, "cover_text": cover,

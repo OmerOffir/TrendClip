@@ -1,5 +1,6 @@
 # The Linux GPU: the local voice when Microsoft refuses Edge (HTTP 403), and the DarkArchives
-# scene pictures (Stable Diffusion XL through diffusers; the weights download on the first video).
+# scene pictures (Stable Diffusion XL through diffusers; the weights download on the first video), and the
+# Dark Outliers narration (Kokoro-82M; it downloads its weights and a small spaCy model on first use).
 # Install into the project venv after the normal ./run.sh setup:
 #
 #   .venv/bin/pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu124
@@ -11,3 +12,5 @@ f5-tts>=1.1
 diffusers>=0.32
 accelerate>=1.0
 safetensors>=0.4
+kokoro>=0.9.4
+soundfile>=0.12

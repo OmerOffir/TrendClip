@@ -896,8 +896,11 @@ the bank, the mix, the next empty slot, the automation), `/da make` (a video for
 and the lessons; `refresh:True` reads YouTube now).
 
 **How a video is made** (`modules/video_gen.py`): the beats are the hook and every scene.
-1. **Narration**: hook + narrations through the usual voice (`trendclip.voiceover`: Edge, or F5-TTS on the
-   GPU when Microsoft refuses), `DA_TTS_VOICE` / `DA_TTS_RATE` (default: `TTS_VOICE`, +10%). The word
+1. **Narration**: hook + narrations through Kokoro (`trendclip/kokoro_voice.py`, `hexgrad/Kokoro-82M`): an
+   open-source narration voice on the GPU that reads each sentence as its own chunk, stops where the
+   sentences stop and gives a timestamp for every word, so the captions follow the voice exactly.
+   `DA_TTS_VOICE` (default `bm_george`; `am_michael`, `am_onyx`, `bm_lewis`…) and `DA_TTS_SPEED` (0.95).
+   `DA_TTS_ENGINE=edge` uses the gameplay channel's Edge / F5 voice instead (`DA_TTS_RATE`). The word
    timings give every beat its start.
 2. **Pictures** (`modules/scene_images.py`): one 9:16 picture per beat from the scene's `image_prompt`.
    `DA_IMAGE_BACKEND`: `auto` (default) = `local` when an NVIDIA GPU and diffusers are there, else `gemini`

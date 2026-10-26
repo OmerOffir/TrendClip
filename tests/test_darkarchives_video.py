@@ -159,6 +159,7 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     scripts.mkdir()
     (scripts / "story_1.json").write_text(_script().model_dump_json())
     monkeypatch.setattr(voiceover, "synthesize", _silent_voice)
+    monkeypatch.setenv("DA_TTS_ENGINE", "edge")  # the test's fake voice sits on the Edge path
     monkeypatch.setattr(scene_images, "wikipedia_photos", lambda url, out_dir, **k: [])  # no network in tests
     monkeypatch.setenv("DA_MUSIC", "none")
     monkeypatch.setenv("DA_IMAGE_BACKEND", "placeholder")
@@ -388,3 +389,30 @@ def test_first_comment_after_a_public_upload(tmp_path, monkeypatch):
     bodies.clear()
     (out / "story_3.json").write_text(json.dumps({"story_id": 3, "title": "The Ship", "description": "Hook.", "hashtags": ["shorts"]}))
     assert "comment" not in da_channel.upload(3, "private", youtube=youtube, out_dir=out) and bodies == []
+
+
+def test_kokoro_words_and_sentences(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from trendclip import kokoro_voice as kv
+
+    assert kv.sentences("One fact. Another one! A third… and more? Last") == ["One fact.", "Another one!", "A third…", "and more?", "Last"]
+    T = lambda text, s=None, e=None: SimpleNamespace(text=text, start_ts=s, end_ts=e)  # noqa: E731
+    words = kv.words_from_tokens([T("In"), T("1956", 0.1, 0.6), T(","), T("doctors", 0.7, 1.1), T("infected", None, None), T("children", 1.6, 2.1), T(".")], offset=10.0)
+    assert [(w.text, w.start, w.end) for w in words] == [("In", 10.0, 10.25), ("1956,", 10.1, 10.6), ("doctors", 10.7, 11.1),
+                                                          ("infected", 11.1, 11.35), ("children.", 11.6, 12.1)]
+
+    class FakePipe:
+        def __call__(self, line, voice, speed):
+            n = len(line.split())
+            toks = [T(w, i * 0.4, i * 0.4 + 0.3) for i, w in enumerate(line.rstrip(".?!").split())] + [T(line[-1])]
+            yield SimpleNamespace(audio=[0.0] * int(24000 * 0.4 * n), tokens=toks, graphemes=line)
+
+    monkeypatch.setattr(kv, "_pipeline", FakePipe())
+    monkeypatch.setattr("trendclip.local_voice._mp3", lambda pcm, sr: b"MP3")
+    words = kv.synthesize("Two words. Three more here.", tmp_path / "v.mp3", "bm_george", 1.0)
+    assert [w.text for w in words] == ["Two", "words.", "Three", "more", "here."]
+    assert words[2].start == round(0.8 + kv.PAUSE, 3)  # the second sentence starts after the first one's audio and the pause
+    assert (tmp_path / "v.mp3").read_bytes() == b"MP3" and json.loads((tmp_path / "v.words.json").read_text())[-1]["word"] == "here."
+    kv.unload()
+    assert kv._pipeline is None
