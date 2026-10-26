@@ -1282,8 +1282,10 @@ def plan_pick(settings: Settings, games: list[str] | None = None, rng: random.Ra
         except Exception as err:  # noqa: BLE001 - a broken analytics file must not stop the video
             logger.warning("Numbers-based pick failed (%s); using the fixed weights", err)
     rng = rng or random.Random()
-    kind = rng.choices(list(PICK_WEIGHTS), weights=list(PICK_WEIGHTS.values()))[0]
+    allowed = {k: w for k, w in PICK_WEIGHTS.items() if k in settings.auto_pick_kinds} or {settings.auto_pick_kinds[0]: 1}
+    kind = rng.choices(list(allowed), weights=list(allowed.values()))[0]
     return analytics.Pick(mode=kind, game=rng.choice(games) if games else None)
+
 
 
 def library_games(settings: Settings) -> list[str]:

@@ -664,7 +664,9 @@ The channel only grows from what the numbers say, so every published video is tr
   the channel's proven games are the main pool (and get up to +50% when they are trending on YouTube
   right now), while the exploration share goes to games never published, weighted by their current
   momentum from the trend pipeline (`AUTO_PICK_TRENDS`, `YT_REGIONS`; `output/latest.json` is reused
-  for 12 hours), so a new game is tried when people are watching it, not at random. The bot says
+  for 12 hours), so a new game is tried when people are watching it, not at random. `AUTO_PICK_KINDS`
+  limits the kinds it may choose (a quiz-only channel: `math,riddle,trivia,paradox,movie`). The bot says
+
 
   what it picked and why ("Math challenge (1.6× the channel median over 9 videos, 93% watched) on
   Minecraft (trying it out)"), and the Insights tab shows the current chances under **What the bot

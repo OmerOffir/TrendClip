@@ -57,6 +57,7 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick_explore": "AUTO_PICK_EXPLORE",
     "auto_pick_days": "AUTO_PICK_DAYS",
     "auto_pick_trends": "AUTO_PICK_TRENDS",
+    "auto_pick_kinds": "AUTO_PICK_KINDS",
     "script_learning": "SCRIPT_LEARNING",
     "auto_produce": "AUTO_PRODUCE",
     "auto_produce_time": "AUTO_PRODUCE_TIME",
@@ -154,6 +155,23 @@ class Settings(BaseModel):
     # The game pick also reads the trend pipeline (YT_REGIONS, a few quota units, at most twice a day):
     # proven games that trend now get a boost, and the exploration share goes to untried games by momentum.
     auto_pick_trends: bool = True
+    # The kinds of video the picker may choose (Pick for me, the production run, the emergency video), e.g.
+    # AUTO_PICK_KINDS=math,riddle,trivia,paradox,movie for a quiz-only channel. Default: every kind.
+    auto_pick_kinds: list[Literal["story", "math", "riddle", "trivia", "paradox", "movie"]] = Field(
+        default_factory=lambda: ["story", "math", "riddle", "trivia", "paradox", "movie"])
+
+    @field_validator("auto_pick_kinds", mode="before")
+    @classmethod
+    def _kind_list(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = [part.strip().lower() for part in value.split(",") if part.strip()]
+        if isinstance(value, list):
+            order = ("story", "math", "riddle", "trivia", "paradox", "movie")
+            value = [k for k in order if k in value]
+            if not value:
+                raise ValueError("AUTO_PICK_KINDS must name at least one of story, math, riddle, trivia, paradox, movie")
+        return value
+
 
     # Every script prompt gets the channel's own lessons (analytics.lessons): the hooks that kept viewers, the
     # styles that lost them, the length that works, the endings that drew comments, the titles used lately.

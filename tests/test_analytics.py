@@ -447,7 +447,8 @@ def test_prompts_end_with_the_brief_unless_learning_is_off(tmp_path, monkeypatch
     s = make_settings(tmp_path)
     seed(s, monkeypatch)
     brief = script_writer.learned(s, "clip")
-    assert brief.startswith("\nWHAT WORKED ON THIS CHANNEL") and "5 videos of every kind" in brief  # clip = story
+    assert brief.startswith("\nWHAT WORKED ON THIS CHANNEL") and "Hooks that kept viewers" in brief  # clip = story
+
     assert script_writer.learned(s.with_overrides(script_learning=False), "math") == ""
     assert script_writer.build_prompt("GTA V", 22, [], "", False, "story", "short", brief).endswith(brief)
     assert "WHAT WORKED" not in script_writer.build_prompt("GTA V", 22, [], "", False, "story")
@@ -559,3 +560,25 @@ def test_trending_games_reuse_a_fresh_latest_json_and_survive_failures(tmp_path,
     monkeypatch.setattr(pipeline, "run_pipeline", lambda settings: calls.append(1) or (_ for _ in ()).throw(RuntimeError("quota")))
     assert analytics.trending_games(s) == {"Minecraft": 12.5, "GTA V / Online": 3.0} and calls == []
     assert analytics.trending_games(s, max_age_hours=0) == {} and calls == [1]  # stale: a run is tried; failure = no trends
+
+
+def test_the_picker_only_chooses_the_allowed_kinds(tmp_path, monkeypatch):
+    from trendclip import discord_bot
+
+    s = make_settings(tmp_path)
+    seed(s, monkeypatch)
+    report = analytics.build_report(s, days=90, at=NOW)
+    quiz_only = s.with_overrides(auto_pick_kinds="math, riddle,trivia,paradox,movie", auto_pick_explore=1.0)
+    assert quiz_only.auto_pick_kinds == ["math", "riddle", "trivia", "paradox", "movie"]
+    picks = [analytics.plan_video(quiz_only, games=["Minecraft"], rng=random.Random(i), report=report) for i in range(100)]
+    assert {p.mode for p in picks} == {"math", "riddle", "trivia", "paradox", "movie"}  # explored, never a story
+    assert [w.key for w in picks[0].weights["mode"]] == ["math", "riddle", "trivia", "paradox", "movie"]
+    assert all(p.target_seconds is None for p in picks)
+    with pytest.raises(ValueError):
+        s.with_overrides(auto_pick_kinds="poetry")
+    # The fixed-weights fallback (AUTO_PICK off) respects it too.
+    fixed = s.with_overrides(auto_pick=False, auto_pick_kinds="riddle")
+    assert all(discord_bot.plan_pick(fixed, ["Minecraft"], random.Random(i)).mode == "riddle" for i in range(20))
+    monkeypatch.setattr(web, "_base_settings", lambda: quiz_only)
+    body = TestClient(web.app).get("/api/insights/picker").json()
+    assert body["kinds"] == ["math", "riddle", "trivia", "paradox", "movie"] and [w["key"] for w in body["mode"]] == body["kinds"]

@@ -819,14 +819,17 @@ def _draw(weights: list[Weight], rng: random.Random, explore: float) -> tuple[st
     return rng.choices([w.key for w in weights], weights=[w.weight for w in weights])[0], False
 
 
-def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[str, ...] = PICK_KINDS,
+def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[str, ...] | None = None,
                rng: random.Random | None = None, report: Report | None = None,
                trending: dict[str, float] | None = None) -> Pick:
-    """Draw the next random video's kind, game (one of `games`; None = leave the choice to the caller)
-    and, for a story, its length from the last AUTO_PICK_DAYS days' numbers. `trending` ({game: momentum},
-    trending_games()): proven games that trend get a boost, untried games are explored by momentum."""
+    """Draw the next random video's kind (one of `kinds`, default AUTO_PICK_KINDS), game (one of `games`;
+    None = leave the choice to the caller) and, for a story, its length from the last AUTO_PICK_DAYS days'
+    numbers. `trending` ({game: momentum}, trending_games()): proven games that trend get a boost,
+    untried games are explored by momentum."""
     rng = rng or random.Random()
+    kinds = kinds or tuple(settings.auto_pick_kinds)
     report = report or build_report(settings, days=settings.auto_pick_days)
+
     explore = settings.auto_pick_explore
     pick = Pick(mode="story", days=report.days, videos=report.ranked)
     modes = weights_for(report, "mode", list(kinds))

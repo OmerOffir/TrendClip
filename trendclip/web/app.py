@@ -782,7 +782,9 @@ def insights_picker() -> dict[str, Any]:
     return {
         "enabled": settings.auto_pick, "explore": settings.auto_pick_explore, "days": report.days,
         "videos": report.ranked, "trends": bool(trending),
-        "mode": [w.model_dump() for w in analytics.weights_for(report, "mode", list(analytics.PICK_KINDS))],
+        "kinds": list(settings.auto_pick_kinds),
+        "mode": [w.model_dump() for w in analytics.weights_for(report, "mode", list(settings.auto_pick_kinds))],
+
         "game": [w.model_dump() for w in analytics.game_weights(report, games, trending)],
 
         "length_bucket": [w.model_dump() for w in analytics.weights_for(report, "length_bucket", list(analytics.STORY_LENGTHS))],
