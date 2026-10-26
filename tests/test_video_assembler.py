@@ -182,14 +182,16 @@ def test_flashes_never_run_off_the_frame(tmp_path):
     from trendclip.video_assembler import FLASH_MARGIN, FLASH_POP, fit_flash, text_width
 
     # Estimated widths (no font file): 0.62 × size per character.
-    assert text_width("+18", 288, None) == 3 * 288 * 0.62
+    assert text_width("+18", 288, None) == 3 * 288 * 0.68
+
     limit = (1080 - 2 * FLASH_MARGIN) / FLASH_POP
     assert fit_flash("+18", 288, limit) == (288, ["+18"])  # fits: untouched
     size, lines = fit_flash("B) SURVIVAL", 288, limit)  # "SURVIVAL" alone is 1428 px at 288: shrink
     assert lines == ["B)", "SURVIVAL"] or lines == ["B) SURVIVAL"]
     assert size < 288 and text_width(max(lines, key=len), size, None) <= limit + 1
     size, lines = fit_flash("MOVIE LOGIC", 288, limit)  # two words, far too wide for one line: wrapped
-    assert lines == ["MOVIE", "LOGIC"] and 250 < size <= 288  # "MOVIE" alone is a touch wide in the estimate
+    assert lines == ["MOVIE", "LOGIC"] and 200 < size <= 288  # "MOVIE" alone is a touch wide in the estimate
+
     size, lines = fit_flash("GOT IT?", 288, limit)  # nearly fits: a little smaller beats two lines
     assert lines == ["GOT IT?"] and size < 288 and text_width("GOT IT?", size, None) <= limit + 1
 

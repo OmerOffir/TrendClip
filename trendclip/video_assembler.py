@@ -309,8 +309,9 @@ def cover_event(text: str, seconds: float, max_chars: int = 14, max_lines: int =
 
 FLASH_POP = 1.18  # the flash pops to 118% for a moment: it has to fit the frame at that size too
 FLASH_MARGIN = 40  # the Flash style's side margins
-_CHAR_WIDTH = 0.62  # of the font size, for a bold condensed display font, when the font file can't be measured
-ONE_LINE_SHRINK = 0.65  # a flash that fits on one line at this share of its size stays on one line
+_CHAR_WIDTH = 0.68  # of the font size, for bold capitals (Arial Bold), when the font file can't be measured
+ONE_LINE_SHRINK = 0.6  # a flash that fits on one line at this share of its size stays on one line
+
 
 
 
