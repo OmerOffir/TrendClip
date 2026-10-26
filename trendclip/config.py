@@ -202,7 +202,8 @@ class Settings(BaseModel):
 
 
     # Your own channels for the morning stats report (empty = skip that platform).
-    stats_youtube: str = "@SideQuestLogic-t6g"
+    stats_youtube: str = "@SideQuestLogic"
+
     stats_tiktok: str = "sidequestlogic"
     stats_instagram: str = "sidequestlogic"
     # Instagram API with Instagram Login (professional account); without it, public profile data is tried.

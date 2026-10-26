@@ -13,10 +13,11 @@ def make_settings(tmp_path, **kw):
 
 
 def test_handles_accept_profile_links(tmp_path):
-    s = make_settings(tmp_path, stats_youtube="https://www.youtube.com/@SideQuestLogic-t6g",
+    s = make_settings(tmp_path, stats_youtube="https://www.youtube.com/@SideQuestLogic",
                       stats_tiktok="https://www.tiktok.com/@sidequestlogic",
                       stats_instagram="https://www.instagram.com/sidequestlogic/reels/")
-    assert (s.stats_youtube, s.stats_tiktok, s.stats_instagram) == ("@SideQuestLogic-t6g", "sidequestlogic", "sidequestlogic")
+    assert (s.stats_youtube, s.stats_tiktok, s.stats_instagram) == ("@SideQuestLogic", "sidequestlogic",
+ "sidequestlogic")
     assert make_settings(tmp_path, stats_youtube="SideQuestLogic").stats_youtube == "@SideQuestLogic"
     assert make_settings(tmp_path, stats_tiktok="@name").stats_tiktok == "name"
 
