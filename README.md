@@ -862,7 +862,8 @@ missed by more than two hours (bot off) is skipped. A video already on YouTube c
 (default 09:30) the bot refreshes the bank from every source (`DA_DAILY_FETCH`) and then, for every empty
 slot of tomorrow and of today still 3 h away: takes the best NEW story of the pillar the mix needs most,
 has Gemini write its script (a rejected story is marked and the next one tried), makes the video, checks
-it (between `DA_MIN_SECONDS` and `DA_MAX_SECONDS` long, real pictures rather than placeholder cards, enough
+it (between `DA_MIN_SECONDS` and `DA_MAX_SECONDS` long, 25-60 s by default since Shorts live on retention,
+real pictures rather than placeholder cards, enough
 words; a video that fails is deleted and the next story tried, four stories per slot at most) and puts it
 on the plan. Each video is posted in the Dark Outliers Discord channel with **Don't post this** (off the
 plan; the video stays in the tab; **Make another now** refills the slot), **Upload to YouTube now** and

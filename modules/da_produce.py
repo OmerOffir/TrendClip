@@ -9,7 +9,8 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
      - the best NEW story of the pillar the mix needs most (repository.get_next_story),
      - its Shorts script (modules.script_gen; a story Gemini rejects is marked and the next one is tried),
      - the video (modules.video_gen),
-     - a check (check_video): length between DA_MIN_SECONDS and DA_MAX_SECONDS, real pictures (not the
+     - a check (check_video): length between DA_MIN_SECONDS and DA_MAX_SECONDS (25-60 s: Shorts live on
+       retention), real pictures (not the
        placeholder cards), enough words; a video that fails is deleted and the next story is tried,
        MAX_STORY_TRIES stories per slot in all;
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
@@ -57,10 +58,10 @@ def daily_fetch() -> bool:
 
 def length_limits() -> tuple[float, float]:
     try:
-        lo, hi = float(setting("DA_MIN_SECONDS", "25")), float(setting("DA_MAX_SECONDS", "90"))
+        lo, hi = float(setting("DA_MIN_SECONDS", "25")), float(setting("DA_MAX_SECONDS", "60"))
     except ValueError:
-        lo, hi = 25.0, 90.0
-    return (lo, hi) if lo < hi else (25.0, 90.0)
+        lo, hi = 25.0, 60.0
+    return (lo, hi) if lo < hi else (25.0, 60.0)
 
 
 def targets(settings, at: datetime, out_dir: Path | None = None) -> list[tuple[Day, str]]:
