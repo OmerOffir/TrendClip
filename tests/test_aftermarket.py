@@ -321,14 +321,15 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
                                settings=get_settings())
     work = tmp_path / "2026-10-26_close"
     assert (work / "video.mp4").is_file() and info["filename"] == "video.mp4" and 23.0 <= media_duration(work / "video.mp4") <= 27.0
-    assert [b["visual"] for b in info["beats"]] == ["board", "board", "ticker:TSLA", "ticker:NVDA", "calendar", "crypto", "broll"]
-    assert [b["picture"] for b in info["beats"]][:4] == ["board.jpg", "board.jpg", "ticker_TSLA.mp4", "ticker_NVDA.mp4"]
-    assert [b["picture_source"] for b in info["beats"]][2:6] == ["chart-animated", "chart-animated", "chart", "chart-animated"]
+    assert [b["visual"] for b in info["beats"]] == ["broll", "board", "ticker:TSLA", "ticker:NVDA", "calendar", "crypto", "broll"]
+    assert [b["picture"] for b in info["beats"]][:5] == ["graded_beat_1.jpg", "board.jpg", "ticker_TSLA.mp4", "ticker_NVDA.mp4", "calendar_4.jpg"]
+    assert [b["picture_source"] for b in info["beats"]][1:6] == ["chart", "chart-animated", "chart-animated", "chart", "chart-animated"]
+    assert info["beats"][0]["image_prompt"].startswith("the closing bell") and info["background_cuts"] == 7
     assert info["animated"] == ["crypto", "ticker:NVDA", "ticker:TSLA"] and info["sfx"] is True
     assert (work / "voice_fx.mp3").is_file() and (work / "pictures" / "frames_crypto" / "frame_030.jpg").is_file()
     assert (tmp_path / "sfx" / "whoosh.wav").is_file() and (tmp_path / "sfx" / "tick.wav").is_file()
     assert 3.5 <= media_duration(work / "pictures" / "crypto.mp4") <= 6.0
-    assert info["beats"][-1]["picture"].startswith("graded_beat_") and info["beats"][-1]["picture_source"] == "placeholder"
+    assert info["beats"][-1]["picture"] == "graded_beat_2.jpg" and info["beats"][-1]["picture_source"] == "placeholder"
     assert info["pictures"] == "cards + placeholder" and info["writer"] == "template" and info["music"] is None
     assert info["beats"][-1]["text"].endswith("Follow for tomorrow's open.") and info["cover_text"] == "TSLA +6.0%"
     assert info["beats"][1]["text"].startswith("Monday, October 26th. Your closing report.")
@@ -339,6 +340,38 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     ass = (work / "video.ass").read_text()
     assert "S&P 500 +0.7%" in ass and ",EndCard," in ass and "TSLA +6.0%" in ass
     assert messages[-1] == "Done"
+
+
+def test_long_broll_beats_cut_between_pictures(tmp_path):
+    from modules.scene_images import Picture
+
+    beats = [am_video.AmBeat(0, "hook", "x", "", "p", 0.0, 3.0, visual="broll"),
+             am_video.AmBeat(1, "scene 1", "x", "", "", 3.0, 9.0, visual="board"),
+             am_video.AmBeat(2, "scene 2", "x", "", "p", 9.0, 18.0, visual="broll")]
+    assert [am_video.variants(b) for b in beats] == [1, 1, 3]
+    pictures = [Picture(tmp_path / "a.jpg", "local"), Picture(tmp_path / "board.jpg", "chart"), Picture(tmp_path / "b.jpg", "local")]
+    extras = {2: [Picture(tmp_path / "b2.jpg", "local"), Picture(tmp_path / "b3.jpg", "local")]}
+    paths, bg, zooms = am_video.background_plan(beats, pictures, extras)
+    assert [p.name for p in paths] == ["a.jpg", "board.jpg", "b.jpg", "b2.jpg", "b3.jpg"]
+    assert [(b.start, b.end) for b in bg] == [(0.0, 3.0), (3.0, 9.0), (9.0, 12.0), (12.0, 15.0), (15.0, 18.0)]
+    assert bg[3].label == "scene 2 (2/3)" and zooms == [am_video.BROLL_ZOOM, am_video.CARD_ZOOM] + [am_video.BROLL_ZOOM] * 3
+
+
+def test_calendar_card_shows_the_names_the_voice_says(tmp_path, monkeypatch):
+    from modules import am_logos
+
+    monkeypatch.setattr(am_logos, "fetch", lambda symbol, cache_dir=None, session=None: None)
+    rows = [{"symbol": "WELL", "name": "Welltower Inc."}, {"symbol": "V", "name": "Visa Inc."}, {"symbol": "KO", "name": "Coca-Cola Company (The)"},
+            {"symbol": "VZ", "name": "Verizon Communications Inc."}]
+    named = am_charts.mentioned("Verizon reported before the bell. Visa and Coca-Cola report tomorrow.", rows)
+    assert [r["symbol"] for r in named] == ["VZ", "V", "KO"]
+    assert am_charts.mentioned("Nothing named here.", rows) == []
+    facts = facts_fixture()
+    facts["earnings"]["today"].append({"symbol": "VZ", "name": "Verizon Communications Inc.", "time": "pre", "eps_forecast": "$1.27"})
+    path = am_charts.calendar(facts, tmp_path / "cal.jpg", mention="Verizon reported before the bell. Visa and Coca-Cola report tomorrow.")
+    assert path.is_file()
+    draft = am_script.ScriptDraft(hook_text="x", scenes=[am_script.SceneDraft(narration="XP plunged 47.75 percent to $2.91.", visual="board", overlay_text="X")])
+    assert any("47.75" in p and "one decimal" in p and "2.91" not in p for p in am_script.check(draft, facts))
 
 
 def test_produce_falls_back_to_the_template(monkeypatch, tmp_path):

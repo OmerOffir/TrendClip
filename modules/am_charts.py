@@ -340,8 +340,27 @@ def crypto(facts: dict, path: Path, fraction: float = 1.0) -> Path:
     return save(img, path)
 
 
-def calendar(facts: dict, path: Path, logos: bool = True) -> Path:
-    """What is due: earnings (before/after the bell) and the macro events of the session that matters."""
+def mentioned(text: str, rows: list[dict]) -> list[dict]:
+    """The earnings rows the narration names (by symbol or by the company's first word: "Visa",
+    "Coca-Cola", "Verizon"), in the order spoken."""
+    import re
+
+    found = []
+    low = text.lower()
+    for row in rows:
+        symbol = (row.get("symbol") or "").lower()
+        name = re.split(r"[ ,.(]", (row.get("name") or "").strip())[0].lower().rstrip(",")
+        keys = [k for k in (symbol, name) if len(k) >= 2 and k not in ("the", "inc", "co")]
+        positions = [m.start() for k in keys for m in re.finditer(rf"\b{re.escape(k)}\b", low)]
+        if positions:
+            found.append((min(positions), row))
+    return [row for _, row in sorted(found, key=lambda t: t[0])]
+
+
+def calendar(facts: dict, path: Path, logos: bool = True, mention: str = "") -> Path:
+    """What is due: earnings (before/after the bell) and the macro events of the session that matters.
+    `mention`: the scene's narration; the companies it names come first, so the card shows what the
+    voice says (a name from any list, even one that already reported)."""
     img, draw = canvas()
     slot = facts.get("slot", "close")
     earnings = facts.get("earnings") or {}
@@ -349,6 +368,11 @@ def calendar(facts: dict, path: Path, logos: bool = True) -> Path:
 
     when = "TODAY" if slot == "premarket" else "TONIGHT & NEXT" if slot == "close" else "NEXT SESSION"
     rows = due_earnings(facts)
+    if mention:
+        pool = rows + [e for key in ("today", "last_night", "next") for e in earnings.get(key) or []]
+        named = mentioned(mention, pool)
+        seen = {e["symbol"] for e in named}
+        rows = named + [e for e in rows if e["symbol"] not in seen]
     header(draw, f"EARNINGS · {when}", "On deck", nice_date(facts) if slot == "premarket" else facts.get("next_session", ""), accent=BLUE)
     y = 540
     for e in rows[:5]:
@@ -357,8 +381,11 @@ def calendar(facts: dict, path: Path, logos: bool = True) -> Path:
         draw = ImageDraw.Draw(img)
         text(draw, (210, y + 24), e.get("symbol", ""), 44)
         text(draw, (210, y + 78), (e.get("name") or "")[:26], 28, MUTED, bold=False)
-        tag = "TONIGHT" if e.get("when") == "tonight" else {"pre": "BEFORE THE BELL", "post": "AFTER THE BELL"}.get(e.get("time"), "TIME TBA")
-        pill(draw, (980, y + 20), tag, 24, AMBER if e.get("time") == "pre" else RED if e.get("when") == "tonight" else BLUE, anchor_right=True)
+        reported = e.get("time") == "pre" and slot == "close" and e in (earnings.get("today") or []) or e in (earnings.get("last_night") or [])
+        tag = ("REPORTED" if reported else "TONIGHT" if e.get("when") == "tonight"
+               else {"pre": "BEFORE THE BELL", "post": "AFTER THE BELL"}.get(e.get("time"), "TIME TBA"))
+        pill(draw, (980, y + 20), tag, 24, MUTED if reported else AMBER if e.get("time") == "pre" else RED if e.get("when") == "tonight" else BLUE,
+             anchor_right=True)
         if e.get("eps_forecast"):
             text(draw, (980, y + 78), f"EPS est. {e['eps_forecast']}", 26, MUTED, bold=False, anchor="ra")
         y += 128

@@ -243,6 +243,10 @@ def check(draft: ScriptDraft, facts: dict[str, Any]) -> list[str]:
     known = visuals_for(facts)
     for i, s in enumerate(draft.scenes, 1):
         n_numbers = len(numbers_in(INDEX_NAME.sub("", s.narration)))
+        fussy = [m.group() for m in NUMBER.finditer(s.narration) if re.search(r"\.\d{2,}", m.group())
+                 and float(m.group().strip("$%+").replace(",", "")) >= 20]
+        if fussy:
+            problems.append(f"scene {i} says {', '.join(fussy[:3])}: one decimal at most (47.8, not 47.75)")
         if n_numbers > MAX_SCENE_NUMBERS:
             problems.append(f"scene {i} reads {n_numbers} numbers: at most {MAX_SCENE_NUMBERS}; the card shows them, say what they mean")
         if s.visual.strip() not in known:

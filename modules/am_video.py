@@ -40,9 +40,11 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = am_data.OUTPUT_DIR
 DEFAULT_VOICE = "am_michael"
-DEFAULT_SPEED = "1.05"
+DEFAULT_SPEED = "1.15"  # Shorts pace
 DEFAULT_RATE = "+12%"  # the Edge engine
 DEFAULT_ENGINE = "kokoro"
+DEFAULT_MUSIC = "folder:electronic"  # music/electronic/*.mp3: deep electronic beds (drop files there)
+FALLBACK_MUSIC = "folder:chill"  # until the electronic folder has music
 DEFAULT_CTA_LINE = {"premarket": "Follow for the close.", "close": "Follow for tomorrow's open.", "weekend": "Follow for Monday's open."}
 DEFAULT_END_CARD = "Follow for the next session"
 BROLL_STYLE = ", cinematic, photoreal, dark blue and amber tones, shallow depth of field, no text, no logos"
@@ -51,7 +53,14 @@ DISCLAIMER = "Not financial advice. Data from Yahoo Finance, Nasdaq, ForexFactor
 TAIL = 0.6  # the video ends right after the last word: a static end is where Shorts lose the viewer
 DRAW_SECONDS = 1.4  # a chart card's line draws itself over this long, then holds
 CLIP_FPS = 24
-BROLL_ZOOM = 0.12  # the AI pictures keep moving
+BROLL_ZOOM = 0.18  # the AI pictures keep moving
+SPLIT_SECONDS = 4.0  # a broll beat longer than this cuts between several pictures
+PICTURE_SECONDS = 3.2  # about this long on each
+HOOK_PROMPT = {  # the hook's own picture (frame 0 is the thumbnail): the moment, not a chart
+    "premarket": "sunrise over Wall Street, the New York Stock Exchange facade, early traders, dramatic morning light",
+    "close": "the closing bell on a crowded trading floor, screens full of charts, dramatic light",
+    "weekend": "an empty trading floor at night, screens glowing with charts, cinematic",
+}
 FLASH_Y = 0.24  # the overlay near the top (y 400-520 of 1920): the chart cards keep that band free
 CARD_ZOOM = 0.05  # a gentle push-in on a still card: it keeps its edges
 SFX_DIR = am_data.PROJECT_ROOT / "assets" / "sfx"
@@ -77,9 +86,7 @@ def channel_handle() -> str:
 
 def beats_of(script: am_script.Script, cta_line: str = "") -> list[Beat]:
     """The hook (over the first scene's picture), then every scene; the call to action joins the last."""
-    first = script.scenes[0] if script.scenes else None
-    beats = [AmBeat(0, "hook", script.hook_text, "", first.image_prompt if first and first.visual == "broll" else "",
-                    visual=first.visual if first else "board")]
+    beats = [AmBeat(0, "hook", script.hook_text, "", HOOK_PROMPT.get(script.slot, HOOK_PROMPT["close"]), visual="broll")]
     beats += [AmBeat(s.scene_id, f"scene {s.scene_id}", s.narration, s.overlay_text, s.image_prompt, visual=s.visual)
               for s in script.scenes]
     if cta_line.strip():
@@ -172,27 +179,49 @@ def mix_sfx(voice: Path, beats: list[AmBeat], output: Path, volume: float, sfx: 
     return output
 
 
+def variants(beat: AmBeat) -> int:
+    """How many pictures a broll beat gets: one, or several when it is long (a still for 8 s is where
+    Shorts lose the viewer)."""
+    if beat.visual != "broll" or beat.duration <= SPLIT_SECONDS:
+        return 1
+    return min(int(round(beat.duration / PICTURE_SECONDS)), 4)
+
+
+ANGLES = ["", ", wide shot", ", close-up, shallow depth of field", ", low angle, dramatic"]
+
+
 def pictures_for(beats: list[AmBeat], facts: dict, work: Path, images: str | None, seed: int,
-                 progress: ProgressFn, animate: bool = True) -> tuple[list[Picture], str]:
+                 progress: ProgressFn, animate: bool = True) -> tuple[list[Picture], str, dict[int, list[Picture]]]:
     """One picture per beat: a chart card for a chart visual (a ticker or crypto card as a clip whose
     line draws itself), the GPU for broll. A ticker card for a symbol the facts do not have falls back
-    to the board."""
+    to the board. The third value: the extra pictures of a long broll beat (background_plan cuts
+    between them)."""
     cards = am_charts.render(facts, work / "pictures")
     pictures: list[Picture | None] = [None] * len(beats)
-    broll = [(i, b.image_prompt + BROLL_STYLE) for i, b in enumerate(beats)
-             if b.visual == "broll" and b.image_prompt.strip()]
+    extras: dict[int, list[Picture]] = {}
+    broll = []  # (beat index, prompt), several per long beat
+    for i, b in enumerate(beats):
+        if b.visual == "broll" and b.image_prompt.strip():
+            for k in range(variants(b)):
+                broll.append((i, b.image_prompt + ANGLES[k % len(ANGLES)] + BROLL_STYLE))
     used = "cards"
     if broll:
         drawn, used_backend = scene_images.make_pictures([p for _, p in broll], work / "pictures" / "broll", images, seed=seed,
                                                          progress=lambda msg: progress(0.15, msg))
         used = f"cards + {used_backend}"
         for (i, _), pic in zip(broll, drawn):
-            pictures[i] = Picture(scene_images.graded_copy(pic.path), pic.source, prompt=pic.prompt)
+            picture = Picture(scene_images.graded_copy(pic.path), pic.source, prompt=pic.prompt)
+            if pictures[i] is None:
+                pictures[i] = picture
+            else:
+                extras.setdefault(i, []).append(picture)
     clips: dict[str, Path] = {}
     for i, b in enumerate(beats):
         if pictures[i] is not None:
             continue
         path = cards.get(b.visual) or cards["board"]
+        if b.visual == "calendar" and b.text.strip():  # the card lists the companies this scene names
+            path = am_charts.calendar(facts, work / "pictures" / f"calendar_{i}.jpg", mention=b.text)
         if animate and b.visual in cards and b.visual.startswith(am_charts.ANIMATED) and b.duration >= DRAW_SECONDS:
             if b.visual not in clips:
                 progress(0.3, f"Drawing the {b.visual} chart")
@@ -203,7 +232,23 @@ def pictures_for(beats: list[AmBeat], facts: dict, work: Path, images: str | Non
             pictures[i] = Picture(clips[b.visual], "chart-animated", prompt=b.visual)
             continue
         pictures[i] = Picture(path, "chart", prompt=b.visual)
-    return [p for p in pictures if p], used
+    return [p for p in pictures if p], used, extras
+
+
+def background_plan(beats: list[AmBeat], pictures: list[Picture], extras: dict[int, list[Picture]]) -> tuple[list[Path], list[Beat], list[float]]:
+    """What build_background gets: the pictures, their beats and zooms, with a long broll beat cut into
+    one sub-beat per picture (each pushes in on its own)."""
+    paths, bg_beats, zooms = [], [], []
+    for i, (b, p) in enumerate(zip(beats, pictures)):
+        parts = [p] + extras.get(i, [])
+        step = b.duration / len(parts)
+        for k, part in enumerate(parts):
+            sub = Beat(b.index, b.label if len(parts) == 1 else f"{b.label} ({k + 1}/{len(parts)})", b.text, b.overlay_text,
+                       b.image_prompt, round(b.start + k * step, 3), round(b.start + (k + 1) * step, 3) if k < len(parts) - 1 else b.end)
+            paths.append(part.path)
+            bg_beats.append(sub)
+            zooms.append(CARD_ZOOM if part.source in ("chart", "chart-animated") else BROLL_ZOOM)
+    return paths, bg_beats, zooms
 
 
 def make_video(facts: dict, script: am_script.Script, progress: ProgressFn = lambda f, m: None, *, images: str | None = None,
@@ -254,12 +299,12 @@ def make_video(facts: dict, script: am_script.Script, progress: ProgressFn = lam
 
     progress(0.1, "Drawing the chart cards")
     seed = int(facts["date"].replace("-", "")) % 100000 + (0 if facts["slot"] == "premarket" else 7)
-    pictures, backend_used = pictures_for(beats, facts, work, images, seed, progress,
-                                          animate=not video_gen.off(setting("AM_ANIMATE_CHARTS", "1")))
-    zooms = [BROLL_ZOOM if p.source != "chart" and p.source != "chart-animated" else CARD_ZOOM for p in pictures]
-    background = video_gen.build_background([p.path for p in pictures], beats, work / "pictures" / "background.mp4",
+    pictures, backend_used, extras = pictures_for(beats, facts, work, images, seed, progress,
+                                                  animate=not video_gen.off(setting("AM_ANIMATE_CHARTS", "1")))
+    paths, bg_beats, zooms = background_plan(beats, pictures, extras)
+    background = video_gen.build_background(paths, bg_beats, work / "pictures" / "background.mp4",
                                             progress=lambda f, m: progress(0.5 + 0.2 * (f or 0), m), zoom=zooms)
-    sfx_volume = float(setting("AM_SFX_VOLUME", "0.35"))
+    sfx_volume = float(setting("AM_SFX_VOLUME", "0.5"))
     voice_file = work / "voice.mp3"
     if sfx_volume > 0:
         try:
@@ -271,12 +316,14 @@ def make_video(facts: dict, script: am_script.Script, progress: ProgressFn = lam
     from trendclip import music as music_mod
 
     track = None
-    source = setting("AM_MUSIC", "folder:chill")
+    source = setting("AM_MUSIC", DEFAULT_MUSIC)
     if not video_gen.off(source):
-        try:
-            track = music_mod.pick(settings, source)
-        except music_mod.MusicError as err:
-            progress(None, f"No music: {err}")
+        for candidate in dict.fromkeys([source, FALLBACK_MUSIC]):
+            try:
+                track = music_mod.pick(settings, candidate)
+                break
+            except music_mod.MusicError as err:
+                progress(None, f"No music from {candidate}: {err}")
     flashes = [TimedFlash(b.overlay_text, round(b.start + 0.2, 3), round(min(b.start + 3.2, b.end - 0.15), 3), "", FLASH_Y)
                for b in beats if b.overlay_text and b.duration > 1.0]
     end_card = setting("AM_END_CARD", f"{channel_handle()} · Follow for the next session" if channel_handle() else DEFAULT_END_CARD)
@@ -289,7 +336,7 @@ def make_video(facts: dict, script: am_script.Script, progress: ProgressFn = lam
         background, voice_file, words, work / "video.mp4", fit="crop",
         progress=lambda f, m: progress(0.75 + 0.24 * (f or 0), m),
         music=music_mod.track_path(settings, track) if track else None,
-        music_volume=float(setting("AM_MUSIC_VOLUME", "0.10")), music_fade_in=0.0,
+        music_volume=float(setting("AM_MUSIC_VOLUME", "0.20")), music_fade_in=0.0,
         highlight=setting("AM_HIGHLIGHT", "yellow"), max_words=3, font_size=88, outline=7, margin_v=600,
         title_card="", flashes=flashes, flash_scale=0.8, end_card=end_card, overlays=overlays,
         title_pop=False, cover_text=cover, cover_seconds=0.8, tail_seconds=TAIL,
@@ -302,6 +349,7 @@ def make_video(facts: dict, script: am_script.Script, progress: ProgressFn = lam
         "pictures": backend_used, "music": {"title": track.title, "credit": track.credit} if track else None,
         "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used, "cover_text": cover, "writer": script.writer,
         "sfx": voice_file.name == "voice_fx.mp3", "animated": sorted({p.prompt for p in pictures if p.source == "chart-animated"}),
+        "background_cuts": len(paths),
         "beats": [{**asdict(b), "picture": pictures[i].path.name, "picture_source": pictures[i].source}
                   for i, b in enumerate(beats)],
         "words": len(words), "seconds_to_make": round(time.time() - started), "problems": facts.get("problems", []),
