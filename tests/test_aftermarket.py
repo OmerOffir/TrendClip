@@ -370,8 +370,15 @@ def test_calendar_card_shows_the_names_the_voice_says(tmp_path, monkeypatch):
     facts["earnings"]["today"].append({"symbol": "VZ", "name": "Verizon Communications Inc.", "time": "pre", "eps_forecast": "$1.27"})
     path = am_charts.calendar(facts, tmp_path / "cal.jpg", mention="Verizon reported before the bell. Visa and Coca-Cola report tomorrow.")
     assert path.is_file()
+    drawn = []
+    monkeypatch.setattr(am_charts, "logo_tile", lambda img, symbol, xy, size, logos=True: drawn.append(symbol))
+    am_charts.calendar(facts, tmp_path / "cal2.jpg", mention="Visa reports tonight, and Visa again.")
+    assert drawn == ["V", "KO"]  # V once, with its due copy first; then the rest of the due list
     draft = am_script.ScriptDraft(hook_text="x", scenes=[am_script.SceneDraft(narration="XP plunged 47.75 percent to $2.91.", visual="board", overlay_text="X")])
     assert any("47.75" in p and "one decimal" in p and "2.91" not in p for p in am_script.check(draft, facts))
+    draft = am_script.ScriptDraft(hook_text="x", scenes=[am_script.SceneDraft(narration="Bitcoin dipped 0.75 percent! Big day! Wow!", visual="board", overlay_text="X")])
+    problems = am_script.check(draft, facts)
+    assert any("0.75" in p for p in problems) and any("3 exclamation marks" in p for p in problems)
 
 
 def test_produce_falls_back_to_the_template(monkeypatch, tmp_path):

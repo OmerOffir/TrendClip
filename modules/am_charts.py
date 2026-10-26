@@ -370,8 +370,11 @@ def calendar(facts: dict, path: Path, logos: bool = True, mention: str = "") -> 
     rows = due_earnings(facts)
     if mention:
         pool = rows + [e for key in ("today", "last_night", "next") for e in earnings.get(key) or []]
-        named = mentioned(mention, pool)
-        seen = {e["symbol"] for e in named}
+        named, seen = [], set()
+        for e in mentioned(mention, pool):  # one row per company: the due copy (with its "tonight") first
+            if e["symbol"] not in seen:
+                seen.add(e["symbol"])
+                named.append(e)
         rows = named + [e for e in rows if e["symbol"] not in seen]
     header(draw, f"EARNINGS · {when}", "On deck", nice_date(facts) if slot == "premarket" else facts.get("next_session", ""), accent=BLUE)
     y = 540
