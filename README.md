@@ -829,7 +829,7 @@ The tab does the same: pick a story → **Write the Shorts script** → **Make t
 the tab shows the progress, then the video, its pictures and a description to copy). The story becomes
 USED.
 
-**Its YouTube channel** (`@DarkArchives-j1l`, a second channel on the same Google account) has its own
+**Its YouTube channel** (`@DarkOutliersOfficial`, a second channel on the same Google account) has its own
 folder, `channels/darkarchives/`, with `channel.env` (`CHANNEL_HANDLE`, `STATS_*`) and its own
 `token_youtube.json`; the OAuth client (`client_secret.json` in the project folder) is shared. Under a
 finished video the tab has **Connect YouTube** (Google asks which channel: pick Dark Outliers) and
