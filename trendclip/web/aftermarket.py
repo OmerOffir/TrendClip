@@ -51,6 +51,20 @@ def status() -> dict[str, Any]:
     }
 
 
+@router.get("/plan")
+def plan() -> dict[str, Any]:
+    """The Plan view: the coming week's jobs (and the last two days') with each one's video and state."""
+    settings = _settings()
+    now = assistant.now(settings)
+    days = am_channel.plan_days(settings, now)
+    with _lock:
+        making = _run_job.get("job", {}).get("key") if _run_job.get("running") else None
+    return {"days": days, "slots": am_channel.slots(), "auto_post": am_channel.auto_post(), "privacy": am_channel.upload_privacy(),
+            "lead_minutes": am_channel.lead_minutes(), "timezone": settings.timezone, "now": now.isoformat(timespec="minutes"),
+            "making": making,
+            "pending": sum(1 for d in days for j in d["jobs"] if j["state"] in ("made", "blocked", "missed", "due"))}
+
+
 @router.get("/videos")
 def videos() -> dict[str, Any]:
     return {"videos": [{**v, "youtube_texts": _texts(v)} for v in am_channel.videos()], "privacy": am_channel.upload_privacy()}

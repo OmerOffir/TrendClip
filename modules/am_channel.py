@@ -154,6 +154,43 @@ def next_job(settings, at: datetime, days: int = 10) -> Job | None:
     return None
 
 
+def slot_state(job: Job, info: dict | None, now: datetime) -> str:
+    """One word for the plan: posted | blocked | vetoed | made | missed | due | waiting."""
+    if info:
+        if (info.get("uploads") or {}).get("youtube"):
+            return "posted"
+        if info.get("check"):
+            return "blocked"
+        if is_vetoed(info):
+            return "vetoed"
+        return "made"
+    if now >= job.start + START_WINDOW:
+        return "missed"
+    if now >= job.start:
+        return "due"
+    return "waiting"
+
+
+def plan_days(settings, now: datetime, before: int = 2, after: int = 7, out_dir: Path | None = None) -> list[dict[str, Any]]:
+    """The Plan view: every job from `before` days back to `after` days ahead, each with its video (if
+    made) and a state word. The weekend days carry their one review / week-ahead job."""
+    now = now.astimezone(settings.tz)
+    days = []
+    for n in range(-before, after + 1):
+        day = now.date() + timedelta(days=n)
+        jobs = []
+        for job in jobs_for(settings, day):
+            info = load_info(job.video_key, out_dir)
+            video = None if info is None else {
+                "key": info["key"], "title": info.get("title", ""), "created_at": info.get("created_at"),
+                "duration_seconds": info.get("duration_seconds"), "check": info.get("check") or [], "veto": info.get("veto"),
+                "youtube": (info.get("uploads") or {}).get("youtube")}
+            jobs.append({**job.view(), "video": video, "state": slot_state(job, info, now)})
+        days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "trading": am_data.is_trading_day(day),
+                     "today": day == now.date(), "jobs": jobs})
+    return days
+
+
 def job_for(settings, day: Day, kind: str) -> Job:
     """The day's job of that kind, or an ad-hoc one (the dashboard's "run now" on a kind the day has not)."""
     for job in jobs_for(settings, day):

@@ -378,3 +378,31 @@ def test_the_tab(tmp_path, monkeypatch, channel_folder):
     assert am_channel.load_info("2026-10-26_close", out)["veto"]
     assert client.get("/api/aftermarket/youtube/status").json()["connected"] is False
     assert client.post("/api/aftermarket/youtube/logout").json() == {"connected": False}
+
+
+def test_plan_days_states(tmp_path):
+    settings = get_settings()
+    now = at(settings, MON, 16, 0)  # Monday afternoon: the pre-market brief is done, the close one waits
+
+    def made(info):  # a video counts once its mp4 is there
+        am_channel.save_info(info, out_dir=tmp_path)
+        am_channel.video_path(info["key"], tmp_path).write_bytes(b"mp4")
+
+    made({"key": "2026-10-26_premarket", "title": "Pre", "created_at": "2026-10-26T14:50",
+          "uploads": {"youtube": {"url": "https://youtu.be/x", "privacy": "public"}}})
+    made({"key": "2026-10-25_weekend", "title": "Week ahead", "created_at": "2026-10-25T15:02"})
+    made({"key": "2026-10-23_close", "title": "Fri close", "check": ["61 s long"]})
+    days = am_channel.plan_days(settings, now, before=3, after=5, out_dir=tmp_path)
+    assert [d["day"] for d in days] == ["2026-10-23", "2026-10-24", "2026-10-25", "2026-10-26", "2026-10-27", "2026-10-28",
+                                        "2026-10-29", "2026-10-30", "2026-10-31"]
+    by = {j["video_key"]: j for d in days for j in d["jobs"]}
+    assert by["2026-10-23_premarket"]["state"] == "missed" and by["2026-10-23_close"]["state"] == "blocked"
+    assert by["2026-10-24_weekend"]["state"] == "missed" and by["2026-10-24_weekend"]["focus"] == "the week in review"
+    assert by["2026-10-25_weekend"]["state"] == "made" and by["2026-10-25_weekend"]["focus"] == "the week ahead"
+    assert by["2026-10-26_premarket"]["state"] == "posted" and by["2026-10-26_premarket"]["video"]["youtube"]["url"] == "https://youtu.be/x"
+    assert by["2026-10-26_close"]["state"] == "waiting" and by["2026-10-26_close"]["video"] is None
+    assert by["2026-10-31_weekend"]["focus"] == "the week in review"
+    assert [d["today"] for d in days].count(True) == 1 and days[3]["today"] and not days[1]["trading"] and days[3]["trading"]
+    # a job whose start has come but whose video is not there yet is "due"
+    assert am_channel.slot_state(am_channel.jobs_for(settings, MON)[1], None, at(settings, MON, 23, 5)) == "due"
+    assert am_channel.slot_state(am_channel.jobs_for(settings, MON)[1], {"key": "k", "veto": "2026"}, now) == "vetoed"

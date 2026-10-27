@@ -6,8 +6,9 @@
     error: $("amError"), hint: $("amAutoHint"), yt: $("amYouTube"), jobs: $("amJobs"), facts: $("amFacts"),
     factsWhen: $("amFactsWhen"), videos: $("amVideos"), count: $("amVideosCount"), run: $("amRun"), runKind: $("amRunKind"),
     runUpload: $("amRunUpload"), runTemplate: $("amRunTemplate"), runStatus: $("amRunStatus"),
+    plan: $("amPlan"), planHint: $("amPlanHint"), navVideos: $("amNavVideos"), navPlan: $("amNavPlan"),
   };
-  const state = { yt: null, polling: null, status: null };
+  const state = { yt: null, polling: null, status: null, section: "today" };
   const KIND = { premarket: "Pre-market", close: "Close", weekend: "Weekend" };
   const showError = (msg) => { els.error.textContent = msg; els.error.hidden = !msg; };
   const pct = (v, d = 2) => (v === null || v === undefined ? "" : `${v > 0 ? "+" : ""}${Number(v).toFixed(d)}%`);
@@ -97,10 +98,107 @@
   });
   window.addEventListener("message", (e) => { if (e.data === "trendclip:youtube") renderYouTube(); });
 
+  // ---- Today | Videos | Plan
+  function showSection(name) {
+    state.section = name;
+    document.querySelectorAll("#amNav [data-am-view]").forEach((b) => {
+      b.classList.toggle("active", b.dataset.amView === name);
+      b.setAttribute("aria-selected", b.dataset.amView === name ? "true" : "false");
+    });
+    document.querySelectorAll("[data-am-panel]").forEach((p) => { p.hidden = p.dataset.amPanel !== name; });
+    if (name === "videos") loadVideos();
+    if (name === "plan") loadPlan();
+  }
+  $("amNav").addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-am-view]");
+    if (btn) showSection(btn.dataset.amView);
+  });
+
+  // ---- Plan: the week's slots, each with its brief's state
+  const STATE = {
+    posted: ["good", "▶️ on YouTube"], made: ["warn", "made, not on YouTube"], blocked: ["warn", "failed the check"],
+    vetoed: ["", "🚫 held back"], missed: ["warn", "⚠️ not made"], due: ["", "⏳ being made"], waiting: ["", "waits for its time"],
+  };
+  function renderPlan(d) {
+    els.navPlan.textContent = d.pending;
+    els.navPlan.hidden = !d.pending;
+    els.planHint.textContent = d.auto_post
+      ? `Two briefs a trading day at ${d.slots.join(" and ")} ${d.timezone}: the pre-market one starts ${d.lead_minutes} min early and goes on YouTube at its slot, the close one uploads as soon as it is rendered; weekends get one review. Uploads as ${d.privacy}.`
+      : "Automatic posting is off (AM_AUTO_POST): each brief is made at its slot, upload it yourself from Videos.";
+    els.plan.innerHTML = d.days.map((day) => `
+      <div class="da-plan-day${day.today ? " today" : ""}${day.day < d.now.slice(0, 10) ? " past" : ""}">
+        <div class="da-plan-date"><b>${esc(day.weekday)}</b><small>${esc(day.day)}${day.trading ? "" : " · no trading"}</small></div>
+        <div class="da-plan-slots">${day.jobs.map((j) => {
+          const making = d.making === j.key;
+          const [cls, label] = making ? ["", "⏳ being made now"] : (STATE[j.state] || ["", j.state]);
+          const v = j.video;
+          const when = j.start !== j.post_at ? `starts ${fmtWhen(j.start).slice(11)} · YouTube ${fmtWhen(j.post_at).slice(11)}` : `starts ${fmtWhen(j.start).slice(11)} · uploads when done`;
+          const canMake = !making && !v && j.state !== "missed" && day.today;
+          const canUpload = v && j.state === "made";
+          return `<div class="da-plan-slot${j.state === "posted" ? " done" : j.state === "missed" || j.state === "blocked" ? " late" : ""}">
+            <span class="time">${esc(j.slot)}</span>
+            <span class="title">${esc(j.focus ? j.focus[0].toUpperCase() + j.focus.slice(1) : KIND[j.kind] || j.kind)}${v ? ` · 🎬 ${esc(v.title)}` : ""} <span class="hint">${when}</span></span>
+            <span class="pill ${cls}">${label}</span>
+            ${v && v.youtube && v.youtube.url ? `<a class="hint" href="${esc(v.youtube.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}
+            ${v && v.check && v.check.length ? `<span class="am-check">${esc(v.check.join("; "))}</span>` : ""}
+            <span class="spacer"></span>
+            ${v ? `<button type="button" class="btn-ghost" data-watch="${esc(v.key)}">Watch</button>` : ""}
+            ${canUpload ? `<button type="button" class="btn-secondary" data-plan-upload="${esc(v.key)}" ${state.yt && state.yt.connected ? "" : "disabled"}>⬆️ Upload now</button>` : ""}
+            ${canMake ? `<button type="button" class="btn-secondary" data-make="${esc(j.kind)}" title="Make this brief now (and upload it, when posting is on)">🎬 Make now</button>` : ""}
+          </div>`;
+        }).join("") || '<div class="da-plan-slot"><span class="hint">nothing scheduled</span></div>'}</div>
+      </div>`).join("");
+  }
+  async function loadPlan() {
+    try {
+      const { body } = await api("/api/aftermarket/plan");
+      renderPlan(body);
+    } catch (err) {
+      els.plan.innerHTML = `<div class="da-note">Couldn't load the plan: ${esc(err.message)}</div>`;
+    }
+  }
+  els.plan.addEventListener("click", async (e) => {
+    const watch = e.target.closest("button[data-watch]");
+    const make = e.target.closest("button[data-make]");
+    const upl = e.target.closest("button[data-plan-upload]");
+    if (watch) {
+      showSection("videos");
+      await loadVideos();
+      const card = els.videos.querySelector(`[data-key="${watch.dataset.watch}"]`);
+      if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    if (make) {
+      make.disabled = true;
+      try {
+        await api("/api/aftermarket/run", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ kind: make.dataset.make, upload: true, template: false }) });
+        if (!state.polling) pollRun();
+        loadPlan();
+      } catch (err) {
+        make.disabled = false;
+        showError(err.message);
+      }
+    }
+    if (upl) {
+      upl.disabled = true;
+      try {
+        await api(`/api/aftermarket/videos/${upl.dataset.planUpload}/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+        loadPlan();
+      } catch (err) {
+        upl.disabled = false;
+        showError(err.message);
+      }
+    }
+  });
+  $("amPlanRefresh").addEventListener("click", loadPlan);
+  $("amVideosRefresh").addEventListener("click", loadVideos);
+
   async function loadVideos() {
     try {
       const { body } = await api("/api/aftermarket/videos");
       els.count.textContent = body.videos.length ? `· ${body.videos.length}` : "";
+      els.navVideos.textContent = body.videos.length;
+      els.navVideos.hidden = !body.videos.length;
       if (!body.videos.length) {
         els.videos.innerHTML = '<div class="empty">No video yet. The bot makes one at each slot; <b>Make the video now</b> makes one right away.</div>';
         return;
@@ -188,6 +286,7 @@
         els.runStatus.textContent = r.error ? `❌ ${r.error}` : `✅ ${r.title || r.key}${r.record ? ` · on YouTube: ${r.record.url}` : body.upload ? " · not uploaded (vetoed, not connected, or AM_AUTO_POST off)" : ""}`;
         loadVideos();
         load();
+        loadPlan();
       } else els.runStatus.textContent = "";
     } catch (err) {
       els.runStatus.textContent = err.message;
@@ -222,7 +321,12 @@
     if (!state.polling) pollRun();
   }
 
-  const onShow = () => { if (document.body.dataset.workspace === "aftermarket") load(); };
+  const onShow = () => {
+    if (document.body.dataset.workspace !== "aftermarket") return;
+    showSection(state.section);
+    load();
+    loadPlan();
+  };
   new MutationObserver(onShow).observe(document.body, { attributes: true, attributeFilter: ["data-workspace"] });
   onShow();
 })();
