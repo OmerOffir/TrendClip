@@ -36,7 +36,7 @@ POOL = 24  # NEW stories Gemini chooses from
 SOURCE_CHARS = 700  # of each story
 ENTRY_WORDS = (7, 10)  # about 4 s each: the whole Short stays under 30 s
 HOOK_WORDS = 6
-MAX_WORDS = 54  # hook + every entry; with the spoken follow line (5 words) and the tail that is 28 s
+MAX_WORDS = 56  # hook + every entry; with the spoken follow line (5 words) and the tail that is 28 s
 ATTEMPTS = 3
 LABEL_WORDS = 4
 
@@ -69,6 +69,9 @@ characters, the number first.
     person's face or likeness; show places, objects, silhouettes.
 - thumbnail_text: 2-4 words in CAPITALS over the first frame, the thumbnail: the theme as a curiosity
   gap ("5 CASES. NO ANSWERS").
+
+LENGTH: hook_text and the {count} narrations together are at most {max_total} words. The whole Short
+must stay under 30 seconds, so every entry is one tight sentence.
 
 TRUTH: use only facts that are in the CANDIDATES. Never invent names, dates, numbers or quotes. Say
 "reportedly" where the source is unsure. Never state as fact that a living person committed a crime
@@ -136,7 +139,7 @@ def build_prompt(stories: list[dict], n: int, today: dt.date | None = None) -> s
         text = re.sub(r"\s+", " ", s["raw_text"])[:SOURCE_CHARS]
         lines.append(f"[id {s['id']}] {s['title']} ({s['source_name']}, {s.get('pillar') or 'dark history'}): {text}")
     return PROMPT.format(count=n, hook_words=HOOK_WORDS, label_words=LABEL_WORDS, min_words=ENTRY_WORDS[0],
-                         max_words=ENTRY_WORDS[1], today=(today or dt.date.today()).isoformat(), candidates="\n\n".join(lines))
+                         max_words=ENTRY_WORDS[1], max_total=MAX_WORDS, today=(today or dt.date.today()).isoformat(), candidates="\n\n".join(lines))
 
 
 NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}

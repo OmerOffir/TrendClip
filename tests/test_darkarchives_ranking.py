@@ -62,7 +62,7 @@ def test_to_script_counts_down_and_keeps_the_ranking():
     assert script.story_id == 42 and [s.narration[:12] for s in script.scenes] == ["Number five."] + ["Number four."] + ["Number three"] + ["Number two. "] + ["Number one. "]
     assert [e.rank for e in script.ranking] == [1, 2, 3, 4, 5] and script.ranking[0].title == "Case 1"
     assert script.scenes[0].overlay_text == "CASE 5 FILES" and script.thumbnail_text == "5 CASES. NO ANSWERS"
-    assert 45 <= script.total_word_count <= 54 and script.estimated_duration_seconds >= 19
+    assert 45 <= script.total_word_count <= 56 and script.estimated_duration_seconds >= 19
     # a script written before rankings existed still loads
     old = json.loads(script.model_dump_json(exclude={"ranking"}))
     assert script_gen.Script.model_validate(old).ranking == []
