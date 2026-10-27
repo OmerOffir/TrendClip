@@ -19,6 +19,7 @@ import os
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -61,6 +62,24 @@ def _port_free(host: str, port: int) -> bool:
     return True
 
 
+PORT_WAIT_SECONDS = 90  # a stopped dashboard keeps its port a little while; a restart waits for it
+PORT_POLL_SECONDS = 2
+
+
+def _wait_for_port(host: str, port: int, timeout: float = PORT_WAIT_SECONDS) -> bool:
+    """True once the port can be bound, waiting up to `timeout` seconds for a previous dashboard
+    (the one systemd just stopped) to let go of it. A port that stays busy is some other program."""
+    if _port_free(host, port):
+        return True
+    print(f"Port {port} is busy; waiting up to {int(timeout)}s for it to free up...", flush=True)
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        time.sleep(PORT_POLL_SECONDS)
+        if _port_free(host, port):
+            return True
+    return False
+
+
 def _run_web(args: list[str]) -> int:
     import uvicorn
 
@@ -69,7 +88,7 @@ def _run_web(args: list[str]) -> int:
     port = int(_pop_option(args, "--port", str(DEFAULT_PORT)))
     reload = _pop_flag(args, "--reload")
 
-    if not _port_free(host, port):
+    if not _wait_for_port(host, port):
         fallback = None
         if not explicit_port:
             fallback = next((p for p in range(port + 1, port + 20) if _port_free(host, p)), None)
