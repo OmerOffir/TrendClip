@@ -869,9 +869,6 @@ def test_reminders_run_posts_first_and_never_wait_for_the_morning_summary(settin
         def darkarchives_posts(self, at):
             pass
 
-        def aftermarket_jobs(self, at):
-            pass
-
         async def morning_summary(self, channel, day):
 
             order.append("morning")

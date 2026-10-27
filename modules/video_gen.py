@@ -185,9 +185,8 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
     """The moving background: every picture for its beat, dissolves centred on the beat changes
     (clip i runs its beat plus the dissolve; the first one plus half), with film grain. It is an
     intermediate the assembler encodes again, so a fast x264 preset is enough. `zoom`: how far each
-    picture pushes in or pulls out, one value or one per beat (After Market's chart cards move less, so
-    their edges stay in). A picture may also be a short .mp4 (After Market's chart that draws itself): it
-    plays as it is, so it must be at least as long as its beat plus the dissolve."""
+    picture pushes in or pulls out, one value or one per beat. A picture may also be a short .mp4 (the
+    depth camera's clips): it plays as it is, so it must be at least as long as its beat plus the dissolve."""
     from trendclip.video_assembler import ffmpeg_with_libass
 
     if len(pictures) != len(beats) or not beats:

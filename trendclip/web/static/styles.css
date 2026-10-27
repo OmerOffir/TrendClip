@@ -860,24 +860,3 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 @media (max-width: 700px) { .insights-grid { grid-template-columns: 1fr; } }
 .in-brief { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--text); }
 
-/* ---------- After Market tab ---------- */
-.ws-mark-am { background: linear-gradient(135deg, #0f3d2e, #d49a1a); }
-.am-jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-bottom: 14px; }
-.am-job { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); font-size: 13px; }
-.am-job b { font-size: 15px; }
-.am-job.next { box-shadow: inset 3px 0 0 #d49a1a; }
-.am-job.past { opacity: 0.7; }
-.am-run { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); font-size: 13px; }
-.am-run label { display: flex; align-items: center; gap: 6px; }
-.am-run select { padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); }
-.am-run .btn-primary { margin: 0; width: auto; }
-.am-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; font-size: 13px; }
-.am-facts h4 { margin: 0 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
-.am-facts table { width: 100%; border-collapse: collapse; }
-.am-facts td { padding: 3px 4px; border-bottom: 1px solid var(--border); }
-.am-facts td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.am-up { color: var(--good); } .am-down { color: #ff6b6b; }
-.am-facts .why { display: block; color: var(--muted); font-size: 12px; }
-.am-facts ul { margin: 0; padding-left: 16px; }
-.am-facts li { margin: 2px 0; }
-.am-check { color: #ff8f8f; }

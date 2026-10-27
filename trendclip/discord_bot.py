@@ -35,7 +35,6 @@ EMERGENCY_GAMES = ("GTA V / Online", "Minecraft")  # names from games.py
 CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini busy) is made again from scratch
 EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
 PRODUCE_ATTEMPTS = 5     # the morning production run has all day: a failed video is made again from scratch
-AM_ATTEMPTS = 2          # an After Market brief has minutes, not hours: one more try (a script over 60 s, Gemini busy)
 RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 REMINDER_ORDER = ("post", "emergency", "slot", "produce", "morning", "leaderboard")  # most time-critical first
@@ -529,7 +528,6 @@ class TrendClipBot(discord.Client):
     async def reminders(self) -> None:
         at = assistant.now(self.settings)
         self.darkarchives_posts(at)
-        self.aftermarket_jobs(at)
         if not self.settings.discord_channel_id:
             return
         # The time-critical work first (a slot's post, the emergency video), then the rest. After a restart the
@@ -725,86 +723,6 @@ class TrendClipBot(discord.Client):
                         f"❌ {slot}: **{item.title}** did not go out: {err}\nUpload it from the Dark Outliers tab."))
                 except Exception:  # noqa: BLE001
                     logger.exception("Could not report the failure in the Dark Outliers channel")
-
-    # ---- After Market ----------------------------------------------------------------------
-
-    def aftermarket_jobs(self, at: datetime) -> None:
-        """After Market (its own channel and token): at each job's start (AM_SLOTS, AM_LEAD) the bot reads the
-        market, writes the script, renders, posts the video in its Discord channel with a veto button and
-        uploads it at the slot's time. Nothing is made the day before: the numbers go stale."""
-        from modules import am_channel
-
-        try:
-            due = am_channel.due_jobs(self.settings, at, self.sent.load())
-        except Exception:  # noqa: BLE001 - never let the third channel stop the others' reminders
-            logger.exception("After Market job check failed")
-            return
-        for job in due:
-            self.sent.add(job.key, at.date())  # marked first: a render takes minutes and must never start twice
-            task = asyncio.create_task(self.aftermarket_run(job))
-            self.jobs.add(task)
-            task.add_done_callback(self._job_done)
-
-    async def aftermarket_channel(self) -> discord.abc.Messageable | None:
-        from modules import am_channel
-
-        channel_id = am_channel.discord_channel_id()
-        if not channel_id:
-            return None
-        try:
-            return self.get_channel(channel_id) or await self.fetch_channel(channel_id)
-        except discord.HTTPException:
-            logger.exception("After Market Discord channel %s is not reachable", channel_id)
-            return None
-
-    async def aftermarket_run(self, job, upload: bool = True) -> None:
-        """One After Market job: make the video (AM_ATTEMPTS tries), show it with "Don't post this", wait for
-        the slot's time, upload. A render that fails is reported and nothing is uploaded."""
-        from modules import am_channel
-
-        settings = self.settings
-        label = f"{day_label(settings, job.day)} {job.slot} · {job.focus or job.kind}"
-        channel = await self.aftermarket_channel()
-        if channel is None:
-            logger.warning("After Market: no Discord channel (DISCORD_CHANNEL_ID in channels/aftermarket/channel.env); "
-                           "making %s without a report", label)
-            try:
-                async with self.render_lock:
-                    await asyncio.to_thread(am_channel.run, settings, job, upload_now=upload, announce=False)
-            except Exception:  # noqa: BLE001
-                logger.exception("After Market %s failed", label)
-            return
-        late = lambda: assistant.now(settings) > job.post_at + am_channel.START_WINDOW  # noqa: E731
-        try:
-            info = await self.run_job(channel, f"📈 After Market, {label}", lambda p: am_channel.make(settings, job, p),
-                                      self.render_lock, attempts=AM_ATTEMPTS, give_up=late)
-        except JobFailed:
-            await channel.send(f"📈 No After Market video for {label}: nothing was uploaded.",
-                               view=view_of(button("amrun", f"{job.day.isoformat()} {job.kind}", "🎬 Try again now",
-                                                   discord.ButtonStyle.success)))
-            return
-        wait = (job.post_at - assistant.now(settings)).total_seconds()
-        posting = upload and am_channel.auto_post()
-        note = (f"It goes out by itself at {job.slot} as {am_channel.upload_privacy()}." if posting and wait > 0
-                else f"Uploading it now as {am_channel.upload_privacy()}." if posting else "Upload it from the After Market tab.")
-        await self.send_file_video(channel, am_channel.video_path(info["key"]), am_channel.video_line(info) + "\n" + note
-                                   + (" Press **Don't post this** to stop it." if posting else ""),
-                                   view_of(button("amveto", info["key"], "🚫 Don't post this", discord.ButtonStyle.danger)))
-        if not posting:
-            return
-        if wait > 0:
-            await asyncio.sleep(wait)
-        try:
-            record = await asyncio.to_thread(am_channel.publish_if_allowed, info["key"], settings=settings)
-        except Exception as err:  # noqa: BLE001 - reported in the channel
-            logger.exception("After Market upload of %s failed", info["key"])
-            await channel.send(clip_text(f"❌ **{info['title']}** did not go out: {err}\nUpload it from the After Market tab."),
-                               view=view_of(button("amup", info["key"], "⬆️ Try the upload again", discord.ButtonStyle.primary)))
-            return
-        if record is None:
-            await channel.send(f"🚫 **{info['title']}** was not uploaded (vetoed, or AM_AUTO_POST is off).")
-        else:
-            logger.info("After Market %s: %s is on YouTube (%s)", info["key"], info["title"], record.get("url"))
 
     def _job_done(self, task: asyncio.Task) -> None:
         self.jobs.discard(task)
@@ -1592,83 +1510,13 @@ async def act_da_delete(bot: TrendClipBot, interaction: discord.Interaction, arg
                              f"removed; the story is {result['status'] or 'kept'}).")
 
 
-async def act_am_veto(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
-    """After Market "Don't post this": before the upload it is cancelled; after it the video goes private."""
-    from modules import am_channel
-
-    try:
-        result = await asyncio.to_thread(am_channel.veto, key)
-    except KeyError:
-        return await reply(interaction, "That After Market video is gone.", ephemeral=True)
-    except Exception as err:  # noqa: BLE001
-        return await reply(interaction, f"❌ Couldn't stop **{key}**: {err}", ephemeral=True)
-    day, kind = key[:10], key[11:]
-    if result["hidden"]:
-        text = f"🚫 **{result['title']}** is private on YouTube now."
-    elif result["uploaded"]:
-        text = f"🚫 **{result['title']}** was already private."
-    else:
-        text = f"🚫 **{result['title']}** won't be posted (the video stays in the After Market tab)."
-    await reply(interaction, text, view=view_of(button("amrun", f"{day} {kind}", "🎬 Make another now", discord.ButtonStyle.success)))
-
-
-async def act_am_run(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
-    """After Market "Try again now" / "Make another now": the whole job for that day and kind, uploaded when done."""
-    from modules import am_channel
-
-    try:
-        date_text, kind = arg.split()
-        day = Day.fromisoformat(date_text)
-        if kind not in am_channel.am_data.SLOTS:
-            raise ValueError(kind)
-    except ValueError as err:
-        return await reply(interaction, f"Couldn't read the job: {err}", ephemeral=True)
-    job = am_channel.job_for(bot.settings, day, kind)
-    await reply(interaction, f"📈 Making the After Market {job.focus or job.kind} video for {day_label(bot.settings, day)}…", ephemeral=True)
-    task = asyncio.create_task(bot.aftermarket_run(job))
-    bot.jobs.add(task)
-    task.add_done_callback(bot._job_done)
-
-
-async def act_am_upload_confirm(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
-    from modules import am_channel
-
-    info = am_channel.load_info(key)
-    if info is None:
-        return await reply(interaction, "That After Market video is gone.", ephemeral=True)
-    if (info.get("uploads") or {}).get("youtube"):
-        return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
-    if info.get("check"):
-        return await reply(interaction, f"**{info['title']}** failed its check ({'; '.join(info['check'])}) and can't go out.", ephemeral=True)
-    if not am_channel.connected():
-        return await reply(interaction, "The After Market YouTube channel is not connected (After Market tab → Connect YouTube).", ephemeral=True)
-    privacy = am_channel.upload_privacy()
-    await reply(interaction, f"Upload **{info['title']}** to the After Market channel now, as **{privacy}**?",
-                view=view_of(button("amupgo", key, f"Yes, upload as {privacy}", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
-                ephemeral=True)
-
-
-async def act_am_upload(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
-    from modules import am_channel
-
-    info = am_channel.load_info(key)
-    if info is None:
-        return await reply(interaction, "That After Market video is gone.", ephemeral=True)
-    await interaction.response.defer(thinking=True)
-    try:
-        record = await asyncio.to_thread(am_channel.upload, key, settings=bot.settings)
-    except Exception as err:  # noqa: BLE001
-        return await reply(interaction, f"❌ Upload failed: {err}")
-    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}")
-
-
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
     "iggo": act_instagram, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
     "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
-    "dadelgo": act_da_delete, "amveto": act_am_veto, "amrun": act_am_run, "amup": act_am_upload_confirm, "amupgo": act_am_upload,
+    "dadelgo": act_da_delete,
 }
 
 
@@ -2136,10 +1984,6 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/da rank` a ranking video (the 5 best stories counted down; every 4th video is one by itself) · "
         "`/da fetch` · `/da upload` · `/da insights` what the channel's own numbers say. Every morning the bank is refreshed and each empty slot gets a video, posted "
         "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
-        "",
-        "**After Market** (the trader's brief, its own YouTube channel): `/am status` · `/am make` the video now (`kind:` "
-        "premarket / close / weekend, `upload:False` to only make it). Every trading day the bot makes and uploads the "
-        "pre-market brief at the first slot and the closing brief at the second (AM_SLOTS), with **Don't post this** under each.",
     ]), ephemeral=True)
 
 
@@ -2316,51 +2160,8 @@ async def da_upload_cmd(interaction: discord.Interaction, video: str) -> None:
     await act_da_upload_confirm(_bot(interaction), interaction, video)
 
 
-# --------------------------------------------------------------------------- After Market
-
-
-am_group = app_commands.Group(name="am", description="After Market: the trader's brief before the open and at the close")
-AmKind = Literal["auto", "premarket", "close", "weekend"]
-
-
-@am_group.command(name="status", description="After Market: YouTube connection, the next job, the last video")
-async def am_status_cmd(interaction: discord.Interaction) -> None:
-    from modules import am_channel
-
-    settings = _bot(interaction).settings
-    await interaction.response.defer(thinking=True)
-    yt = await asyncio.to_thread(am_channel.youtube_status)
-    yt_line = (f"✅ YouTube connected ({(yt.get('channel') or {}).get('title', 'channel')} {yt.get('handle', '')})" if yt.get("connected")
-               else f"❌ YouTube not connected{': ' + yt['error'] if yt.get('error') else ''} (After Market tab → Connect YouTube)")
-    now = assistant.now(settings)
-    nxt = am_channel.next_job(settings, now)
-    last = (await asyncio.to_thread(am_channel.videos, None, 1) or [None])[0]
-    up = ((last or {}).get("uploads") or {}).get("youtube") or {}
-    await reply(interaction, "\n".join([
-        yt_line,
-        f"🕒 Next: {day_label(settings, nxt.day) + ' ' + nxt.slot + ' (' + (nxt.focus or nxt.kind) + ', starts ' + nxt.start.strftime('%H:%M') + ')' if nxt else 'nothing in 10 days'}",
-        f"🎬 Last video: {last['title']} ({last['key']}, {last.get('duration_seconds', 0):.0f} s) · " + (f"▶️ {up.get('url')}" if up else "not on YouTube") if last else "🎬 No video yet",
-        f"🏭 Automation: {'on' if am_channel.auto_post() else 'off'} · slots {', '.join(am_channel.slots())} · the pre-market job starts "
-        f"{am_channel.lead_minutes()} min early · uploads as {am_channel.upload_privacy()}",
-    ]))
-
-
-@am_group.command(name="make", description="Make the After Market video now (facts → script → video → YouTube)")
-@app_commands.describe(kind="Which brief (default: the one that fits the clock)", upload="Upload it when done (default yes)")
-async def am_make_cmd(interaction: discord.Interaction, kind: AmKind = "auto", upload: bool = True) -> None:
-    from modules import am_channel
-
-    bot = _bot(interaction)
-    now = assistant.now(bot.settings)
-    job = am_channel.job_for(bot.settings, now.date(), am_channel.am_data.slot_for(now) if kind == "auto" else kind)
-    await reply(interaction, f"📈 Making the After Market {job.focus or job.kind} video now. Progress in the After Market channel.", ephemeral=True)
-    task = asyncio.create_task(bot.aftermarket_run(job, upload=upload))
-    bot.jobs.add(task)
-    task.add_done_callback(bot._job_done)
-
-
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
-            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, am_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, help_cmd]
 
 
 

@@ -963,35 +963,6 @@ Gemini rejects a story (status REJECTED, with the reason shown in the tab) if it
 - a recent political controversy or ongoing news;
 - not a story at all.
 
-## After Market (the trader's brief, twice a day)
-
-The third channel: a 60 s Short before the New York open and one at the close, made from free keyless
-sources (Yahoo Finance, the Nasdaq earnings calendar, ForexFactory, CoinGecko, alternative.me, CNBC and
-Google News RSS). `modules/am_data.py` reads the session, `am_charts.py` draws the cards, `am_script.py`
-has Gemini write the script and checks every number against the facts (a template script is the
-fallback), `am_video.py` renders the Short, and `am_channel.py` runs the channel.
-
-Unlike Dark Outliers nothing is made the day before: the numbers go stale. The Discord bot has two jobs a
-trading day (`AM_SLOTS`, default `15:00,23:00` in `TIMEZONE`, which is 08:00 and 16:00 in New York):
-
-- the **pre-market** job starts `AM_LEAD` minutes early (default 20): facts → script → render → the video
-  in the channel's Discord channel with **Don't post this** → the upload at the slot's time;
-- the **close** job starts at its time, so it has the closing prints, and uploads as soon as the render is done.
-
-A day with no session (weekends, the NYSE holidays in `am_data.HOLIDAYS`) gets one video at the first
-slot: Saturday "the week in review", Sunday (and a holiday) "the week ahead". A render that fails is
-reported in the channel and nothing is uploaded; a video over 60 s (not a Short) never goes out. The veto
-button cancels the upload before it, and makes the video private after it. `/am status` and `/am make`
-(`kind:` premarket / close / weekend, `upload:False` to only make it) run it by hand.
-
-Setup: `channels/aftermarket/channel.env` (copy `channels/channel.env.example`; `CHANNEL_HANDLE` and the
-`DISCORD_CHANNEL_ID` the bot reports in), then the **After Market** tab → **Connect YouTube** (pick the
-After Market channel in Google's window; the token lands in `channels/aftermarket/token_youtube.json`).
-The tab shows today's jobs, the last session's facts, every video with what went to YouTube, and makes a
-video now. Uploads go out as `AM_UPLOAD_PRIVACY` (public) in category `AM_CATEGORY` (25, News & Politics;
-27 for Education). `AM_AUTO_POST=0` makes the videos without uploading them. The `AM_*` settings for the
-voice, the music, the cards and the watchlist are at the end of `.env.example`.
-
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a

@@ -1,4 +1,4 @@
-"""What every extra channel (Dark Outliers, After Market) shares: its folder under channels/<name>/, its
+"""What every extra channel (Dark Outliers) shares: its folder under channels/<name>/, its
 channel.env (handle, Discord channel id), its own YouTube login (token_youtube.json, through the shared
 OAuth client), Discord's REST API aimed at its channel, and the message buttons the bot answers.
 

@@ -99,7 +99,7 @@ def trim_silence(audio, sample_rate: int, lead: float = 0.1, tail: float = 0.25)
 
 def speak(text: str, rate: str = "+0%", ref_wav: Path | None = None, ref_text: str | None = None) -> tuple[bytes, list[Word]]:
     """MP3 bytes and estimated word timings for `text`. `ref_wav` / `ref_text`: another reference clip
-    and its transcript (After Market's energetic reader); default: voices/ref.wav."""
+    and its transcript; default: voices/ref.wav."""
     import numpy as np
 
     ref_wav = ref_wav or REF_WAV
