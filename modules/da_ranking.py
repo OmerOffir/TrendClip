@@ -54,7 +54,8 @@ cold cases, cursed places...) and give the ranking a title that names the theme 
 characters, the number first.
 
 - hook_text: ONE statement of at most {hook_words} words, spoken first, that says what is ranked and
-  why it is worth staying for ("Five cases the files never closed. Number five."). No question.
+  why it is worth staying for ("Five cases the files never closed."). No question, and it never says
+  "Number five": the first entry's narration says that.
 - entries: exactly {count}, one per rank, each with
   - story_id: the id of a CANDIDATE (every id different);
   - rank: 1 to {count};
@@ -140,6 +141,17 @@ def build_prompt(stories: list[dict], n: int, today: dt.date | None = None) -> s
 
 
 NUMBER_WORDS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight"}
+TRAILING_NUMBER = re.compile(r"\s*\bnumber\s+(\w+|\d+)\s*[.!]?\s*$", re.I)
+
+
+def clean_hook(hook: str) -> str:
+    """The hook without a "Number five." at its end: the first entry says that, so the voice said it twice."""
+    hook = hook.strip()
+    cut = TRAILING_NUMBER.sub("", hook).strip()
+    if not cut or cut == hook:
+        return hook
+    cut = cut.rstrip(",;:- ")
+    return cut if cut.endswith((".", "!", "?")) else cut + "."
 
 
 def check(draft: RankingDraft, ids: set[int], n: int) -> list[str]:
@@ -222,9 +234,9 @@ def to_script(story_id: int, draft: RankingDraft, stories: dict[int, dict]) -> s
     scenes = [script_gen.Scene(scene_id=i, narration=e.narration.strip(), visual_keywords=["dark archive", "old documents"],
                                image_prompt=e.image_prompt.strip(), overlay_text=e.label.strip().upper())
               for i, e in enumerate(ordered, 1)]
-    total = script_gen.words(draft.hook_text) + sum(script_gen.words(s.narration) for s in scenes)
+    total = script_gen.words(clean_hook(draft.hook_text)) + sum(script_gen.words(s.narration) for s in scenes)
     return script_gen.Script(
-        story_id=story_id, title=draft.title.strip(), hook_text=draft.hook_text.strip(),
+        story_id=story_id, title=draft.title.strip(), hook_text=clean_hook(draft.hook_text),
         estimated_duration_seconds=round(total / script_gen.WORDS_PER_SECOND), total_word_count=total, scenes=scenes,
         thumbnail_text=draft.thumbnail_text.strip().upper(),
         ranking=[script_gen.RankEntry(rank=e.rank, label=e.label.strip(), story_id=e.story_id,

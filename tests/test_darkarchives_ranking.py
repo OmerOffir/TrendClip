@@ -47,6 +47,15 @@ def test_check_finds_the_problems():
     assert any("title" in p for p in da_ranking.check(_draft(title=""), ids, 5))
 
 
+def test_the_hook_never_ends_with_the_first_number():
+    assert da_ranking.clean_hook("Five cases the files never closed. Number five.") == "Five cases the files never closed."
+    assert da_ranking.clean_hook("Five cases the files never closed, number 5") == "Five cases the files never closed."
+    assert da_ranking.clean_hook("Number five is the worst of all.") == "Number five is the worst of all."
+    assert da_ranking.clean_hook("Five cases the files never closed.") == "Five cases the files never closed."
+    stories = {i: {"title": f"Case {i}"} for i in range(1, 6)}
+    assert da_ranking.to_script(1, _draft(), stories).hook_text == "Five cases the files never closed."
+
+
 def test_to_script_counts_down_and_keeps_the_ranking():
     stories = {i: {"title": f"Case {i}"} for i in range(1, 6)}
     script = da_ranking.to_script(42, _draft(), stories)
