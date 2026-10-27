@@ -286,6 +286,7 @@ def test_make_records_the_video(settings, tmp_path, world):
     assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0)
     assert (tmp_path / job.key / "script.json").is_file()
     assert bw_channel.videos(tmp_path)[0]["key"] == job.key
+    assert "Northwest Angle" in bw_topics.load(tmp_path).used  # the script's topic is never made again
 
 
 def test_too_long_video_fails_its_check(settings, tmp_path, world):
@@ -378,3 +379,40 @@ def test_next_script_queue_then_topics(settings, tmp_path, monkeypatch):
     with pytest.raises(bw_script.TryLater):
         bw_channel.next_script(out_dir=tmp_path, research=busy)
     assert bw_topics.SEEDS[2][1] not in bw_topics.load(tmp_path).rejected  # a busy day does not drop the topic
+
+
+def test_manual_topic_goes_first_and_listing(tmp_path):
+    bw_topics.mark(tmp_path, bw_topics.SEEDS[0][1], used=True)
+    bw_topics.add(tmp_path, "Why is Alaska's capital not reachable by road?", "Juneau, Alaska")
+    assert bw_topics.next_topic(tmp_path).article == "Juneau, Alaska"
+    rows = bw_topics.listing(tmp_path)
+    assert rows[0]["article"] == "Juneau, Alaska" and rows[0]["status"] == "next" and rows[0]["source"] == "manual"
+    assert rows[-1]["status"] == "used" and rows[-1]["article"] == bw_topics.SEEDS[0][1]
+
+
+def test_tab_endpoints(tmp_path, monkeypatch, settings, world):
+    from fastapi.testclient import TestClient
+
+    from trendclip.web.app import app
+
+    monkeypatch.setattr(bw_channel, "OUTPUT_DIR", tmp_path)
+    job, info, _ = _make(settings, tmp_path, world)
+    client = TestClient(app)
+    body = client.get("/api/borderlinewhy/videos").json()
+    assert body["videos"][0]["key"] == job.key and body["videos"][0]["state"] == "waiting"
+    assert "Sources:" in body["videos"][0]["youtube"]["description"]
+    assert client.get(f"/api/borderlinewhy/videos/{job.key}/video.mp4").status_code == 200
+    assert client.get("/api/borderlinewhy/videos/nope/video.mp4").status_code == 404
+    approved = client.post(f"/api/borderlinewhy/videos/{job.key}/approve").json()
+    assert approved["approved"] is True
+    assert client.get("/api/borderlinewhy/videos").json()["videos"][0]["state"] == "approved"
+    client.post(f"/api/borderlinewhy/videos/{job.key}/veto")
+    assert client.get("/api/borderlinewhy/videos").json()["videos"][0]["state"] == "vetoed"
+    monkeypatch.setattr(bw_script, "article_exists", lambda title: None)
+    assert client.post("/api/borderlinewhy/topics", json={"question": "Why is this a thing?", "article": "Nope"}).status_code == 400
+    monkeypatch.setattr(bw_script, "article_exists", lambda title: "Juneau, Alaska")
+    added = client.post("/api/borderlinewhy/topics", json={"question": "Why no road to Juneau?", "article": "juneau"}).json()
+    assert added["article"] == "Juneau, Alaska"
+    assert client.get("/api/borderlinewhy/topics").json()["topics"][0]["article"] == "Juneau, Alaska"
+    status = client.get("/api/borderlinewhy/status").json()
+    assert status["slots"] == ["19:00"] and "connected" in status["youtube"]

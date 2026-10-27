@@ -26,6 +26,10 @@
           <span class="ws-mark ws-mark-dark" aria-hidden="true">DA</span>
           <span><b>Dark Outliers</b><small>Real dark stories &amp; mysteries</small></span>
         </button>
+        <button type="button" role="tab" class="workspace" data-workspace="borderlinewhy" aria-selected="false">
+          <span class="ws-mark ws-mark-bw" aria-hidden="true">BW</span>
+          <span><b>Borderline Why</b><small>Map mysteries, explained</small></span>
+        </button>
         <button type="button" class="workspace ws-new" disabled title="More channels for other kinds of videos are coming">+ New channel</button>
       </nav>
       <div class="status" id="status" aria-live="polite"></div>
@@ -48,7 +52,69 @@
         <button type="button" role="tab" data-da-view="plan">Plan <span class="nav-count todo" id="daNavPlan" hidden title="Planned videos not yet on YouTube"></span></button>
       </nav>
     </div>
+    <div class="subbar" data-workspace-panel="borderlinewhy" hidden>
+      <span class="subbar-label">Borderline Why</span>
+      <nav class="nav" id="bwNav" role="tablist" aria-label="Borderline Why sections">
+        <button type="button" role="tab" class="active" data-bw-view="videos">Videos <span class="nav-count todo" id="bwNavWaiting" hidden title="Videos waiting for Approve"></span></button>
+        <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
+      </nav>
+    </div>
   </header>
+
+  <main class="container da-view" id="viewBwVideos" data-workspace-panel="borderlinewhy" data-bw-panel="videos" hidden>
+    <div id="bwError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Borderline Why</h2>
+          <span class="hint" id="bwAutoHint">Loading…</span>
+        </div>
+        <button type="button" class="btn-secondary" id="bwRefresh">Refresh</button>
+      </div>
+      <div class="da-ytbar" id="bwYouTube"></div>
+      <div class="bw-make">
+        <button type="button" class="btn-primary" id="bwMake">🗺️ Make the next video now</button>
+        <span class="hint" id="bwMakeStatus"></span>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Videos <span class="hint" id="bwVideosCount"></span></h2>
+          <span class="hint">Newest first. A video goes to YouTube at its slot only after <b>Approve</b>; approving after the slot uploads it at once</span>
+        </div>
+      </div>
+      <div class="da-videos" id="bwVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewBwTopics" data-workspace-panel="borderlinewhy" data-bw-panel="topics" hidden>
+    <div id="bwTopicsError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Add a question</h2>
+          <span class="hint">It is made next. The research starts from its English Wikipedia article and the pages that article cites</span>
+        </div>
+      </div>
+      <form class="bw-add" id="bwAdd">
+        <input type="text" id="bwAddQuestion" placeholder="Why does … ?" required minlength="8" maxlength="140" aria-label="Question" />
+        <input type="text" id="bwAddArticle" placeholder="Wikipedia article title" required aria-label="Wikipedia article" />
+        <button type="submit" class="btn-primary">Add</button>
+        <span class="hint" id="bwAddStatus"></span>
+      </form>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Topics <span class="hint" id="bwTopicsCount"></span></h2>
+          <span class="hint">In the order they will be made. A topic is dropped when two readable sources can't back a clear answer; Gemini adds more when fewer than 8 are left</span>
+        </div>
+        <button type="button" class="btn-secondary" id="bwTopicsRefresh">Refresh</button>
+      </div>
+      <div class="bw-topics" id="bwTopics"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
 
   <main class="container da-view" id="viewDarkStories" data-workspace-panel="darkarchives" data-da-panel="stories" hidden>
     <div id="daError" class="banner banner-error" hidden></div>
@@ -919,5 +985,6 @@
   <script src="/static/insights.js"></script>
   <script src="/static/find.js"></script>
   <script src="/static/darkarchives.js"></script>
+  <script src="/static/borderlinewhy.js"></script>
 </body>
 </html>

@@ -355,8 +355,9 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     }
     info["check"] = check_video(info)
     save_info(info, out_dir)
-    if origin.startswith("topic:"):
-        bw_topics.mark(out_root(out_dir), origin.removeprefix("topic:"), used=True)
+    article = origin.removeprefix("topic:") if origin.startswith("topic:") else script.get("article", "")
+    if article:  # a queued script uses up its topic too, so the list never makes it twice
+        bw_topics.mark(out_root(out_dir), article, used=True)
     if info["check"]:
         raise ChannelError(f"{info['title']} can't go out: " + "; ".join(info["check"]))
     if announce:

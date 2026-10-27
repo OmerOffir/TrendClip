@@ -860,3 +860,22 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 @media (max-width: 700px) { .insights-grid { grid-template-columns: 1fr; } }
 .in-brief { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin: 0; color: var(--text); }
 
+
+/* ---------- Borderline Why tab ---------- */
+.ws-mark-bw { background: linear-gradient(135deg, #3a6aa8, #f2c14e); }
+.bw-make { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.bw-make .btn-primary { margin: 0; width: auto; }
+.bw-sources { margin: 0; padding-left: 18px; font-size: 12px; }
+.bw-sources a { color: var(--text); word-break: break-all; }
+.bw-narration { font-size: 13px; line-height: 1.5; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; }
+.bw-add { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 10px; align-items: center; }
+.bw-add input { padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; min-width: 0; }
+.bw-add .btn-primary { margin: 0; width: auto; }
+.bw-add .hint { grid-column: 1 / -1; }
+.bw-topics { display: grid; gap: 6px; }
+.bw-topic { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elev); font-size: 13px; }
+.bw-topic .bw-n { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.bw-topic small { display: block; color: var(--muted); }
+.bw-topic.used, .bw-topic.dropped { opacity: 0.6; }
+.bw-topic.next { box-shadow: inset 3px 0 0 #f2c14e; }
+@media (max-width: 700px) { .bw-add { grid-template-columns: 1fr; } }

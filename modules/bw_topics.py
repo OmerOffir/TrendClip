@@ -75,7 +75,7 @@ SEEDS: list[tuple[str, str]] = [
 class Topic(BaseModel):
     question: str
     article: str
-    source: str = "seed"  # seed | gemini
+    source: str = "seed"  # seed | gemini | manual (added on the dashboard: goes first)
 
 
 class TopicState(BaseModel):
@@ -108,9 +108,39 @@ def all_topics(state: TopicState) -> list[Topic]:
 
 
 def remaining(out_dir: Path) -> list[Topic]:
+    """The topics still to make: the ones added by hand first, then the seeds, then Gemini's."""
     state = load(out_dir)
     done = set(state.used) | set(state.rejected)
-    return [t for t in all_topics(state) if t.article not in done]
+    left = [t for t in all_topics(state) if t.article not in done]
+    return [t for t in left if t.source == "manual"] + [t for t in left if t.source != "manual"]
+
+
+def add(out_dir: Path, question: str, article: str) -> Topic:
+    """A question added by hand (its Wikipedia article checked by the caller); it is made next."""
+    topic = Topic(question=question.strip(), article=article.strip(), source="manual")
+    with _lock:
+        state = load(out_dir)
+        state.proposed = [t for t in state.proposed if t.article != topic.article] + [topic]
+        state.rejected.pop(topic.article, None)
+        save(state, out_dir)
+    return topic
+
+
+def listing(out_dir: Path) -> list[dict[str, Any]]:
+    """Every topic with its state, in the order they will be made (done ones last)."""
+    state = load(out_dir)
+    left = remaining(out_dir)
+    order = {t.article: i for i, t in enumerate(left)}
+    out = []
+    for t in all_topics(state):
+        if t.article in state.used:
+            status, note = "used", state.used[t.article]
+        elif t.article in state.rejected:
+            status, note = "dropped", state.rejected[t.article]
+        else:
+            status, note = "next" if order.get(t.article) == 0 else "waiting", ""
+        out.append({**t.model_dump(), "status": status, "note": note, "order": order.get(t.article)})
+    return sorted(out, key=lambda r: (r["order"] is None, r["order"] if r["order"] is not None else 0))
 
 
 def next_topic(out_dir: Path, skip: set[str] | None = None) -> Topic | None:
