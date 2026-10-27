@@ -14,6 +14,8 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
        placeholder cards), enough words; a video that fails is deleted and the next story is tried,
        MAX_STORY_TRIES stories per slot in all;
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
+  Every DA_RANKING_EVERY-th video (default 4) is a ranking instead: Gemini ranks the 5 best stories of
+  the bank and counts them down (modules.da_ranking; /da rank and the dashboard make one on demand).
   The bot shows each video in the Dark Outliers Discord channel with a "Don't post this" button.
   The channel learns from its own numbers (modules.da_insights): the mix leans towards a pillar whose
   videos get more views (DA_PILLAR_BIAS caps it) and the script prompt ends with what worked.
@@ -141,18 +143,42 @@ def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_
     raise ProduceError(f"{tries} stories in a row were rejected")
 
 
+def ranking_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None) -> dict:
+    """A ranking script (modules.da_ranking) in next_script's shape."""
+    from modules import da_ranking
+
+    progress(None, f"Ranking the {da_ranking.count()} best stories of the bank")
+    return da_ranking.process(db_path=db_path, out_dir=scripts_dir)
+
+
 def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, m: None, *, db_path=None,
                 scripts_dir: Path | None = None, out_dir: Path | None = None, make=None, tries: int = MAX_STORY_TRIES,
-                announce: bool = False) -> dict:
+                announce: bool = False, ranking: bool | None = None) -> dict:
     """One slot: story -> script -> video -> check -> plan. {"status": "planned" | "taken", "story_id",
     "item", "info", "tried": [...]} ; raises ProduceError when no story made a good video. `announce`:
-    post it in the Discord channel (the bot's own run posts with a veto button instead)."""
+    post it in the Discord channel (the bot's own run posts with a veto button instead). `ranking`: a
+    ranking video (modules.da_ranking) instead of one story; None = one when it is due (every
+    DA_RANKING_EVERY-th video). A ranking that fails falls back to a single story."""
+    from modules import da_ranking
+
     make = make or video_gen.make_video
     tried: list[dict[str, Any]] = []
+    want_ranking = da_ranking.due(out_dir) if ranking is None else ranking
     for attempt in range(tries):
         if da_plan.slot_item(day, slot, out_dir) is not None:
             return {"status": "taken", "day": day.isoformat(), "slot": slot, "tried": tried}
-        scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt)
+        if want_ranking:
+            want_ranking = False  # one try: its stories are USED now, the next attempt tells one story
+            try:
+                scripted = ranking_script(progress, db_path, scripts_dir)
+            except Exception as err:  # noqa: BLE001 - the ranking is a bonus, never the end of the slot
+                logger.warning("No ranking this time: %s", err)
+                progress(None, f"No ranking this time ({str(err)[:80]}); telling one story instead")
+                if ranking:
+                    raise ProduceError(f"The ranking failed: {err}") from err
+                scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt)
+        else:
+            scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt)
         story_id = scripted["story"]["id"]
         progress(0.0, f"Making the video: {scripted['script'].title[:60]}")
         info = make(story_id, progress, out_dir=out_dir, scripts_dir=scripts_dir, db_path=db_path, settings=settings,

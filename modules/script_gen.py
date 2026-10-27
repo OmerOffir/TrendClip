@@ -60,6 +60,14 @@ class Scene(BaseModel):
     overlay_text: str
 
 
+class RankEntry(BaseModel):
+    """One place of a ranking video (modules.da_ranking): the list on screen shows `label` at `rank`."""
+    rank: int
+    label: str
+    story_id: int  # the bank story it came from
+    title: str = ""
+
+
 class Script(BaseModel):
     story_id: int
     title: str
@@ -68,6 +76,7 @@ class Script(BaseModel):
     total_word_count: int
     scenes: list[Scene]
     thumbnail_text: str = ""  # the headline on frame 0 (scripts from before it existed: made from the hook)
+    ranking: list[RankEntry] = []  # a ranking video: the scenes count down from the last place to rank 1
 
 
 class ScriptGenError(RuntimeError):

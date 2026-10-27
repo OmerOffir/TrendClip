@@ -637,7 +637,9 @@ class TrendClipBot(discord.Client):
             logger.warning("Dark Outliers lesson unavailable: %s", err)
             return ""
 
-    async def darkarchives_produce_one(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
+    async def darkarchives_produce_one(self, channel: discord.abc.Messageable, day: Day, slot: str,
+                                       ranking: bool | None = None) -> None:
+        """`ranking`: a ranking video for the slot (None: one when it is due)."""
         from modules import da_plan, da_produce
 
         settings = self.settings
@@ -645,8 +647,8 @@ class TrendClipBot(discord.Client):
             return
         label = f"{day_label(settings, day)} {slot}"
         try:
-            result = await self.run_job(channel, f"Making the video for {label}",
-                                        lambda p: da_produce.produce_one(settings, day, slot, p), self.render_lock)
+            result = await self.run_job(channel, f"Making the {'ranking ' if ranking else ''}video for {label}",
+                                        lambda p: da_produce.produce_one(settings, day, slot, p, ranking=ranking), self.render_lock)
         except JobFailed:
             await channel.send(f"🏭 Couldn't make a video for {label}.",
                                view=view_of(button("daprod", f"{day.isoformat()} {slot}", "🎬 Try again now",
@@ -657,7 +659,8 @@ class TrendClipBot(discord.Client):
         info, item = result["info"], result["item"]
         skipped = [t for t in result["tried"] if not t.get("ok")]
         note = ("\nSkipped: " + "; ".join(f"{t['title'][:30]} ({', '.join(t['problems'])})" for t in skipped)) if skipped else ""
-        text = (f"🏭 **{info['title']}** is planned for {label} and goes out by itself as {da_plan.upload_privacy()}.\n"
+        ranked = ("\n" + " · ".join(f"{e['rank']}. {e['label']}" for e in info["ranking"])) if info.get("ranking") else ""
+        text = (f"🏭 **{info['title']}** is planned for {label} and goes out by itself as {da_plan.upload_privacy()}.{ranked}\n"
                 f"{info['duration_seconds']:.0f} s · pictures: {info['pictures']}"
                 + (f" · {len(info['photos'])} photo(s)" if info.get("photos") else "")
                 + (f" · 🎵 {info['music']['title']}" if info.get("music") else "") + note)
@@ -2113,6 +2116,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "",
         "**Dark Outliers** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
         "`/da make` a video for the next empty slot now (`slots:` more, `fetch:True` refresh the bank first) · "
+        "`/da rank` a ranking video (the 5 best stories counted down; every 4th video is one by itself) · "
         "`/da fetch` · `/da upload` · `/da insights` what the channel's own numbers say. Every morning the bank is refreshed and each empty slot gets a video, posted "
         "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
         "",
@@ -2234,6 +2238,29 @@ async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Rang
                     pass
         for day, slot in wanted:
             await bot.darkarchives_produce(only=(day, slot))
+
+    task = asyncio.create_task(go())
+    bot.jobs.add(task)
+    task.add_done_callback(bot._job_done)
+
+
+@da_group.command(name="rank", description="Make a Dark Outliers ranking video now: the 5 best stories of the bank counted down, for the next empty slot")
+async def da_rank_cmd(interaction: discord.Interaction) -> None:
+    from modules import da_produce
+
+    bot = _bot(interaction)
+    settings = bot.settings
+    targets = await asyncio.to_thread(da_produce.targets, settings, assistant.now(settings))
+    if not targets:
+        return await reply(interaction, "Every Dark Outliers slot of today and tomorrow is planned; nothing to make.", ephemeral=True)
+    day, slot = targets[0]
+    await reply(interaction, f"🏆 Making a ranking video for {day_label(settings, day)} {slot}. Progress in the Dark Outliers channel.",
+                ephemeral=True)
+
+    async def go() -> None:
+        channel = await bot.darkarchives_channel()
+        if channel is not None:
+            await bot.darkarchives_produce_one(channel, day, slot, ranking=True)
 
     task = asyncio.create_task(go())
     bot.jobs.add(task)

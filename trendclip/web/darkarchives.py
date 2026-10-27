@@ -131,6 +131,33 @@ def _write(story_id: int) -> None:
             _script_job.update(running=False, finished_at=time.time())
 
 
+def _rank() -> None:
+    from modules import da_ranking
+
+    try:
+        result = da_ranking.process()
+        with _lock:
+            _script_job.update(status=result["status"], story_id=result["story"]["id"], title=result["script"].title)
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        with _lock:
+            _script_job.update(error=str(err)[:300])
+    finally:
+        with _lock:
+            _script_job.update(running=False, finished_at=time.time())
+
+
+@router.post("/ranking", status_code=202)
+def start_ranking() -> dict[str, Any]:
+    """Gemini ranks the best NEW stories of the bank into one countdown script (a new story of its own)."""
+    with _lock:
+        if _script_job.get("running"):
+            raise HTTPException(status_code=409, detail="A script is already being written")
+        _script_job.clear()
+        _script_job.update(running=True, story_id=None, ranking=True, started_at=time.time())
+    threading.Thread(target=_rank, name="darkarchives-ranking", daemon=True).start()
+    return script_status()
+
+
 @router.post("/stories/{story_id}/script", status_code=202)
 def start_script(story_id: int) -> dict[str, Any]:
     """Gemini writes the Shorts script in the background (it can take a minute or more)."""

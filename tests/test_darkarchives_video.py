@@ -138,8 +138,7 @@ def test_make_pictures_falls_back_to_the_next_backend(tmp_path, monkeypatch):
     assert all(p.path.is_file() for p in pictures)
 
 
-def _silent_voice(text, output_mp3, voice, rate, **kwargs):
-    seconds = 4.0
+def _silent_voice(text, output_mp3, voice, rate, seconds=4.0, **kwargs):
     subprocess.run([ffmpeg_with_libass(), "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
                     "-t", str(seconds), "-codec:a", "libmp3lame", "-qscale:a", "6", str(output_mp3)], check=True)
     words = estimate_word_timings(text, seconds)

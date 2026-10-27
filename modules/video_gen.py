@@ -432,26 +432,36 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     track = _music(settings, progress)
     from trendclip import music as music_mod
 
-    flashes = [TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
-               for b in beats if b.overlay_text and b.duration > 1.0]
+    ranking = bool(script.ranking)
+    flashes = [] if ranking else [
+        TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
+        for b in beats if b.overlay_text and b.duration > 1.0]
     title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
     end_card = setting("DA_END_CARD", default_end_card())  # "·" breaks the line; "none" for no card
     end_card = "" if off(end_card) else end_card
     overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
     cover = setting("DA_COVER", "auto")  # the headline on frame 0 (the thumbnail): auto, your words, or none
     cover = "" if off(cover) else cover_text(script) if cover.lower() == "auto" else cover.upper()
+    highlight = setting("DA_HIGHLIGHT", "orange")
+    layout: dict = {}
+    if ranking:  # the title stays up until the end card, the list fills in down the left, the cover sits low
+        from modules import da_ranking
+
+        styles, events = da_ranking.panel(script, beats, words[-1].end + TAIL, highlight=highlight)
+        layout = {"extra_styles": styles, "extra_events": events, "cover_y": 0.78, "title_chars": 20, "title_size": 76,
+                  "title_seconds": max(words[-1].end - (3.5 if end_card else 0.0), 3.0)}
     progress(0.75, "Rendering the Short")
     output = assemble_video(
         background, work / "voice.mp3", words, video_path(story_id, out_dir), fit="crop",
         progress=lambda f, m: progress(0.75 + 0.24 * (f or 0), m),
         music=music_mod.track_path(settings, track) if track else None,
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
-        highlight=setting("DA_HIGHLIGHT", "orange"), max_words=3, font_size=92, outline=7, margin_v=600,
-        title_card=title_card, title_chars=18, title_lines=4, title_size=88, flashes=flashes, flash_scale=1.0,
-        end_card=end_card, overlays=overlays,
+        highlight=highlight, max_words=3, font_size=92, outline=7, margin_v=600,
+        end_card=end_card, overlays=overlays, flashes=flashes, flash_scale=1.0,
         title_pop=False, cover_text=cover, cover_seconds=0.8,  # frame 0 is the thumbnail: everything at full strength
         tail_seconds=TAIL,
         preset=setting("DA_X264_PRESET", "fast"),
+        **{"title_card": title_card, "title_chars": 18, "title_lines": 4, "title_size": 88, **layout},
     )
 
     credits = [p.credit for p in pictures if p.credit]
@@ -463,6 +473,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         "photos": [p.credit for p in pictures if p.source == "wikipedia"],
         "music": {"title": track.title, "credit": track.credit} if track else None,
         "cta_line": cta_line, "end_card": end_card, "stickers": stickers_used, "cover_text": cover,
+        "ranking": [e.model_dump() for e in script.ranking],
         "beats": [{**asdict(b), "picture": pictures[i].path.name, "picture_source": pictures[i].source}
                   for i, b in enumerate(beats)],
         "words": len(words), "seconds_to_make": round(time.time() - started),

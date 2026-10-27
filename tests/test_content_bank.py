@@ -297,7 +297,7 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     assert result["status"] == "SCRIPT_READY" and repository.get_story(1, db)["status"] == "SCRIPT_READY"
     assert "150 words" in prompts[1] and "Cut words" in prompts[1]
     data = json.loads((tmp_path / "scripts" / "story_1.json").read_text())
-    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text"]
+    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text", "ranking"]
     assert data["story_id"] == 1 and data["total_word_count"] == 110 and data["estimated_duration_seconds"] == 48
     assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 9))
     assert list(data["scenes"][0]) == ["scene_id", "narration", "visual_keywords", "image_prompt", "overlay_text"]

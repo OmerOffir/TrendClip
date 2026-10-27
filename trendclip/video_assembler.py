@@ -410,6 +410,8 @@ def create_karaoke_ass_file(
     cover_size: int = 140,
     cover_y: float = 0.5,  # its centre, as a share of the height
     tail_seconds: float = TAIL_SECONDS,  # how long the video runs after the last word
+    extra_styles: list[str] | None = None,  # more "Style: ..." lines ("{font}" in them is the font's name)
+    extra_events: list[str] | None = None,  # more "Dialogue: ..." lines (a ranking's list on screen)
 ) -> Path:
     """Write a 1080x1920 (or `size`) .ass file: 2-4 words per line, the spoken word recoloured for its duration.
 
@@ -436,7 +438,7 @@ Style: Title,{font},{title_size},{BLACK},{BLACK},{WHITE},&H64000000,-1,0,0,0,100
 Style: EndCard,{font},{round(title_size * 96 / 132)},{BLACK},{BLACK},&H0000FFFF,&H64000000,-1,0,0,0,100,100,1,0,3,26,0,8,60,60,{top_margin},1
 Style: Flash,{font},{round(font_size * flash_scale)},{hl},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,4,0,1,{round(outline * 1.8)},{shadow + 4},5,40,40,0,1
 Style: Cover,{font},{cover_size},{WHITE},{hl},{BLACK},&H80000000,-1,0,0,0,100,100,3,0,1,{round(outline * 1.6)},{shadow + 4},5,40,40,0,1
-
+{"".join(line.replace("{font}", font) + chr(10) for line in extra_styles or [])}
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
@@ -471,6 +473,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         events.append(flash_event(f.text, f.start, f.end, pos, getattr(f, "color", ""),
                                   fs if fs < flash_size else None, lines if len(lines) > 1 else None))
 
+    events += list(extra_events or [])
     for ci, chunk in enumerate(chunks):
         next_start = chunks[ci + 1][0].start if ci + 1 < len(chunks) else None
         line_end = chunk[-1].end + hold_seconds

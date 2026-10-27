@@ -5,7 +5,7 @@
   const els = {
     error: $("daError"), sources: $("daSources"), list: $("daList"), detail: $("daDetail"), shown: $("daShown"),
     source: $("daSource"), status: $("daStatus"), pillar: $("daPillar"), query: $("daQuery"), fetch: $("daFetch"),
-    fetchStatus: $("daFetchStatus"), navCount: $("daNavCount"), mix: $("daMix"),
+    fetchStatus: $("daFetchStatus"), rank: $("daRank"), navCount: $("daNavCount"), mix: $("daMix"),
     n: { reddit: $("daNReddit"), wikipedia: $("daNWiki"), gemini: $("daNGemini"), rss: $("daNRss") },
   };
   const SOURCES = { reddit: "Reddit", wikipedia: "Wikipedia", gemini: "Gemini", rss: "RSS feeds" };
@@ -355,6 +355,11 @@
       showScriptJob(body);
       if (body.running) return setTimeout(pollScript, 2000);
       if (body.finished_at) {
+        if (body.ranking) {
+          els.rank.disabled = false;
+          els.fetchStatus.textContent = body.error ? `No ranking: ${body.error}` : `Ranking ready: ${body.title || ""} (story ${body.story_id})`;
+          if (body.story_id) state.selected = body.story_id;
+        }
         await load();
         if (state.selected === body.story_id) {
           await open(body.story_id);
@@ -363,6 +368,19 @@
       }
     } catch (err) {
       showError(err.message);
+    }
+  }
+
+  async function rankStories() {
+    try {
+      els.rank.disabled = true;
+      const { body } = await api("/api/darkarchives/ranking", { method: "POST" });
+      els.fetchStatus.textContent = "Gemini is ranking the best stories…";
+      showScriptJob(body);
+      setTimeout(pollScript, 2000);
+    } catch (err) {
+      showError(err.message);
+      els.rank.disabled = false;
     }
   }
 
@@ -787,6 +805,7 @@
     state.searchTimer = setTimeout(load, 250);
   });
   els.fetch.addEventListener("click", startFetch);
+  els.rank.addEventListener("click", rankStories);
 
   const onShow = () => {
     if (document.body.dataset.workspace !== "darkarchives") return;
