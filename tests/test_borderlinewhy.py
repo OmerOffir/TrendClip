@@ -235,7 +235,9 @@ def settings(monkeypatch):
     return get_settings()
 
 
-def test_jobs_and_due_times(settings, tmp_path):
+def test_jobs_and_due_times(settings, tmp_path, monkeypatch):
+    assert bw_channel.slots() == ["14:30", "23:00"]
+    monkeypatch.setenv("BW_SLOTS", "19:00")
     day = Day(2026, 11, 2)
     job = bw_channel.jobs_for(settings, day)[0]
     assert job.slot == "19:00" and job.key == "2026-11-02_1900"
@@ -257,7 +259,7 @@ SCRIPT = {"title": "Why does Minnesota have a notch?", "question": "Why does Min
                       {"id": 2, "url": "https://mnhs.org", "title": "MNHS"}]}
 
 
-def _make(settings, tmp_path, world, day=Day(2026, 11, 2), seconds=45.0):
+def _make(settings, tmp_path, world, day=Day(2026, 11, 2), seconds=45.0, slot="14:30"):
     script = {**_spec_dict(), **SCRIPT}
     rendered = []
 
@@ -273,7 +275,7 @@ def _make(settings, tmp_path, world, day=Day(2026, 11, 2), seconds=45.0):
         out.write_bytes(b"\x00" * 64)
         return out
 
-    job = bw_channel.jobs_for(settings, day)[0]
+    job = bw_channel.job_for(settings, day, slot)
     info = bw_channel.make(settings, job, out_dir=tmp_path, script=script, voice=voice, render=render)
     return job, info, rendered
 
@@ -292,7 +294,7 @@ def test_make_records_the_video(settings, tmp_path, world):
 def test_too_long_video_fails_its_check(settings, tmp_path, world):
     with pytest.raises(bw_channel.ChannelError, match="s long"):
         _make(settings, tmp_path, world, seconds=120.0)
-    assert bw_channel.load_info("2026-11-02_1900", tmp_path)["check"]
+    assert bw_channel.load_info("2026-11-02_1430", tmp_path)["check"]
 
 
 class FakeYouTube:
@@ -415,4 +417,28 @@ def test_tab_endpoints(tmp_path, monkeypatch, settings, world):
     assert added["article"] == "Juneau, Alaska"
     assert client.get("/api/borderlinewhy/topics").json()["topics"][0]["article"] == "Juneau, Alaska"
     status = client.get("/api/borderlinewhy/status").json()
-    assert status["slots"] == ["19:00"] and "connected" in status["youtube"]
+    assert status["slots"] == ["14:30", "23:00"] and "connected" in status["youtube"]
+    plan = client.get("/api/borderlinewhy/plan").json()
+    assert plan["slots"] == ["14:30", "23:00"] and len(plan["days"]) == 8
+    assert client.post("/api/borderlinewhy/make", json={"day": "2026-11-02", "slot": "12:00"}).status_code == 400
+
+
+def test_plan_days_states_and_extra_videos(settings, tmp_path, world, monkeypatch):
+    job, info, _ = _make(settings, tmp_path, world)  # 2026-11-02 14:30, waiting for Approve
+    old = tmp_path / "2026-11-02_1900"  # made when the slot was 19:00, already on YouTube
+    old.mkdir()
+    (old / "video.mp4").write_bytes(b"x")
+    (old / "info.json").write_text(json.dumps({"title": "Old", "job": {"post_at": "2026-11-02T19:00+02:00"},
+                                               "uploads": {"youtube": {"url": "https://youtu.be/o"}}}))
+    now = datetime(2026, 11, 2, 16, 0, tzinfo=settings.tz)
+    days = bw_channel.plan_days(settings, now, before=0, after=1, out_dir=tmp_path)
+    today = days[0]
+    assert today["today"] and [r["slot"] for r in today["slots"]] == ["14:30", "19:00", "23:00"]
+    by = {r["slot"]: r for r in today["slots"]}
+    assert by["14:30"]["state"] == "waiting" and by["14:30"]["video"]["title"] == SCRIPT["title"]
+    assert by["19:00"]["state"] == "posted" and by["19:00"]["extra"]
+    assert by["23:00"]["state"] == "due"  # made 8 h before: 15:00, so it is being made
+    tomorrow = {r["slot"]: r["state"] for r in days[1]["slots"]}
+    assert tomorrow == {"14:30": "later", "23:00": "later"}
+    later = datetime(2026, 11, 3, 1, 0, tzinfo=settings.tz)
+    assert {r["slot"]: r["state"] for r in bw_channel.plan_days(settings, later, 1, 0, tmp_path)[0]["slots"]}["23:00"] == "missed"

@@ -977,11 +977,11 @@ places from their Wikipedia coordinates.
   the topic is dropped unless two sources are cited
 - `modules/bw_render.py` the frames (camera fit to the named places, highlights, pins, arrows, lines, parallels,
   title cards, stamps, word-by-word captions; one of four palettes per video) piped to ffmpeg
-- `modules/bw_channel.py` the day: made `BW_LEAD` hours before `BW_SLOTS`, posted in its Discord channel with
+- `modules/bw_channel.py` the day: two slots (`BW_SLOTS`, default 14:30 and 23:00), each video made `BW_LEAD` hours before, posted in its Discord channel with
   **Approve / Don't post this / Upload now**, uploaded at the slot only when approved
 - Hand-checked scripts dropped in `output/borderlinewhy/queue/*.json` (same JSON as a made `script.json`) go first
 
-Discord: `/bw status` · `/bw make` · `/bw connect`. Dashboard API: `/api/borderlinewhy/status`, `/videos`, and
+Dashboard: the **Borderline Why** channel button (Videos, Plan, Topics; Connect YouTube). Discord: `/bw status` · `/bw make` · `/bw connect`. Dashboard API: `/api/borderlinewhy/status`, `/videos`, and
 `/api/borderlinewhy/youtube/connect` (open it in a browser through `ssh -L 8000:localhost:8000 Bot`).
 
 ## Video assembly (karaoke Shorts)

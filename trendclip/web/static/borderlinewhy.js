@@ -204,6 +204,80 @@
     }
   });
 
+  // ---- plan
+  const plan = { box: $("bwPlan"), hint: $("bwPlanHint"), error: $("bwPlanError"), nav: $("bwNavPlan") };
+  const SLOT = {
+    posted: ["good", "▶️ On YouTube"], approved: ["good", "✅ Approved"], waiting: ["warn", "⏸ Waiting for Approve"],
+    vetoed: ["", "🚫 Won't be posted"], blocked: ["warn", "❌ Failed its check"], due: ["warn", "🏭 Being made"],
+    missed: ["", "— No video"], later: ["", "🕒 Made later"],
+  };
+
+  function slotRow(r, making, past) {
+    const v = r.video;
+    const [cls, label] = r.key === making ? ["warn", "🏭 Making now…"] : (SLOT[r.state] || ["", r.state]);
+    const up = v && v.youtube;
+    const what = v
+      ? `<b>${esc(v.title)}</b><small>${Math.round(v.duration_seconds || 0)} s${v.check.length ? ` · ${esc(v.check.join("; "))}` : ""}${r.extra ? " · made for an earlier slot time" : ""}</small>`
+      : `<b class="hint">${r.state === "later" ? `Made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}` : r.state === "due" ? "The bot is making it" : "Nothing was made"}</b>`;
+    const btns = [];
+    if (up) btns.push(`<a href="${esc(up.url)}" target="_blank" rel="noopener">Watch ↗</a>`);
+    if (v && r.state === "waiting") btns.push(`<button type="button" class="btn-primary" data-act="approve" data-key="${esc(v.key)}">✅ Approve</button>`);
+    if (v && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
+    if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
+    if (!up && !r.extra && r.key !== making && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
+    return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
+      <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
+      <span class="bw-btns">${btns.join("")}</span></div>`;
+  }
+
+  async function loadPlan() {
+    try {
+      const { body } = await api("/api/borderlinewhy/plan");
+      plan.hint.innerHTML = `Slots <b>${esc(body.slots.join(" and "))}</b> (${esc(body.timezone)}). Each video is made ${body.lead_hours} h before its slot and posted in Discord;`
+        + ` ${body.require_approval ? "it goes to YouTube at the slot only after <b>Approve</b>" : "it goes out at the slot unless stopped"} (as ${esc(body.privacy)})`;
+      plan.nav.textContent = body.waiting;
+      plan.nav.hidden = !body.waiting;
+      const today = body.now.slice(0, 10);
+      plan.box.innerHTML = body.days.map((d) => `<div class="bw-day${d.today ? " today" : ""}${d.day < today ? " past" : ""}">
+          <h3>${d.today ? "Today" : esc(d.weekday)}<small>${esc(d.day)}</small></h3>
+          ${d.slots.map((r) => slotRow(r, body.making, d.day < today)).join("")}
+        </div>`).join("");
+      plan.error.hidden = true;
+      if (body.making) setTimeout(() => { if (state.section === "plan") loadPlan(); }, 4000);
+    } catch (err) {
+      plan.error.textContent = err.message;
+      plan.error.hidden = false;
+    }
+  }
+
+  plan.box.addEventListener("click", async (e) => {
+    const btn = e.target.closest("button[data-act]");
+    if (!btn) return;
+    const { act, key, day, slot } = btn.dataset;
+    try {
+      if (act === "approve") {
+        const { body } = await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/approve`);
+        if (body.uploading) btn.textContent = "Uploading…";
+      } else if (act === "veto") {
+        if (!confirm("Stop this video? Before the upload it won't be posted; after it, it becomes private on YouTube.")) return;
+        await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/veto`);
+      } else if (act === "upload") {
+        if (!confirm(`Upload it to Borderline Why now, as ${state.status ? state.status.privacy : "public"}?`)) return;
+        await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/upload`, { privacy: state.status ? state.status.privacy : "public" });
+        btn.textContent = "Uploading…";
+        setTimeout(loadPlan, 5000);
+      } else if (act === "make") {
+        if (!confirm(`Make a new video for ${day} ${slot} now? A video already made for it (not uploaded) is set aside.`)) return;
+        await post("/api/borderlinewhy/make", { day, slot });
+      }
+      loadPlan();
+    } catch (err) {
+      plan.error.textContent = err.message;
+      plan.error.hidden = false;
+    }
+  });
+  $("bwPlanRefresh").addEventListener("click", loadPlan);
+
   // ---- topics
   const TOPIC = { next: "▶ next", waiting: "", used: "✅ made", dropped: "✖ dropped" };
   async function loadTopics() {
@@ -249,6 +323,7 @@
     });
     document.querySelectorAll("[data-bw-panel]").forEach((p) => { p.hidden = p.dataset.bwPanel !== name; });
     if (name === "topics") loadTopics();
+    if (name === "plan") loadPlan();
   }
   $("bwNav").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-bw-view]");
@@ -259,6 +334,7 @@
     if (document.body.dataset.workspace !== "borderlinewhy") return;
     showSection(state.section);
     loadStatus().then(loadVideos);
+    if (state.section !== "plan") loadPlan();  // the Plan button's count
   };
   new MutationObserver(onShow).observe(document.body, { attributes: true, attributeFilter: ["data-workspace"] });
   onShow();

@@ -1,5 +1,5 @@
 """The Borderline Why channel (@BorderlineWhy): its folder under channels/borderlinewhy/, its YouTube login, its
-Discord channel, and its day: one video at BW_SLOTS (default 19:00 in Settings.timezone).
+Discord channel, and its day: one video per BW_SLOTS time (default 14:30 and 23:00 in Settings.timezone).
 
 BW_LEAD hours before the slot (default 8) the bot makes the video: the next topic (a hand-checked script from
 output/borderlinewhy/queue/ first, else the topic list), its research and checked script, the voice, the maps,
@@ -37,7 +37,7 @@ DIR = channel_common.channel_dir(CHANNEL)
 TOKEN = channel_common.token_path(CHANNEL)
 OUTPUT_DIR = PROJECT_ROOT / "output" / CHANNEL
 CATEGORY = "27"  # Education
-DEFAULT_SLOTS = "19:00"  # noon in New York, in Asia/Jerusalem (BW_SLOTS)
+DEFAULT_SLOTS = "14:30,23:00"  # two a day, like the other channels (BW_SLOTS, in Settings.timezone)
 DEFAULT_LEAD = 8  # hours before the slot the video is made, so there is time to approve it (BW_LEAD)
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
 MIN_SECONDS, MAX_SECONDS = 30.0, 90.0
@@ -156,6 +156,56 @@ def next_job(settings, at: datetime, days: int = 3) -> Job | None:
             if job.post_at > at:
                 return job
     return None
+
+
+def slot_state(job: Job, info: dict | None, now: datetime) -> str:
+    """One word for the plan: posted | blocked | vetoed | approved | waiting (for Approve) | due (being made) |
+    missed (no video and the slot has passed) | later (made at job.start)."""
+    if info:
+        if (info.get("uploads") or {}).get("youtube"):
+            return "posted"
+        if info.get("check"):
+            return "blocked"
+        if is_vetoed(info):
+            return "vetoed"
+        return "approved" if is_approved(info) or not require_approval() else "waiting"
+    if now >= job.post_at:
+        return "missed"
+    return "due" if now >= job.start else "later"
+
+
+def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir: Path | None = None) -> list[dict[str, Any]]:
+    """The Plan view: every slot from `before` days back to `after` days ahead with its video and state; a
+    video made for a time that is no longer a slot (BW_SLOTS changed) is listed under its day too."""
+    now = now.astimezone(settings.tz)
+    days = []
+    for n in range(-before, after + 1):
+        day = now.date() + timedelta(days=n)
+        rows = []
+        keys = set()
+        for job in jobs_for(settings, day):
+            info = load_info(job.key, out_dir)
+            keys.add(job.key)
+            rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info)})
+        folder = out_root(out_dir)
+        if folder.is_dir():
+            for extra in sorted(folder.glob(f"{day.isoformat()}_[0-9][0-9][0-9][0-9]")):
+                if extra.name in keys or (info := load_info(extra.name, out_dir)) is None:
+                    continue
+                slot = f"{extra.name[11:13]}:{extra.name[13:15]}"
+                job = Job(day, slot, datetime.fromisoformat(info["job"]["post_at"]) - timedelta(hours=lead_hours())
+                          if info.get("job") else now, datetime.fromisoformat(info["job"]["post_at"]) if info.get("job") else now)
+                rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info), "extra": True})
+        rows.sort(key=lambda r: r["slot"])
+        days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
+    return days
+
+
+def _plan_video(info: dict | None) -> dict | None:
+    if info is None:
+        return None
+    return {"key": info["key"], "title": info.get("title", ""), "duration_seconds": info.get("duration_seconds"),
+            "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"), "question": info.get("question", "")}
 
 
 # --------------------------------------------------------------------------- files

@@ -879,3 +879,19 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .bw-topic.used, .bw-topic.dropped { opacity: 0.6; }
 .bw-topic.next { box-shadow: inset 3px 0 0 #f2c14e; }
 @media (max-width: 700px) { .bw-add { grid-template-columns: 1fr; } }
+.bw-plan { display: grid; gap: 12px; }
+.bw-day { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); padding: 10px 12px; }
+.bw-day.today { box-shadow: inset 3px 0 0 #f2c14e; }
+.bw-day.past { opacity: 0.7; }
+.bw-day h3 { margin: 0 0 8px; font-size: 14px; }
+.bw-day h3 small { color: var(--muted); font-weight: 400; margin-left: 6px; }
+.bw-slot { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--border); font-size: 13px; }
+.bw-slot:first-of-type { border-top: 0; }
+.bw-slot .bw-time { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.bw-slot .bw-what { min-width: 0; }
+.bw-slot .bw-what b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bw-slot .bw-what small { color: var(--muted); }
+.bw-slot .bw-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+.bw-slot .bw-btns button { width: auto; margin: 0; padding: 6px 10px; font-size: 12px; }
+.bw-slot .bw-btns a { font-size: 12px; align-self: center; }
+@media (max-width: 700px) { .bw-slot { grid-template-columns: 48px minmax(0, 1fr); } .bw-slot .bw-btns { grid-column: 1 / -1; justify-content: flex-start; } }

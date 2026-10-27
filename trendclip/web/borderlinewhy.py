@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from datetime import date
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -150,17 +151,38 @@ def upload_job() -> dict[str, Any]:
     return _job("upload")
 
 
+class MakeRequest(BaseModel):
+    day: date | None = None  # with slot: that slot (the Plan tab); else the next slot to come
+    slot: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
+
+
 @router.post("/make")
-def make() -> dict[str, Any]:
-    """Make the next slot's video now (a video already made for it is set aside), posted in Discord too."""
+def make(req: MakeRequest | None = None) -> dict[str, Any]:
+    """Make a slot's video now (a video already made for it is set aside), posted in Discord too."""
     settings = _settings()
     now = assistant.now(settings)
-    job = bw_channel.next_job(settings, now) or bw_channel.job_for(settings, now.date())
+    if req and req.day and req.slot:
+        job = bw_channel.job_for(settings, req.day, req.slot)
+        if job.slot != req.slot:
+            raise HTTPException(status_code=400, detail=f"{req.slot} is not a slot (BW_SLOTS: {', '.join(bw_channel.slots())})")
+    else:
+        job = bw_channel.next_job(settings, now) or bw_channel.job_for(settings, now.date())
     try:
         bw_channel.set_aside(job.key)
     except bw_channel.ChannelError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
     return _start("make", lambda p: bw_channel.make(settings, job, p, announce=True)["key"], key=job.key)
+
+
+@router.get("/plan")
+def plan() -> dict[str, Any]:
+    settings = _settings()
+    now = assistant.now(settings)
+    days = bw_channel.plan_days(settings, now)
+    return {"days": days, "slots": bw_channel.slots(), "lead_hours": bw_channel.lead_hours(), "timezone": settings.timezone,
+            "require_approval": bw_channel.require_approval(), "privacy": bw_channel.upload_privacy(),
+            "now": now.isoformat(timespec="minutes"), "making": (_job("make").get("key") if _job("make").get("running") else None),
+            "waiting": sum(1 for d in days for r in d["slots"] if r["state"] == "waiting")}
 
 
 @router.get("/make-job")

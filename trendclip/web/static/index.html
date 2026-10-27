@@ -56,6 +56,7 @@
       <span class="subbar-label">Borderline Why</span>
       <nav class="nav" id="bwNav" role="tablist" aria-label="Borderline Why sections">
         <button type="button" role="tab" class="active" data-bw-view="videos">Videos <span class="nav-count todo" id="bwNavWaiting" hidden title="Videos waiting for Approve"></span></button>
+        <button type="button" role="tab" data-bw-view="plan">Plan <span class="nav-count todo" id="bwNavPlan" hidden title="Videos waiting for Approve"></span></button>
         <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
       </nav>
     </div>
@@ -85,6 +86,20 @@
         </div>
       </div>
       <div class="da-videos" id="bwVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewBwPlan" data-workspace-panel="borderlinewhy" data-bw-panel="plan" hidden>
+    <div id="bwPlanError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Plan</h2>
+          <span class="hint" id="bwPlanHint">Loading…</span>
+        </div>
+        <button type="button" class="btn-secondary" id="bwPlanRefresh">Refresh</button>
+      </div>
+      <div class="bw-plan" id="bwPlan"><div class="empty">Loading…</div></div>
     </section>
   </main>
 
