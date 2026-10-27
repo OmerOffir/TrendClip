@@ -45,6 +45,11 @@ def test_check_finds_the_problems():
     too_long.entries[1].narration = "Number two. " + "word " * 40
     assert any("rank 2: 42 words" in p for p in da_ranking.check(too_long, ids, 5))
     assert any("title" in p for p in da_ranking.check(_draft(title=""), ids, 5))
+    over = _draft(hook_text="Five cases the files never closed and nobody can explain any of them today.")  # 14 + 45
+    assert any("hook_text over" in p for p in da_ranking.check(over, ids, 5)) and not any("words in all" in p for p in da_ranking.check(over, ids, 5))
+    way_over = _draft()
+    way_over.entries[0].narration = "Number one. " + "word " * 20  # 22 + 36 + 4 = 62
+    assert any("62 words in all" in p for p in da_ranking.check(way_over, ids, 5))
 
 
 def test_the_hook_never_ends_with_the_first_number():

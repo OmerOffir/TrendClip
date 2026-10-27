@@ -37,6 +37,7 @@ SOURCE_CHARS = 700  # of each story
 ENTRY_WORDS = (7, 10)  # about 4 s each: the whole Short stays under 30 s
 HOOK_WORDS = 6
 MAX_WORDS = 56  # hook + every entry; with the spoken follow line (5 words) and the tail that is 28 s
+TOLERANCE = 3  # Gemini lands a word or two over the budget it is given; 59 words are still under 29 s
 ATTEMPTS = 3
 LABEL_WORDS = 4
 
@@ -184,7 +185,7 @@ def check(draft: RankingDraft, ids: set[int], n: int) -> list[str]:
         if not e.image_prompt.strip():
             problems.append(f"rank {e.rank}: no image_prompt")
     total = script_gen.words(draft.hook_text) + sum(script_gen.words(e.narration) for e in draft.entries)
-    if total > MAX_WORDS:
+    if total > MAX_WORDS + TOLERANCE:
         problems.append(f"{total} words in all; at most {MAX_WORDS} (cut the least important facts)")
     return problems
 
