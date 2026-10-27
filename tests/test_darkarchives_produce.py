@@ -29,12 +29,12 @@ def test_targets_and_settings(tmp_path, monkeypatch):
 
 
 def test_check_video(monkeypatch):
-    good = {"duration_seconds": 60, "pictures": "local", "words": 130}
+    good = {"duration_seconds": 30, "pictures": "local", "words": 60}
     assert da_produce.check_video(good) == []
-    assert da_produce.check_video({**good, "duration_seconds": 61}) == ["61 s long (wanted 25-60)"]
-    assert da_produce.check_video({**good, "duration_seconds": 58}) == []
+    assert da_produce.check_video({**good, "duration_seconds": 31}) == ["31 s long (wanted 12-30)"]
+    assert da_produce.check_video({**good, "duration_seconds": 28}) == []
     assert da_produce.check_video({**good, "pictures": "placeholder (local: boom)"}) == ["placeholder pictures (placeholder (local: boom))"]
-    assert da_produce.check_video({**good, "words": 40}) == ["only 40 words"]
+    assert da_produce.check_video({**good, "words": 20}) == ["only 20 words"]
     monkeypatch.setenv("DA_ALLOW_PLACEHOLDER", "1")
     assert da_produce.check_video({**good, "pictures": "placeholder"}) == []
 
@@ -47,7 +47,7 @@ def _bank(tmp_path, titles):
     return db
 
 
-def _fake_make(out, seconds=60.0, pictures="local"):
+def _fake_make(out, seconds=28.0, pictures="local"):
     def make(story_id, progress, out_dir=None, scripts_dir=None, db_path=None, settings=None, announce=False):
         out.mkdir(exist_ok=True)
         (out / f"story_{story_id}.mp4").write_bytes(b"\x00" * 8)
@@ -84,7 +84,7 @@ def test_produce_one_skips_rejected_stories_and_bad_videos(tmp_path, monkeypatch
     result = da_produce.produce_one(settings, Day(2026, 11, 2), "14:30", lambda f, m: messages.append(m),
                                     db_path=db, scripts_dir=scripts, out_dir=out, make=_fake_make(out))
     assert result["status"] == "planned" and result["story_id"] == 3 and result["info"]["title"] == "Video 3"
-    assert [t["story_id"] for t in result["tried"]] == [2, 3] and result["tried"][0]["problems"] == ["120 s long (wanted 25-60)"]
+    assert [t["story_id"] for t in result["tried"]] == [2, 3] and result["tried"][0]["problems"] == ["120 s long (wanted 12-30)"]
     assert repository.get_story(1, db)["status"] == "REJECTED" and repository.get_story(2, db)["status"] == "REJECTED"
     assert "production check" in repository.get_story(2, db)["note"] and not (out / "story_2.mp4").exists()
     assert repository.get_story(3, db)["status"] == "USED" and da_plan.slot_item(Day(2026, 11, 2), "14:30", out).story_id == 3

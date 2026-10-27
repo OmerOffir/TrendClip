@@ -23,10 +23,10 @@ def _bank(tmp_path, n=6):
 def _draft(ids=(1, 2, 3, 4, 5), **over):
     words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
     entries = [da_ranking.EntryDraft(story_id=sid, rank=r, label=f"Case {sid} Files",
-                                     narration=f"Number {words[r]}. In the year it happened nobody could explain what was found in the house.",
+                                     narration=f"Number {words[r]}. In 1959 nine hikers fled their tent at night.",
                                      image_prompt="cinematic dark photo of an old house, 35mm")
                for r, sid in enumerate(ids, 1)]
-    data = dict(title="5 Cases That Still Make No Sense", hook_text="Five cases the files never closed. Number five.",
+    data = dict(title="5 Cases That Still Make No Sense", hook_text="Five cases never closed. Number five.",
                 thumbnail_text="5 CASES. NO ANSWERS", entries=entries)
     data.update(over)
     return da_ranking.RankingDraft(**data)
@@ -39,7 +39,7 @@ def test_check_finds_the_problems():
     assert any("different CANDIDATE" in p for p in da_ranking.check(bad, ids, 5))
     assert any("instead of 5" in p for p in da_ranking.check(_draft(ids=(1, 2, 3)), ids, 5))
     wrong_start = _draft()
-    wrong_start.entries[0].narration = "The house in the year it happened nobody could explain what was found there at all."
+    wrong_start.entries[0].narration = "In 1959 nine hikers fled their tent into the snow at night."
     assert any('start with "Number one."' in p for p in da_ranking.check(wrong_start, ids, 5))
     too_long = _draft()
     too_long.entries[1].narration = "Number two. " + "word " * 40
@@ -53,7 +53,7 @@ def test_the_hook_never_ends_with_the_first_number():
     assert da_ranking.clean_hook("Number five is the worst of all.") == "Number five is the worst of all."
     assert da_ranking.clean_hook("Five cases the files never closed.") == "Five cases the files never closed."
     stories = {i: {"title": f"Case {i}"} for i in range(1, 6)}
-    assert da_ranking.to_script(1, _draft(), stories).hook_text == "Five cases the files never closed."
+    assert da_ranking.to_script(1, _draft(), stories).hook_text == "Five cases never closed."
 
 
 def test_to_script_counts_down_and_keeps_the_ranking():
@@ -62,7 +62,7 @@ def test_to_script_counts_down_and_keeps_the_ranking():
     assert script.story_id == 42 and [s.narration[:12] for s in script.scenes] == ["Number five."] + ["Number four."] + ["Number three"] + ["Number two. "] + ["Number one. "]
     assert [e.rank for e in script.ranking] == [1, 2, 3, 4, 5] and script.ranking[0].title == "Case 1"
     assert script.scenes[0].overlay_text == "CASE 5 FILES" and script.thumbnail_text == "5 CASES. NO ANSWERS"
-    assert 80 <= script.total_word_count <= 125 and script.estimated_duration_seconds >= 35
+    assert 50 <= script.total_word_count <= 62 and script.estimated_duration_seconds >= 20
     # a script written before rankings existed still loads
     old = json.loads(script.model_dump_json(exclude={"ranking"}))
     assert script_gen.Script.model_validate(old).ranking == []
@@ -141,8 +141,8 @@ def test_produce_one_makes_a_ranking_when_asked_and_falls_back(tmp_path, monkeyp
         script = script_gen.Script.model_validate_json((scripts_dir / f"story_{story_id}.json").read_text())
         made.append(story_id)
         (out / f"story_{story_id}.mp4").write_bytes(b"\x00" * 8)
-        info = {"story_id": story_id, "title": script.title, "filename": f"story_{story_id}.mp4", "duration_seconds": 58.0,
-                "pictures": "local", "words": 120, "photos": [], "ranking": [e.model_dump() for e in script.ranking],
+        info = {"story_id": story_id, "title": script.title, "filename": f"story_{story_id}.mp4", "duration_seconds": 28.0,
+                "pictures": "local", "words": 60, "photos": [], "ranking": [e.model_dump() for e in script.ranking],
                 "created_at": "2026-11-01T10:00:00"}
         (out / f"story_{story_id}.json").write_text(json.dumps(info))
         repository.set_status(story_id, "USED", db_path, note="video")

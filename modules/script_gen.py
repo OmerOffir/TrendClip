@@ -1,12 +1,12 @@
-"""Dark Outliers script generator: turns the top NEW raw story into a 35-50 s Shorts script (strict JSON).
+"""Dark Outliers script generator: turns the top NEW raw story into a 20-28 s Shorts script (strict JSON).
 
     python -m modules.script_gen            # the top-rated NEW story
     python -m modules.script_gen --id 12    # a specific story (any status but USED)
 
 Structure (the Dark Outliers guidelines): a suspense / paradox hook (0-3 s), tension escalating through
-scenes 1-5, and a conclusion (40-50 s) that is an open question, an eerie twist or a provoking thought
+scenes 1-3, and a conclusion (at 20-28 s) that is an open question, an eerie twist or a provoking thought
 for the comments. Documentary tone. The spoken script is hook_text followed by every scene's narration;
-110-140 words in total and no sentence over MAX_SENTENCE_WORDS, both checked here (not trusted from
+48-60 words in total and no sentence over MAX_SENTENCE_WORDS, both checked here (not trusted from
 Gemini) and sent back to Gemini to fix when missed. Output: assets/generated_scripts/story_{id}.json,
 and the story becomes SCRIPT_READY. A source Gemini judges unusable (not a real dark story, gore with
 no story, fiction, recent politics or ongoing news…) is marked REJECTED with the reason in its note.
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "assets" / "generated_scripts"
-MIN_WORDS, MAX_WORDS = 95, 120  # Shorts live on retention: about 45-50 s with the channel's voice
+MIN_WORDS, MAX_WORDS = 48, 60  # the owner wants the channel under 30 s (2026-10-27): about 22-27 s with the voice
 MAX_SENTENCE_WORDS = 12  # short, rhythmic sentences for text-to-speech
 WORDS_PER_SECOND = 2.3  # the channel's narrator (F5-TTS at +10%): 105 words ~ 46 s
 ATTEMPTS = 3
@@ -89,7 +89,7 @@ eerie true events, unsolved mysteries and disturbing historical anomalies, narra
 TONE: documentary-style, atmospheric, suspenseful, authoritative and eerie. A calm narrator who knows
 the files, never a hype voice. No slang, no "guys", no exclamation marks.
 
-Turn the SOURCE below into one Short of 40-50 seconds. Content pillar: {pillar}.
+Turn the SOURCE below into one Short of 20-28 seconds. Content pillar: {pillar}.
 If the SOURCE starts with "Anniversary:", the video goes out around that date: open with how many years ago
 this week it happened ("Eighty years ago this week, ...") and keep the date in the first scene.
 
@@ -100,13 +100,13 @@ STRUCTURE (high retention):
   ever...", no spoiler of the ending. It is spoken first.
 - SENTENCES: short and rhythmic for text-to-speech: 8-12 words each, never more than 12. One new
   concrete fact per sentence: dates, places, numbers, what was found.
-- scenes: 6 to 8 scenes in story order, each narration 1-2 sentences.
-  Scenes 1-5 escalate the tension: every scene more unsettling than the one before.
-- The LAST scene (40-50 s) is the conclusion: an open-ended question, an eerie twist, or a provoking
+- scenes: 3 to 4 scenes in story order, each narration 1-2 sentences.
+  The first scenes escalate the tension: every scene more unsettling than the one before.
+- The LAST scene is the conclusion: an open-ended question, an eerie twist, or a provoking
   thought that makes viewers argue in the comments (e.g. "So what really happened on that mountain?").
 
-LENGTH: hook_text + every narration together = {min_words} to {max_words} words. Aim for 105: every
-second a viewer stays counts, so cut anything that is not a new fact or the twist.
+LENGTH: hook_text + every narration together = {min_words} to {max_words} words. Aim for 55: the
+whole Short is under 30 seconds, so only the facts that make the story unbelievable, and the twist.
 
 TRUTH: use only facts that are in the SOURCE. Never invent names, dates, numbers or quotes. If the
 source is uncertain, say "reportedly". Never state as fact that a living person committed a crime

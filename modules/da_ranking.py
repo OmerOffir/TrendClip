@@ -4,7 +4,7 @@
     python -m modules.da_ranking --count 4
 
 Gemini gets the best NEW stories of the bank and returns a theme, a hook and one entry per rank: a short
-label for the list on screen, 18-26 words of narration ("Number five. ..."), a picture prompt. The
+label for the list on screen, 8-12 words of narration ("Number five. ..."), a picture prompt. The
 ranking is saved as a story of its own in the bank (source "ranking", so it has an id like any story:
 the video, the plan and the uploads work unchanged) with its script in output/darkarchives/scripts; the
 ranked stories become USED ("ranking <id>"). The video (modules.video_gen) shows the title all along and
@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 COUNT = 5
 POOL = 24  # NEW stories Gemini chooses from
 SOURCE_CHARS = 700  # of each story
-ENTRY_WORDS = (18, 26)  # about 8-11 s each with the channel's voice
-HOOK_WORDS = 12
-MAX_WORDS = 125  # hook + every entry: the production check wants the video under 60 s
+ENTRY_WORDS = (8, 12)  # about 4-5 s each: the whole Short stays under 30 s
+HOOK_WORDS = 8
+MAX_WORDS = 62  # hook + every entry: the production check wants the video under 30 s
 ATTEMPTS = 3
 LABEL_WORDS = 4
 
@@ -47,8 +47,8 @@ TONE: documentary-style, atmospheric, suspenseful, authoritative and eerie. A ca
 the files, never a hype voice. No slang, no "guys", no exclamation marks.
 
 Make a RANKING Short: pick the {count} strongest stories from the CANDIDATES below, rank them (1 = the
-one that will shock people most) and count them down from {count} to 1. Every entry gets about 10
-seconds. Pick stories that belong to one theme when you can (disappearances, experiments, hoaxes,
+one that will shock people most) and count them down from {count} to 1. Every entry gets about 4
+seconds: one fact, the most unbelievable one, nothing else. Pick stories that belong to one theme when you can (disappearances, experiments, hoaxes,
 cold cases, cursed places...) and give the ranking a title that names the theme and the number:
 "5 Disappearances That Still Make No Sense", "5 Experiments Nobody Should Have Run". At most 45
 characters, the number first.
@@ -62,9 +62,8 @@ characters, the number first.
   - label: 2-{label_words} words for the list on screen, the name of the case or place ("Dyatlov Pass",
     "The Dancing Plague"), no number;
   - narration: {min_words}-{max_words} words that start with "Number <rank>." (in words: "Number five.")
-    then the one fact that makes the case unbelievable: concrete dates, places, numbers, what was found.
-    Short sentences of at most 12 words each. Rank 1's narration ends with the twist or the open
-    question that makes viewers argue in the comments;
+    then the one fact that makes the case unbelievable: a date or place and what was found. Rank 1's
+    narration is the twist or the open question that makes viewers argue in the comments;
   - image_prompt: a vivid prompt for an AI image generator: subject, setting, era, lighting, mood,
     camera ("cinematic dark moody photo of ..., 35mm, film grain, photorealistic"). Never a real
     person's face or likeness; show places, objects, silhouettes.
@@ -92,7 +91,7 @@ class EntryDraft(BaseModel):
     story_id: int
     rank: int
     label: str = Field(description="2-4 words for the list on screen")
-    narration: str = Field(description="18-26 words starting with 'Number <rank>.'")
+    narration: str = Field(description="8-12 words starting with 'Number <rank>.'")
     image_prompt: str
 
 
