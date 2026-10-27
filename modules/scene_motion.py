@@ -25,8 +25,8 @@ DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_SIZE = 518  # the model's input; the map is scaled up to the picture
 PARALLAX = 0.05
 FOG = 0.12
-ZOOM = (1.08, 1.18)  # the camera's window: never below 1.08 so the shifted edges stay out of the frame
-PAN = 0.015  # sideways drift over a clip (share of the width)
+ZOOM = (1.14, 1.26)  # the camera's window: never below 1.14 so the drift and the parallax never show an edge
+PAN = 0.035  # sideways drift over a clip (share of the width): a slow dolly, right on one clip, left on the next
 BATCH = 8  # frames rendered at once
 DUST_COUNT = 45
 FOG_COLOR = (0.62, 0.68, 0.76)  # a cold grey-blue
@@ -123,15 +123,15 @@ def ease(t: float) -> float:
 
 
 def camera(index: int, frames: int, parallax: float, pan: float = PAN, zoom: tuple[float, float] = ZOOM):
-    """Per-frame (zoom, pan_x, pan_y, parallax_x, parallax_y): even clips push in and drift one way, odd
-    clips pull out and drift the other; the parallax follows the drift, with a slow vertical sway."""
+    """Per-frame (zoom, pan_x, pan_y, parallax_x, parallax_y): every clip pushes in (the owner's choice,
+    2026-10-27: no pull-outs) and drifts sideways, right on even clips and left on odd ones; the parallax
+    follows the drift, with a slow vertical sway."""
     out = []
-    push = index % 2 == 0
-    side = -1.0 if index % 4 in (1, 2) else 1.0
+    side = 1.0 if index % 2 == 0 else -1.0
     for f in range(frames):
         t = f / max(frames - 1, 1)
         e = ease(t)
-        z = zoom[0] + (zoom[1] - zoom[0]) * (e if push else 1 - e)
+        z = zoom[0] + (zoom[1] - zoom[0]) * e
         px = side * pan * (e - 0.5) * 2
         py = 0.3 * pan * math.sin(math.pi * t)
         out.append((z, px, py, side * parallax * (e - 0.5) * 2, parallax * 0.35 * math.sin(math.pi * t)))

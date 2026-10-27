@@ -11,14 +11,17 @@ from modules import scene_motion, video_gen
 torch = pytest.importorskip("torch")
 
 
-def test_camera_alternates_and_eases():
-    push = scene_motion.camera(0, 31, parallax=0.05)
-    pull = scene_motion.camera(1, 31, parallax=0.05)
-    assert push[0][0] == scene_motion.ZOOM[0] and push[-1][0] == pytest.approx(scene_motion.ZOOM[1])
-    assert pull[0][0] == pytest.approx(scene_motion.ZOOM[1]) and pull[-1][0] == scene_motion.ZOOM[0]
-    assert push[0][3] == -0.05 * 1 and push[-1][3] == pytest.approx(0.05)  # the parallax sweeps with the drift
-    assert pull[0][3] == pytest.approx(0.05) and pull[-1][3] == pytest.approx(-0.05)  # the other way
-    assert abs(push[15][4]) <= 0.05 * 0.35 + 1e-9 and push[15][1] == pytest.approx(0.0, abs=1e-9)
+def test_camera_pushes_in_and_drifts_each_way():
+    right = scene_motion.camera(0, 31, parallax=0.05)
+    left = scene_motion.camera(1, 31, parallax=0.05)
+    for clip in (right, left):  # every clip pushes in
+        assert clip[0][0] == scene_motion.ZOOM[0] and clip[-1][0] == pytest.approx(scene_motion.ZOOM[1])
+    assert right[0][1] == -scene_motion.PAN and right[-1][1] == pytest.approx(scene_motion.PAN)  # drifts one way
+    assert left[0][1] == scene_motion.PAN and left[-1][1] == pytest.approx(-scene_motion.PAN)  # and the next the other
+    assert right[0][3] == -0.05 and right[-1][3] == pytest.approx(0.05)  # the parallax sweeps with the drift
+    assert abs(right[15][4]) <= 0.05 * 0.35 + 1e-9 and right[15][1] == pytest.approx(0.0, abs=1e-9)
+    # the window never shows an edge: zoom margin covers the drift plus the near pixels' parallax
+    assert 1 - 1 / scene_motion.ZOOM[0] >= 2 * scene_motion.PAN + scene_motion.PARALLAX
 
 
 def test_normalize_depth_ignores_stray_pixels():
