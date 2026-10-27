@@ -359,7 +359,7 @@ def start_login(redirect_uri: str, token: Path | None = None) -> str:
                                     state=state)
     now = time.monotonic()
     with _flows_lock:
-        for key in [k for k, (t, _) in _flows.items() if now - t > FLOW_TTL]:
+        for key in [k for k, (t, *_) in _flows.items() if now - t > FLOW_TTL]:
             _flows.pop(key, None)
         _flows[state] = (now, flow, token or TOKEN_FILE)
     return url

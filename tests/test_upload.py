@@ -231,3 +231,23 @@ def test_hashtags_sent_as_one_string_are_split():
     assert script_writer._clean_hashtags(merged) == ["#shorts", "#comedy", "#brainteaser", "#riddle", "#quiz"]
     assert publish._hashtags(merged, 3) == ["#shorts", "#comedy", "#brainteaser"]
     assert script_writer._clean_hashtags(["#shorts法mathchallenge法forza"]) == ["#shorts", "#mathchallenge", "#forza"]
+
+
+def test_start_login_twice_drops_expired_flows(tmp_path, monkeypatch):
+    """A second Connect YouTube click must not crash on the first one's flow (it holds three values)."""
+    import json
+
+    from trendclip import publish
+
+    secret = tmp_path / "client_secret.json"
+    secret.write_text(json.dumps({"installed": {"client_id": "x.apps.googleusercontent.com", "client_secret": "s",
+                                                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                                                "token_uri": "https://oauth2.googleapis.com/token", "redirect_uris": ["http://localhost"]}}))
+    monkeypatch.setattr(publish, "CLIENT_SECRETS", secret)
+    publish._flows.clear()
+    first = publish.start_login("http://localhost:8765/api/upload/youtube/callback", tmp_path / "a.json")
+    clock = publish.time.monotonic() + publish.FLOW_TTL + 5
+    monkeypatch.setattr(publish.time, "monotonic", lambda: clock)
+    second = publish.start_login("http://localhost:8765/api/upload/youtube/callback", tmp_path / "b.json")
+    assert first != second and len(publish._flows) == 1
+    publish._flows.clear()
