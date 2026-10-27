@@ -963,6 +963,27 @@ Gemini rejects a story (status REJECTED, with the reason shown in the tab) if it
 - a recent political controversy or ongoing news;
 - not a story at all.
 
+## Borderline Why (map Shorts)
+
+The third channel, [@BorderlineWhy](https://www.youtube.com/@BorderlineWhy): 45-70 s Shorts that answer a geography or
+history "why" question with maps drawn by code. No AI pictures: every outline comes from
+[Natural Earth](https://www.naturalearthdata.com/) (public domain, downloaded once into `assets/geodata/`), small
+places from their Wikipedia coordinates.
+
+- `modules/bw_topics.py` the questions (a hand-picked list, then Gemini's proposals when it runs low)
+- `modules/bw_script.py` research (the Wikipedia article + the pages it cites that can be read) and the script:
+  Gemini splits the narration into map and card scenes and lists its claims with exact quotes; the quotes are
+  checked word for word, a second pass looks for unsupported statements, every place must exist on the map, and
+  the topic is dropped unless two sources are cited
+- `modules/bw_render.py` the frames (camera fit to the named places, highlights, pins, arrows, lines, parallels,
+  title cards, stamps, word-by-word captions; one of four palettes per video) piped to ffmpeg
+- `modules/bw_channel.py` the day: made `BW_LEAD` hours before `BW_SLOTS`, posted in its Discord channel with
+  **Approve / Don't post this / Upload now**, uploaded at the slot only when approved
+- Hand-checked scripts dropped in `output/borderlinewhy/queue/*.json` (same JSON as a made `script.json`) go first
+
+Discord: `/bw status` · `/bw make` · `/bw connect`. Dashboard API: `/api/borderlinewhy/status`, `/videos`, and
+`/api/borderlinewhy/youtube/connect` (open it in a browser through `ssh -L 8000:localhost:8000 Bot`).
+
 ## Video assembly (karaoke Shorts)
 
 `trendclip/video_assembler.py` turns a background clip, a voiceover and word timestamps into a

@@ -35,6 +35,7 @@ EMERGENCY_GAMES = ("GTA V / Online", "Minecraft")  # names from games.py
 CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini busy) is made again from scratch
 EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
 PRODUCE_ATTEMPTS = 5     # the morning production run has all day: a failed video is made again from scratch
+BW_ATTEMPTS = 2          # a Borderline Why video: one more try (Gemini busy, a topic without sources)
 RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 REMINDER_ORDER = ("post", "emergency", "slot", "produce", "morning", "leaderboard")  # most time-critical first
@@ -528,6 +529,7 @@ class TrendClipBot(discord.Client):
     async def reminders(self) -> None:
         at = assistant.now(self.settings)
         self.darkarchives_posts(at)
+        self.borderlinewhy_jobs(at)
         if not self.settings.discord_channel_id:
             return
         # The time-critical work first (a slot's post, the emergency video), then the rest. After a restart the
@@ -723,6 +725,89 @@ class TrendClipBot(discord.Client):
                         f"❌ {slot}: **{item.title}** did not go out: {err}\nUpload it from the Dark Outliers tab."))
                 except Exception:  # noqa: BLE001
                     logger.exception("Could not report the failure in the Dark Outliers channel")
+
+    # ---- Borderline Why --------------------------------------------------------------------
+
+    def borderlinewhy_jobs(self, at: datetime) -> None:
+        """Borderline Why (its own channel and token): BW_LEAD hours before the slot the bot makes the day's video
+        and posts it with Approve; at the slot the approved video goes to YouTube."""
+        from modules import bw_channel
+
+        try:
+            sent = self.sent.load()
+            makes = bw_channel.due_makes(self.settings, at, sent)
+            posts = bw_channel.due_posts(self.settings, at, sent)
+        except Exception:  # noqa: BLE001 - never let the third channel stop the others' reminders
+            logger.exception("Borderline Why job check failed")
+            return
+        for job in makes:
+            self.sent.add(job.make_key, at.date())  # marked first: a render takes minutes and must never start twice
+            self._spawn(self.borderlinewhy_make(job))
+        for job in posts:
+            self.sent.add(job.post_key, at.date())
+            self._spawn(self.borderlinewhy_post(job))
+
+    def _spawn(self, work) -> None:
+        task = asyncio.create_task(work)
+        self.jobs.add(task)
+        task.add_done_callback(self._job_done)
+
+    async def borderlinewhy_channel(self) -> discord.abc.Messageable | None:
+        from modules import bw_channel
+
+        channel_id = bw_channel.discord_channel_id()
+        if not channel_id:
+            return None
+        try:
+            return self.get_channel(channel_id) or await self.fetch_channel(channel_id)
+        except discord.HTTPException:
+            logger.exception("Borderline Why Discord channel %s is not reachable", channel_id)
+            return None
+
+    async def borderlinewhy_make(self, job) -> None:
+        """Make the job's video (BW_ATTEMPTS tries) and show it with Approve / Don't post / Upload now."""
+        from modules import bw_channel
+
+        settings = self.settings
+        label = f"{day_label(settings, job.day)} {job.slot}"
+        channel = await self.borderlinewhy_channel()
+        if channel is None:
+            logger.warning("Borderline Why: no Discord channel (DISCORD_CHANNEL_ID in channels/borderlinewhy/channel.env); "
+                           "nothing made for %s", label)
+            return
+        late = lambda: assistant.now(settings) > job.post_at  # noqa: E731
+        try:
+            info = await self.run_job(channel, f"🗺️ Borderline Why video for {label}", lambda p: bw_channel.make(settings, job, p),
+                                      self.render_lock, attempts=BW_ATTEMPTS, give_up=late)
+        except JobFailed:
+            await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.",
+                               view=view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Try again now",
+                                                   discord.ButtonStyle.success)))
+            return
+        await self.send_file_video(channel, bw_channel.video_path(info["key"]),
+                                   bw_channel.video_line(info) + "\n" + bw_channel.video_note(info), bw_view(info["key"]))
+
+    async def borderlinewhy_post(self, job) -> None:
+        """The slot's time: upload the approved video; say so when it is still waiting for Approve."""
+        from modules import bw_channel
+
+        info = await asyncio.to_thread(bw_channel.load_info, job.key)
+        if info is None or (info.get("uploads") or {}).get("youtube") or bw_channel.is_vetoed(info) or info.get("check"):
+            return
+        channel = await self.borderlinewhy_channel()
+        if not bw_channel.ready(info):
+            if channel is not None:
+                await channel.send(f"⏸ {job.slot}: **{info['title']}** is waiting for **Approve**; it goes out as soon as you press it.",
+                                   view=bw_view(info["key"]))
+            return
+        try:
+            record = await asyncio.to_thread(bw_channel.publish_if_allowed, job.key, settings=self.settings)
+            logger.info("Borderline Why %s: %s", job.key, (record or {}).get("url"))
+        except Exception as err:  # noqa: BLE001 - reported in the channel
+            logger.exception("Borderline Why upload of %s failed", job.key)
+            if channel is not None:
+                await channel.send(clip_text(f"❌ **{info['title']}** did not go out: {err}"),
+                                   view=view_of(button("bwup", info["key"], "⬆️ Try the upload again", discord.ButtonStyle.primary)))
 
     def _job_done(self, task: asyncio.Task) -> None:
         self.jobs.discard(task)
@@ -1510,13 +1595,95 @@ async def act_da_delete(bot: TrendClipBot, interaction: discord.Interaction, arg
                              f"removed; the story is {result['status'] or 'kept'}).")
 
 
+def bw_view(key: str) -> discord.ui.View | None:
+    return view_of(button("bwok", key, "✅ Approve", discord.ButtonStyle.success),
+                   button("bwveto", key, "🚫 Don't post this", discord.ButtonStyle.danger),
+                   button("bwup", key, "⬆️ Upload now", discord.ButtonStyle.primary))
+
+
+async def act_bw_approve(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    """Borderline Why "Approve": it goes out at its slot, or now when the slot has passed."""
+    from modules import bw_channel
+
+    await interaction.response.defer(thinking=True)
+    try:
+        result = await asyncio.to_thread(bw_channel.approve, key, bot.settings)
+    except KeyError:
+        return await reply(interaction, "That Borderline Why video is gone.")
+    if result["record"]:
+        return await reply(interaction, f"✅ **{result['title']}** is on YouTube: {result['record'].get('url', '')}")
+    when = result["post_at"].strftime("%H:%M") if result["post_at"] else "its slot"
+    await reply(interaction, f"✅ **{result['title']}** is approved: it goes out at {when} as {bw_channel.upload_privacy()}.")
+
+
+async def act_bw_veto(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import bw_channel
+
+    try:
+        result = await asyncio.to_thread(bw_channel.veto, key)
+    except KeyError:
+        return await reply(interaction, "That Borderline Why video is gone.", ephemeral=True)
+    text = (f"🚫 **{result['title']}** is private on YouTube now." if result["hidden"] else
+            f"🚫 **{result['title']}** was already private." if result["uploaded"] else f"🚫 **{result['title']}** won't be posted.")
+    day, slot = key[:10], f"{key[11:13]}:{key[13:15]}"
+    await reply(interaction, text, view=view_of(button("bwrun", f"{day} {slot}", "🎬 Make another now", discord.ButtonStyle.success)))
+
+
+async def act_bw_run(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    """Borderline Why "Try again now" / "Make another now": a new video for that slot (the old folder is kept aside)."""
+    from modules import bw_channel
+
+    try:
+        date_text, slot = arg.split()
+        day = Day.fromisoformat(date_text)
+    except ValueError as err:
+        return await reply(interaction, f"Couldn't read the slot: {err}", ephemeral=True)
+    job = bw_channel.job_for(bot.settings, day, slot)
+    await asyncio.to_thread(bw_channel.set_aside, job.key)
+    await reply(interaction, f"🗺️ Making a new Borderline Why video for {day_label(bot.settings, day)} {job.slot}…", ephemeral=True)
+    bot._spawn(bot.borderlinewhy_make(job))
+
+
+async def act_bw_upload_confirm(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import bw_channel
+
+    info = bw_channel.load_info(key)
+    if info is None:
+        return await reply(interaction, "That Borderline Why video is gone.", ephemeral=True)
+    if (info.get("uploads") or {}).get("youtube"):
+        return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
+    if info.get("check"):
+        return await reply(interaction, f"**{info['title']}** failed its check ({'; '.join(info['check'])}) and can't go out.", ephemeral=True)
+    if not bw_channel.connected():
+        return await reply(interaction, "The Borderline Why YouTube channel is not connected: `/bw connect`.", ephemeral=True)
+    privacy = bw_channel.upload_privacy()
+    await reply(interaction, f"Upload **{info['title']}** to Borderline Why now, as **{privacy}**?",
+                view=view_of(button("bwupgo", key, f"Yes, upload as {privacy}", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
+                ephemeral=True)
+
+
+async def act_bw_upload(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import bw_channel
+
+    info = bw_channel.load_info(key)
+    if info is None:
+        return await reply(interaction, "That Borderline Why video is gone.", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    try:
+        record = await asyncio.to_thread(bw_channel.upload, key, settings=bot.settings)
+    except Exception as err:  # noqa: BLE001
+        return await reply(interaction, f"❌ Upload failed: {err}")
+    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}")
+
+
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
     "iggo": act_instagram, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
     "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
-    "dadelgo": act_da_delete,
+    "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
+    "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload,
 }
 
 
@@ -1984,6 +2151,10 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/da rank` a ranking video (the 5 best stories counted down; every 4th video is one by itself) · "
         "`/da fetch` · `/da upload` · `/da insights` what the channel's own numbers say. Every morning the bank is refreshed and each empty slot gets a video, posted "
         "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
+        "",
+        "**Borderline Why** (map Shorts, its own YouTube channel): `/bw status` · `/bw make` the next video now · "
+        "`/bw connect` the YouTube login. Every day the bot makes one video hours before its slot and posts it in its "
+        "channel; press **Approve** and it goes out at the slot.",
     ]), ephemeral=True)
 
 
@@ -2160,8 +2331,68 @@ async def da_upload_cmd(interaction: discord.Interaction, video: str) -> None:
     await act_da_upload_confirm(_bot(interaction), interaction, video)
 
 
+# --------------------------------------------------------------------------- Borderline Why
+
+
+bw_group = app_commands.Group(name="bw", description="Borderline Why: map Shorts answering geography and history questions")
+
+
+@bw_group.command(name="status", description="Borderline Why: YouTube login, the next video, the topics left")
+async def bw_status_cmd(interaction: discord.Interaction) -> None:
+    from modules import bw_channel, bw_topics
+
+    settings = _bot(interaction).settings
+    await interaction.response.defer(thinking=True)
+    yt = await asyncio.to_thread(bw_channel.youtube_status)
+    yt_line = (f"✅ YouTube connected ({(yt.get('channel') or {}).get('title', 'channel')})" if yt.get("connected")
+               else f"❌ YouTube not connected{': ' + yt['error'] if yt.get('error') else ''} (`/bw connect`)")
+    nxt = bw_channel.next_job(settings, assistant.now(settings))
+    last = (await asyncio.to_thread(bw_channel.videos, None, 1) or [None])[0]
+    up = ((last or {}).get("uploads") or {}).get("youtube") or {}
+    topics = await asyncio.to_thread(bw_topics.summary, bw_channel.out_root())
+    queued = len(bw_channel.queued_scripts())
+    await reply(interaction, "\n".join([
+        yt_line,
+        f"🕒 Next: {day_label(settings, nxt.day) + ' ' + nxt.slot + ' (made at ' + nxt.start.strftime('%H:%M') + ')' if nxt else 'none'}",
+        (f"🎬 Last: {last['title']} ({last['key']}, {last.get('duration_seconds', 0):.0f} s) · "
+         + (f"▶️ {up.get('url')}" if up else "approved" if last.get("approved") else "waiting for Approve")) if last else "🎬 No video yet",
+        f"🧭 Topics: {topics['left']} left, {topics['used']} used, {topics['rejected']} dropped · {queued} hand-checked script(s) queued"
+        + (f" · next: {topics['next']}" if topics["next"] else ""),
+        f"🏭 Automation: making {'on' if bw_channel.auto_make() else 'off'} · posting {'on' if bw_channel.auto_post() else 'off'} · "
+        f"slot {', '.join(bw_channel.slots())} · approval {'required' if bw_channel.require_approval() else 'not required'} · "
+        f"as {bw_channel.upload_privacy()}",
+    ]))
+
+
+@bw_group.command(name="make", description="Make the next Borderline Why video now (topic → research → script → maps)")
+async def bw_make_cmd(interaction: discord.Interaction) -> None:
+    from modules import bw_channel
+
+    bot = _bot(interaction)
+    now = assistant.now(bot.settings)
+    job = bw_channel.next_job(bot.settings, now) or bw_channel.job_for(bot.settings, now.date())
+    try:
+        await asyncio.to_thread(bw_channel.set_aside, job.key)
+    except bw_channel.ChannelError as err:
+        return await reply(interaction, f"🗺️ {err}", ephemeral=True)
+    await reply(interaction, f"🗺️ Making the Borderline Why video for {day_label(bot.settings, job.day)} {job.slot}. "
+                             "Progress in the Borderline Why channel.", ephemeral=True)
+    bot._spawn(bot.borderlinewhy_make(job))
+
+
+@bw_group.command(name="connect", description="How to connect the Borderline Why YouTube channel")
+async def bw_connect_cmd(interaction: discord.Interaction) -> None:
+    port = 8000  # the dashboard's port on the hub (trendclip.service)
+    await reply(interaction, "\n".join([
+        "Connect the **Borderline Why** YouTube channel (sign in with the Google account that owns @BorderlineWhy):",
+        f"1. On your Mac: `ssh -L {port}:localhost:{port} Bot` (keeps a tunnel to the hub open)",
+        f"2. Open http://localhost:{port}/api/borderlinewhy/youtube/connect and pick the Borderline Why channel",
+        "3. `/bw status` should then say ✅ YouTube connected.",
+    ]), ephemeral=True)
+
+
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
-            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, bw_group, help_cmd]
 
 
 
