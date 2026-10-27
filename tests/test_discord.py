@@ -817,3 +817,24 @@ def test_the_production_run_fills_the_empty_slots_and_a_veto_frees_one(settings,
     assert channel.sent[-1].startswith("🏭 Couldn't make the video for Tomorrow") and "23:00 after 5 attempts" in channel.sent[-1]
 
     assert planner.slot_item(settings, tomorrow, "23:00") is None  # left to the emergency video / the button
+
+
+def test_every_slash_command_fits_discords_limits():
+    """Discord refuses the whole command list when one description is over 100 characters, and then the
+    bot never starts (no morning summary, no production run, no automatic posts)."""
+    from discord import app_commands
+
+    from trendclip import discord_bot
+
+    def walk(commands, prefix=""):
+        for c in commands:
+            name = f"{prefix}{c.name}"
+            assert 1 <= len(c.name) <= 32 and c.name == c.name.lower(), name
+            assert 1 <= len(c.description) <= 100, f"{name}: {len(c.description)} characters"
+            if isinstance(c, app_commands.Group):
+                walk(c.commands, f"{name} ")
+            else:
+                for p in c.parameters:
+                    assert 1 <= len(p.description) <= 100, f"{name} {p.name}: {len(p.description)} characters"
+
+    walk(discord_bot.COMMANDS)

@@ -319,15 +319,22 @@ class TrendClipBot(discord.Client):
         self.add_dynamic_items(ActionButton)
         for command in COMMANDS:
             self.tree.add_command(command)
-        if self.settings.discord_guild_id:
-            guild = discord.Object(id=self.settings.discord_guild_id)
-            self.tree.copy_global_to(guild=guild)
-            self.tree.clear_commands(guild=None)
-            synced = await self.tree.sync(guild=guild)
-            await self.tree.sync()  # drop global copies from earlier runs
-        else:
-            synced = await self.tree.sync()
-        logger.info("Registered %d slash commands", len(synced))
+        try:
+            if self.settings.discord_guild_id:
+                guild = discord.Object(id=self.settings.discord_guild_id)
+                self.tree.copy_global_to(guild=guild)
+                self.tree.clear_commands(guild=None)
+                synced = await self.tree.sync(guild=guild)
+                await self.tree.sync()  # drop global copies from earlier runs
+            else:
+                synced = await self.tree.sync()
+            logger.info("Registered %d slash commands", len(synced))
+        except app_commands.CommandSyncFailure:
+            # A bad command definition (a description over 100 characters…) must not take the whole bot
+            # down: the reminders, posts and production run need no slash commands. Discord keeps the
+            # commands it registered last time.
+            logger.exception("Registering the slash commands failed; running with the ones Discord already has")
+
         self.reminders.start()
         self.reply_loop.start()
         self.comment_check.start()
@@ -2244,7 +2251,8 @@ async def da_make_cmd(interaction: discord.Interaction, slots: app_commands.Rang
     task.add_done_callback(bot._job_done)
 
 
-@da_group.command(name="rank", description="Make a Dark Outliers ranking video now: the 5 best stories of the bank counted down, for the next empty slot")
+@da_group.command(name="rank", description="Make a Dark Outliers ranking video now: the bank's 5 best stories counted down, for the next slot")
+
 async def da_rank_cmd(interaction: discord.Interaction) -> None:
     from modules import da_produce
 
