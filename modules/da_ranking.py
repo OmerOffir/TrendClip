@@ -4,7 +4,7 @@
     python -m modules.da_ranking --count 4
 
 Gemini gets the best NEW stories of the bank and returns a theme, a hook and one entry per rank: a short
-label for the list on screen, 8-12 words of narration ("Number five. ..."), a picture prompt. The
+label for the list on screen, 7-10 words of narration ("Number five. ..."), a picture prompt. The
 ranking is saved as a story of its own in the bank (source "ranking", so it has an id like any story:
 the video, the plan and the uploads work unchanged) with its script in output/darkarchives/scripts; the
 ranked stories become USED ("ranking <id>"). The video (modules.video_gen) shows the title all along and
@@ -34,9 +34,9 @@ logger = logging.getLogger(__name__)
 COUNT = 5
 POOL = 24  # NEW stories Gemini chooses from
 SOURCE_CHARS = 700  # of each story
-ENTRY_WORDS = (8, 12)  # about 4-5 s each: the whole Short stays under 30 s
-HOOK_WORDS = 8
-MAX_WORDS = 62  # hook + every entry: the production check wants the video under 30 s
+ENTRY_WORDS = (7, 10)  # about 4 s each: the whole Short stays under 30 s
+HOOK_WORDS = 6
+MAX_WORDS = 54  # hook + every entry; with the spoken follow line (5 words) and the tail that is 28 s
 ATTEMPTS = 3
 LABEL_WORDS = 4
 
@@ -91,7 +91,7 @@ class EntryDraft(BaseModel):
     story_id: int
     rank: int
     label: str = Field(description="2-4 words for the list on screen")
-    narration: str = Field(description="8-12 words starting with 'Number <rank>.'")
+    narration: str = Field(description="7-10 words starting with 'Number <rank>.'")
     image_prompt: str
 
 

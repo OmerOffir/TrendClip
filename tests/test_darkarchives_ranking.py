@@ -23,7 +23,7 @@ def _bank(tmp_path, n=6):
 def _draft(ids=(1, 2, 3, 4, 5), **over):
     words = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five"}
     entries = [da_ranking.EntryDraft(story_id=sid, rank=r, label=f"Case {sid} Files",
-                                     narration=f"Number {words[r]}. In 1959 nine hikers fled their tent at night.",
+                                     narration=f"Number {words[r]}. In 1959 nine hikers fled their tent.",
                                      image_prompt="cinematic dark photo of an old house, 35mm")
                for r, sid in enumerate(ids, 1)]
     data = dict(title="5 Cases That Still Make No Sense", hook_text="Five cases never closed. Number five.",
@@ -62,7 +62,7 @@ def test_to_script_counts_down_and_keeps_the_ranking():
     assert script.story_id == 42 and [s.narration[:12] for s in script.scenes] == ["Number five."] + ["Number four."] + ["Number three"] + ["Number two. "] + ["Number one. "]
     assert [e.rank for e in script.ranking] == [1, 2, 3, 4, 5] and script.ranking[0].title == "Case 1"
     assert script.scenes[0].overlay_text == "CASE 5 FILES" and script.thumbnail_text == "5 CASES. NO ANSWERS"
-    assert 50 <= script.total_word_count <= 62 and script.estimated_duration_seconds >= 20
+    assert 45 <= script.total_word_count <= 54 and script.estimated_duration_seconds >= 19
     # a script written before rankings existed still loads
     old = json.loads(script.model_dump_json(exclude={"ranking"}))
     assert script_gen.Script.model_validate(old).ranking == []
