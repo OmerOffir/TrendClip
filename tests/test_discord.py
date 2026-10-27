@@ -838,3 +838,68 @@ def test_every_slash_command_fits_discords_limits():
                     assert 1 <= len(p.description) <= 100, f"{name} {p.name}: {len(p.description)} characters"
 
     walk(discord_bot.COMMANDS)
+
+
+def test_reminders_run_posts_first_and_never_wait_for_the_morning_summary(settings, monkeypatch, clock):
+    """After a restart the whole backlog is due at once; the 14:30 post must not queue behind the morning
+    summary (stats, insights, comments: minutes)."""
+    import asyncio
+
+    from trendclip import discord_bot
+
+    cfg = settings.with_overrides(discord_channel_id=1, auto_produce=True)
+    order, started = [], asyncio.Event()
+
+    class Channel:
+        async def send(self, *a, **kw):
+            pass
+
+    class Bot:
+        settings = cfg
+        jobs: set = set()
+        _job_done = discord_bot.TrendClipBot._job_done
+        reminders = None
+
+        def __init__(self):
+            self.sent = assistant.SentLog(cfg)
+
+        def get_channel(self, _id):
+            return Channel()
+
+        def darkarchives_posts(self, at):
+            pass
+
+        def aftermarket_jobs(self, at):
+            pass
+
+        async def morning_summary(self, channel, day):
+
+            order.append("morning")
+            await started.wait()  # slow: blocks until the test lets it finish
+
+        async def auto_post(self, channel, day, slot):
+            order.append(f"post {slot}")
+
+        async def produce_videos(self, channel):
+            order.append("produce")
+
+        async def leaderboard_post(self, channel):
+            order.append("leaderboard")
+
+        async def emergency_video(self, channel, day, slot):
+            order.append(f"emergency {slot}")
+
+    bot = Bot()
+    clock[0] = at(cfg, 14, 45)  # morning (10:00), produce (10:15) and the 14:30 post are all due
+
+
+    async def run():
+        await discord_bot.TrendClipBot.reminders.coro(bot)
+        await asyncio.sleep(0)  # let the tasks start
+        assert order[:1] == ["post 14:30"] and set(order) == {"post 14:30", "produce", "morning"}
+        keys = bot.sent.load()
+        assert {"2026-10-07 14:30 post", "2026-10-07 produce", "2026-10-07 morning"} <= keys  # marked at once
+        started.set()
+        await asyncio.gather(*bot.jobs)
+
+    asyncio.run(run())

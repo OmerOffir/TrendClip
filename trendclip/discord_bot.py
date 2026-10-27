@@ -38,6 +38,8 @@ PRODUCE_ATTEMPTS = 5     # the morning production run has all day: a failed vide
 AM_ATTEMPTS = 2          # an After Market brief has minutes, not hours: one more try (a script over 60 s, Gemini busy)
 RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
+REMINDER_ORDER = ("post", "emergency", "slot", "produce", "morning", "leaderboard")  # most time-critical first
+
 SlotChoice = Literal["14:30", "23:00"]
 REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
 NO_PINGS = discord.AllowedMentions.none()  # comment text from YouTube is shown as is
@@ -530,32 +532,40 @@ class TrendClipBot(discord.Client):
         self.aftermarket_jobs(at)
         if not self.settings.discord_channel_id:
             return
-        for reminder in assistant.due_reminders(self.settings, at, self.sent.load()):
+        # The time-critical work first (a slot's post, the emergency video), then the rest. After a restart the
+        # whole backlog is due at once, and the morning summary (stats, insights, comments, Gemini) takes
+        # minutes: it must never hold up a post. Everything slow runs as its own task.
+        due = sorted(assistant.due_reminders(self.settings, at, self.sent.load()),
+                     key=lambda r: REMINDER_ORDER.index(r.kind))
+        for reminder in due:
             try:
                 channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
                     self.settings.discord_channel_id)
-                if reminder.kind == "morning":
-                    await self.morning_summary(channel, reminder.day)
-                elif reminder.kind == "leaderboard":
-                    if publish.TOKEN_FILE.is_file():
-                        await self.leaderboard_post(channel)
-                elif reminder.kind in ("post", "emergency", "produce"):
-                    # Marked sent first: an upload or a render takes minutes and must never start twice.
-                    self.sent.add(reminder.key, at.date())
-                    if reminder.kind == "produce":
-                        task = asyncio.create_task(self.produce_videos(channel))
-                    else:
-                        work = self.auto_post if reminder.kind == "post" else self.emergency_video
-                        task = asyncio.create_task(work(channel, reminder.day, reminder.slot))
-                    self.jobs.add(task)
-                    task.add_done_callback(self._job_done)
-                    continue
-                else:
+                if reminder.kind == "slot":
                     await self.slot_reminder(channel, reminder.day, reminder.slot)
+                    self.sent.add(reminder.key, at.date())
+                    continue
+                if reminder.kind == "leaderboard" and not publish.TOKEN_FILE.is_file():
+                    self.sent.add(reminder.key, at.date())
+                    continue
+                # Marked sent first: an upload or a render takes minutes and must never start twice.
+                self.sent.add(reminder.key, at.date())
+                if reminder.kind == "post":
+                    work = self.auto_post(channel, reminder.day, reminder.slot)
+                elif reminder.kind == "emergency":
+                    work = self.emergency_video(channel, reminder.day, reminder.slot)
+                elif reminder.kind == "produce":
+                    work = self.produce_videos(channel)
+                elif reminder.kind == "morning":
+                    work = self.morning_summary(channel, reminder.day)
+                else:
+                    work = self.leaderboard_post(channel)
+                task = asyncio.create_task(work)
+                self.jobs.add(task)
+                task.add_done_callback(self._job_done)
             except discord.HTTPException:
                 logger.exception("Reminder %s failed; retrying next minute", reminder.key)
                 continue
-            self.sent.add(reminder.key, at.date())
 
     def darkarchives_posts(self, at: datetime) -> None:
         """Dark Outliers (its own plan, channel and token): the slot's planned video goes to its YouTube
