@@ -220,7 +220,7 @@ def test_the_emergency_video_is_made_and_planned_in_the_empty_slot(settings, mon
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
     asked = []
 
-    def plan(s, games=None, rng=None):  # the numbers-based choice, restricted to the emergency games
+    def plan(s, games=None, rng=None, day=None):  # the numbers-based choice, restricted to the emergency games
         asked.append(games)
         return analytics.Pick(mode="math", game="Minecraft", days=60, videos=9)
 
@@ -485,10 +485,10 @@ def test_create_asks_story_math_or_riddle_with_buttons(settings, monkeypatch):
     from trendclip import discord_bot
 
     ids = [b.item.custom_id for b in discord_bot.kind_buttons("GTA V")]
-    assert ids == ["tc:mk:pick:GTA V", "tc:mk:math:GTA V", "tc:mk:trivia:GTA V", "tc:mk:riddle:GTA V",
+    assert ids == ["tc:mk:pick:GTA V", "tc:mk:math:GTA V", "tc:mk:gamer:GTA V", "tc:mk:trivia:GTA V", "tc:mk:riddle:GTA V",
                    "tc:mk:movie:GTA V", "tc:mk:paradox:GTA V", "tc:mk:story:GTA V"]
     assert [b.item.custom_id for b in discord_bot.kind_buttons("x" * 120)] == [
-        "tc:mk:pick", "tc:mk:math", "tc:mk:trivia", "tc:mk:riddle", "tc:mk:movie", "tc:mk:paradox", "tc:mk:story"]
+        "tc:mk:pick", "tc:mk:math", "tc:mk:gamer", "tc:mk:trivia", "tc:mk:riddle", "tc:mk:movie", "tc:mk:paradox", "tc:mk:story"]
     import random
 
     from trendclip import analytics
@@ -502,7 +502,7 @@ def test_create_asks_story_math_or_riddle_with_buttons(settings, monkeypatch):
     monkeypatch.setattr(analytics, "trending_games", lambda s: {"Minecraft": 5.0})  # no pipeline run in tests
     seen = {}
 
-    def planned(s, games=None, rng=None, trending=None):
+    def planned(s, games=None, rng=None, trending=None, kinds=None):
         seen["trending"] = trending
         return analytics.Pick(mode="story", game=(games or [None])[0])
     monkeypatch.setattr(analytics, "plan_video", planned)
@@ -740,7 +740,7 @@ def test_the_production_run_fills_the_empty_slots_and_a_veto_frees_one(settings,
 
     monkeypatch.setattr(script_writer, "gemini_api_key", lambda s: "key")
     monkeypatch.setattr(discord_bot, "library_games", lambda s: ["Minecraft", "Roblox"])
-    monkeypatch.setattr(discord_bot, "plan_pick", lambda s, games=None, rng=None: analytics.Pick(
+    monkeypatch.setattr(discord_bot, "plan_pick", lambda s, games=None, rng=None, day=None: analytics.Pick(
         mode="story", game=games[0], target_seconds=22, days=60, videos=9))
     made = []
 

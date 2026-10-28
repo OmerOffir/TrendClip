@@ -268,7 +268,15 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    screen, then a green **GOT IT?** with **DROP YOUR ANSWER BELOW!** on top (never the answer, so the
    comments and the leaderboard stay a real game). Gemini picks the trap most people would choose, a
    distractor and the surprising answer, and only a question that passes a Google fact-check is used.
-   The pinned comment is the question plus a hint, not the answer. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
+   The pinned comment is the question plus a hint, not the answer.
+
+   **🎮 Gamer IQ** (12–15 s, same loop as the trivia trap) asks about the game in the background, so the
+   game is the puzzle, not wallpaper: a number every player has met, "which one is NOT in the game?",
+   "which came first?", or a fact from its makers (the shapes take turns). Every one is a numbered level
+   of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in
+   "| Level 12 🎮", and the pinned comment adds the leaderboard points and "Level 13 drops next!". The
+   questions are fact-checked on Google against the game's wiki; a quiz without a game uses a random
+   clip and asks about its game (it is never moved to a "themed" background). **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
    keeps your words, removes any subscribe line and ends on the comment line.
 
    **🎬 Movie quiz** (15–25 s) is built on a famous movie from any year. It takes turns between three
@@ -682,7 +690,9 @@ The channel only grows from what the numbers say, so every published video is tr
   right now), while the exploration share goes to games never published, weighted by their current
   momentum from the trend pipeline (`AUTO_PICK_TRENDS`, `YT_REGIONS`; `output/latest.json` is reused
   for 12 hours), so a new game is tried when people are watching it, not at random. `AUTO_PICK_KINDS`
-  limits the kinds it may choose (a quiz-only channel: `math,riddle,trivia,paradox,movie`). The bot says
+  limits the kinds it may choose (a quiz-only channel: `math,riddle,trivia,paradox,movie,gamer`), and
+  `AUTO_PICK_DAILY` (e.g. `math,gamer`) fixes a daily lineup for a fair test: each day gets every kind of
+  it once, in an order that rotates by day so each kind gets each upload slot. The bot says
 
 
   what it picked and why ("Math challenge (1.6× the channel median over 9 videos, 93% watched) on

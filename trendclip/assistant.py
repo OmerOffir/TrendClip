@@ -165,14 +165,15 @@ def fresh_clip(settings: Settings, game: str | None = None, progress: ProgressFn
 
 
 def create_random_short(settings: Settings, game: str | None = None, progress: ProgressFn = _noop,
-                        mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story",
+                        mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"] = "story",
                         only: tuple[str, ...] = (), target_seconds: int | None = None) -> shorts.ShortVideo:
     """Random gameplay + a random Gemini storytime (or a math / riddle quiz) + voice, music by mood,
     pop-ups and stickers. `only`: if the download fails, fall back only to clips of these games.
     `target_seconds`: a story's length (default SHORT_TARGET_SECONDS; quizzes have their own)."""
     if script_writer.gemini_api_key(settings) is None:
         raise script_writer.ScriptError("GEMINI_API_KEY is not set in .env (needed to write the story)")
-    if mode in quiz.QUIZ_MODES and not game:
+    # Gamer IQ asks about the gameplay itself, so its clip comes first and is never swapped for a themed one.
+    if mode in quiz.QUIZ_MODES and mode != "gamer" and not game:
         return _themed_quiz(settings, mode, progress)
     clip = fresh_clip(settings, game, progress, only)
     path = Path(clip.path)
@@ -205,7 +206,7 @@ OWN_TEXT_MAX_SECONDS = 170  # stays a Short (YouTube: up to 3 minutes)
 
 
 def create_from_text(settings: Settings, text: str, game: str | None = None, progress: ProgressFn = _noop,
-                     mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> shorts.ShortVideo:
+                     mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"] = "story") -> shorts.ShortVideo:
     """Like the Create tab's "Fill the rest": your words are the voiceover, Gemini writes the rest, on random
     (or `game`) gameplay. A story too long for the clip is tightened; a quiz is kept word for word."""
     if script_writer.gemini_api_key(settings) is None:

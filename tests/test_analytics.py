@@ -582,3 +582,33 @@ def test_the_picker_only_chooses_the_allowed_kinds(tmp_path, monkeypatch):
     monkeypatch.setattr(web, "_base_settings", lambda: quiz_only)
     body = TestClient(web.app).get("/api/insights/picker").json()
     assert body["kinds"] == ["math", "riddle", "trivia", "paradox", "movie"] and [w["key"] for w in body["mode"]] == body["kinds"]
+
+
+def test_daily_lineup_makes_each_kind_once_then_the_numbers_decide(tmp_path, monkeypatch):
+    from trendclip import discord_bot, planner
+
+    s = make_settings(tmp_path).with_overrides(auto_pick_daily="math, gamer, math", auto_pick=False)
+    assert s.auto_pick_daily == ["math", "gamer"]
+    day = date(2026, 11, 2)
+    first = analytics.lineup_kind(s, day)
+    assert analytics.lineup_kind(s, day + timedelta(days=1)) != first  # the order rotates, so slots are fair
+    name = add_short(s, "m.mp4", mode=first, answer="42")
+    planner.add_item(s, planner.ItemRequest(date=day, slot=planner.SLOTS[0], short=name))
+    other = {"math": "gamer", "gamer": "math"}[first]
+    assert analytics.lineup_kind(s, day) == other
+    assert discord_bot.plan_pick(s, ["Minecraft"], random.Random(1), day).mode == other
+    add_short(s, "g.mp4", mode=other, answer="x")
+    planner.add_item(s, planner.ItemRequest(date=day, slot=planner.SLOTS[1], short="g.mp4"))
+    assert analytics.lineup_kind(s, day) is None  # complete: extra slots go back to the picker
+    assert analytics.lineup_kind(s.with_overrides(auto_pick_daily=""), day) is None
+
+
+def test_gamer_iq_never_swaps_its_gameplay_for_a_themed_one(tmp_path, monkeypatch):
+    from trendclip import assistant, script_writer
+
+    s = make_settings(tmp_path)
+    monkeypatch.setattr(script_writer, "gemini_api_key", lambda settings: "k")
+    monkeypatch.setattr(assistant, "_themed_quiz", lambda *a: pytest.fail("a Gamer IQ background must not be re-themed"))
+    monkeypatch.setattr(assistant, "fresh_clip", lambda *a: (_ for _ in ()).throw(RuntimeError("clip first")))
+    with pytest.raises(RuntimeError, match="clip first"):
+        assistant.create_random_short(s, None, mode="gamer")

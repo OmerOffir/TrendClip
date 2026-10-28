@@ -48,9 +48,9 @@ TRACK_DAYS = 365  # channel uploads older than this are not tracked
 MIN_AGE_DAYS = 2  # a video younger than this has no fair numbers yet: listed, but not in the group ranks
 DIMENSIONS = {"format": "Format", "mode": "Kind of video", "game": "Game", "hook_style": "Hook style",
               "length_bucket": "Length", "slot": "Upload time", "music_mood": "Music"}
-MODES = ("story", "math", "riddle", "trivia", "paradox", "movie")
+MODES = ("story", "math", "riddle", "trivia", "paradox", "movie", "gamer")
 MODE_LABELS = {"story": "Story", "math": "Math challenge", "riddle": "Riddle", "trivia": "Trivia trap",
-               "paradox": "Paradox trap", "movie": "Movie quiz", "other": "Other / made elsewhere"}
+               "paradox": "Paradox trap", "movie": "Movie quiz", "gamer": "Gamer IQ", "other": "Other / made elsewhere"}
 FORMAT_LABELS = {"short": "Short", "multi": "Multi-part", "long": "Long 16:9", "other": "Unknown"}
 HOOK_STYLES = {
     "dare": "Dare (\"Only 5% get this\")",
@@ -68,7 +68,8 @@ _COMMAND_WORDS = {"name", "guess", "watch", "start", "imagine", "stop", "listen"
                   "look", "wait", "remember", "tell", "answer", "finish", "solve", "spot", "find"}
 _FIRST_PERSON = re.compile(r"^(i|i'm|i've|i'd|i'll|my|we|we're|our|me)\b", re.I)
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
-_TITLE_MODE = [("math", re.compile(r"\b(math|calculat|number|count|add|subtract|divide|multiply)\w*", re.I)),
+_TITLE_MODE = [("gamer", re.compile(r"\| level \d+\b", re.I)),
+               ("math", re.compile(r"\b(math|calculat|number|count|add|subtract|divide|multiply)\w*", re.I)),
                ("riddle", re.compile(r"\briddle", re.I)),
                ("trivia", re.compile(r"\btrivia|\bwhich (country|planet|animal)|true or false", re.I)),
                ("movie", re.compile(r"\b(movie|film|actually sa(y|id)|quote|scene)\b", re.I)),
@@ -705,7 +706,7 @@ def build_report(settings: Settings, days: int = 90, min_age_days: int = MIN_AGE
 
 PICK_PRIOR = 3.0  # pseudo-videos of average performance mixed into every group, so small samples stay humble
 PICK_FLOOR = 0.15  # no choice ever drops below this share of an average one: it can still come back
-PICK_KINDS = ("story", "math", "riddle", "trivia", "paradox", "movie")
+PICK_KINDS = ("story", "math", "riddle", "trivia", "paradox", "movie", "gamer")
 STORY_LENGTHS = {"≤15 s": 15, "16-22 s": 22, "23-30 s": 30, "31-45 s": 45}  # the lengths a random story may get
 
 
@@ -851,6 +852,28 @@ def plan_video(settings: Settings, games: list[str] | None = None, kinds: tuple[
         if explored:
             pick.explored.append("length_bucket")
     return pick
+
+
+def lineup_kind(settings: Settings, day: Day) -> str | None:
+    """AUTO_PICK_DAILY: the first kind of `day`'s lineup that isn't planned that day yet, the lineup rotated by
+    the date so each kind gets each slot in turn; None when there is no lineup or the day already has it all."""
+    lineup = list(settings.auto_pick_daily)
+    if not lineup:
+        return None
+    shift = day.toordinal() % len(lineup)
+    lineup = lineup[shift:] + lineup[:shift]
+    planned = []
+    for item in planner.load(settings).items:
+        if item.date != day or not item.short:
+            continue
+        try:
+            planned.append(mode_of(shorts.get_short(settings, item.short)))
+        except Exception:  # noqa: BLE001 - a deleted Short just doesn't count
+            continue
+    for kind in planned:
+        if kind in lineup:
+            lineup.remove(kind)
+    return lineup[0] if lineup else None
 
 
 def describe_pick(pick: Pick) -> str:

@@ -9,6 +9,8 @@
 - movie: a famous movie, in one of three shapes picked in turn: a misquote trap (what did the character
   ACTUALLY say? A / B / C, fact-checked on Google), guess the movie from 3 emojis (pop-up stickers), or a
   movie-logic debate (two sides, like a paradox).
+- gamer: "Gamer IQ", a 3-option question about the game in the background (a number players meet, the fake
+  one, which came first, a fact from its makers), fact-checked on Google and numbered as a level of a series.
 
 Each number / clue flashes big in the middle of the screen the moment it is spoken (`Flash`), the video
 ends on a big "?" and "COMMENT YOUR ANSWER" (trivia and emoji movie: 12-15 s loops ending on a green
@@ -37,8 +39,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-QuizKind = Literal["math", "riddle", "trivia", "paradox", "movie"]
-QUIZ_MODES = ("math", "riddle", "trivia", "paradox", "movie")
+QuizKind = Literal["math", "riddle", "trivia", "paradox", "movie", "gamer"]
+QUIZ_MODES = ("math", "riddle", "trivia", "paradox", "movie", "gamer")
 FLASH_SECONDS = 1.4  # each step stays up 1.2-1.5 s (or until the next one)
 LAST_FLASH_SECONDS = 3.0
 END_CARD = "COMMENT YOUR ANSWER"
@@ -502,6 +504,74 @@ Reply with exactly one line per candidate, for every candidate, and nothing else
 class GeminiTriviaSet(BaseModel):
     candidates: list[GeminiTrivia] = Field(description="The trivia traps, one per requested category, in order.")
 
+
+class GeminiGamer(BaseModel):
+    question: str = Field(description=(
+        "The question, at most 12 words, naming the game, e.g. 'How many obsidian blocks make the smallest Minecraft "
+        "Nether portal?' (the form only: never reuse an example)."))
+    trap: str = Field(description=(
+        "The answer most casual players pick instinctively, but WRONG, 1 to 4 words, as spoken after 'Is it'."))
+    distractor: str = Field(description="A plausible but wrong option, 1 to 4 words, same style.")
+    correct: str = Field(description=(
+        "The CORRECT answer, 1 to 4 words, same style. True in the current version of the game, well documented "
+        "on the game's wiki or by its makers, easy to verify on Google."))
+    fact: str = Field(description=(
+        "One or two short sentences proving the correct answer with the real numbers or names. Used to build the "
+        "hint; the answer itself stays off the video."))
+    short_name: str = Field(description="The game's short name in capitals, at most 12 characters, e.g. 'MINECRAFT', 'GTA', 'CS2'.")
+    title: str = Field(description=(
+        "YouTube title, at most 45 characters, no hashtags, never the answer, aimed at the game's fans, e.g. "
+        "'Real Minecraft Players Know This' or 'GTA Fans Always Miss This One'. No emoji."))
+    description: str = Field(description="One or two short sentences daring the game's fans to comment the answer, no hashtags.")
+    hashtags: list[str] = Field(description="5 to 8 hashtags: #shorts, the game's own tags (e.g. #minecraft), #gaming, #quiz.")
+    hint: str = Field("", description=(
+        "One spoiler-free hint with a number or a comparison, never naming the correct option, e.g. 'fewer than "
+        "you need for a full frame'."))
+
+
+class GeminiGamerSet(BaseModel):
+    candidates: list[GeminiGamer] = Field(description="The questions, all about the same game.")
+
+
+# Every shape is about the game in the background: its fans recognise it in the first frame and argue in the
+# comments; anyone else swipes, which is fine.
+GAMER_SHAPES = {
+    "number": ("a number every real player has met: a crafting recipe, a price, a stack or magazine size, a "
+               "health or level cap, a map count. Only numbers that patches don't change"),
+    "fake": ("'Which one is NOT in {game}?': two real items, characters, places or weapons and one convincing "
+             "fake. The correct answer is the fake; the trap is a real but obscure one that sounds made up"),
+    "first": ("'Which came first?': three things added to the game at documented, different times (updates, "
+              "maps, characters, mechanics, games of the series). The correct answer is the oldest"),
+    "lore": ("a fact about the game's world, characters or making, told by its makers: original names, what "
+             "inspired a design, cut content, hidden details most players walk past"),
+}
+
+GAMER_PROMPT = """Write {count} different GAMER IQ questions for a Short (12-15 seconds) about {game}, the
+gameplay playing in the background. Shape: {shape}.
+Each is a speed question with three options: the trap most casual players pick instinctively, a plausible
+distractor, and the correct answer. A real {game} fan should be able to get it, and feel proud; a casual
+player should feel sure of the trap, then doubt it, and comment to argue.
+
+What makes a candidate good:
+- ONE answer is right under the exact wording, on the game's wiki and by every reputable source, with no
+  "it depends" (platform, edition, game mode or patch): say which when it matters ("in Java Edition").
+- About {game} itself (or its series), never a generic gaming question.
+- Never current player counts, sales, prices of real money, esports results or "most popular".
+- Every option short and easy to say, written as spoken after "Is it ...?".
+- Not one of these, already asked on the channel: {used}.
+{notes}"""
+
+GAMER_CHECK = """Fact-check these video game questions with Google Search. For each candidate, PASS only if ALL hold:
+1. The claimed correct answer is true in the current version of the game, by the game's wiki or its makers.
+2. Under the exact wording, it is the ONLY right option: the other two are clearly wrong, and no edition,
+   platform, game mode or older patch makes another option right.
+3. It is not a rumour, a fan theory or a myth.
+4. A dedicated fan can know it, but it is not something every casual player knows.
+Reply with exactly one line per candidate, for every candidate, and nothing else:
+"<number>: PASS" or "<number>: FAIL: <reason in one sentence>".
+
+{candidates}"""
+
 class GeminiParadox(BaseModel):
     name: str = Field(description="The paradox or dilemma it is based on, e.g. 'the crocodile dilemma' (for the creator only).")
     hook: str = Field(description=(
@@ -857,6 +927,8 @@ def write_quiz(settings: Settings, game: str, kind: QuizKind, *, notes: str = ""
         return _write_trivia(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     if kind == "paradox":
         return _write_paradox(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
+    if kind == "gamer":
+        return _write_gamer(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     if kind == "movie":
         return _write_movie(settings, game, notes=notes, format=format, progress=progress, client=client, rng=rng)
     client, model = sw._gemini(settings, client)
@@ -931,7 +1003,7 @@ TRIVIA_CANDIDATES = 4
 TRIVIA_ROUNDS = 3
 
 
-def _trivia_options(trivia: GeminiTrivia) -> tuple[str, str, str] | None:
+def _trivia_options(trivia: GeminiTrivia | GeminiGamer) -> tuple[str, str, str] | None:
     """(trap, distractor, correct), or None unless all three are there and different."""
     options = tuple(_option(t) for t in (trivia.trap, trivia.distractor, trivia.correct))
     return options if all(options) and len({o.lower() for o in options}) == 3 else None
@@ -958,8 +1030,8 @@ def used_trivia_questions(settings: Settings) -> list[str]:
 _VERDICT = re.compile(r"^\W*(\d+)\W*(PASS|FAIL)\b\W*(.*)$", re.I)
 
 
-def fact_check(client, model: str, candidates: list[GeminiTrivia],
-               progress: ProgressFn) -> list[tuple[bool, str]]:
+def fact_check(client, model: str, candidates: list[GeminiTrivia] | list[GeminiGamer],
+               progress: ProgressFn, check: str = FACT_CHECK) -> list[tuple[bool, str]]:
     """(passed, reason) per candidate, checked by Gemini with Google Search. Unanswered ones fail."""
     from google.genai import errors, types
 
@@ -970,7 +1042,7 @@ def fact_check(client, model: str, candidates: list[GeminiTrivia],
         f"{c.distractor}\n   Claimed proof: {c.fact}" for i, c in enumerate(candidates, 1))
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], temperature=0)
     try:
-        response, _ = sw._generate_with_fallback(client, model, [FACT_CHECK.format(candidates=listing)], config,
+        response, _ = sw._generate_with_fallback(client, model, [check.format(candidates=listing)], config,
                                                  progress, errors.APIError)
     except errors.APIError as err:
         raise sw._explain(err, model) from err
@@ -1040,6 +1112,89 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
     pinned = public_pin(question, hint)
     script = _script(settings, game, model, "trivia", format, " ".join(lines), hook, flashes, correct, pinned,
                      result, on_screen=f"Answer: {correct} (trap: {trap}). {fact}", end_card=LOOP_CARD)
+    return script.model_copy(update={"reactions": [Reaction(word="Three", mood="suspicious")]})
+
+
+GAMER_CANDIDATES = 4
+GAMER_HOOK = "{game} fans only."
+
+
+def gamer_level(settings: Settings) -> int:
+    """The next Gamer IQ level: one more than the questions written so far (the series' episode number)."""
+    return len(history(settings, "gamer")) + 1
+
+
+def pick_gamer_shape(settings: Settings, rng: random.Random) -> str:
+    """A shape the last two Gamer IQ questions didn't use."""
+    recent = {d.get("shape") for d in history(settings, "gamer")[-2:]}
+    return rng.choice([s for s in GAMER_SHAPES if s not in recent] or list(GAMER_SHAPES))
+
+
+def gamer_card(level: int, short_name: str, game: str) -> str:
+    """The frame-0 banner: the level (a series to come back to) and who it is for."""
+    name = " ".join(re.sub(r"[^\w\s&-]", " ", short_name or "").split()).upper()[:12]
+    name = name or re.split(r"[/:(]", game)[0].strip().upper()[:12] or "GAMERS"
+    return f"LEVEL {level} - {name} FANS ONLY"
+
+
+def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
+                 rng: random.Random) -> ShortScript:
+    """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
+    level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
+    from . import script_writer as sw
+    from .stickers import Reaction
+
+    client, model = sw._gemini(settings, client)
+    level = gamer_level(settings)
+    shape = pick_gamer_shape(settings, rng)
+    asked = _unique([f"{d.get('question', '')} ({d.get('answer', '')})" for d in history(settings, "gamer")
+                     if d.get("question")])
+    result = None
+    for _ in range(TRIVIA_ROUNDS):
+        prompt = GAMER_PROMPT.format(count=GAMER_CANDIDATES, game=game, shape=GAMER_SHAPES[shape].format(game=game),
+                                     used="; ".join(asked[-40:]) or "none yet",
+                                     notes=_notes(notes) + _variety(settings) + _learned(settings, "gamer"))
+        batch, model = _ask(client, model, GeminiGamerSet, prompt, progress)
+        usable = [c for c in batch.candidates if _trivia_options(c)]
+        if not usable:
+            continue
+        progress(None, f"Fact-checking the {game} questions on Google")
+        verdicts = fact_check(client, model, usable, progress, GAMER_CHECK)
+        passed = [c for c, (ok, _) in zip(usable, verdicts) if ok]
+        for c, (ok, why) in zip(usable, verdicts):
+            if not ok:
+                logger.info("Gamer question rejected: %s -> %s (%s)", c.question, c.correct, why)
+        if passed:
+            result = rng.choice(passed)
+            break
+        asked += [f"{c.question} ({c.correct})" for c in usable]
+    if result is None:
+        raise sw.ScriptError(f"No {game} question passed the Google fact-check; try again")
+    trap, distractor, correct = _trivia_options(result)
+    question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
+    options = [trap, distractor, correct]
+    rng.shuffle(options)
+    _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))
+    hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
+    asks = [f"Is it {options[0]}?", f"{options[1][:1].upper()}{options[1][1:]}?", f"Or {options[2]}?"]
+    # Like the trivia trap: the question is the first word spoken and the Short loops back into it.
+    lines = [question, *asks, COUNTDOWN]
+    end = loop_end(lines)
+    lines.append(end)
+    flashes = [Flash(word=question.split()[0], text="?")]
+    for letter, option, said in zip("ABC", options, ("Is it ", "", "Or ")):
+        name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
+        label = f"{letter}) {name[:1].upper()}{name[1:]}"
+        word = (said + " ".join(option.split()[:3])).strip()[:40]
+        flashes.append(Flash(word=word, text=label if len(label) <= 16 else letter))
+    flashes += [*COUNTDOWN_FLASHES, got_it(end)]
+    pinned = (public_pin(question, hint) + f"\n🏆 First correct answer gets 10 leaderboard points. "
+              f"Level {level + 1} drops next!")
+    title = re.sub(r"[^\w\s'’!?,.&:-]", "", result.title).strip()[:50].rstrip(" -:,")
+    pack = result.model_copy(update={"title": f"{title or GAMER_HOOK.format(game=game)} | Level {level} 🎮"})
+    script = _script(settings, game, model, "gamer", format, " ".join(lines), GAMER_HOOK.format(game=game), flashes,
+                     correct, pinned, pack, on_screen=f"Answer: {correct} (trap: {trap}). {result.fact.strip()}",
+                     card=gamer_card(level, result.short_name, game), end_card=LOOP_CARD)
     return script.model_copy(update={"reactions": [Reaction(word="Three", mood="suspicious")]})
 
 
@@ -1174,7 +1329,7 @@ def own_quiz(settings: Settings, game: str, script: str, kind: QuizKind, *, note
 
     client, model = sw._gemini(settings, client)
     label = {"math": "RAPID MATH", "riddle": "RIDDLE", "trivia": "TRIVIA TRAP", "paradox": "PARADOX TRAP",
-             "movie": "MOVIE QUIZ"}[kind]
+             "movie": "MOVIE QUIZ", "gamer": "GAMER IQ"}[kind]
     prompt = "\n".join([f"Package this {label} quiz Short the creator wrote.",
                         f"Background gameplay: {game}.{_notes(notes)}",
                         *([f"The correct answer is {solved[0]} ({solved[1]})."] if solved else []),

@@ -58,6 +58,7 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick_days": "AUTO_PICK_DAYS",
     "auto_pick_trends": "AUTO_PICK_TRENDS",
     "auto_pick_kinds": "AUTO_PICK_KINDS",
+    "auto_pick_daily": "AUTO_PICK_DAILY",
     "script_learning": "SCRIPT_LEARNING",
     "auto_produce": "AUTO_PRODUCE",
     "auto_produce_time": "AUTO_PRODUCE_TIME",
@@ -157,8 +158,21 @@ class Settings(BaseModel):
     auto_pick_trends: bool = True
     # The kinds of video the picker may choose (Pick for me, the production run, the emergency video), e.g.
     # AUTO_PICK_KINDS=math,riddle,trivia,paradox,movie for a quiz-only channel. Default: every kind.
-    auto_pick_kinds: list[Literal["story", "math", "riddle", "trivia", "paradox", "movie"]] = Field(
-        default_factory=lambda: ["story", "math", "riddle", "trivia", "paradox", "movie"])
+    auto_pick_kinds: list[Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"]] = Field(
+        default_factory=lambda: ["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"])
+
+    # A fixed daily lineup for a fair A/B test, e.g. AUTO_PICK_DAILY=math,gamer: each day's production run
+    # makes every kind of it once (the emergency video doesn't: it goes by AUTO_PICK_KINDS), in an order that rotates by day so each
+    # kind gets each upload slot equally; extra slots go back to the numbers. Empty: the numbers decide.
+    auto_pick_daily: list[Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"]] = Field(
+        default_factory=list)
+
+    @field_validator("auto_pick_daily", mode="before")
+    @classmethod
+    def _lineup(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = [part.strip().lower() for part in value.split(",") if part.strip()]
+        return list(dict.fromkeys(value)) if isinstance(value, list) else value
 
     @field_validator("auto_pick_kinds", mode="before")
     @classmethod
@@ -166,10 +180,10 @@ class Settings(BaseModel):
         if isinstance(value, str):
             value = [part.strip().lower() for part in value.split(",") if part.strip()]
         if isinstance(value, list):
-            order = ("story", "math", "riddle", "trivia", "paradox", "movie")
+            order = ("story", "math", "riddle", "trivia", "paradox", "movie", "gamer")
             value = [k for k in order if k in value]
             if not value:
-                raise ValueError("AUTO_PICK_KINDS must name at least one of story, math, riddle, trivia, paradox, movie")
+                raise ValueError("AUTO_PICK_KINDS must name at least one of story, math, riddle, trivia, paradox, movie, gamer")
         return value
 
 

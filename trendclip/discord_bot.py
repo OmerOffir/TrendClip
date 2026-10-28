@@ -30,7 +30,7 @@ CUSTOM_ID_MAX = 100
 OWN_TEXT_MAX = 3000  # the longest voiceover a render takes
 PENDING_TEXTS = 30
 NOUNS = {"math": "math challenge", "riddle": "riddle", "trivia": "trivia trap", "paradox": "paradox trap",
-         "movie": "movie quiz"}
+         "movie": "movie quiz", "gamer": "Gamer IQ question"}
 EMERGENCY_GAMES = ("GTA V / Online", "Minecraft")  # names from games.py
 CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini busy) is made again from scratch
 EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
@@ -1184,7 +1184,7 @@ class TrendClipBot(discord.Client):
         if await asyncio.to_thread(planner.slot_item, settings, day, slot):
             return
         label = f"{day_label(settings, day)} {slot}"
-        pick = await asyncio.to_thread(plan_pick, settings, games or list(EMERGENCY_GAMES))
+        pick = await asyncio.to_thread(plan_pick, settings, games or list(EMERGENCY_GAMES), None, day)
         kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
         noun = NOUNS.get(kind, "story")
         await channel.send(clip_text(f"🏭 {label}: a {noun} on {game} gameplay.\n{analytics.describe_pick(pick)}"))
@@ -1222,6 +1222,8 @@ class TrendClipBot(discord.Client):
         if script_writer.gemini_api_key(settings) is None:
             await channel.send(f"🚨 Nothing is planned for {slot}, and I can't make a video without GEMINI_API_KEY.")
             return
+        # No AUTO_PICK_DAILY lineup here: an hour before the slot Gemini's quota is often gone, and the
+        # picker's kinds include math, which has built-in texts.
         pick = await asyncio.to_thread(plan_pick, settings, list(EMERGENCY_GAMES))
         kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
         noun = NOUNS.get(kind, "story")
@@ -1404,25 +1406,32 @@ async def act_delete(bot: TrendClipBot, interaction: discord.Interaction, filena
 
 # Math first: its Shorts get the most comments (13-18 against 2-8 for the other quizzes).
 KINDS = {"math": ("🧮 Math challenge 🔥", discord.ButtonStyle.success),
+         "gamer": ("🎮 Gamer IQ", discord.ButtonStyle.success),
          "trivia": ("🌍 Trivia trap", discord.ButtonStyle.primary), "riddle": ("🧩 Riddle", discord.ButtonStyle.primary),
          "movie": ("🎬 Movie quiz", discord.ButtonStyle.primary),
          "paradox": ("🌀 Paradox trap", discord.ButtonStyle.primary),
          "story": ("📖 Story", discord.ButtonStyle.secondary)}
 # "🎲 Pick for me" and the emergency video without AUTO_PICK: a quiz kind, math most often.
-PICK_WEIGHTS = {"math": 4, "trivia": 2, "riddle": 2, "movie": 2, "paradox": 1}
+PICK_WEIGHTS = {"math": 4, "gamer": 3, "trivia": 2, "riddle": 2, "movie": 2, "paradox": 1}
 
 
-def plan_pick(settings: Settings, games: list[str] | None = None, rng: random.Random | None = None) -> analytics.Pick:
+def plan_pick(settings: Settings, games: list[str] | None = None, rng: random.Random | None = None,
+              day: Day | None = None) -> analytics.Pick:
     """What "🎲 Pick for me" and the emergency video make: drawn by the channel's own numbers (AUTO_PICK,
-    analytics.plan_video), else by the fixed weights above. `games`: the gameplay to choose from."""
+    analytics.plan_video), else by the fixed weights above. `games`: the gameplay to choose from. `day`: the
+    slot's day, whose AUTO_PICK_DAILY lineup fixes the kind until it is complete."""
+    lineup = analytics.lineup_kind(settings, day) if day else None
     if settings.auto_pick:
         try:
             trending = analytics.trending_games(settings) if games and settings.auto_pick_trends else None
-            return analytics.plan_video(settings, games=games, rng=rng, trending=trending)
+            return analytics.plan_video(settings, games=games, rng=rng, trending=trending,
+                                        kinds=(lineup,) if lineup else None)
 
         except Exception as err:  # noqa: BLE001 - a broken analytics file must not stop the video
             logger.warning("Numbers-based pick failed (%s); using the fixed weights", err)
     rng = rng or random.Random()
+    if lineup:
+        return analytics.Pick(mode=lineup, game=rng.choice(games) if games else None)
     allowed = {k: w for k, w in PICK_WEIGHTS.items() if k in settings.auto_pick_kinds} or {settings.auto_pick_kinds[0]: 1}
     kind = rng.choices(list(allowed), weights=list(allowed.values()))[0]
     return analytics.Pick(mode=kind, game=rng.choice(games) if games else None)

@@ -630,3 +630,66 @@ def test_the_leaderboard_reads_the_full_options_of_a_movie_quiz():
     assert leaderboard.judge(video, "B") == "correct"
     assert leaderboard.judge(video, "it's 'No, I am your father'") == "correct"
     assert leaderboard.judge(video, "A for sure") == "wrong"
+
+
+def gamer_client(rounds, checks, seen=None):
+    """Gemini that writes Gamer IQ `rounds` (lists of candidates) and answers fact-checks with `checks`."""
+    rounds, checks = list(rounds), list(checks)
+
+    class Models:
+        def generate_content(self, model, contents, config):
+            if seen is not None:
+                seen.setdefault("prompts", []).append(contents[0])
+            if config.response_schema is None:
+                assert config.tools
+                return SimpleNamespace(parsed=None, text=checks.pop(0))
+            assert config.response_schema is quiz.GeminiGamerSet
+            return SimpleNamespace(parsed=quiz.GeminiGamerSet(candidates=rounds.pop(0)), text="")
+    return SimpleNamespace(models=Models())
+
+
+def gamer(question="How many obsidian blocks make the smallest Nether portal", trap="14", distractor="12",
+          correct="10", **kw):
+    return quiz.GeminiGamer(
+        question=question, trap=trap, distractor=distractor, correct=correct,
+        fact=kw.pop("fact", "Corners are optional, so 10 obsidian blocks are enough."),
+        short_name=kw.pop("short_name", "Minecraft"), title=kw.pop("title", "Real Minecraft Players Know This 🧱"),
+        description="Comment it!", hashtags=["#minecraft", "#shorts"], hint=kw.pop("hint", "fewer than a full frame"))
+
+
+def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path):
+    s, seen = make_settings(tmp_path), {}
+    result = script_writer.write_script(s, "Minecraft", mode="gamer",
+                                        client=gamer_client([[gamer()]], ["1: PASS"], seen))
+    assert "about Minecraft" in seen["prompts"][0] and "GAMER IQ" in seen["prompts"][0]
+    assert "wiki" in seen["prompts"][1]  # the game check, not the general trivia one
+    assert result.mode == "gamer" and result.answer == "10" and result.game == "Minecraft"
+    assert result.script.startswith("How many obsidian blocks make the smallest Nether portal? Is it ")
+    assert result.script.endswith(quiz.LOOP_END) and len(result.script.split()) <= quiz.LOOP_MAX_WORDS
+    assert result.title_card == "LEVEL 1 - MINECRAFT FANS ONLY"
+    assert result.title == "Real Minecraft Players Know This | Level 1 🎮"  # Gemini's emoji is dropped
+    assert "Level 2 drops next!" in result.pinned_comment and "10 leaderboard points" in result.pinned_comment
+    assert "Hint: fewer than a full frame." in result.pinned_comment
+    assert [f.text for f in result.flashes][4:] == ["3", "2", "1", "GOT IT?"]
+
+    again = quiz.write_quiz(s, "GTA V / Online", "gamer", rng=random.Random(1), client=gamer_client(
+        [[gamer("Which car is NOT in GTA V", "Pegassi Zentorno", "Grotti Turismo R", "Ferrari Enzo",
+                short_name="", title="GTA Fans Always Miss This")]], ["1: PASS"]))
+    assert again.title_card == "LEVEL 2 - GTA V FANS ONLY" and again.title.endswith("| Level 2 🎮")
+    history = quiz.history(s, "gamer")
+    assert [h["level"] for h in history] == ["1", "2"] and history[1]["game"] == "GTA V / Online"
+    assert history[0]["shape"] != history[1]["shape"] or len(quiz.GAMER_SHAPES) == 1
+
+
+def test_gamer_iq_writes_again_when_the_fact_check_fails(tmp_path):
+    seen = {}
+    result = quiz.write_quiz(make_settings(tmp_path), "Minecraft", "gamer", rng=random.Random(1),
+                             client=gamer_client([[gamer(correct="9")], [gamer()]], ["1: FAIL: wrong", "1: PASS"], seen))
+    assert result.answer == "10" and "(9)" in seen["prompts"][2]  # the rejected one isn't asked again
+
+
+def test_gamer_shapes_take_turns(tmp_path):
+    s = make_settings(tmp_path)
+    for shape in ("number", "fake"):
+        quiz._remember(s, "gamer", shape=shape)
+    assert all(quiz.pick_gamer_shape(s, random.Random(i)) in ("first", "lore") for i in range(20))

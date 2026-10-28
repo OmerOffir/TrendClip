@@ -821,7 +821,7 @@ def insights_picker() -> dict[str, Any]:
 
 
 @app.get("/api/insights/brief")
-def insights_brief(mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie"] = "story") -> dict[str, Any]:
+def insights_brief(mode: Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"] = "story") -> dict[str, Any]:
     """The lessons every new script of this kind is written with (what Gemini is told)."""
     settings = _base_settings()
     return {**analytics.lessons(settings, mode).model_dump(mode="json"), "enabled": settings.script_learning,

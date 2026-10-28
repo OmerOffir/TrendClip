@@ -380,7 +380,7 @@
     updateButtons();
   }
 
-  const QUIZ = ["math", "riddle", "trivia", "paradox", "movie"];
+  const QUIZ = ["math", "riddle", "trivia", "paradox", "movie", "gamer"];
   // The movie quiz picks its shape from the notes ("emoji" = guess the movie from 3 emojis).
   const EMOJI_NOTES = "Guess the movie from 3 emojis";
   const isQuiz = () => QUIZ.includes(els.mode.value);

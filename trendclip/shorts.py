@@ -39,7 +39,7 @@ class ShortVideo(BaseModel):
     filename: str
     game: str
     aspect: Aspect = "vertical"
-    mode: str = ""  # story / math / riddle / trivia / paradox / movie (insights group videos by it)
+    mode: str = ""  # story / math / riddle / trivia / paradox / movie / gamer (insights group videos by it)
     title: str
     description: str
     hashtags: list[str]
@@ -88,7 +88,7 @@ class RenderRequest(BaseModel):
     highlight: str = "yellow"
     fit: Literal["crop", "blur"] = "crop"
     aspect: Aspect = "vertical"  # "landscape": 16:9 for long videos
-    mode: str = Field("", pattern=r"^(|clip|story|math|riddle|trivia|paradox|movie)$")  # the script kind, for insights
+    mode: str = Field("", pattern=r"^(|clip|story|math|riddle|trivia|paradox|movie|gamer)$")  # the script kind, for insights
     max_words: int = Field(3, ge=1, le=6)
     # "none", "random" (any music channel) or a music channel id; music_track pins a previewed track.
     music_source: str = Field("none", max_length=200)  # see music.pick ("mood", "folder:dramatic", "local:…")
