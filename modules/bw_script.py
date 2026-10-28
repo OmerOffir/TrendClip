@@ -2,7 +2,8 @@
 sources; Gemini writes a 45-70 s narration split into map and card scenes, and lists its claims, each with a
 quote from a source. The quotes are checked here word for word against the source text, a second Gemini pass
 looks for anything in the narration the sources do not support, and every place a scene names must exist in
-the map data. A draft that fails is sent back with the problems (ATTEMPTS times), then the topic is dropped.
+the map data. A draft that fails is sent back with the problems (ATTEMPTS drafts for the rules, CHECK_FIXES more
+for what the checker flags), then the topic is dropped.
 """
 
 from __future__ import annotations
@@ -33,7 +34,8 @@ MIN_WORDS, MAX_WORDS = 110, 170  # about 45-70 s with the narrator
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 3
-ATTEMPTS = 3
+ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
+CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
 SKIP_DOMAINS = ("wikipedia.org", "wikimedia.org", "wikidata.org", "books.google", "google.com", "archive.org/details",
                 "jstor.org", "doi.org", "worldcat.org", "facebook.com", "twitter.com", "x.com", "youtube.com", "instagram.com",
                 "amazon.", "ebay.", "geohack", "openstreetmap.org", "tools.wmflabs.org", "toolforge.org", "pdf")
@@ -374,13 +376,28 @@ Fix every one and return the whole draft again. Your previous draft:
 {draft}
 """
 
+CHECK_FIX_PROMPT = """A fact checker compared your narration with the sources and flagged these statements:
+{flagged}
+
+For each one: delete it, or rewrite it so it says only what a source says (stay close to the source's wording).
+An OFF TOPIC sentence goes. Keep every other sentence exactly as it is and the scenes split the same way where you
+can; update the claims so each quote still backs what the narration now says; keep the narration {min_words}-{max_words}
+words. Return the whole draft. Your previous draft:
+{draft}
+"""
+
 VERIFY_PROMPT = """Check a YouTube narration that answers the question "{question}" against its sources. List:
-- every statement the sources do not clearly support (a wrong number, a date, a cause, a name, an exaggeration);
+- every statement the sources do not support (a wrong number, a date, a cause, a name, an exaggeration);
 - every sentence that does not help answer the question (a side fact or tangent), marked "OFF TOPIC: ...".
-Simple framing like "here's why" needs no support. Return an empty list when everything is supported and on topic.
+Write each as the statement, a dash, and what is wrong. Only flag real problems: a statement a source supports in
+other words, a fair simplification or simple framing like "here's why" is fine. The claims below come with quotes
+already checked word for word against their source. Return an empty list when everything is supported and on topic.
 
 NARRATION
 {narration}
+
+CLAIMS (quote checked word for word in the source named)
+{claims}
 
 SOURCES
 {sources}
@@ -433,12 +450,7 @@ def squash(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
 
 
-def quote_found(quote: str, source: Source) -> bool:
-    """The quote is in the source text (case, punctuation and spacing ignored); a long quote may differ at its
-    ends (a sentence cut mid-way), so its middle 80% is enough."""
-    q, body = squash(quote), squash(source.text)
-    if len(q.split()) < 4:
-        return False
+def _piece_found(q: str, body: str) -> bool:
     if q in body:
         return True
     w = q.split()
@@ -446,6 +458,21 @@ def quote_found(quote: str, source: Source) -> bool:
         cut = max(1, len(w) // 10)
         return " ".join(w[cut:-cut]) in body
     return False
+
+
+def quote_found(quote: str, source: Source) -> bool:
+    """The quote is in the source text (case, punctuation and spacing ignored); a long quote may differ at its
+    ends (a sentence cut mid-way), so its middle 80% is enough. A quote shortened with "..." passes when every
+    piece of 4+ words is in the source (and the pieces hold 4+ words in all)."""
+    body = squash(source.text)
+    pieces = [squash(p) for p in re.split(r"\.{3,}|…", quote)]
+    pieces = [p for p in pieces if p]
+    if sum(len(p.split()) for p in pieces) < 4:
+        return False
+    if len(pieces) == 1:
+        return _piece_found(pieces[0], body)
+    long = [p for p in pieces if len(p.split()) >= 4]
+    return bool(long) and all(_piece_found(p, body) for p in long)
 
 
 BANNED = ("did you know", "you won't believe", "you wont believe", "blow your mind", "let's dive", "subscribe", "follow for",
@@ -525,9 +552,10 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
 
 
 def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
-    found = _ask(client, model, VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), sources=sources_block(res)),
-                  Check, temperature=0.0)
-    return [u for u in found.unsupported if u.strip()]
+    claims = "\n".join(f"- {c.claim} [source {c.source_id}: \"{c.quote}\"]" for c in draft.claims) or "(none)"
+    found = _ask(client, model, VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), claims=claims,
+                                                     sources=sources_block(res)), Check, temperature=0.0)
+    return [u.strip() for u in found.unsupported if u.strip()]
 
 
 def write(res: Research, client=None, today: str = "", progress=lambda m: None) -> dict[str, Any]:
@@ -543,24 +571,33 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
                            today=today or dt.date.today().isoformat(), sources=sources_block(res))
     progress("Writing the script")
     draft = _ask(client, model, prompt, Draft)
-    problems: list[str] = []
-    for attempt in range(1, ATTEMPTS + 1):
+    # The rules (length, quotes, places) and the fact checker each get their own fixes, so a draft that needed
+    # its rule fixes still gets a chance to correct what the checker flags.
+    fixes = {"rules": 0, "facts": 0}
+    limits = {"rules": ATTEMPTS - 1, "facts": CHECK_FIXES}
+    while True:
         if not draft.usable:
             raise ScriptError(f"Gemini: the sources can't support it ({draft.reject_reason.strip() or 'no reason given'})")
-        problems = check(draft, res)
+        kind, problems = "rules", check(draft, res)
         if not problems:
             progress("Checking the narration against the sources")
-            unsupported = verify(client, model, draft, res)
-            if not unsupported:
+            problems = verify(client, model, draft, res)
+            if not problems:
                 break
-            problems = ["the checker found statements the sources do not support or that are off topic (remove or correct "
-                        "them): " + " | ".join(unsupported[:5])]
-        logger.info("Borderline Why draft, attempt %d: %s", attempt, "; ".join(problems))
-        if attempt == ATTEMPTS:
-            raise ScriptError(f"The script missed the rules {ATTEMPTS} times: " + "; ".join(problems))
-        progress(f"Fixing the script (attempt {attempt + 1}): {problems[0][:80]}")
-        draft = _ask(client, model, prompt + "\n\n" + FIX_PROMPT.format(problems="; ".join(problems),
-                                                                          draft=draft.model_dump_json()), Draft)
+            kind = "facts"
+        logger.info("Borderline Why draft (%s fix %d): %s", kind, fixes[kind], " | ".join(problems))
+        if fixes[kind] >= limits[kind]:
+            what = "the fact checker still flagged" if kind == "facts" else f"the script missed the rules {ATTEMPTS} times"
+            raise ScriptError(f"{what[0].upper()}{what[1:]}: " + " | ".join(problems[:5]))
+        fixes[kind] += 1
+        if kind == "facts":
+            progress(f"Fixing the facts ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
+            fix = CHECK_FIX_PROMPT.format(flagged="\n".join(f"- {p}" for p in problems[:8]), min_words=MIN_WORDS,
+                                          max_words=MAX_WORDS, draft=draft.model_dump_json())
+        else:
+            progress(f"Fixing the script ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
+            fix = FIX_PROMPT.format(problems="; ".join(problems), draft=draft.model_dump_json())
+        draft = _ask(client, model, prompt + "\n\n" + fix, Draft)
     used = sorted({c.source_id for c in draft.claims})
     return {
         **to_spec_dict(draft),

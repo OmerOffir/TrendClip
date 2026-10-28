@@ -198,6 +198,54 @@ def test_quote_found_ignores_case_and_punctuation_but_not_changes():
     assert not bw_script.quote_found("123 square", source)  # too short to prove anything
 
 
+def test_a_quote_shortened_with_dots_passes_when_each_piece_is_in_the_source():
+    source = bw_script.Source(1, "u", "t", "The Treaty of Paris (1783) stated that the boundary would run through the lake "
+                                         "to its most northwestern point and then due west to the Mississippi River.")
+    assert bw_script.quote_found("The Treaty of Paris (1783)... stated that the boundary... would run", source)
+    assert bw_script.quote_found("through the lake to its most northwestern point … due west to the Mississippi River", source)
+    assert not bw_script.quote_found("The Treaty of Paris (1783)... said the border followed the river north", source)
+    assert not bw_script.quote_found("The Treaty... stated", source)
+
+
+@pytest.fixture
+def scripted(monkeypatch):
+    """bw_script.write with the rule check and the fact checker answering from lists, and every prompt kept."""
+    calls = {"prompts": [], "rules": [], "facts": []}
+
+    def ask(client, model, prompt, schema, temperature=0.7):
+        calls["prompts"].append(prompt)
+        return _draft()
+
+    monkeypatch.setattr(bw_script, "gemini", lambda client=None: (None, "m"))
+    monkeypatch.setattr(bw_script, "_ask", ask)
+    monkeypatch.setattr(bw_script, "check", lambda draft, res: calls["rules"].pop(0) if calls["rules"] else [])
+    monkeypatch.setattr(bw_script, "verify", lambda client, model, draft, res: calls["facts"].pop(0) if calls["facts"] else [])
+    return calls
+
+
+def test_the_fact_checker_gets_its_own_fixes_after_the_rule_fixes(scripted):
+    scripted["rules"] = [["the narration is 188 words"], ["a quote is not word for word"]]
+    scripted["facts"] = [["The lake is 200 miles wide - the sources say 70"], ["OFF TOPIC: David Thompson's later life"]]
+    steps = []
+
+    script = bw_script.write(_research(), today="2026-10-28", progress=steps.append)
+
+    assert script["title"] == "Why does Minnesota have a notch?"
+    assert len(scripted["prompts"]) == 5  # the draft, 2 rule fixes, 2 fact fixes
+    assert "The lake is 200 miles wide" in scripted["prompts"][3] and "Keep every other sentence exactly" in scripted["prompts"][3]
+    assert "Fixing the facts (1 of 3): The lake is 200 miles wide - the sources say 70" in steps
+
+
+def test_a_draft_the_checker_keeps_flagging_drops_the_topic_with_what_it_flagged(scripted):
+    scripted["facts"] = [["Built in 1900 - no source gives a year"]] * (bw_script.CHECK_FIXES + 1)
+
+    with pytest.raises(bw_script.ScriptError) as err:
+        bw_script.write(_research(), today="2026-10-28")
+
+    assert "The fact checker still flagged: Built in 1900" in str(err.value)
+    assert len(scripted["prompts"]) == 1 + bw_script.CHECK_FIXES
+
+
 def test_description_lists_sources_and_credits():
     text = bw_script.description({"question": "Why?", "description": "Because.", "hashtags": ["borders"],
                                   "sources": [{"title": "MNHS", "url": "https://mnhs.org"}]}, "@BorderlineWhy")
