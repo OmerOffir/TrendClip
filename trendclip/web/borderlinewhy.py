@@ -184,6 +184,94 @@ def plan(fresh: bool = False) -> dict[str, Any]:
         settings, making=_job("make").get("key") if _job("make").get("running") else None), fresh)
 
 
+# ---- Write it myself: any LLM writes the script when Gemini is out of quota (modules/bw_manual.py)
+
+
+class ManualStart(BaseModel):
+    question: str = Field("", max_length=200)
+    article: str = Field("", max_length=200)
+
+
+class ManualText(BaseModel):
+    text: str = Field(min_length=2, max_length=200_000)
+
+
+def _manual(fn, *args):
+    from modules import bw_manual
+
+    try:
+        return fn(*args)
+    except bw_manual.ManualError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except bw_script.TryLater as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except bw_script.ScriptError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+
+
+@router.get("/manual")
+def manual_list() -> dict[str, Any]:
+    from modules import bw_manual
+
+    root = bw_channel.out_root()
+    return {"sessions": bw_manual.sessions(), "topics": [t.model_dump() for t in bw_topics.remaining(root)[:15]]}
+
+
+@router.post("/manual")
+def manual_start(req: ManualStart) -> dict[str, Any]:
+    """Read the topic's sources (about a minute) and give the writing prompt."""
+    from modules import bw_manual
+
+    return _manual(bw_manual.start, req.question, req.article)
+
+
+@router.get("/manual/{sid}")
+def manual_view(sid: str) -> dict[str, Any]:
+    from modules import bw_manual
+
+    return _manual(bw_manual.view, sid)
+
+
+@router.post("/manual/{sid}/answer")
+def manual_answer(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import bw_manual
+
+    return _manual(bw_manual.answer, sid, req.text)
+
+
+@router.post("/manual/{sid}/facts")
+def manual_facts(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import bw_manual
+
+    return _manual(bw_manual.facts, sid, req.text)
+
+
+@router.post("/manual/{sid}/make")
+def manual_make(sid: str, req: MakeRequest | None = None) -> dict[str, Any]:
+    """Make the video of a checked manual script for a slot (the next one when none is given)."""
+    from modules import bw_manual
+
+    settings = _settings()
+    script = _manual(bw_manual.script, sid)
+    if req and req.day and req.slot:
+        job = bw_channel.job_for(settings, req.day, req.slot)
+        if job.slot != req.slot:
+            raise HTTPException(status_code=400, detail=f"{req.slot} is not a slot (BW_SLOTS: {', '.join(bw_channel.slots())})")
+    else:
+        job = bw_channel.next_job(settings, assistant.now(settings)) or bw_channel.job_for(settings, assistant.now(settings).date())
+    try:
+        bw_channel.set_aside(job.key)
+    except bw_channel.ChannelError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+    def run(progress):
+        info = bw_channel.make(settings, job, progress, script=script, announce=True)
+        bw_manual.mark_made(sid, info["key"])
+        return info["key"]
+
+    return _start("make", run, key=job.key)
+
+
 @router.get("/make-job")
 def make_job() -> dict[str, Any]:
     return _job("make")

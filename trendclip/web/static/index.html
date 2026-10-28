@@ -62,6 +62,7 @@
         <button type="button" role="tab" class="active" data-bw-view="videos">Videos <span class="nav-count todo" id="bwNavWaiting" hidden title="Videos waiting for Approve"></span></button>
         <button type="button" role="tab" data-bw-view="plan">Plan <span class="nav-count todo" id="bwNavPlan" hidden title="Videos waiting for Approve"></span></button>
         <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
+        <button type="button" role="tab" data-bw-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
       </nav>
     </div>
   </header>
@@ -120,6 +121,27 @@
       <div class="bw-plan" id="bwPlan"><div class="empty">Loading…</div></div>
     </section>
     <section class="card ch-hub" id="bwHub" hidden></section>
+  </main>
+
+  <main class="container da-view" id="viewBwWrite" data-workspace-panel="borderlinewhy" data-bw-panel="write" hidden>
+    <div id="bwWError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write it myself</h2>
+          <span class="hint">For when Gemini is out of quota. The code reads the sources; you paste each prompt into any LLM and its
+            answer back here. The same checks run as on Gemini's scripts: the rules, the quotes, then a fact check (best in a second LLM).</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <select id="bwWTopic" aria-label="Topic"><option value="">The next topic on the list</option></select>
+        <button type="button" class="btn-primary" id="bwWStart">📚 Read the sources</button>
+        <span class="spacer"></span>
+        <select id="bwWSessions" aria-label="Continue a script" hidden></select>
+        <button type="button" class="btn-secondary" id="bwWOpen" hidden>Continue</button>
+      </div>
+      <div class="bw-w" id="bwWSession"></div>
+    </section>
   </main>
 
   <main class="container da-view" id="viewBwTopics" data-workspace-panel="borderlinewhy" data-bw-panel="topics" hidden>
@@ -1020,6 +1042,7 @@
   <script src="/static/insights.js"></script>
   <script src="/static/find.js"></script>
   <script src="/static/channelhub.js"></script>
+  <script src="/static/bwmanual.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/upcoming.js"></script>

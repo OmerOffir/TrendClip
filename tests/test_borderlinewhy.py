@@ -657,3 +657,53 @@ def test_check_wants_known_icons_and_flags_on_poles(world):
     on_place = bw_script.ElementDraft(kind="Flag", place="Canada", flag="Flag of Canada.svg")
     alone = bw_script.ElementDraft(kind="flag", flag="Flag of Canada.svg")
     assert (on_place.kind, alone.kind) == ("highlight", "pole")
+
+
+# --------------------------------------------------------------------------- write it myself (any LLM)
+
+
+def test_write_it_myself_goes_through_both_checks_with_pasted_answers(tmp_path, world, monkeypatch):
+    from modules import bw_manual
+
+    monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: _research())
+    s = bw_manual.start(article="Northwest Angle", question="Why does Minnesota have a notch?", out_dir=tmp_path)
+    assert s["step"] == "write" and "SOURCES" in s["prompt"] and "ANSWER FORMAT" in s["prompt"] and len(s["sources"]) == 2
+
+    with pytest.raises(bw_manual.ManualError):
+        bw_manual.answer(s["id"], "Sorry, I can't help with that.", tmp_path)
+    bad = _draft(narration_words=40)
+    s = bw_manual.answer(s["id"], "Here you go:\n```json\n" + bad.model_dump_json() + "\n```", tmp_path, find=_find(world))
+    assert s["step"] == "fix" and any("words" in p for p in s["problems"]) and "Your draft has problems" in s["prompt"]
+
+    s = bw_manual.answer(s["id"], _draft().model_dump_json(), tmp_path, find=_find(world))
+    assert s["step"] == "facts" and "Check a YouTube narration" in s["prompt"] and '{"unsupported": []}' in s["prompt"]
+    with pytest.raises(bw_manual.ManualError):
+        bw_manual.script(s["id"], tmp_path)
+
+    s = bw_manual.facts(s["id"], '{"unsupported": ["The treaty was in 1784 - the sources say 1783"]}', tmp_path)
+    assert s["step"] == "facts_fix" and "1784" in s["prompt"] and "fact checker" in s["prompt"]
+    s = bw_manual.answer(s["id"], _draft().model_dump_json(), tmp_path, find=_find(world))
+    s = bw_manual.facts(s["id"], '{"unsupported": []}', tmp_path)
+    assert s["step"] == "ready" and s["prompt"] == ""
+
+    script = bw_manual.script(s["id"], tmp_path)
+    assert script["origin"] == "manual" and script["article"] == "Northwest Angle" and len(script["sources"]) == 2
+    assert [x["id"] for x in bw_manual.sessions(tmp_path)] == [s["id"]]
+
+
+def test_a_manual_script_needs_two_sources(tmp_path, monkeypatch):
+    from modules import bw_manual
+
+    only_wiki = _research()
+    only_wiki.sources = only_wiki.sources[:1]
+    monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: only_wiki)
+    with pytest.raises(bw_script.ScriptError, match="two sources"):
+        bw_manual.start(article="Northwest Angle", out_dir=tmp_path)
+    with pytest.raises(bw_manual.ManualError):
+        bw_manual.view("../etc", tmp_path)
+
+
+def test_a_manual_script_is_made_with_its_origin(settings, tmp_path, world, monkeypatch):
+    monkeypatch.setitem(SCRIPT, "origin", "manual")
+    job, info, rendered = _make(settings, tmp_path, world)
+    assert info["origin"] == "manual" and "origin" not in json.loads((tmp_path / job.key / "script.json").read_text())

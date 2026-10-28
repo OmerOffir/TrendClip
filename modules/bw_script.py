@@ -578,24 +578,53 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
     return problems
 
 
-def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
+def verify_prompt(draft: Draft, res: Research) -> str:
     claims = "\n".join(f"- {c.claim} [source {c.source_id}: \"{c.quote}\"]" for c in draft.claims) or "(none)"
-    found = _ask(client, model, VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), claims=claims,
-                                                     sources=sources_block(res)), Check, temperature=0.0)
+    return VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), claims=claims, sources=sources_block(res))
+
+
+def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
+    found = _ask(client, model, verify_prompt(draft, res), Check, temperature=0.0)
     return [u.strip() for u in found.unsupported if u.strip()]
+
+
+def write_prompt(res: Research, today: str = "") -> str:
+    import datetime as dt
+
+    return PROMPT.format(question=res.topic.question, min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
+                         min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.ICONS),
+                         today=today or dt.date.today().isoformat(), sources=sources_block(res))
+
+
+def fix_prompt(problems: list[str], draft: Draft) -> str:
+    return FIX_PROMPT.format(problems="; ".join(problems), draft=draft.model_dump_json())
+
+
+def check_fix_prompt(flagged: list[str], draft: Draft) -> str:
+    return CHECK_FIX_PROMPT.format(flagged="\n".join(f"- {p}" for p in flagged[:8]), min_words=MIN_WORDS, max_words=MAX_WORDS,
+                                   draft=draft.model_dump_json())
+
+
+def finish(draft: Draft, res: Research) -> dict[str, Any]:
+    """The script dict of a draft that passed (modules.bw_render.spec_from_dict reads it)."""
+    used = sorted({c.source_id for c in draft.claims})
+    return {
+        **to_spec_dict(draft),
+        "question": res.topic.question, "article": res.article, "narration": narration(draft),
+        "claims": [c.model_dump() for c in draft.claims],
+        "sources": [{"id": s.id, "url": s.url, "title": s.title} for s in res.sources if s.id in used],
+        "description": draft.description.strip(),
+        "hashtags": [h.strip().lstrip("#").replace(" ", "") for h in draft.hashtags if h.strip()][:5],
+    }
 
 
 def write(res: Research, client=None, today: str = "", progress=lambda m: None) -> dict[str, Any]:
     """The checked script for a researched topic (a dict: modules.bw_render.spec_from_dict reads it). Raises
     ScriptError when Gemini rejects the topic or misses the rules ATTEMPTS times."""
-    import datetime as dt
-
     if len(res.sources) < 2:
         raise ScriptError(f"Only Wikipedia could be read for {res.article!r}: the channel wants two sources")
     client, model = gemini(client)
-    prompt = PROMPT.format(question=res.topic.question, min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
-                           min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.ICONS),
-                           today=today or dt.date.today().isoformat(), sources=sources_block(res))
+    prompt = write_prompt(res, today)
     progress("Writing the script")
     draft = _ask(client, model, prompt, Draft)
     # The rules (length, quotes, places) and the fact checker each get their own fixes, so a draft that needed
@@ -619,21 +648,12 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
         fixes[kind] += 1
         if kind == "facts":
             progress(f"Fixing the facts ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
-            fix = CHECK_FIX_PROMPT.format(flagged="\n".join(f"- {p}" for p in problems[:8]), min_words=MIN_WORDS,
-                                          max_words=MAX_WORDS, draft=draft.model_dump_json())
+            fix = check_fix_prompt(problems, draft)
         else:
             progress(f"Fixing the script ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
-            fix = FIX_PROMPT.format(problems="; ".join(problems), draft=draft.model_dump_json())
+            fix = fix_prompt(problems, draft)
         draft = _ask(client, model, prompt + "\n\n" + fix, Draft)
-    used = sorted({c.source_id for c in draft.claims})
-    return {
-        **to_spec_dict(draft),
-        "question": res.topic.question, "article": res.article, "narration": narration(draft),
-        "claims": [c.model_dump() for c in draft.claims],
-        "sources": [{"id": s.id, "url": s.url, "title": s.title} for s in res.sources if s.id in used],
-        "description": draft.description.strip(),
-        "hashtags": [h.strip().lstrip("#").replace(" ", "") for h in draft.hashtags if h.strip()][:5],
-    }
+    return finish(draft, res)
 
 
 def description(script: dict[str, Any], handle: str = "") -> str:

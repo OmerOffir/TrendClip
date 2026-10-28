@@ -789,12 +789,15 @@ class TrendClipBot(discord.Client):
             if isinstance(failed.__cause__, bw_script.TryLater) and retry_at <= job.post_at - BW_RETRY_UNTIL:
                 # Wikipedia down, Gemini busy or out of quota: not the topic's fault, so wait and try again by itself
                 await channel.send(f"⏳ Wikipedia or Gemini is not answering ({clip_text(str(failed), 200)}). "
-                                   f"I'll try the {label} video again at {retry_at:%H:%M} by myself.", view=try_again)
+                                   f"I'll try the {label} video again at {retry_at:%H:%M} by myself. Or write the script with any other "
+                                   "LLM: dashboard → Borderline Why → ✍️ Write it myself.", view=try_again)
                 await asyncio.sleep((retry_at - assistant.now(settings)).total_seconds())
                 if await asyncio.to_thread(bw_channel.load_info, job.key) is None:
                     await self.borderlinewhy_make(job)
                 return
-            await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.", view=try_again)
+            hint = (" Gemini is out of quota: write the script with any other LLM on the dashboard → Borderline Why → "
+                    "✍️ Write it myself." if isinstance(failed.__cause__, bw_script.TryLater) else "")
+            await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.{hint}", view=try_again)
             return
         await self.send_file_video(channel, bw_channel.video_path(info["key"]),
                                    bw_channel.video_line(info) + "\n" + bw_channel.video_note(info), bw_view(info["key"]))

@@ -390,7 +390,8 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
         progress(0.0, "Choosing the topic")
         script, origin = next_script(lambda m: progress(None, m), out_dir, client)
     else:
-        origin = "given"
+        script = dict(script)
+        origin = script.pop("origin", "given")
     script.setdefault("seed", random.randrange(1, 10_000))
     script.setdefault("look", setting("BW_LOOK", "satellite"))
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
