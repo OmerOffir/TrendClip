@@ -350,8 +350,12 @@ def youtube_texts(info: dict) -> dict[str, Any]:
 
 
 @router.get("/plan")
-def plan() -> dict[str, Any]:
-    return da_plan.view()
+def plan(fresh: bool = False) -> dict[str, Any]:
+    """This machine's plan; on the sending machine the Linux machine's (the one that counts), see channel_hub.plan_tab."""
+    from modules import channel_hub
+    from trendclip.config import get_settings
+
+    return channel_hub.plan_tab(get_settings(), "darkarchives", da_plan.view, fresh)
 
 
 @router.post("/plan/items", status_code=201)

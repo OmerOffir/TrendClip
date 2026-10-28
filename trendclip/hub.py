@@ -15,6 +15,7 @@ The other channels (Dark Outliers, Borderline Why) go the same way, with the cha
 nonce (modules/channel_hub.py does their side):
     tc-hub cask <nonce> <channel>                                -> tc-hub free <nonce> {"free": [...]}
     tc-hub cplan <nonce> <channel>                               -> tc-hub week <nonce> {} + plan.json
+    tc-hub cview <nonce> <channel>     (the Plan tab's own data)  -> tc-hub week <nonce> {} + plan.json
     tc-hub csend <nonce> <channel> <date> <slot> <part ids>  + bundle.json -> tc-hub done|fail <nonce> {...}
 
 And the Upcoming tab (every channel's week, modules/upcoming.py):
@@ -42,8 +43,8 @@ from .models import utcnow
 logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
-REQUESTS = ("ask", "send", "plan", "uplan", "cask", "cplan", "csend")
-CHANNEL_REQUESTS = ("cask", "cplan", "csend")
+REQUESTS = ("ask", "send", "plan", "uplan", "cask", "cplan", "cview", "csend")
+CHANNEL_REQUESTS = ("cask", "cplan", "cview", "csend")
 REPLIES = ("free", "week", "done", "fail")  # never a request word, or the hub would answer itself
 FREE_DAYS = 7
 PART_BYTES = 8 * 1024 * 1024

@@ -258,6 +258,18 @@ def set_aside(key: str, out_dir: Path | None = None) -> Path | None:
     return target
 
 
+def plan_view(settings, now: datetime | None = None, making: str | None = None) -> dict[str, Any]:
+    """The Plan tab's data (GET /api/borderlinewhy/plan; the hub sends the same to the sending machine)."""
+    from trendclip import assistant
+
+    now = now or assistant.now(settings)
+    days = plan_days(settings, now)
+    return {"days": days, "slots": slots(), "lead_hours": lead_hours(), "timezone": settings.timezone,
+            "require_approval": require_approval(), "privacy": upload_privacy(),
+            "now": now.isoformat(timespec="minutes"), "making": making,
+            "waiting": sum(1 for d in days for r in d["slots"] if r["state"] == "waiting")}
+
+
 def videos(out_dir: Path | None = None, limit: int = 30) -> list[dict]:
     root = out_root(out_dir)
     if not root.is_dir():

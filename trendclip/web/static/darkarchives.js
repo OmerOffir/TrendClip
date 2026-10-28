@@ -646,9 +646,10 @@
     const pending = d.items.filter((i) => !i.youtube.done);
     plan.nav.textContent = pending.length;
     plan.nav.hidden = !pending.length;
-    plan.hint.textContent = d.auto_post
+    const linuxPlan = d.source === "linux";
+    plan.hint.innerHTML = channelHub.source(d) + esc(d.auto_post
       ? `The Discord bot uploads each slot's video to the Dark Outliers channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
-      : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`;
+      : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`);
     // the empty slot's dropdown: videos not on YouTube, not sent to the hub, and not planned already (a video
     // planned twice went out twice once; a planned one shows its date on its card in Videos)
     const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube) && !(v.sent && v.sent.hub) && !v.planned.length);
@@ -665,6 +666,17 @@
         <div class="da-plan-slots">${d.slots.map((slot) => {
           const item = byKey[`${iso} ${slot}`];
           const passed = `${iso} ${slot}` < `${today} ${now.toTimeString().slice(0, 5)}`;
+          if (item && linuxPlan) {  // the Linux plan: handled there
+            const yt = item.youtube;
+            return `<div class="da-plan-slot${yt.done ? " done" : passed ? " late" : ""}"><span class="time">${slot}</span>
+              <span class="title">🎬 ${esc(item.title)}${item.video_missing ? ' <span class="da-note">(video missing on Linux)</span>' : ""}</span>
+              ${yt.done ? `<span class="pill good">▶️ on YouTube</span>${yt.url ? ` <a class="hint" href="${esc(yt.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}`
+                : passed ? '<span class="pill">⚠️ not posted</span>' : '<span class="pill">⏳ waits for its time</span>'}</div>`;
+          }
+          if (linuxPlan) {
+            return `<div class="da-plan-slot"><span class="time">${slot}</span>
+              ${passed ? '<span class="hint">passed</span>' : channelHub.sendHere(iso, slot, d.sendable)}</div>`;
+          }
           if (item) {
             const yt = item.youtube;
             const cls = yt.done ? " done" : passed ? " late" : "";
@@ -747,15 +759,15 @@
   });
 
   const { channelHub } = window.TrendClip;
-  const linux = channelHub.mount($("daHub"), "darkarchives", () => loadPlan());
-  async function loadPlan() {
+  const linux = channelHub.mount($("daHub"), "darkarchives", () => loadPlan(true));
+  async function loadPlan(fresh) {
     try {
-      const [{ body }, sender] = await Promise.all([api("/api/darkarchives/plan"), channelHub.sender()]);
+      const [{ body }, sender] = await Promise.all([api(`/api/darkarchives/plan${fresh === true ? "?fresh=1" : ""}`), channelHub.sender()]);
       plan.data = body;
       plan.sender = sender;
       plan.error.hidden = true;
       renderPlan();
-      linux.counts();
+      linux.refresh();
       renderProduce();
       renderInsights();
     } catch (err) {
@@ -779,8 +791,10 @@
     const json = (data) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     const watchBtn = e.target.closest("button[data-watch]");
     if (watchBtn) return channelHub.watch(watchBtn.closest(".da-plan-slot"), `/api/darkarchives/stories/${watchBtn.dataset.watch}/video`);
+    const here = e.target.closest("button[data-send-here]");
+    if (here) return channelHub.sendHereClick(here, "darkarchives").then((ok) => ok && loadPlan(true));
     const hubBtn = e.target.closest("button[data-hub]");
-    if (hubBtn) return channelHub.picker(hubBtn.closest(".da-plan-slot"), "darkarchives", hubBtn.dataset.hub, () => { setTimeout(loadPlan, 1500); linux.refresh(); });
+    if (hubBtn) return channelHub.picker(hubBtn.closest(".da-plan-slot"), "darkarchives", hubBtn.dataset.hub, () => setTimeout(() => loadPlan(true), 1500));
     const add = e.target.closest("button[data-add]");
     if (add) {
       const sel = add.parentElement.querySelector("select");

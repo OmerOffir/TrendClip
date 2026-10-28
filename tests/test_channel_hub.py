@@ -238,4 +238,42 @@ def test_an_unknown_channel_is_answered(linux, mac, discord):
 
 
 def test_channel_requests_are_hub_requests():
-    assert all(hub.is_request(f"tc-hub {op} ab12 darkarchives") for op in ("cask", "cplan", "csend"))
+    assert all(hub.is_request(f"tc-hub {op} ab12 darkarchives") for op in ("cask", "cplan", "cview", "csend"))
+
+
+def test_the_sending_machines_plan_tab_is_the_linux_plan(linux, mac, tomorrow, discord, machines, announced, monkeypatch):
+    monkeypatch.setattr(channel_hub, "_views", {})
+    machines.use("linux")
+    there = _story("reddit_linux", "Linux story")
+    _da_video(there, "Linux story")
+    da_plan.add_item(da_plan.ItemRequest(story_id=there, date=tomorrow, slot="23:00"))
+    _bw_video(linux, tomorrow, "14:30", "Linux BW")
+    machines.use("mac")
+    here = _story("reddit_mac", "Mac story")
+    _da_video(here, "Mac story")
+    key = _bw_video(mac, tomorrow, "23:00", "Mac BW")
+
+    da = channel_hub.plan_tab(mac, "darkarchives", da_plan.view)
+    bw = channel_hub.plan_tab(mac, "borderlinewhy", lambda: bw_channel.plan_view(mac))
+
+    assert da["source"] == "linux" and [i["title"] for i in da["items"]] == ["Linux story"] and da["videos"] == []
+    assert da["sendable"] == [{"ref": str(here), "title": "Mac story", "seconds": 55}]
+    titles = [r["video"]["title"] for d in bw["days"] for r in d["slots"] if r["video"]]
+    assert bw["source"] == "linux" and titles == ["Linux BW"] and [v["ref"] for v in bw["sendable"]] == [key]
+
+    channel_hub.send(mac, "borderlinewhy", key, tomorrow, "23:00")  # sending forgets the kept Linux plan
+    bw = channel_hub.plan_tab(mac, "borderlinewhy", lambda: bw_channel.plan_view(mac))
+    titles = [r["video"]["title"] for d in bw["days"] for r in d["slots"] if r["video"]]
+    assert titles == ["Linux BW", "Mac BW"] and bw["sendable"] == []
+    assert channel_hub.plan_tab(linux, "darkarchives", lambda: {"items": []}) == {"items": [], "source": "here"}
+
+
+def test_the_plan_tab_falls_back_to_this_machine_when_linux_is_silent(mac, monkeypatch):
+    def silent(settings, op, name):
+        raise hub.HubError("The Linux bot didn't answer.", 504)
+
+    monkeypatch.setattr(channel_hub, "_views", {})
+    monkeypatch.setattr(channel_hub, "_ask", silent)
+    monkeypatch.setattr(channel_hub.CHANNELS["darkarchives"], "sendable", lambda settings: [])
+    tab = channel_hub.plan_tab(mac, "darkarchives", lambda: {"items": ["mine"]})
+    assert tab["source"] == "here" and tab["items"] == ["mine"] and "didn't answer" in tab["hub_error"]

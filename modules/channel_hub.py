@@ -31,6 +31,8 @@ from trendclip.hub import HubError
 logger = logging.getLogger(__name__)
 
 DAYS = 7  # the free times and the plan cover this many days from today
+VIEW_CACHE_SECONDS = 60  # the sending machine's Plan tab asks Linux through Discord: one answer serves a minute
+_views: dict[str, tuple[float, dict[str, Any]]] = {}
 MAKING_GRACE = 30 * 60  # a Borderline Why slot folder touched this recently (no video yet) is being made
 
 
@@ -125,7 +127,20 @@ class DarkOutliers:
                                   components=da_channel.video_buttons(story_id, item.id))
         return {"date": day.isoformat(), "slot": slot, "title": info.get("title", ""), "ref": story_id}
 
+    def view(self, settings) -> dict[str, Any]:
+        """The hub's Plan tab, without its own video list (the sending machine shows its own)."""
+        from modules import da_plan
+
+        return {**da_plan.view(), "videos": []}
+
     # ---- sending side
+    def sendable(self, settings) -> list[dict[str, Any]]:
+        """This machine's videos that can go to Linux: not on YouTube, not sent there already."""
+        from modules import da_plan
+
+        return [{"ref": str(v["story_id"]), "title": v.get("title", ""), "seconds": v.get("duration_seconds")}
+                for v in da_plan.videos() if not (v.get("uploads") or {}).get("youtube") and not (v.get("sent") or {}).get("hub")]
+
     def bundle(self, ref: int | str) -> tuple[bytes, dict[str, Any]]:
         from db import repository
         from modules import da_plan, script_gen, video_gen
@@ -252,7 +267,21 @@ class BorderlineWhy:
         bw_channel.announce_video(info, settings)
         return {"date": day.isoformat(), "slot": slot, "title": info.get("title", ""), "ref": job.key}
 
+    def view(self, settings) -> dict[str, Any]:
+        from modules import bw_channel
+
+        return bw_channel.plan_view(settings)
+
     # ---- sending side
+    def sendable(self, settings) -> list[dict[str, Any]]:
+        """This machine's videos that can go to Linux: not on YouTube or Linux, not stopped, passed their check."""
+        from modules import bw_channel
+
+        return [{"ref": v["key"], "title": v.get("title", ""), "seconds": v.get("duration_seconds")}
+                for v in bw_channel.videos(limit=100)
+                if not (v.get("uploads") or {}).get("youtube") and not (v.get("sent") or {}).get("hub")
+                and not v.get("check") and not bw_channel.is_vetoed(v)]
+
     def bundle(self, ref: int | str) -> tuple[bytes, dict[str, Any]]:
         from modules import bw_channel
 
@@ -321,8 +350,8 @@ async def handle(settings, words: list[str], message: Any, discord_channel: Any)
         ch = channel(words[3] if len(words) > 3 else "")
         if op == "cask":
             return hub._reply("free", nonce, {"free": await asyncio.to_thread(ch.free, settings)}), None
-        if op == "cplan":
-            plan = await asyncio.to_thread(ch.plan, settings)
+        if op in ("cplan", "cview"):
+            plan = await asyncio.to_thread(ch.plan if op == "cplan" else ch.view, settings)
             return hub._reply("week", nonce, {}), ("plan.json", json.dumps(plan, ensure_ascii=False).encode("utf-8"))
         if len(words) != 7 or not message.attachments:
             raise HubError("The send message is incomplete")
@@ -368,6 +397,37 @@ def remote_plan(settings, name: str) -> dict[str, Any]:
     return data["file"]
 
 
+def remote_view(settings, name: str) -> dict[str, Any]:
+    """The hub's Plan tab data of that channel (what GET /api/<channel>/plan answers there)."""
+    data = _ask(settings, "cview", name)
+    if "file" not in data:
+        raise HubError("The Linux bot answered without its plan. Update the code there (git pull) and restart it.", 502)
+    return data["file"]
+
+
+def plan_tab(settings, name: str, local, fresh: bool = False) -> dict[str, Any]:
+    """A Plan tab's data. Here `local()` with "source": "here"; on the sending machine the Linux machine's
+    (asked through Discord, kept VIEW_CACHE_SECONDS) with "source": "linux" and "sendable", this machine's
+    videos that can go there. If Linux doesn't answer: this machine's with "hub_error"."""
+    if not hub.is_sender(settings):
+        return {**local(), "source": "here"}
+    ch = channel(name)
+    extra = {"sendable": ch.sendable(settings), "sender": True}
+    cached = _views.get(name)
+    if cached and not fresh and time.monotonic() - cached[0] < VIEW_CACHE_SECONDS:
+        return {**cached[1], **extra, "source": "linux"}
+    try:
+        view = remote_view(settings, name)
+    except HubError as err:
+        return {**local(), **extra, "source": "here", "hub_error": str(err)}
+    _views[name] = (time.monotonic(), view)
+    return {**view, **extra, "source": "linux"}
+
+
+def forget_view(name: str) -> None:
+    _views.pop(name, None)
+
+
 def send(settings, name: str, ref: int | str, day: Day, slot: str) -> dict[str, Any]:
     """Sending side: check the time on the hub, then post the video to it. The hub's reply
     {"date", "slot", "title", "ref"}; a refused time raises HubError with the free ones."""
@@ -385,6 +445,7 @@ def send(settings, name: str, ref: int | str, day: Day, slot: str) -> dict[str, 
     if op != "done":
         raise HubError(reply.get("message") or "The hub refused the video", 409, reply.get("free"))
     ch.after_send(ref, reply)
+    forget_view(name)
     logger.info("Sent %s %s to the hub: %s %s", name, ref, reply["date"], reply["slot"])
     return reply
 

@@ -4,11 +4,6 @@
   const { api, esc } = window.TrendClip;
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const dayLabel = (iso) => new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
-  const addDays = (iso, n) => {
-    const d = new Date(`${iso}T12:00:00`);
-    d.setDate(d.getDate() + n);
-    return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-  };
   let status = null;
   // The hub endpoints answer errors with {message, free}; api() hands that over as JSON text.
   const failure = (err) => {
@@ -69,21 +64,43 @@
     };
   }
 
-  function linuxDay(day, plan) {
-    const items = plan.items.filter((i) => i.date === day);
-    const rows = plan.slots.map((slot) => {
-      const item = items.find((i) => i.slot === slot);
-      return item ? `<div class="hub-slot taken"><b>${esc(slot)}</b> ${item.state === "posted" ? "✅ " : ""}${esc(item.title)}</div>`
-        : `<div class="hub-slot open"><b>${esc(slot)}</b> open</div>`;
-    });
-    items.filter((i) => !plan.slots.includes(i.slot)).forEach((i) => rows.push(`<div class="hub-slot taken"><b>${esc(i.slot)}</b> ${esc(i.title)}</div>`));
-    return `<div class="hub-day"><div class="hub-day-name">${esc(dayLabel(day))}</div>${rows.join("")}</div>`;
+  // On the sending machine the Plan tab shows the Linux plan: a note for its head, and an empty Linux slot's
+  // "send one of this machine's videos here" (data-send-here on the button, the <select> next to it).
+  function source(body) {
+    if (body.source === "linux") return '<span class="pill good">🐧 Linux plan</span> ';
+    if (body.hub_error) return `<span class="pill warn" title="${esc(body.hub_error)}">💻 This machine's plan: Linux didn't answer</span> `;
+    return "";
   }
 
-  // The "Send plan to Linux" bar and Linux's plan, in `box` (shown on the sending machine only).
+  function sendHere(day, slot, sendable) {
+    if (!sendable || !sendable.length) return '<span class="hint">open on Linux · no video on this machine to send</span>';
+    return `<select aria-label="Video to send for ${esc(day)} ${esc(slot)}"><option value="">— a video from this machine —</option>
+      ${sendable.map((v) => `<option value="${esc(v.ref)}">${esc(v.title)}${v.seconds ? ` (${Math.round(v.seconds)}s)` : ""}</option>`).join("")}</select>
+      <button type="button" class="btn-secondary" data-send-here="${esc(day)} ${esc(slot)}">📤 Send here</button>`;
+  }
+
+  // A click on a "Send here" button: send the picked video to that Linux slot. Resolves true once Linux took it.
+  async function sendHereClick(btn, name) {
+    const sel = btn.parentElement.querySelector("select");
+    if (!sel || !sel.value) return false;
+    const [date, slot] = btn.dataset.sendHere.split(" ");
+    btn.disabled = true;
+    btn.textContent = "Sending through Discord…";
+    try {
+      await post(`/api/channel-hub/${name}/send`, { ref: sel.value, date, slot });
+      return true;
+    } catch (err) {
+      btn.disabled = false;
+      btn.textContent = "📤 Send here";
+      alert(`Linux didn't take it: ${failure(err).message}`);
+      return false;
+    }
+  }
+
+  // The "Send plan to Linux" bar and this machine's videos not on Linux yet, in `box` (shown on the sending machine only).
   function mount(box, name, onChange) {
-    box.innerHTML = `<div class="ch-hub-head"><b>🐧 Linux plan</b>
-        <span class="hint">The Linux machine posts these; a video sent there leaves this machine's plan</span>
+    box.innerHTML = `<div class="ch-hub-head"><b>💻 On this machine, not on Linux yet</b>
+        <span class="hint">The plan above is the Linux one, which posts; these go there at their own day and time</span>
         <span class="spacer"></span>
         <button type="button" class="btn-primary" data-ch-plan hidden></button>
         <button type="button" class="btn-secondary" data-ch-refresh>Refresh</button></div>
@@ -105,15 +122,11 @@
     async function refresh() {
       if (!(await sender())) return;
       box.hidden = false;
-      counts();
       els.refresh.disabled = true;
-      els.week.innerHTML = '<div class="empty">Asking the Linux machine…</div>';
-      try {
-        const { body: plan } = await api(`/api/channel-hub/${name}/plan`);
-        els.week.innerHTML = Array.from({ length: plan.days }, (_, n) => linuxDay(addDays(plan.today, n), plan)).join("");
-      } catch (err) {
-        els.week.innerHTML = `<div class="empty error">Couldn't get the Linux plan: ${esc(failure(err).message)}</div>`;
-      }
+      await counts();
+      els.week.innerHTML = pending.length
+        ? pending.map((p) => `<div class="hub-slot taken"><b>${esc(dayLabel(p.date))} ${esc(p.slot)}</b> ${esc(p.title)}</div>`).join("")
+        : '<div class="empty">Nothing planned here that Linux doesn\'t have</div>';
       els.refresh.disabled = false;
     }
 
@@ -140,5 +153,5 @@
     return { refresh, counts };
   }
 
-  window.TrendClip.channelHub = { sender, watch, picker, mount };
+  window.TrendClip.channelHub = { sender, watch, picker, mount, source, sendHere, sendHereClick };
 })();

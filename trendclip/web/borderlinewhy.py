@@ -175,14 +175,13 @@ def make(req: MakeRequest | None = None) -> dict[str, Any]:
 
 
 @router.get("/plan")
-def plan() -> dict[str, Any]:
+def plan(fresh: bool = False) -> dict[str, Any]:
+    """This machine's plan; on the sending machine the Linux machine's (the one that counts), see channel_hub.plan_tab."""
+    from modules import channel_hub
+
     settings = _settings()
-    now = assistant.now(settings)
-    days = bw_channel.plan_days(settings, now)
-    return {"days": days, "slots": bw_channel.slots(), "lead_hours": bw_channel.lead_hours(), "timezone": settings.timezone,
-            "require_approval": bw_channel.require_approval(), "privacy": bw_channel.upload_privacy(),
-            "now": now.isoformat(timespec="minutes"), "making": (_job("make").get("key") if _job("make").get("running") else None),
-            "waiting": sum(1 for d in days for r in d["slots"] if r["state"] == "waiting")}
+    return channel_hub.plan_tab(settings, "borderlinewhy", lambda: bw_channel.plan_view(
+        settings, making=_job("make").get("key") if _job("make").get("running") else None), fresh)
 
 
 @router.get("/make-job")

@@ -220,6 +220,14 @@
       ? `<b>${esc(v.title)}</b><small>${Math.round(v.duration_seconds || 0)} s${v.check.length ? ` · ${esc(v.check.join("; "))}` : ""}${r.extra ? " · made for an earlier slot time" : ""}</small>`
       : `<b class="hint">${r.state === "later" ? `Made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}` : r.state === "due" ? "The bot is making it" : "Nothing was made"}</b>`;
     const btns = [];
+    if (state.linux) {  // the Linux plan: its videos are handled there (Discord); an open slot takes one from here
+      if (up) btns.push(`<a href="${esc(up.url)}" target="_blank" rel="noopener">Watch ↗</a>`);
+      else if (r.state === "waiting") btns.push('<span class="hint">Approve it in Discord</span>');
+      if (!v && !past && r.state === "later") btns.push(channelHub.sendHere(r.day, r.slot, state.sendable));
+      return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
+        <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
+        <span class="bw-btns">${btns.join("")}</span></div>`;
+    }
     const sent = v && v.sent;
     if (sent) btns.push(`<span class="pill good">✅ On Linux plan · ${esc(sent.date)} ${esc(sent.slot)}</span>`);
     if (up) btns.push(`<a href="${esc(up.url)}" target="_blank" rel="noopener">Watch ↗</a>`);
@@ -237,13 +245,15 @@
   }
 
   const { channelHub } = window.TrendClip;
-  const linux = channelHub.mount($("bwHub"), "borderlinewhy", () => loadPlan());
-  async function loadPlan() {
+  const linux = channelHub.mount($("bwHub"), "borderlinewhy", () => loadPlan(true));
+  async function loadPlan(fresh) {
     try {
-      const [{ body }, sender] = await Promise.all([api("/api/borderlinewhy/plan"), channelHub.sender()]);
+      const [{ body }, sender] = await Promise.all([api(`/api/borderlinewhy/plan${fresh === true ? "?fresh=1" : ""}`), channelHub.sender()]);
       state.sender = sender;
-      linux.counts();
-      plan.hint.innerHTML = `Slots <b>${esc(body.slots.join(" and "))}</b> (${esc(body.timezone)}). Each video is made ${body.lead_hours} h before its slot and posted in Discord;`
+      state.linux = body.source === "linux";
+      state.sendable = body.sendable || [];
+      linux.refresh();
+      plan.hint.innerHTML = channelHub.source(body) + `Slots <b>${esc(body.slots.join(" and "))}</b> (${esc(body.timezone)}). Each video is made ${body.lead_hours} h before its slot and posted in Discord;`
         + ` ${body.require_approval ? "it goes to YouTube at the slot only after <b>Approve</b>" : "it goes out at the slot unless stopped"} (as ${esc(body.privacy)})`;
       plan.nav.textContent = body.waiting;
       plan.nav.hidden = !body.waiting;
@@ -261,12 +271,17 @@
   }
 
   plan.box.addEventListener("click", async (e) => {
+    const here = e.target.closest("button[data-send-here]");
+    if (here) {
+      if (await channelHub.sendHereClick(here, "borderlinewhy")) loadPlan(true);
+      return;
+    }
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const { act, key, day, slot } = btn.dataset;
     const row = btn.closest(".bw-slot");
     if (act === "watch") return channelHub.watch(row, `/api/borderlinewhy/videos/${encodeURIComponent(key)}/video.mp4?t=${encodeURIComponent(btn.dataset.t || "")}`);
-    if (act === "hub") return channelHub.picker(row, "borderlinewhy", key, () => { setTimeout(loadPlan, 1500); linux.refresh(); });
+    if (act === "hub") return channelHub.picker(row, "borderlinewhy", key, () => setTimeout(() => loadPlan(true), 1500));
     try {
       if (act === "approve") {
         const { body } = await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/approve`);
@@ -289,7 +304,7 @@
       plan.error.hidden = false;
     }
   });
-  $("bwPlanRefresh").addEventListener("click", loadPlan);
+  $("bwPlanRefresh").addEventListener("click", () => loadPlan(true));
 
   // ---- topics
   const TOPIC = { next: "▶ next", waiting: "", used: "✅ made", dropped: "✖ dropped" };
