@@ -380,6 +380,7 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     else:
         origin = "given"
     script.setdefault("seed", random.randrange(1, 10_000))
+    script.setdefault("look", setting("BW_LOOK", "satellite"))
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.1, "Recording the narration")
     words = (voice or record_voice)(script["narration"], work / "voice.mp3", lambda m: progress(0.1, m))

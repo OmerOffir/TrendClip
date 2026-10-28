@@ -18,7 +18,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field
 
-from modules import bw_geo, bw_render
+from modules import bw_fx, bw_geo, bw_render
 from modules.bw_topics import Topic
 
 logger = logging.getLogger(__name__)
@@ -283,13 +283,16 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
     to: str = Field("", description="line / arrow: where it ends.")
     value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W).")
     text: str = Field("", description="A short label, 1-4 words (stamp: 1-2 words).")
     color: str = Field("a", description="a | b | c | gold | red | white")
     cue: str = Field("", description="The word of this scene's narration it appears on.")
+    flag: str = Field("", description="highlight / pole: the flag's Wikimedia Commons file, e.g. 'Flag of Canada.svg'.")
+    icon: str = Field("", description="icon / route: one name from the icon list.")
+    points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
 
 
 class SceneDraft(BaseModel):
@@ -344,18 +347,30 @@ THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
 THE SCENES ({min_scenes}-{max_scenes})
 Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
 must be the whole narration.
-- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (0-4 per scene):
+- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (0-5 per scene):
   highlight (fill a country, state/province or lake, draw a river, or ring a small place), label (a name on the map),
   pin (a marker with a short text), ring (a pulsing circle round a small place), line (a dashed line from place to
   "to"), arrow (a movement from place to "to"), parallel / meridian (a line of latitude / longitude: "value"),
-  stamp (a big rubber stamp word like REJECTED, SOLD, SWAPPED, at most one in the video).
+  stamp (a big rubber stamp word like REJECTED, SOLD, SWAPPED, at most one in the video),
+  icon (a 3D picture that pops in: "icon" from the list below; with a place it stands on that place, else the
+  layout places it), pole (a waving flag on a pole: "flag"; good for who claimed or owned something, and on cards),
+  route (a path drawn place by place through "points", e.g. a road, a voyage, an army's march; "icon" can ride
+  along it, like car, ship, canoe, horse, train).
+- Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
+  flags in 2-4 scenes for the countries the story is about. "flag" is the Wikimedia Commons file name: today's
+  ("Flag of France.svg", "Flag of the United States.svg", "Flag of the United Kingdom.svg") or, for a scene set in
+  the past, the flag of that time ("Flag of Great Britain (1707–1800).svg", "Flag of the United States (1777–1795).svg",
+  "Flag of the Russian Empire.svg"). Never put a modern country's flag on a story from before it existed.
+- Icons ({icons}): use 4-8 in the video where they make a sentence easier to picture (money for a sale, a
+  ship for a voyage, a cross for a mistake). Never decoration only.
 - Name places exactly as a map or Wikipedia would: countries ("Spain", "United States of America"), states and
   provinces ("Minnesota", "Manitoba"), lakes ("Lake of the Woods"), rivers ("Mississippi River"), cities ("Paris"),
   or a small place's Wikipedia title ("Llívia", "Northwest Angle"). Never coordinates, never regions like "Europe"
   or "the Midwest", never historical states that are not on today's map.
 - color: "a", "b", "c" for the sides of a story (the same country keeps the same letter all video), "gold" for the
   place the video is about, "red" for a mistake or a "no".
-- card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle.
+- card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
+  they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
 - cue: a word from that scene's narration, so the element appears as it is said.
 - Vary the scenes: not every scene needs a headline; mix wide and close views.
 
@@ -528,6 +543,10 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
             if e.kind in ("parallel", "meridian") and not -85 <= e.value <= 85 and e.kind == "parallel":
                 problems.append(f"scene {i}: parallel {e.value} is not a latitude")
             stamps += e.kind == "stamp"
+            if e.kind == "icon" and not bw_fx.icon_code(e.icon):
+                problems.append(f"scene {i}: unknown icon {e.icon!r} (use a name from the icon list)")
+            if e.kind == "pole" and not e.flag.strip():
+                problems.append(f"scene {i}: a pole needs a flag")
     if stamps > 1:
         problems.append(f"{stamps} stamps (at most one)")
     spec = bw_render.spec_from_dict(to_spec_dict(draft), [])
@@ -567,7 +586,7 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
         raise ScriptError(f"Only Wikipedia could be read for {res.article!r}: the channel wants two sources")
     client, model = gemini(client)
     prompt = PROMPT.format(question=res.topic.question, min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
-                           min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS,
+                           min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.ICONS),
                            today=today or dt.date.today().isoformat(), sources=sources_block(res))
     progress("Writing the script")
     draft = _ask(client, model, prompt, Draft)

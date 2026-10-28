@@ -40,7 +40,8 @@ BOLD_FONTS = ("Impact.ttf", "impact.ttf", "Anton-Regular.ttf", "DejaVuSans-Bold.
 ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf"  # SIL Open Font License
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
-ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp")
+ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route")
+NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
 THEMES: dict[str, dict[str, tuple[int, int, int]]] = {
@@ -74,6 +75,7 @@ class Element:
     color: str = "a"
     cue: str = ""  # the narration word it appears on
     at: float = 0.0
+    opts: dict[str, Any] = field(default_factory=dict)  # the satellite look's extras (modules.bw_fx): flag, icon, points...
     feature: bw_geo.Feature | None = field(default=None, repr=False)
     feature_to: bw_geo.Feature | None = field(default=None, repr=False)
 
@@ -91,6 +93,7 @@ class Scene:
     start: float = 0.0
     end: float = 0.0
     view: tuple[float, float, float] | None = None  # lon, lat, pixels per degree
+    opts: dict[str, Any] = field(default_factory=dict)  # e.g. globe: true (modules.bw_fx)
 
 
 @dataclass
@@ -107,6 +110,7 @@ class Spec:
     cover: str = ""  # the first frame's big text (the thumbnail)
     theme: str = "atlas"
     seed: int = 0
+    look: str = "flat"  # flat | satellite (modules.bw_fx)
 
     @property
     def duration(self) -> float:
@@ -123,7 +127,20 @@ def resolve(spec: Spec, find: Callable[[str], bw_geo.Feature | None] = bw_geo.re
         if scene.kind != "map":
             continue
         for el in scene.elements:
-            if el.kind in ("stamp", "parallel", "meridian"):
+            if el.kind == "route":
+                coords = []
+                for name in el.opts.get("points") or []:
+                    if not isinstance(name, str):
+                        coords.append(list(name))
+                    elif f := find(name):
+                        coords.append(list(f.label_point()))
+                    else:
+                        missing.append(name)
+                el.opts["coords"] = coords
+                if len(el.opts.get("points") or []) < 2:
+                    missing.append("(route with fewer than 2 points)")
+                continue
+            if el.kind in NO_PLACE_KINDS and not el.place:
                 continue
             el.feature = find(el.place) if el.place else None
             if el.feature is None:
@@ -696,7 +713,15 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
            progress: Callable[[float | None, str], None] = lambda f, m: None) -> Path:
     """Draw every frame, encode, and mix the voice with the music under it."""
     ensure_fonts()
-    renderer = Renderer(spec)
+    renderer: Renderer | None = None
+    if spec.look == "satellite":
+        from modules import bw_fx
+
+        try:
+            renderer = bw_fx.FxRenderer(spec)
+        except Exception as err:  # noqa: BLE001 - NASA or GitHub down: the flat look still makes the video
+            logger.warning("The satellite look is unavailable (%s); drawing the flat look", err)
+    renderer = renderer or Renderer(spec)
     out.parent.mkdir(parents=True, exist_ok=True)
     silent = out.with_name(out.stem + ".silent.mp4")
     n = int(math.ceil(spec.duration * FPS))
@@ -731,12 +756,16 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
 def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
     """A Spec from the script JSON (modules.bw_script) and the voice's words."""
     scenes = []
+    el_keys = {"kind", "place", "to", "value", "text", "color", "cue"}
+    scene_keys = {"kind", "narration", "focus", "headline", "kicker", "title", "subtitle", "elements"}
     for s in data["scenes"]:
         els = [Element(kind=e["kind"], place=e.get("place", ""), to=e.get("to", ""), value=e.get("value"), text=e.get("text", ""),
-                       color=e.get("color") or "a", cue=e.get("cue", "")) for e in s.get("elements", [])]
+                       color=e.get("color") or "a", cue=e.get("cue", ""),
+                       opts={k: v for k, v in e.items() if k not in el_keys and v not in (None, "", [])}) for e in s.get("elements", [])]
         scenes.append(Scene(kind=s.get("kind", "map"), narration=s["narration"], focus=list(s.get("focus") or []),
                             headline=s.get("headline", ""), kicker=s.get("kicker", ""), title=s.get("title", ""),
-                            subtitle=s.get("subtitle", ""), elements=els))
+                            subtitle=s.get("subtitle", ""), elements=els,
+                            opts={k: v for k, v in s.items() if k not in scene_keys and v not in (None, "", [])}))
     seed = int(data.get("seed") or 0)
     theme = data.get("theme") or random.Random(seed).choice(sorted(THEMES))
-    return Spec(scenes, words, cover=data.get("cover_text", ""), theme=theme, seed=seed)
+    return Spec(scenes, words, cover=data.get("cover_text", ""), theme=theme, seed=seed, look=data.get("look") or "flat")

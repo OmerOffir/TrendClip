@@ -555,3 +555,102 @@ def test_research_says_try_later_when_both_wikipedia_routes_fail(monkeypatch):
     monkeypatch.setattr(bw_script, "_get", down)
     with pytest.raises(bw_script.TryLater):
         bw_script.research(bw_topics.Topic(question="Why?", article="Llívia"))
+
+
+# --------------------------------------------------------------------------- the satellite look
+
+
+@pytest.fixture
+def fx_offline(monkeypatch):
+    """bw_fx without the network: a plain-color world picture, made-up flags and icons."""
+    from PIL import Image
+
+    from modules import bw_fx
+
+    class FakeSat:
+        globe_tex = np.full((64, 128, 3), (40, 120, 60), np.uint8)
+
+        def frame(self, cam):
+            return Image.new("RGB", (bw_render.W, bw_render.H), (40, 120, 60))
+
+    def flag(name):
+        if "Atlantis" in name or not name.startswith("Flag of"):
+            raise OSError("404")
+        return Image.new("RGB", (300, 200), (200, 30, 30))
+
+    def icon(code, size):
+        return Image.new("RGBA", (size, size), (250, 200, 0, 255))
+
+    monkeypatch.setattr(bw_fx, "satellite", lambda: FakeSat())
+    monkeypatch.setattr(bw_fx, "flag_image", flag)
+    monkeypatch.setattr(bw_fx, "icon_image", icon)
+    return bw_fx
+
+
+def _fx_dict():
+    data = _spec_dict()
+    data["look"] = "satellite"
+    data["scenes"][0]["elements"] += [
+        {"kind": "highlight", "place": "Canada", "flag": "Flag of Canada.svg", "cue": "map"},
+        {"kind": "icon", "icon": "money_bag", "cue": "notch"},
+        {"kind": "icon", "icon": "car", "place": "Minnesota"},
+        {"kind": "icon", "icon": "unicorn"},
+        {"kind": "route", "points": ["Minnesota", "Lake of the Woods"], "icon": "car", "cue": "There", "flag": ""},
+    ]
+    data["scenes"][1]["elements"] += [{"kind": "pole", "flag": "Canada"}, {"kind": "pole", "flag": "Atlantis"}]
+    return data
+
+
+def test_satellite_look_dresses_and_draws_frames(world, fx_offline):
+    data = _fx_dict()
+    narration = " ".join(s["narration"] for s in data["scenes"])
+    spec = bw_render.spec_from_dict(data, _words(narration))
+    assert spec.look == "satellite"
+    assert bw_render.prepare(spec) == []
+    route = next(e for e in spec.scenes[0].elements if e.kind == "route")
+    assert "flag" not in route.opts and len(route.opts["coords"]) == 2  # empty fields are not options
+    r = fx_offline.FxRenderer(spec)
+    kinds = [(e.kind, e.opts.get("icon") or e.opts.get("flag")) for s in spec.scenes for e in s.elements if e.kind in ("icon", "pole")]
+    # the unknown icon and the flag Commons does not have are left out; known names become code points / files
+    assert kinds == [("icon", "1f4b0"), ("icon", "1f697"), ("pole", "Flag of Canada.svg")]
+    money = next(e for e in spec.scenes[0].elements if e.opts.get("icon") == "1f4b0")
+    car = next(e for e in spec.scenes[0].elements if e.kind == "icon" and e.opts.get("icon") == "1f697")
+    assert (money.opts["x"], money.opts["y"]) == fx_offline.ICON_SLOTS["map"][0] and car.opts["dy"] < 0
+    assert spec.scenes[0].opts["globe"] is True and spec.scenes[0].view[2] <= fx_offline.GLOBE_MAX_PPD
+    for t in (0.0, 1.0, 2.0, 2.9, 3.2, 4.5, spec.duration - 0.1):
+        assert r.frame(t).size == (bw_render.W, bw_render.H)
+
+
+def test_satellite_look_falls_back_to_flat_when_nasa_is_down(world, monkeypatch, tmp_path):
+    from modules import bw_fx
+
+    def down():
+        raise OSError("GIBS unreachable")
+
+    monkeypatch.setattr(bw_fx, "satellite", down)
+    data = _fx_dict()
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    bw_render.prepare(spec)
+    used = []
+    from PIL import Image
+
+    def frame(self, t):
+        used.append(type(self).__name__)
+        return Image.new("RGB", (bw_render.W, bw_render.H))
+
+    monkeypatch.setattr(bw_render.Renderer, "frame", frame)
+    monkeypatch.setattr(bw_render.subprocess, "Popen", lambda *a, **k: type("P", (), {"stdin": open(tmp_path / "raw", "wb"), "wait": lambda s: 0, "returncode": 0})())
+    monkeypatch.setattr(bw_render.subprocess, "run", lambda *a, **k: type("R", (), {"returncode": 0})())
+    bw_render.render(spec, tmp_path / "v.mp3", tmp_path / "out.mp4")
+    assert used and set(used) == {"Renderer"}
+
+
+def test_check_wants_known_icons_and_flags_on_poles(world):
+    from modules import bw_fx
+
+    assert bw_fx.icon_code("Money Bag") == "1f4b0" and bw_fx.icon_code("1f697") == "1f697" and bw_fx.icon_code("unicorn") == ""
+    assert bw_fx.flag_name("Canada") == "Flag of Canada.svg" and bw_fx.flag_name("Flag_of_Canada.svg") == "Flag of Canada.svg"
+    draft = _draft()
+    draft.scenes[0].elements += [bw_script.ElementDraft(kind="icon", icon="unicorn"), bw_script.ElementDraft(kind="pole")]
+    problems = " ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "unknown icon 'unicorn'" in problems and "a pole needs a flag" in problems
