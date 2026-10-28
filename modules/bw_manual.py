@@ -180,7 +180,10 @@ def answer(sid: str, text: str, out_dir: Path | None = None, find=None) -> dict[
     draft = _parse(text, Draft)
     state = _state(folder)
     if not draft.usable:
-        state.update(step="rejected", draft=draft.model_dump(), problems=[draft.reject_reason.strip() or "no reason given"])
+        reason = draft.reject_reason.strip() or "no reason given"
+        state.update(step="rejected", draft=draft.model_dump(), problems=[reason])
+        bw_topics.mark(bw_channel.out_root(out_dir), _research(folder).topic.article, used=False,
+                       note=f"the LLM said the sources can't support it: {reason}"[:300])
     else:
         problems = bw_script.check(draft, _research(folder), **({"find": find} if find else {}))
         state.update(step="fix" if problems else "facts", draft=draft.model_dump(), problems=problems, flagged=[])
