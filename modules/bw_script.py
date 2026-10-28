@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from modules import bw_fx, bw_geo, bw_render
 from modules.bw_topics import Topic
@@ -293,6 +293,14 @@ class ElementDraft(BaseModel):
     flag: str = Field("", description="highlight / pole: the flag's Wikimedia Commons file, e.g. 'Flag of Canada.svg'.")
     icon: str = Field("", description="icon / route: one name from the icon list.")
     points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
+
+    @model_validator(mode="after")
+    def _plain_kind(self):
+        # Gemini sometimes writes kind "flag": a flag on a place is a highlight with that flag, otherwise a pole
+        self.kind = self.kind.strip().lower()
+        if self.kind == "flag":
+            self.kind = "highlight" if self.place.strip() else "pole"
+        return self
 
 
 class SceneDraft(BaseModel):

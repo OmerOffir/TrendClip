@@ -654,3 +654,6 @@ def test_check_wants_known_icons_and_flags_on_poles(world):
     draft.scenes[0].elements += [bw_script.ElementDraft(kind="icon", icon="unicorn"), bw_script.ElementDraft(kind="pole")]
     problems = " ".join(bw_script.check(draft, _research(), _find(world)))
     assert "unknown icon 'unicorn'" in problems and "a pole needs a flag" in problems
+    on_place = bw_script.ElementDraft(kind="Flag", place="Canada", flag="Flag of Canada.svg")
+    alone = bw_script.ElementDraft(kind="flag", flag="Flag of Canada.svg")
+    assert (on_place.kind, alone.kind) == ("highlight", "pole")
