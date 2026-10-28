@@ -355,7 +355,8 @@ THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
 THE SCENES ({min_scenes}-{max_scenes})
 Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
 must be the whole narration.
-- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (0-5 per scene):
+- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (1-5 per scene; something new
+  should appear in every scene so the screen is never still):
   highlight (fill a country, state/province or lake, draw a river, or ring a small place), label (a name on the map),
   pin (a marker with a short text), ring (a pulsing circle round a small place), line (a dashed line from place to
   "to"), arrow (a movement from place to "to"), parallel / meridian (a line of latitude / longitude: "value"),
@@ -365,11 +366,12 @@ must be the whole narration.
   route (a path drawn place by place through "points", e.g. a road, a voyage, an army's march; "icon" can ride
   along it, like car, ship, canoe, horse, train).
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
-  flags in 2-4 scenes for the countries the story is about. "flag" is the Wikimedia Commons file name: today's
+  flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
+  flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name: today's
   ("Flag of France.svg", "Flag of the United States.svg", "Flag of the United Kingdom.svg") or, for a scene set in
   the past, the flag of that time ("Flag of Great Britain (1707–1800).svg", "Flag of the United States (1777–1795).svg",
   "Flag of the Russian Empire.svg"). Never put a modern country's flag on a story from before it existed.
-- Icons ({icons}): use 4-8 in the video where they make a sentence easier to picture (money for a sale, a
+- Icons ({icons}): use 6-10 in the video where they make a sentence easier to picture (money for a sale, a
   ship for a voyage, a cross for a mistake). Never decoration only.
 - Name places exactly as a map or Wikipedia would: countries ("Spain", "United States of America"), states and
   provinces ("Minnesota", "Manitoba"), lakes ("Lake of the Woods"), rivers ("Mississippi River"), cities ("Paris"),
@@ -380,7 +382,8 @@ must be the whole narration.
 - card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
   they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
 - cue: a word from that scene's narration, so the element appears as it is said.
-- Vary the scenes: not every scene needs a headline; mix wide and close views.
+- Vary the scenes: not every scene needs a headline; mix wide and close views. Don't keep the same focus for more
+  than two scenes in a row: pull out to the countries or the region around a small place, then go back in.
 
 THE CLAIMS
 List every fact the narration states (5-12 claims). For each, the id of the source that supports it and an EXACT
@@ -661,7 +664,11 @@ def description(script: dict[str, Any], handle: str = "") -> str:
     tags = list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps", "shorts"]))[:7]
     lines = [script.get("question", ""), "", script.get("description", ""), "", "Sources:"]
     lines += [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
-    lines += ["", "Maps drawn from Natural Earth (public domain). No AI-generated images."]
+    if script.get("look", "satellite") == "satellite":
+        lines += ["", "Maps: NASA Blue Marble and Natural Earth (public domain). Flags: Wikimedia Commons. Icons: Noto Emoji "
+                  "by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0). No AI-generated images."]
+    else:
+        lines += ["", "Maps drawn from Natural Earth (public domain). No AI-generated images."]
     if handle:
         lines += ["", f"More map mysteries: {handle}"]
     lines += ["", " ".join(f"#{t}" for t in tags)]

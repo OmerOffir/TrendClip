@@ -5,15 +5,21 @@
 - a scene can open on a spinning 3D globe (scene option globe: true);
 - a highlight can fill a country or region with its waving flag (element option flag: a Wikimedia Commons file);
 - icons (Google's Noto 3D emoji, Apache 2.0) pop in on their cue word, or ride along a route (a car on a road);
-- flags on poles, routes that draw themselves, and hand-drawn sketches (an ink line that traces itself).
+- flags on poles, routes that draw themselves, and hand-drawn sketches (an ink line that traces itself);
+- something always moves: each scene's camera pushes, pulls or pans, scenes on the same place cut between close and
+  wide views, the place a scene is about gets a pulsing target and a bouncing arrow (or its border traced in gold)
+  when no element marks it, a flag on a place too small to fill becomes a round flag badge, icons with an animated
+  Noto version (CC BY 4.0) play it, clouds drift over the land, and cards type, pop and count up.
 
 Everything is drawn by code from real map data and free images; nothing is AI-generated.
 """
 
 from __future__ import annotations
 
+import bisect
 import logging
 import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -21,8 +27,8 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 from modules import bw_geo
-from modules.bw_render import (CY, FIXED, H, MAP_BOTTOM, MAP_TOP, W, Cam, Element, Renderer, Scene, curve, ease, flat,
-                               font, ramp, text)
+from modules.bw_render import (CY, FIXED, H, MAP_BOTTOM, MAP_TOP, MOVE, W, Cam, Element, Renderer, Scene, blend_view, curve,
+                               ease, flat, font, ramp, text, wrap)
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +39,7 @@ GLOBAL_PX = 8192  # the whole world, 22.8 px per degree
 LEVELS = ((90, 5.0), (220, 2.0))  # (pixels per degree, tile size in degrees); 220 is the layer's 500 m limit
 FLAG_URL = "https://commons.wikimedia.org/wiki/Special:FilePath/{name}?width=1600"
 ICON_URL = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/3D/png/512/emoji_u{code}.png"
+ANIM_URL = "https://fonts.gstatic.com/s/e/notoemoji/latest/{code}/512.webp"  # Animated Noto Emoji, CC BY 4.0
 HAND_URL = "https://github.com/google/fonts/raw/main/ofl/patrickhand/PatrickHand-Regular.ttf"  # SIL Open Font License
 
 # the icons a script may name (Noto 3D emoji code points)
@@ -48,8 +55,14 @@ ICONS = dict(
     bomb="1f4a3", chart_up="1f4c8", chart_down="1f4c9", globe="1f30d", key="1f511", lock="1f512", scissors="2702",
 )
 # where icons and poles stand when a script names no place for them (x, y on the 1080x1920 frame)
-ICON_SLOTS = {"map": ((540, 900), (230, 680), (850, 680), (540, 1180)), "card": ((540, 1230), (260, 1230), (820, 1230))}
+ICON_SLOTS = {"map": ((540, 640), (250, 760), (830, 760), (540, 1170)), "card": ((540, 1230), (260, 1230), (820, 1230))}
 POLE_SLOTS = {"map": ((150, 1270), (420, 1270), (690, 1270)), "card": ((200, 1340), (640, 1340), (420, 1340))}
+# a run of map scenes on the same place cuts between these zooms, the place sitting off center by these fractions
+# of the width, so the picture changes at every scene
+ZOOMS = (1.0, 0.45, 0.8, 0.3, 0.65)
+SHIFTS = ((0.0, 0.0), (0.16, -0.06), (-0.16, 0.05), (0.0, 0.08), (0.12, -0.04))
+MOTIONS = ("push", "pan", "pull", "push", "pan_back", "pull")  # what each map scene's camera does while it runs
+TINY_PX = 70  # a place smaller than this on screen is marked with a target, and its flag shows as a badge
 GLOBE_MAX_PPD = 30.0  # the opening globe stops at about a continent; the next scene zooms in from there
 
 WATER = (46, 112, 158)
@@ -263,6 +276,109 @@ def icon_image(code: str, size: int) -> Image.Image:
     return _icons[key]
 
 
+_anims: dict[tuple[str, int], tuple[list[Image.Image], list[float]] | None] = {}
+
+
+def anim_frames(code: str, size: int) -> tuple[list[Image.Image], list[float]] | None:
+    """The animated Noto version of an icon (frames at `size` and each frame's end time), cached in
+    assets/bw_fx/anim/; None when there is none (remembered) or it can't be fetched now (the still icon is used)."""
+    key = (code, size)
+    if key in _anims:
+        return _anims[key]
+    _anims[key] = None
+    folder = FX_DIR / "anim"
+    path, none = folder / f"{code}.webp", folder / f"{code}.none"
+    if none.is_file():
+        return None
+    if not path.is_file():
+        import requests
+
+        for c in (code, f"{code}_fe0f"):
+            try:
+                _cached(path, ANIM_URL.format(code=c))
+                break
+            except requests.HTTPError as err:
+                if err.response is None or err.response.status_code != 404:
+                    return None
+            except Exception:  # noqa: BLE001 - offline: the still icon this time
+                return None
+        else:
+            folder.mkdir(parents=True, exist_ok=True)
+            none.touch()
+            return None
+    try:
+        im = Image.open(path)
+        frames, ends, end = [], [], 0.0
+        for n in range(getattr(im, "n_frames", 1)):
+            im.seek(n)
+            frames.append(im.convert("RGBA").resize((size, size), Image.LANCZOS))
+            end += max(0.02, (im.info.get("duration") or 33) / 1000)
+            ends.append(end)
+    except Exception as err:  # noqa: BLE001 - a broken file: the still icon
+        logger.warning("Animated icon %s unreadable: %s", code, err)
+        return None
+    _anims[key] = (frames, ends)
+    return _anims[key]
+
+
+def icon_frame(code: str, size: int, age: float) -> tuple[Image.Image, bool]:
+    """The icon as it looks `age` seconds after it appeared, and whether it is animated."""
+    anim = anim_frames(code, size)
+    if anim is None:
+        return icon_image(code, size), False
+    frames, ends = anim
+    return frames[min(len(frames) - 1, bisect.bisect_right(ends, age % ends[-1]))], True
+
+
+_clouds: Image.Image | None = None
+
+
+def clouds() -> Image.Image:
+    """Soft white clouds, three screens wide; a frame shows the part the wind has reached."""
+    global _clouds
+    if _clouds is None:
+        rng = np.random.default_rng(11)
+        w, h = W * 3 // 8, H // 8  # made small and soft, then scaled up, so no blocks show
+        n = np.zeros((h, w), np.float32)
+        for cell, weight in ((30, 1.0), (14, 0.5), (6, 0.25)):
+            small = rng.random((h // cell + 2, w // cell + 2)).astype(np.float32)
+            n += weight * np.asarray(Image.fromarray(small).resize((w, h), Image.BICUBIC))
+        n = np.asarray(Image.fromarray((n / 1.75 * 255).clip(0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(3))) / 255
+        alpha = Image.fromarray((np.clip((n - 0.55) / 0.25, 0, 1) * 55).astype(np.uint8)).resize((W * 3, H), Image.BICUBIC)
+        _clouds = Image.new("RGBA", (W * 3, H), (255, 255, 255, 0))
+        _clouds.putalpha(alpha)
+    return _clouds
+
+
+_rose: Image.Image | None = None
+
+
+def rose() -> Image.Image:
+    """A faint ink compass rose for the cards' background (it turns slowly)."""
+    global _rose
+    if _rose is None:
+        size = 900
+        c = size / 2
+        img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        ink = FIXED["ink"] + (38,)
+        for r in (430, 400, 250):
+            d.ellipse([c - r, c - r, c + r, c + r], outline=ink, width=4)
+        for k in range(32):
+            ang = math.radians(k * 360 / 32)
+            r0 = 400 if k % 2 else 385
+            d.line([c + 250 * math.cos(ang), c + 250 * math.sin(ang), c + r0 * math.cos(ang), c + r0 * math.sin(ang)], fill=ink, width=3)
+        for k in range(8):  # the star: long points north, east, south, west; short ones between
+            ang = math.radians(k * 45 - 90)
+            r = 380 if k % 2 == 0 else 230
+            side = math.radians(k * 45 - 90 + 90)
+            tip = (c + r * math.cos(ang), c + r * math.sin(ang))
+            d.polygon([tip, (c + 40 * math.cos(side), c + 40 * math.sin(side)), (c, c)], fill=FIXED["ink"] + (34,))
+            d.polygon([tip, (c - 40 * math.cos(side), c - 40 * math.sin(side)), (c, c)], outline=ink, width=3)
+        _rose = img
+    return _rose
+
+
 _hand: dict[int, Any] = {}
 
 
@@ -364,6 +480,8 @@ def dress(spec) -> list[str]:
                 else:
                     el.opts["icon"] = code
             free = el.feature is None and "at" not in el.opts and "x" not in el.opts
+            if el.kind == "icon" and scene.kind == "card":
+                el.opts.setdefault("size", 250)
             if el.kind == "icon" and free:
                 slots = ICON_SLOTS[scene.kind]
                 el.opts["x"], el.opts["y"] = slots[icons % len(slots)]
@@ -384,14 +502,77 @@ def dress(spec) -> list[str]:
     return dropped
 
 
+def vary_views(scenes: list[Scene]) -> list[tuple[float, float, float] | None]:
+    """The scenes' cameras, with a run of map scenes on the same view cut between close and wide shots."""
+    out: list[tuple[float, float, float] | None] = []
+    run, last = 0, None
+    for s in scenes:
+        if s.kind != "map" or s.view is None:
+            out.append(s.view)
+            continue
+        run = run + 1 if s.view == last and not s.opts.get("globe") else 0
+        last = s.view
+        lon, lat, ppd = s.view
+        z, (sx, sy) = ZOOMS[run % len(ZOOMS)], SHIFTS[run % len(SHIFTS)]
+        p = max(2.5, ppd * z)
+        k = max(0.2, math.cos(math.radians(lat)))
+        out.append((lon - sx * W / (p * k), lat + sy * W / p, p))
+    return out
+
+
+def main_place(scene: Scene) -> tuple[bw_geo.Feature | None, bool]:
+    """The place a map scene is about (its smallest focus place, else its first element's), and whether an
+    element already points at it."""
+    feats = [f for f in (bw_geo.resolve(n) for n in scene.focus) if f is not None]
+    feats = feats or [el.feature for el in scene.elements if el.feature is not None]
+    if not feats:
+        return None, False
+
+    def area(f: bw_geo.Feature) -> float:
+        if not f.parts:
+            return 0.0
+        x0, y0, x1, y1 = f.bbox()
+        return (x1 - x0) * (y1 - y0)
+
+    main = min(feats, key=area)
+    marked = any(el.feature is not None and (el.feature is main or el.feature.name == main.name)
+                 and el.kind in ("highlight", "pin", "ring", "label", "icon", "pole") for el in scene.elements)
+    return main, marked
+
+
 class FxRenderer(Renderer):
     def __init__(self, spec):
         super().__init__(spec)
         self.sat = satellite()
         if dropped := dress(spec):
             logger.info("Left out of the video: %s", ", ".join(dropped))
+        self.views = vary_views(spec.scenes)
+        self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
+        self._badges: dict[tuple[str, int], Image.Image] = {}
+        rng = np.random.default_rng(spec.seed or 5)
+        self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
 
     # -- cameras --
+
+    def moved(self, j: int, u: float) -> tuple[float, float, float]:
+        """Scene j's view `u` of the way through its own move: a push in, a pull out or a pan."""
+        lon, lat, ppd = self.views[j]
+        if self.spec.scenes[j].opts.get("globe"):
+            return lon, lat, ppd
+        motion = MOTIONS[(j + self.spec.seed) % len(MOTIONS)]
+        zoom, dx = {"push": (1 + 0.16 * u, 0.0), "pull": (1.16 - 0.16 * u, 0.0),
+                    "pan": (1.08, -0.07 + 0.14 * u), "pan_back": (1.08, 0.07 - 0.14 * u)}[motion]
+        p = ppd * zoom
+        return lon + dx * W / (p * max(0.2, math.cos(math.radians(lat)))), lat, p
+
+    def camera(self, i: int, t: float) -> Cam:
+        scenes = self.spec.scenes
+        scene = scenes[i]
+        here = self.moved(i, min(1.0, max(0.0, (t - scene.start) / max(1.0, scene.end - scene.start))))
+        prev = next((j for j in range(i - 1, -1, -1) if scenes[j].kind == "map"), None)
+        if prev is not None and t < scene.start + MOVE:  # fly on from where the last map scene ended
+            return blend_view(self.moved(prev, 1.0), here, (t - scene.start) / MOVE)
+        return Cam(*here)
 
     def globe_cam(self, i: int, t: float) -> GlobeCam:
         """The opening globe turns from the Atlantic to the scene's place and grows until it matches the flat map."""
@@ -524,7 +705,8 @@ class FxRenderer(Renderer):
         for el in scene.elements:
             if el.kind == "highlight" and el.feature is not None and not el.feature.is_line and el.feature.parts:
                 if el.opts.get("flag"):
-                    flags.append(el)
+                    if not self.tiny(cam, el.feature):
+                        flags.append(el)
                 else:
                     fills[id(el.feature)] = (self.color(el.color), ramp(t, el.at))
         if globe:
@@ -532,6 +714,9 @@ class FxRenderer(Renderer):
             self.vectors(img, cam, fills)
         else:
             img = self.base(cam, fills)
+            cl = clouds()
+            x = int(min(cl.width - W, (t * 22 + self.spec.seed * 37) % (cl.width - W - 600)))
+            img.alpha_composite(cl.crop((x, 0, x + W, H)))
         for el in flags:
             a = ramp(t, el.at, 0.7)
             if a > 0:
@@ -548,14 +733,121 @@ class FxRenderer(Renderer):
             img.alpha_composite(lines)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
+        if not globe:
+            self.attention(ov, cam, i, t)
         for el in scene.elements:
             self.element(ov, d, cam, el, t, scene)
         img.alpha_composite(ov)
         return img
 
+    def tiny(self, cam, feat: bw_geo.Feature) -> bool:
+        if not feat.parts:
+            return True
+        x0, y0, x1, y1 = feat.bbox()
+        (ax, ay), (bx, by) = cam.pt(x0, y1), cam.pt(x1, y0)
+        return max(abs(bx - ax), abs(by - ay)) < TINY_PX
+
+    def attention(self, ov: Image.Image, cam, i: int, t: float) -> None:
+        """Point at the scene's place when nothing else does: a target on a small place, a gold trace round a big one."""
+        main, marked = self.main[i]
+        scene = self.spec.scenes[i]
+        if main is None or marked:
+            return
+        at = scene.start + 0.5
+        if self.tiny(cam, main):
+            self.target(ov, cam.pt(*main.label_point()), t, at, "" if scene.headline else main.name)
+        elif not any(el.kind == "highlight" for el in scene.elements):
+            self.trace(ov, cam, main, t, at)
+
+    def target(self, ov: Image.Image, xy: tuple[float, float], t: float, at: float, name: str = "") -> None:
+        """Ripples, a ring and a bouncing arrow on a place."""
+        a = ramp(t, at, 0.3)
+        if a <= 0:
+            return
+        x, y = xy
+        d = ImageDraw.Draw(ov)
+        gold, al = FIXED["gold"], int(255 * a)
+        for k in range(2):
+            ph = ((t - at) * 0.8 + k * 0.5) % 1.0
+            r = 32 + 95 * ph
+            d.ellipse([x - r, y - r, x + r, y + r], outline=gold + (int(al * (1 - ph)),), width=6)
+        r = 30 * backout((t - at) / 0.4)
+        d.ellipse([x - r, y - r, x + r, y + r], outline=(0, 0, 0, al // 2), width=11)
+        d.ellipse([x - r, y - r, x + r, y + r], outline=(255, 255, 255, al), width=7)
+        d.ellipse([x - 8, y - 8, x + 8, y + 8], fill=gold + (al,))
+        tip = y - 44 - 22 * abs(math.sin((t - at) * 3.5)) - 60 * (1 - backout((t - at) / 0.5))
+        d.polygon([(x, tip), (x + 38, tip - 50), (x + 14, tip - 50), (x + 14, tip - 130), (x - 14, tip - 130), (x - 14, tip - 50),
+                   (x - 38, tip - 50)], fill=gold + (al,), outline=(0, 0, 0, al), width=5)
+        if name:
+            text(ov, (x, y + 78), name.upper(), 44, a=ramp(t, at + 0.3), max_width=W - 80)
+
+    def trace(self, ov: Image.Image, cam, feat: bw_geo.Feature, t: float, at: float) -> None:
+        """The place's border drawn in gold, then a spark that keeps running round it."""
+        u = (t - at) / 1.4
+        if u <= 0:
+            return
+        step = cam.step()
+        parts = [cam.xy(p.at(step)[0]) for p in feat.parts]
+        parts = [p for p in parts if len(p) > 2]
+        if not parts:
+            return
+        big = max(parts, key=len)
+        d = ImageDraw.Draw(ov)
+        gold = FIXED["gold"]
+        for p in parts:
+            loop = np.vstack([p, p[:1]])
+            n = max(2, int(len(loop) * min(1.0, u))) if p is big else (len(loop) if u >= 1 else 0)
+            if n >= 2:
+                pts = flat(loop[:n])
+                d.line(pts, fill=gold + (90,), width=16, joint="curve")
+                d.line(pts, fill=gold + (255,), width=6, joint="curve")
+        if u >= 1:
+            loop = np.vstack([big, big[:1]])
+            x, y = loop[int(((t - at) * 0.25 % 1.0) * (len(loop) - 1))]
+            for r, al in ((22, 70), (12, 160), (6, 255)):
+                d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 250, 220, al))
+
+    def flag_badge(self, ov: Image.Image, xy: tuple[float, float], name: str, t: float, at: float, r: int = 92) -> None:
+        """A round waving flag that pops up above a place too small to fill, with a stem down to it."""
+        s = backout((t - at) / 0.45)
+        if s <= 0.02:
+            return
+        x, y = xy
+        key = (name, r)
+        if key not in self._badges:
+            src = flag_image(name)
+            k = 2 * r / min(src.width, src.height)
+            im = src.resize((max(2 * r, int(src.width * k)), max(2 * r, int(src.height * k))), Image.LANCZOS)
+            l, tp = (im.width - 2 * r) // 2, (im.height - 2 * r) // 2
+            self._badges[key] = im.crop((l, tp, l + 2 * r, tp + 2 * r))
+        flag = wave(self._badges[key], t + at, amp=0.04).convert("RGBA")
+        size = 2 * r + 20
+        disc = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        dd = ImageDraw.Draw(disc)
+        dd.ellipse([0, 0, size - 1, size - 1], fill=(255, 255, 255, 255))
+        mask = Image.new("L", (2 * r, 2 * r), 0)
+        ImageDraw.Draw(mask).ellipse([0, 0, 2 * r - 1, 2 * r - 1], fill=255)
+        disc.paste(flag, (10, 10), mask)
+        px = max(4, int(size * s))
+        disc = disc.resize((px, px), Image.BILINEAR)
+        cy = y - r - 80 + 6 * math.sin(2.2 * t)
+        d = ImageDraw.Draw(ov)
+        d.line([x, cy + px / 2 - 4, x, y - 10], fill=(255, 255, 255, 230), width=6)
+        d.ellipse([x - 12, y - 12, x + 12, y + 12], fill=(255, 255, 255, 255), outline=(0, 0, 0, 160), width=3)
+        sh = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+        ImageDraw.Draw(sh).ellipse([0, 0, px - 1, px - 1], fill=(0, 0, 0, 110))
+        ov.alpha_composite(sh.filter(ImageFilter.GaussianBlur(8)), (int(x - px / 2 + 6), int(cy - px / 2 + 9)))
+        ov.alpha_composite(disc, (int(x - px / 2), int(cy - px / 2)))
+
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
         if el.kind == "icon":
-            self.icon(ov, el, self.anchor(cam, el), t)
+            xy = self.anchor(cam, el)
+            main, marked = self.main[next(k for k, s in enumerate(self.spec.scenes) if s is scene)]
+            if el.feature is None and main is not None and not marked:  # keep a placed-by-layout icon off the target
+                mx, my = cam.pt(*main.label_point())
+                if math.hypot(xy[0] - mx, xy[1] - my) < 260:
+                    xy = (mx + 300 if mx < W / 2 else mx - 300, min(xy[1], my - 120))
+            self.icon(ov, el, xy, t)
         elif el.kind == "pole":
             self.pole(ov, el, self.anchor(cam, el), t)
         elif el.kind == "route":
@@ -563,7 +855,14 @@ class FxRenderer(Renderer):
         elif el.kind == "sketch":
             self.sketch_on_map(ov, cam, el, t)
         elif el.kind == "highlight" and el.opts.get("flag"):
-            if el.text and el.feature is not None:
+            if el.feature is not None and self.tiny(cam, el.feature):
+                same = [e for e in scene.elements if e.kind == "highlight" and e.opts.get("flag") and e.feature is el.feature]
+                x, y = cam.pt(*el.feature.label_point())
+                x += (same.index(el) - (len(same) - 1) / 2) * 210
+                self.flag_badge(ov, (x, y), el.opts["flag"], t, el.at)
+                if el.text:
+                    text(ov, (x, y - 300), el.text.upper(), 50, a=ramp(t, el.at), max_width=W - 80)
+            elif el.text and el.feature is not None:
                 text(ov, cam.pt(*el.feature.label_point()), el.text.upper(), 54, a=ramp(t, el.at), max_width=W - 80)
         else:
             super().element(ov, d, cam, el, t, scene)
@@ -595,7 +894,12 @@ class FxRenderer(Renderer):
             if sk <= 0.02:
                 continue
             px = max(8, int(size * sk))
-            im = icon_image(el.opts["icon"], size).resize((px, px), Image.BILINEAR)
+            im, animated = icon_frame(el.opts["icon"], size, t - el.at)
+            if not animated:  # a still icon rocks and breathes a little
+                im = im.rotate(6 * math.sin(2.1 * t + k + el.at), resample=Image.BILINEAR)
+                px = int(px * (1 + 0.04 * math.sin(3.3 * t + el.at)))
+            if px != size:
+                im = im.resize((px, px), Image.BILINEAR)
             if flip or el.opts.get("flip"):
                 im = im.transpose(Image.FLIP_LEFT_RIGHT)
             bob = 5 * math.sin(2.4 * t + k + el.at)
@@ -705,9 +1009,91 @@ class FxRenderer(Renderer):
 
     # -- cards --
 
-    def card_frame(self, i: int, t: float) -> Image.Image:
-        img = super().card_frame(i, t)
+    def card_paper(self, i: int, t: float) -> Image.Image:
+        """The old paper, slowly zooming and drifting, a compass rose turning in it and specks floating up."""
         scene = self.spec.scenes[i]
+        u = min(1.0, max(0.0, (t - scene.start) / max(1.0, scene.end - scene.start)))
+        z = 1.0 + 0.08 * u
+        w, h = W / z, H / z
+        x0, y0 = (W - w) * (0.5 + 0.35 * (u - 0.5)), (H - h) / 2
+        img = self.paper.crop((int(x0), int(y0), int(x0 + w), int(y0 + h))).resize((W, H), Image.BILINEAR)
+        r = rose().rotate(7 * t, resample=Image.BICUBIC)
+        img.alpha_composite(r, (int(W / 2 - r.width / 2), int(1000 - r.height / 2)))
+        d = ImageDraw.Draw(img)
+        for x, y, speed, size in self.dust:
+            px = x * W + 18 * math.sin(0.8 * t + 9 * y)
+            py = (y * H - (20 + 50 * speed) * t) % H
+            rad = 2 + 4 * size
+            d.ellipse([px - rad, py - rad, px + rad, py + rad], fill=FIXED["ink"] + (int(40 + 50 * size),))
+        return img
+
+    @staticmethod
+    def counting(title: str, u: float) -> str:
+        """A title's number counting up to its value (a year from 60 before it, other numbers from 0)."""
+        m = re.search(r"\d[\d,]*", title)
+        if not m or u >= 1:
+            return title
+        value = int(m.group().replace(",", ""))
+        if value < 10:
+            return title
+        start = value - 60 if 1000 <= value <= 2100 and "," not in m.group() else 0
+        n = int(start + (value - start) * ease(max(0.0, u)))
+        shown = f"{n:,}" if "," in m.group() else str(n)
+        return title[:m.start()] + shown + title[m.end():]
+
+    @staticmethod
+    def pop(ov: Image.Image, layer: Image.Image, s: float, center: tuple[float, float]) -> None:
+        """Paste `layer` onto `ov` scaled by s around `center`."""
+        box = layer.getbbox()
+        if not box or s <= 0.02:
+            return
+        part = layer.crop(box)
+        cx, cy = center
+        nw, nh = max(1, int(part.width * s)), max(1, int(part.height * s))
+        x = cx + (box[0] - cx) * s
+        y = cy + (box[1] - cy) * s
+        ov.alpha_composite(part.resize((nw, nh), Image.BILINEAR), (int(x), int(y)))
+
+    def card_frame(self, i: int, t: float) -> Image.Image:
+        """A title card that never sits still: the kicker types itself, the title pops (its number counts up) and
+        gets underlined, the subtitle slides up."""
+        scene = self.spec.scenes[i]
+        age = t - scene.start
+        img = self.card_paper(i, t)
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        ink, red = FIXED["ink"], FIXED["red"]
+        y = 720
+        if scene.kicker:
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            text(layer, (W / 2, y), scene.kicker.upper(), 56, fill=ink, serif=True, stroke=0, max_width=W - 120)
+            box = layer.getbbox()
+            u = min(1.0, max(0.0, (age - 0.1) / 0.5))
+            if box and u > 0:
+                cut = int(box[0] + (box[2] - box[0]) * u)
+                ov.alpha_composite(layer.crop((0, 0, cut, H)), (0, 0))
+            y += 120
+        if scene.title:
+            title = self.counting(scene.title, (age - 0.45) / 0.9)
+            lines = wrap(title, 130, W - 140, serif=True)[:3]
+            layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            for k, line in enumerate(lines):
+                text(layer, (W / 2, y + k * 140), line, 130, fill=red, serif=True, stroke=0, max_width=W - 100)
+            self.pop(ov, layer, backout((age - 0.45) / 0.45), (W / 2, y + 70 * (len(lines) - 1)))
+            uu = ease((age - 0.95) / 0.4)
+            if uu > 0:
+                box = layer.getbbox() or (300, 0, W - 300, 0)
+                half = (box[2] - box[0]) / 2 * uu
+                ly = y + 140 * (len(lines) - 1) + 82
+                ImageDraw.Draw(ov).line([W / 2 - half, ly, W / 2 + half, ly], fill=red + (255,), width=8)
+            y += 140 * len(lines) + 30
+        if scene.subtitle:
+            slide = 50 * (1 - ease((age - 1.0) / 0.45))
+            for k, line in enumerate(wrap(scene.subtitle, 50, W - 180, serif=True)[:3]):
+                text(ov, (W / 2, y + k * 64 + slide), line, 50, fill=ink, a=ramp(t, scene.start + 1.0), serif=True, stroke=0)
+        for el in scene.elements:
+            if el.kind == "stamp" and el.text:
+                self.stamp(ov, el.text, el.at, t, self.color(el.color if el.color != "a" else "red"))
+        img.alpha_composite(ov)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         for el in scene.elements:
             if el.kind == "icon":

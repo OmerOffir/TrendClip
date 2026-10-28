@@ -32,6 +32,7 @@ CAPTION_Y = 1420
 MOVE = 0.9  # seconds the camera takes from one scene's view to the next
 FADE = 0.4
 TAIL = 1.2  # seconds after the last word
+POP = 0.16  # seconds a caption word stays bigger as it is said
 
 FONTS_DIR = bw_geo.PROJECT_ROOT / "assets" / "fonts"
 FONT_DIRS = (str(FONTS_DIR), "/System/Library/Fonts/Supplemental", "/usr/share/fonts/truetype/msttcorefonts",
@@ -671,9 +672,13 @@ class Renderer:
         x = W / 2 - sum(widths) / 2 + f.getlength(" ") / 2
         d = ImageDraw.Draw(img)
         for i, p, width in zip(group, parts, widths):
-            on = words[i].start <= t
-            d.text((x, CAPTION_Y), p, font=f, fill=(255, 220, 60) if on else (255, 255, 255), stroke_width=9,
-                   stroke_fill=(0, 0, 0), anchor="lm")
+            age = t - words[i].start
+            fill = (255, 220, 60) if age >= 0 else (255, 255, 255)
+            if 0 <= age < POP:  # the word being said pops up a size, then settles
+                big = font(int(size * (1 + 0.22 * (1 - age / POP))) // 2 * 2)
+                d.text((x + f.getlength(p) / 2, CAPTION_Y), p, font=big, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0), anchor="mm")
+            else:
+                d.text((x, CAPTION_Y), p, font=f, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0), anchor="lm")
             x += width
 
     def frame(self, t: float) -> Image.Image:

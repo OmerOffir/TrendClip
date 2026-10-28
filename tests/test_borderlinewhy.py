@@ -251,6 +251,8 @@ def test_description_lists_sources_and_credits():
                                   "sources": [{"title": "MNHS", "url": "https://mnhs.org"}]}, "@BorderlineWhy")
     assert "Sources:\n- MNHS: https://mnhs.org" in text
     assert "Natural Earth" in text and "#borders" in text and "@BorderlineWhy" in text
+    assert "NASA" in text and "CC BY 4.0" in text  # the satellite look's pictures are credited
+    assert "NASA" not in bw_script.description({"look": "flat"})
 
 
 def test_page_text_keeps_paragraphs_and_drops_scripts():
@@ -584,6 +586,7 @@ def fx_offline(monkeypatch):
     monkeypatch.setattr(bw_fx, "satellite", lambda: FakeSat())
     monkeypatch.setattr(bw_fx, "flag_image", flag)
     monkeypatch.setattr(bw_fx, "icon_image", icon)
+    monkeypatch.setattr(bw_fx, "anim_frames", lambda code, size: None)
     return bw_fx
 
 
@@ -619,6 +622,35 @@ def test_satellite_look_dresses_and_draws_frames(world, fx_offline):
     assert spec.scenes[0].opts["globe"] is True and spec.scenes[0].view[2] <= fx_offline.GLOBE_MAX_PPD
     for t in (0.0, 1.0, 2.0, 2.9, 3.2, 4.5, spec.duration - 0.1):
         assert r.frame(t).size == (bw_render.W, bw_render.H)
+
+
+def test_satellite_look_keeps_the_screen_moving(world, fx_offline):
+    # three map scenes on the same place cut between close and wide shots
+    scenes = [bw_render.Scene("map", "a", view=(-94.5, 49.0, 200.0)) for _ in range(3)]
+    views = fx_offline.vary_views(scenes)
+    assert len({v[2] for v in views}) == 3 and views[0] == (-94.5, 49.0, 200.0)
+    # a card's number counts up: a year from 60 before it, others from 0
+    assert fx_offline.FxRenderer.counting("1659", 0.0) == "1599" and fx_offline.FxRenderer.counting("1659", 1.0) == "1659"
+    assert fx_offline.FxRenderer.counting("350 years", 0.0) == "0 years" and fx_offline.FxRenderer.counting("2 kings", 0.0) == "2 kings"
+    # a flag on a place too small to fill is a badge; a scene on a small place with nothing on it gets a target
+    data = {"title": "Why?", "cover_text": "Paris", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "One two three.", "focus": ["Minnesota"], "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "map", "narration": "Four five six.", "focus": ["Paris"], "elements": [
+            {"kind": "highlight", "place": "Paris", "flag": "Flag of France.svg", "cue": "four"}]},
+        {"kind": "map", "narration": "Seven eight nine.", "focus": ["Paris"], "headline": "Here"},
+        {"kind": "map", "narration": "Ten eleven twelve.", "focus": ["Minnesota"]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    assert r.main[1] == (world.find("Paris"), True) and r.main[2] == (world.find("Paris"), False)
+    assert r.main[3] == (world.find("Minnesota"), False)
+    calls = []
+    for name in ("flag_badge", "target", "trace"):
+        orig = getattr(r, name)
+        setattr(r, name, lambda *a, _n=name, _o=orig, **k: (calls.append(_n), _o(*a, **k))[1])
+    for scene in spec.scenes[1:]:
+        r.frame(scene.end - 0.1)
+    assert calls == ["flag_badge", "target", "trace"]
 
 
 def test_satellite_look_falls_back_to_flat_when_nasa_is_down(world, monkeypatch, tmp_path):
