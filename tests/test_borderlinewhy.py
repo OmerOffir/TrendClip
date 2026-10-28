@@ -703,6 +703,33 @@ def test_a_manual_script_needs_two_sources(tmp_path, monkeypatch):
         bw_manual.view("../etc", tmp_path)
 
 
+def test_a_pasted_answer_with_unescaped_quotes_and_trailing_commas_is_read():
+    from modules import bw_manual
+
+    pasted = """Here it is:
+{
+"usable": false,
+"reject_reason": "Source 2 is about King Wamba.",
+"title": "Why does a Spanish town sit completely inside France?",
+"claims": [
+{
+"claim": "Spain ceded northern Cerdanya to France.",
+"source_id": 1,
+"quote": "ceded the comarques of Roussillon, Conflent, Capcir, Vallespir, and northern Cerdanya ("Cerdagne") to the Kingdom of France"
+},
+],
+"hashtags": ["geography", "history",]
+}"""
+
+    draft = bw_manual._parse(pasted, bw_script.Draft)
+
+    assert draft.claims[0].quote.endswith('northern Cerdanya ("Cerdagne") to the Kingdom of France')
+    assert draft.hashtags == ["geography", "history"] and not draft.usable
+    assert bw_manual.repair_json('{"a": "x \\"y\\" z", "b": ["c"]}') == '{"a": "x \\"y\\" z", "b": ["c"]}'  # valid JSON stays
+    with pytest.raises(bw_manual.ManualError):
+        bw_manual._parse('{"title": }', bw_script.Draft)
+
+
 def test_a_manual_script_is_made_with_its_origin(settings, tmp_path, world, monkeypatch):
     monkeypatch.setitem(SCRIPT, "origin", "manual")
     job, info, rendered = _make(settings, tmp_path, world)
