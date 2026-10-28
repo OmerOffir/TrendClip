@@ -276,7 +276,13 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in
    "| Level 12 🎮", and the pinned comment adds the leaderboard points and "Level 13 drops next!". The
    questions are fact-checked on Google against the game's wiki; a quiz without a game uses a random
-   clip and asks about its game (it is never moved to a "themed" background). **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
+   clip and asks about its game (it is never moved to a "themed" background). `AUTO_PICK_DAILY_GAME=Minecraft`
+   makes one video a day on Minecraft (the slot alternates by day) and sends the other slots to other games.
+   When Gemini's quota is used up, the bot's Gamer IQ becomes a math challenge (built-in texts) so the slot
+   still gets a video. **✍️ Write it myself** (a SideQuestLogic tab) writes a Gamer IQ with any LLM instead:
+   pick the game, copy the prompt into the LLM, paste its JSON back (four candidate questions), copy the
+   fact-check prompt into a second LLM with web search and paste its "1: PASS" lines back; a question that
+   passed becomes the next level over new no-copyright gameplay of that game, planned in the slot you pick. **Fill the rest for my quiz** works for your own math, riddle or trivia text too: it
    keeps your words, removes any subscribe line and ends on the comment line.
 
    **🎬 Movie quiz** (15–25 s) is built on a famous movie from any year. It takes turns between three

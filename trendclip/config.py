@@ -59,6 +59,7 @@ _ENV_MAP: dict[str, str] = {
     "auto_pick_trends": "AUTO_PICK_TRENDS",
     "auto_pick_kinds": "AUTO_PICK_KINDS",
     "auto_pick_daily": "AUTO_PICK_DAILY",
+    "auto_pick_daily_game": "AUTO_PICK_DAILY_GAME",
     "script_learning": "SCRIPT_LEARNING",
     "auto_produce": "AUTO_PRODUCE",
     "auto_produce_time": "AUTO_PRODUCE_TIME",
@@ -166,6 +167,10 @@ class Settings(BaseModel):
     # kind gets each upload slot equally; extra slots go back to the numbers. Empty: the numbers decide.
     auto_pick_daily: list[Literal["story", "math", "riddle", "trivia", "paradox", "movie", "gamer"]] = Field(
         default_factory=list)
+
+    # One of each day's production videos is on this game (e.g. AUTO_PICK_DAILY_GAME=Minecraft), in a slot that
+    # alternates by day; the other slots go to other games. Empty: the numbers pick every game.
+    auto_pick_daily_game: str = Field("", max_length=80)
 
     @field_validator("auto_pick_daily", mode="before")
     @classmethod

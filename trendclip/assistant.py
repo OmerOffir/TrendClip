@@ -184,6 +184,30 @@ def create_random_short(settings: Settings, game: str | None = None, progress: P
 
 
 
+def create_auto_short(settings: Settings, game: str | None, progress: ProgressFn, mode: str,
+                      only: tuple[str, ...] = (), target_seconds: int | None = None) -> shorts.ShortVideo:
+    """The bot's automatic video: like create_random_short, but a Gamer IQ that can't be written because Gemini's
+    quota is used up becomes a math challenge (it has built-in texts), so the slot still gets a video."""
+    try:
+        return create_random_short(settings, game, progress, mode, only, target_seconds)
+    except script_writer.QuotaError:
+        if mode != "gamer":
+            raise
+        progress(None, "Gemini is out of quota: making a math challenge instead")
+        return create_random_short(settings, game, progress, "math", only)
+
+
+def create_gamer_short(settings: Settings, game: str, question: "quiz.GeminiGamer", shape: str,
+                       progress: ProgressFn = _noop, model: str = "manual") -> shorts.ShortVideo:
+    """A Gamer IQ Short from a question that is already written and checked (by hand, with any LLM), over
+    gameplay of its own game only."""
+    clip = fresh_clip(settings, game, progress, only=(game,))
+    if clip.game != game:
+        raise DownloadError(f"No {game} gameplay could be downloaded, and the question is about {game}")
+    script = quiz.gamer_script(settings, game, question, shape=shape, model=model)
+    return _render_script(settings, clip, script, progress, "gamer")
+
+
 def _themed_quiz(settings: Settings, mode: str, progress: ProgressFn) -> shorts.ShortVideo:
     """A quiz is written first (it doesn't need the clip), then the gameplay that fits its theme is
     downloaded: a war movie over a shooter, space trivia over a space game, else a neutral fast one."""

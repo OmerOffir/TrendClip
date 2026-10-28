@@ -46,6 +46,7 @@
         <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
         <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
         <button type="button" role="tab" data-view="insights">Insights</button>
+        <button type="button" role="tab" data-view="write" title="Write a Gamer IQ question with any LLM">✍️ Write it myself</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="darkarchives" hidden>
@@ -756,6 +757,29 @@
     </dialog>
   </main>
 
+  <main class="container view" id="viewWrite" hidden>
+    <div id="gwError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write a Gamer IQ question myself</h2>
+          <span class="hint">With any LLM, when Gemini is out of quota or you'd rather use another one. Copy each prompt into the
+            LLM and paste its answer back here: first the questions, then a fact check (best in a second LLM with web search).
+            The question that passes becomes the next level, over no-copyright gameplay of its own game.</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <select id="gwGame" aria-label="Game"></select>
+        <button type="button" class="btn-primary" id="gwStart">🎮 Start a question</button>
+        <span class="hint" id="gwLevel"></span>
+        <span class="spacer"></span>
+        <select id="gwSessions" aria-label="Continue a question" hidden></select>
+        <button type="button" class="btn-secondary" id="gwOpen" hidden>Continue</button>
+      </div>
+      <div class="bw-w" id="gwSession"></div>
+    </section>
+  </main>
+
   <main class="container view" id="viewInsights" hidden>
     <div id="inError" class="banner banner-error" hidden></div>
     <div id="inNotes"></div>
@@ -1046,6 +1070,7 @@
   <script src="/static/find.js"></script>
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
+  <script src="/static/gamermanual.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/upcoming.js"></script>

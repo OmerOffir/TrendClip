@@ -1037,20 +1037,29 @@ def fact_check(client, model: str, candidates: list[GeminiTrivia] | list[GeminiG
 
     from . import script_writer as sw
 
-    listing = "\n\n".join(
-        f"{i}. Q: {c.question.strip().rstrip('?')}?\n   Claimed correct: {c.correct}\n   Wrong options: {c.trap}; "
-        f"{c.distractor}\n   Claimed proof: {c.fact}" for i, c in enumerate(candidates, 1))
     config = types.GenerateContentConfig(tools=[types.Tool(google_search=types.GoogleSearch())], temperature=0)
     try:
-        response, _ = sw._generate_with_fallback(client, model, [check.format(candidates=listing)], config,
-                                                 progress, errors.APIError)
+        response, _ = sw._generate_with_fallback(client, model, [check.format(candidates=check_listing(candidates))],
+                                                 config, progress, errors.APIError)
     except errors.APIError as err:
         raise sw._explain(err, model) from err
+    return read_verdicts(response.text or "", len(candidates))
+
+
+def check_listing(candidates: list[GeminiTrivia] | list[GeminiGamer]) -> str:
+    """The candidates as the fact-check prompt lists them, numbered from 1."""
+    return "\n\n".join(
+        f"{i}. Q: {c.question.strip().rstrip('?')}?\n   Claimed correct: {c.correct}\n   Wrong options: {c.trap}; "
+        f"{c.distractor}\n   Claimed proof: {c.fact}" for i, c in enumerate(candidates, 1))
+
+
+def read_verdicts(text: str, count: int) -> list[tuple[bool, str]]:
+    """(passed, reason) per candidate from "<n>: PASS" / "<n>: FAIL: why" lines; unanswered ones fail."""
     found: dict[int, tuple[bool, str]] = {}
-    for line in (response.text or "").splitlines():
+    for line in text.splitlines():
         if (m := _VERDICT.match(line.strip())) and int(m.group(1)) not in found:
             found[int(m.group(1))] = (m.group(2).upper() == "PASS", m.group(3).strip(" :-"))
-    return [found.get(i, (False, "not checked")) for i in range(1, len(candidates) + 1)]
+    return [found.get(i, (False, "not checked")) for i in range(1, count + 1)]
 
 
 def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
@@ -1137,24 +1146,31 @@ def gamer_card(level: int, short_name: str, game: str) -> str:
     return f"LEVEL {level} - {name} FANS ONLY"
 
 
+def gamer_asked(settings: Settings) -> list[str]:
+    """The Gamer IQ questions already written, "question (answer)", oldest first."""
+    return _unique([f"{d.get('question', '')} ({d.get('answer', '')})" for d in history(settings, "gamer")
+                    if d.get("question")])
+
+
+def gamer_prompt(settings: Settings, game: str, shape: str, asked: list[str], notes: str = "") -> str:
+    """The writing prompt for GAMER_CANDIDATES questions of `shape` about `game` (Gemini's, or any LLM's by hand)."""
+    return GAMER_PROMPT.format(count=GAMER_CANDIDATES, game=game, shape=GAMER_SHAPES[shape].format(game=game),
+                               used="; ".join(asked[-40:]) or "none yet",
+                               notes=_notes(notes) + _variety(settings) + _learned(settings, "gamer"))
+
+
 def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
                  rng: random.Random) -> ShortScript:
     """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
     level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
     from . import script_writer as sw
-    from .stickers import Reaction
 
     client, model = sw._gemini(settings, client)
-    level = gamer_level(settings)
     shape = pick_gamer_shape(settings, rng)
-    asked = _unique([f"{d.get('question', '')} ({d.get('answer', '')})" for d in history(settings, "gamer")
-                     if d.get("question")])
+    asked = gamer_asked(settings)
     result = None
     for _ in range(TRIVIA_ROUNDS):
-        prompt = GAMER_PROMPT.format(count=GAMER_CANDIDATES, game=game, shape=GAMER_SHAPES[shape].format(game=game),
-                                     used="; ".join(asked[-40:]) or "none yet",
-                                     notes=_notes(notes) + _variety(settings) + _learned(settings, "gamer"))
-        batch, model = _ask(client, model, GeminiGamerSet, prompt, progress)
+        batch, model = _ask(client, model, GeminiGamerSet, gamer_prompt(settings, game, shape, asked, notes), progress)
         usable = [c for c in batch.candidates if _trivia_options(c)]
         if not usable:
             continue
@@ -1170,6 +1186,16 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
         asked += [f"{c.question} ({c.correct})" for c in usable]
     if result is None:
         raise sw.ScriptError(f"No {game} question passed the Google fact-check; try again")
+    return gamer_script(settings, game, result, shape=shape, model=model, format=format, rng=rng)
+
+
+def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: str, model: str,
+                 format: str = "short", rng: random.Random | None = None) -> ShortScript:
+    """The Short of one checked Gamer IQ question, as the next level (recorded in the history)."""
+    from .stickers import Reaction
+
+    rng = rng or random.Random()
+    level = gamer_level(settings)
     trap, distractor, correct = _trivia_options(result)
     question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
     options = [trap, distractor, correct]

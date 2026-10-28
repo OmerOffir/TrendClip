@@ -1184,19 +1184,28 @@ class TrendClipBot(discord.Client):
         if await asyncio.to_thread(planner.slot_item, settings, day, slot):
             return
         label = f"{day_label(settings, day)} {slot}"
-        pick = await asyncio.to_thread(plan_pick, settings, games or list(EMERGENCY_GAMES), None, day)
+        pool = games or list(EMERGENCY_GAMES)
+        must, avoid = await asyncio.to_thread(analytics.daily_game, settings, day, slot)
+        if must:
+            pool = [must]
+        elif avoid:
+            pool = [g for g in pool if g != avoid] or pool
+        pick = await asyncio.to_thread(plan_pick, settings, pool, None, day)
         kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
         noun = NOUNS.get(kind, "story")
-        await channel.send(clip_text(f"🏭 {label}: a {noun} on {game} gameplay.\n{analytics.describe_pick(pick)}"))
+        daily = f" (today's {must} video)" if must else ""
+        await channel.send(clip_text(f"🏭 {label}: a {noun} on {game} gameplay{daily}.\n{analytics.describe_pick(pick)}"))
         try:
             short = await self.run_job(channel, f"Making the {noun} for {label}",
-                                       lambda p: assistant.create_random_short(settings, game, p, kind, EMERGENCY_GAMES,
-                                                                               target_seconds=pick.target_seconds),
+                                       lambda p: assistant.create_auto_short(settings, game, p, kind, EMERGENCY_GAMES,
+                                                                             target_seconds=pick.target_seconds),
                                        self.render_lock, attempts=PRODUCE_ATTEMPTS,
                                        give_up=lambda: planner.slot_item(settings, day, slot) is not None)
         except JobFailed:
+            manual = (" Or write a Gamer IQ with any LLM: dashboard → SideQuestLogic → ✍️ Write it myself."
+                      if kind == "gamer" else "")
             await channel.send(f"🏭 Couldn't make the video for {label} after {PRODUCE_ATTEMPTS} attempts. The "
-                               f"emergency video will try again an hour before the slot, or:",
+                               f"emergency video will try again an hour before the slot.{manual} Or:",
                                view=view_of(button("prod", f"{day.isoformat()} {slot}", "🎬 Try again now",
                                                    discord.ButtonStyle.success)))
             return
@@ -1234,9 +1243,9 @@ class TrendClipBot(discord.Client):
                                f"with {game} gameplay for it now.\n{analytics.describe_pick(pick)}")
             try:
                 short = await self.run_job(channel, f"Emergency {noun} for {slot}",
-                                           lambda p: assistant.create_random_short(settings, game, p, kind,
-                                                                                   EMERGENCY_GAMES,
-                                                                                   target_seconds=pick.target_seconds),
+                                           lambda p: assistant.create_auto_short(settings, game, p, kind,
+                                                                                 EMERGENCY_GAMES,
+                                                                                 target_seconds=pick.target_seconds),
                                            self.render_lock, attempts=EMERGENCY_ATTEMPTS,
                                            give_up=lambda: planner.slot_item(settings, day, slot) is not None)
             except JobFailed:

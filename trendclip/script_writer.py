@@ -36,6 +36,10 @@ class ScriptError(RuntimeError):
     pass
 
 
+class QuotaError(ScriptError):
+    """Gemini's quota is used up: trying again today won't help (a quiz with built-in texts still can)."""
+
+
 MUSIC_MOOD_HELP = (
     "Background music mood for this voiceover, exactly one of: 'funny_quirky' (awkward, weird, embarrassing, "
     "silly, chaotic stories) or 'chill_lofi' (casual, cozy, relaxed storytelling, mysteries, facts, tips).")
@@ -363,7 +367,7 @@ def _explain(err: Exception, model: str) -> ScriptError:
     if code in (401, 403) or "API key" in text or "API_KEY" in text:
         return ScriptError("Gemini rejected the API key: check GEMINI_API_KEY in .env")
     if code == 429:
-        return ScriptError("Gemini quota reached (free tier limit); wait a minute or try tomorrow")
+        return QuotaError("Gemini quota reached (free tier limit); wait a minute or try tomorrow")
     if code in RETRYABLE_CODES:
         return ScriptError("Gemini is overloaded right now (all models busy); try again in a minute")
     if code == 404:

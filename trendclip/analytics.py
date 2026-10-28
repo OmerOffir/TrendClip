@@ -876,6 +876,25 @@ def lineup_kind(settings: Settings, day: Day) -> str | None:
     return lineup[0] if lineup else None
 
 
+def daily_game(settings: Settings, day: Day, slot: str) -> tuple[str | None, str | None]:
+    """AUTO_PICK_DAILY_GAME for one slot: (the game it must be, the game it must not be). The daily game takes
+    the day's alternating slot, or the day's last free slot when it is still missing; once it is planned
+    that day (or the slot is the other one), the other slots go to other games."""
+    game = settings.auto_pick_daily_game.strip()
+    if not game:
+        return None, None
+    for item in planner.load(settings).items:
+        if item.date == day and item.short and item.slot != slot:
+            try:
+                if shorts.get_short(settings, item.short).game == game:
+                    return None, game
+            except Exception:  # noqa: BLE001 - a deleted Short just doesn't count
+                continue
+    own = planner.SLOTS[day.toordinal() % len(planner.SLOTS)]
+    free = [s for s in planner.free_slots(settings, day) if s != slot]
+    return (game, None) if slot == own or not free else (None, game)
+
+
 def describe_pick(pick: Pick) -> str:
     """One Discord line: what was picked and why."""
     def why(dimension: str, key: str) -> str:

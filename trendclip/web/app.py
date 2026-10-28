@@ -9,7 +9,7 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import date as Day
+from datetime import date as Day, timedelta
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,8 +20,8 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (__version__, analytics, hub, instagram, music, planner, publish, script_writer, shorts, stickers,
-                video_downloader, voiceover)
+from .. import (__version__, analytics, assistant, gamer_manual, hub, instagram, music, planner, publish, quiz,
+                script_writer, shorts, stickers, video_downloader, voiceover)
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -588,6 +588,96 @@ def create_job(job_id: str) -> dict[str, Any]:
     if job is None:
         raise HTTPException(status_code=404, detail="Unknown job")
     return job.model_dump(mode="json")
+
+
+# ---- Gamer IQ "Write it myself": any LLM writes the question (trendclip/gamer_manual.py)
+
+
+class GamerManualStart(BaseModel):
+    game: str = Field(min_length=1, max_length=80)
+
+
+class GamerManualText(BaseModel):
+    text: str = Field(min_length=2, max_length=100_000)
+
+
+class GamerManualChoice(BaseModel):
+    index: int = Field(ge=0, le=20)
+
+
+class GamerManualMake(BaseModel):
+    day: Day | None = None
+    slot: planner.Slot | None = None
+
+
+def _gamer_manual(fn, *args):
+    try:
+        return fn(_base_settings(), *args)
+    except gamer_manual.ManualError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+GAMER_MANUAL_DAYS = 7
+
+
+@app.get("/api/gamer/manual")
+def gamer_manual_list() -> dict[str, Any]:
+    """The open sessions, the games with gameplay (Minecraft first) and the free slots of the next week."""
+    settings = _base_settings()
+    try:
+        counts = video_downloader.get_library(settings).counts()
+    except Exception:  # noqa: BLE001 - no library: the game is typed
+        counts = {}
+    games = sorted((g for g, n in counts.items() if n), key=lambda g: (g != "Minecraft", -counts[g], g))
+    now = assistant.now(settings)
+    slots = [{"day": d.isoformat(), "slot": s} for d in (now.date() + timedelta(days=i) for i in range(GAMER_MANUAL_DAYS))
+             for s in planner.free_slots(settings, d) if planner.slot_time(settings, d, s) > now]
+    return {"sessions": gamer_manual.sessions(settings), "games": games or ["Minecraft"], "slots": slots,
+            "level": quiz.gamer_level(settings)}
+
+
+@app.post("/api/gamer/manual")
+def gamer_manual_start(req: GamerManualStart) -> dict[str, Any]:
+    return _gamer_manual(gamer_manual.start, req.game)
+
+
+@app.get("/api/gamer/manual/{sid}")
+def gamer_manual_view(sid: str) -> dict[str, Any]:
+    return _gamer_manual(gamer_manual.view, sid)
+
+
+@app.post("/api/gamer/manual/{sid}/answer")
+def gamer_manual_answer(sid: str, req: GamerManualText) -> dict[str, Any]:
+    return _gamer_manual(gamer_manual.answer, sid, req.text)
+
+
+@app.post("/api/gamer/manual/{sid}/facts")
+def gamer_manual_facts(sid: str, req: GamerManualText) -> dict[str, Any]:
+    return _gamer_manual(gamer_manual.facts, sid, req.text)
+
+
+@app.post("/api/gamer/manual/{sid}/choose")
+def gamer_manual_choose(sid: str, req: GamerManualChoice) -> dict[str, Any]:
+    return _gamer_manual(gamer_manual.choose, sid, req.index)
+
+
+@app.post("/api/gamer/manual/{sid}/make", status_code=202)
+def gamer_manual_make(sid: str, req: GamerManualMake) -> dict[str, Any]:
+    """Make the Short of the chosen question (a render job, polled at /api/create/jobs/{id}) and plan it in
+    the slot (none: it waits in Upload)."""
+    settings = _base_settings()
+    game, question, shape = _gamer_manual(gamer_manual.question, sid)
+    if req.day and req.slot and planner.slot_item(settings, req.day, req.slot):
+        raise HTTPException(status_code=409, detail=f"{req.day} {req.slot} already has a video")
+
+    def run(progress):
+        short = assistant.create_gamer_short(settings, game, question, shape, progress)
+        gamer_manual.mark_made(settings, sid, short.filename)
+        if req.day and req.slot and not planner.slot_item(settings, req.day, req.slot):
+            assistant.plan_short(settings, short.filename, req.day, req.slot)
+        return short
+
+    return _create.submit_call(game, run).model_dump(mode="json")
 
 
 @app.get("/api/shorts")

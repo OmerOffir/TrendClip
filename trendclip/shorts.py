@@ -625,6 +625,12 @@ class CreateManager:
         self._scripts.submit(self._run, job.id, lambda p: describe(settings, req, p))
         return job
 
+    def submit_call(self, game: str, fn: Callable[[ProgressFn], Any]) -> CreateJob:
+        """Any render-heavy `fn(progress)` as a render job (one at a time with the other renders)."""
+        job = self._add("render", game)
+        self._renders.submit(self._run, job.id, fn)
+        return job
+
     def submit_render(self, settings: Settings, req: RenderRequest) -> CreateJob:
         job = self._add("render", req.game)
         self._renders.submit(self._run, job.id, lambda p: render_short(settings, req, p))
