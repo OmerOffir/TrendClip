@@ -55,6 +55,7 @@
         <button type="button" role="tab" class="active" data-da-view="stories">Stories <span class="nav-count" id="daNavCount" hidden></span></button>
         <button type="button" role="tab" data-da-view="videos">Videos <span class="nav-count" id="daNavVideos" hidden></span></button>
         <button type="button" role="tab" data-da-view="plan">Plan <span class="nav-count todo" id="daNavPlan" hidden title="Planned videos not yet on YouTube"></span></button>
+        <button type="button" role="tab" data-da-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="borderlinewhy" hidden>
@@ -246,6 +247,27 @@
       </div>
       <div class="da-ytbar" id="daVideosYouTube"></div>
       <div class="da-videos" id="daVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewDarkWrite" data-workspace-panel="darkarchives" data-da-panel="write" hidden>
+    <div id="daWError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write it myself</h2>
+          <span class="hint">For when Gemini is out of quota. Pick a story from the bank; you paste each prompt into any LLM and its
+            answer back here. The same rules check runs as on Gemini's scripts, then a fact check against the story (best in a second LLM).</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <select id="daWStory" aria-label="Story"><option value="">The next story</option></select>
+        <button type="button" class="btn-primary" id="daWStart">✍️ Get the prompt</button>
+        <span class="spacer"></span>
+        <select id="daWSessions" aria-label="Continue a script" hidden></select>
+        <button type="button" class="btn-secondary" id="daWOpen" hidden>Continue</button>
+      </div>
+      <div class="bw-w" id="daWSession"></div>
     </section>
   </main>
 
@@ -1071,6 +1093,7 @@
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
   <script src="/static/gamermanual.js"></script>
+  <script src="/static/darkmanual.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/upcoming.js"></script>

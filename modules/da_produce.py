@@ -156,6 +156,20 @@ def ranking_script(progress: ProgressFn = lambda f, m: None, db_path=None, scrip
     return da_ranking.process(db_path=db_path, out_dir=scripts_dir)
 
 
+def plan_video(settings, story_id: int, info: dict, day: Day, slot: str, out_dir: Path | None = None,
+               announce: bool = False) -> da_plan.PlanItem:
+    """Put a finished video on its slot; `announce`: post it in the Discord channel with the veto button."""
+    item = da_plan.add_item(da_plan.ItemRequest(story_id=story_id, date=day, slot=slot), out_dir)
+    if announce:
+        from modules import da_channel
+
+        da_channel.announce_video(story_id, info, settings, out_dir, note=(
+            f"Planned for {day.isoformat()} {slot}: it goes out by itself as {da_plan.upload_privacy()}. "
+            "Don't want it? Press the button or take it off the plan in the Dark Outliers tab."),
+            components=da_channel.video_buttons(story_id, item_id=item.id))
+    return item
+
+
 def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, m: None, *, db_path=None,
                 scripts_dir: Path | None = None, out_dir: Path | None = None, make=None, tries: int = MAX_STORY_TRIES,
                 announce: bool = False, ranking: bool | None = None) -> dict:
@@ -190,15 +204,8 @@ def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, 
                     announce=False)
         problems = check_video(info)
         if not problems:
-            item = da_plan.add_item(da_plan.ItemRequest(story_id=story_id, date=day, slot=slot), out_dir)
+            item = plan_video(settings, story_id, info, day, slot, out_dir, announce)
             tried.append({"story_id": story_id, "title": info.get("title", ""), "ok": True})
-            if announce:
-                from modules import da_channel
-
-                da_channel.announce_video(story_id, info, settings, out_dir, note=(
-                    f"Planned for {day.isoformat()} {slot}: it goes out by itself as {da_plan.upload_privacy()}. "
-                    "Don't want it? Press the button or take it off the plan in the Dark Outliers tab."),
-                    components=da_channel.video_buttons(story_id, item_id=item.id))
             return {"status": "planned", "day": day.isoformat(), "slot": slot, "story_id": story_id,
                     "item": item.model_dump(mode="json"), "info": info, "tried": tried}
         progress(None, f"Not good enough ({'; '.join(problems)}): trying another story")

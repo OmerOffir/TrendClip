@@ -472,3 +472,132 @@ def insights(refresh: bool = False) -> dict[str, Any]:
 def produce_targets() -> dict[str, Any]:
     return {"targets": [f"{d.isoformat()} {s}" for d, s in da_produce.targets(_settings_for_targets(), _now())],
             "auto_produce": da_produce.auto_produce(), "time": da_produce.produce_time(), "daily_fetch": da_produce.daily_fetch()}
+
+
+# --------------------------------------------------------------------------- Write it myself (modules/da_manual.py)
+
+
+class ManualStart(BaseModel):
+    story_id: int | None = Field(None, ge=1)
+
+
+class ManualText(BaseModel):
+    text: str = Field(min_length=2, max_length=200_000)
+
+
+class ManualMake(BaseModel):
+    day: str | None = Field(None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    slot: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
+
+
+def _manual(fn, *args):
+    from modules import da_manual
+
+    try:
+        return fn(*args)
+    except da_manual.ManualError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+def open_slots(days: int = 7) -> list[str]:
+    """The empty slots of the coming days, from now on ("2026-10-29 14:00")."""
+    from datetime import timedelta
+
+    settings, now = _settings_for_targets(), _now()
+    return [f"{day.isoformat()} {slot}" for n in range(days) for day in [now.date() + timedelta(days=n)]
+            for slot in da_plan.slots()
+            if da_plan.slot_time(settings, day, slot) > now and da_plan.slot_item(day, slot) is None]
+
+
+@router.get("/manual")
+def manual_list() -> dict[str, Any]:
+    from modules import da_manual
+
+    return {"sessions": da_manual.sessions(), "stories": da_manual.stories(), "slots": open_slots()}
+
+
+@router.post("/manual")
+def manual_start(req: ManualStart) -> dict[str, Any]:
+    """Open a session for a story (the next one when none is given) and give the writing prompt."""
+    from modules import da_manual
+
+    return _manual(da_manual.start, req.story_id)
+
+
+@router.get("/manual/{sid}")
+def manual_view(sid: str) -> dict[str, Any]:
+    from modules import da_manual
+
+    return _manual(da_manual.view, sid)
+
+
+@router.post("/manual/{sid}/answer")
+def manual_answer(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import da_manual
+
+    return _manual(da_manual.answer, sid, req.text)
+
+
+@router.post("/manual/{sid}/facts")
+def manual_facts(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import da_manual
+
+    return _manual(da_manual.facts, sid, req.text)
+
+
+def _make_manual(sid: str, story_id: int, day, slot: str) -> None:
+    from modules import da_manual
+    from trendclip.config import get_settings
+
+    def progress(frac, msg):
+        with _lock:
+            _video_job.update(progress=frac, message=msg)
+
+    try:
+        settings = get_settings()
+        info = video_gen.make_video(story_id, progress, settings=settings, announce=False)
+        problems = da_produce.check_video(info)
+        if problems:
+            raise RuntimeError("The video is made (it's in Videos) but not planned: " + "; ".join(problems))
+        if da_plan.slot_item(day, slot) is not None:
+            raise RuntimeError(f"{day} {slot} was taken meanwhile: the video is in Videos, plan it from there")
+        item = da_produce.plan_video(settings, story_id, info, day, slot, announce=True)
+        da_manual.mark_made(sid, item.model_dump(mode="json"))
+        with _lock:
+            _video_job.update(result=info, planned=f"{day} {slot}")
+    except Exception as err:  # noqa: BLE001 - shown in the tab
+        logger.exception("Dark Outliers manual video for story %s failed", story_id)
+        with _lock:
+            _video_job.update(error=str(err)[:400])
+    finally:
+        with _lock:
+            _video_job.update(running=False, finished_at=time.time())
+
+
+@router.post("/manual/{sid}/make", status_code=202)
+def manual_make(sid: str, req: ManualMake | None = None) -> dict[str, Any]:
+    """Make the video of a checked script and plan it for a slot (the next free one when none is given);
+    it is posted in Discord with the "Don't post this" button, like the morning run's."""
+    from datetime import date
+
+    from modules import da_manual
+
+    story_id = _manual(da_manual.story_of, sid)
+    if req and req.day and req.slot:
+        if req.slot not in da_plan.slots():
+            raise HTTPException(status_code=400, detail=f"{req.slot} is not a slot (DA_SLOTS: {', '.join(da_plan.slots())})")
+        day, slot = date.fromisoformat(req.day), req.slot
+        if da_plan.slot_item(day, slot) is not None:
+            raise HTTPException(status_code=409, detail=f"{req.day} {slot} already has a video")
+    else:
+        found = da_plan.next_free_slot(_settings_for_targets(), _now())
+        if found is None:
+            raise HTTPException(status_code=409, detail="No free slot in the next 30 days")
+        day, slot = found
+    with _lock:
+        if _video_job.get("running"):
+            raise HTTPException(status_code=409, detail="A video is already being made")
+        _video_job.clear()
+        _video_job.update(running=True, story_id=story_id, started_at=time.time(), progress=0.0, message="Starting")
+    threading.Thread(target=_make_manual, args=(sid, story_id, day, slot), name="darkarchives-manual-video", daemon=True).start()
+    return video_status()

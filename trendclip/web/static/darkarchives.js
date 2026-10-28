@@ -107,7 +107,7 @@
             ${s.url ? `<a class="btn-secondary" href="${esc(s.url)}" target="_blank" rel="noopener">Open source ↗</a>` : '<span class="hint">Gemini: no source link, fact-check before using</span>'}
             ${STATUSES.map((st) => `<button type="button" class="btn-secondary" data-status="${st}" ${st === s.status ? "disabled" : ""}>${LABELS[st]}</button>`).join("")}
           </div>
-          ${s.status === "USED" ? "" : `<div class="da-actions"><button type="button" class="btn-primary" id="daWrite">✍️ ${s.status === "SCRIPT_READY" ? "Rewrite" : "Write"} the Shorts script</button><span class="hint" id="daWriteStatus"></span></div>`}
+          ${s.status === "USED" ? "" : `<div class="da-actions"><button type="button" class="btn-primary" id="daWrite">✍️ ${s.status === "SCRIPT_READY" ? "Rewrite" : "Write"} the Shorts script</button><button type="button" class="btn-secondary" id="daWriteMyself" title="Write the script with any LLM (when Gemini is out of quota)">✍️ Write it myself</button><span class="hint" id="daWriteStatus"></span></div>`}
         </div>
         <div id="daScript"></div>
         <div id="daVideo"></div>
@@ -818,6 +818,7 @@
     const btn = e.target.closest("button[data-status]");
     if (btn) setStatus(btn.dataset.status);
     if (e.target.closest("#daWrite")) writeScript();
+    if (e.target.closest("#daWriteMyself")) { showSection("write"); window.TrendClip.writeDarkStory?.(state.selected); }
     if (e.target.closest("#daMake")) makeVideo();
     if (e.target.closest("#daYtConnect")) connectYouTube();
     if (e.target.closest("#daYtLogout")) api("/api/darkarchives/youtube/logout", { method: "POST" }).then(reloadVideo).catch((err) => showError(err.message));

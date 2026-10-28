@@ -256,6 +256,21 @@ def build_prompt(story: dict, today: dt.date | None = None, brief: str | None = 
     return text + brief if brief else text
 
 
+def draft_json(draft: ScriptDraft) -> str:
+    return draft.model_dump_json(include={"title", "hook_text", "thumbnail_text", "hook_image_prompt", "scenes"})
+
+
+def fix_prompt(draft: ScriptDraft, problems: list[str]) -> str:
+    """What goes after the writing prompt when a draft missed the rules: the problems, how to fix them, the draft."""
+    n = words(spoken(draft))
+    direction = " ".join(filter(None, [
+        "Cut words: drop the least important detail." if n > MAX_WORDS else
+        "Add words: one more concrete detail or scene from the source." if n < MIN_WORDS else "",
+        f"Split or shorten every sentence over {MAX_SENTENCE_WORDS} words." if long_sentences(draft) else "",
+    ])) or "Fix those problems."
+    return FIX_PROMPT.format(problems="; ".join(problems), direction=direction, draft=draft_json(draft))
+
+
 def write_script(story: dict, client=None) -> tuple[Script | None, str]:
     """(the Shorts script for one raw story, ""), or (None, why) when Gemini says the story is unusable."""
     client, model = _gemini(client)
@@ -272,20 +287,21 @@ def write_script(story: dict, client=None) -> tuple[Script | None, str]:
         logger.info("Attempt %d: %s", attempt + 1, "; ".join(problems))
         if attempt == ATTEMPTS - 1:
             break
-        n = words(spoken(draft))
-        direction = " ".join(filter(None, [
-            "Cut words: drop the least important detail." if n > MAX_WORDS else
-            "Add words: one more concrete detail or scene from the source." if n < MIN_WORDS else "",
-            f"Split or shorten every sentence over {MAX_SENTENCE_WORDS} words." if long_sentences(draft) else "",
-        ])) or "Fix those problems."
-        draft = _ask(client, model, prompt + "\n\n" + FIX_PROMPT.format(
-            problems="; ".join(problems), direction=direction,
-            draft=draft.model_dump_json(include={"title", "hook_text", "thumbnail_text", "hook_image_prompt", "scenes"})))
+        draft = _ask(client, model, prompt + "\n\n" + fix_prompt(draft, problems))
     raise ScriptGenError(f"Gemini missed the rules {ATTEMPTS} times ({'; '.join(problems)})")
 
 
 def script_path(story_id: int, out_dir: Path | None = None) -> Path:
     return (out_dir or OUTPUT_DIR) / f"story_{story_id}.json"
+
+
+def save(script: Script, out_dir: Path | None = None, db_path=None, note: str = "") -> Path:
+    """Write story_<id>.json; the story becomes SCRIPT_READY (the video can be made)."""
+    path = script_path(script.story_id, out_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(script.model_dump(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    repository.set_status(script.story_id, "SCRIPT_READY", db_path, note=note)
+    return path
 
 
 def process(story_id: int | None = None, client=None, out_dir: Path | None = None, db_path=None) -> dict:
@@ -304,10 +320,7 @@ def process(story_id: int | None = None, client=None, out_dir: Path | None = Non
         if script is None:
             repository.set_status(story["id"], "REJECTED", db_path, note=reason[:300])
             return {"story": story, "script": None, "path": None, "status": "REJECTED", "reason": reason}
-        path = script_path(story["id"], out_dir)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(script.model_dump(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        repository.set_status(story["id"], "SCRIPT_READY", db_path, note="")
+        path = save(script, out_dir, db_path)
         return {"story": story, "script": script, "path": path, "status": "SCRIPT_READY", "reason": ""}
     except BaseException:
         repository.set_status(story["id"], before, db_path)

@@ -669,7 +669,8 @@ class TrendClipBot(discord.Client):
             result = await self.run_job(channel, f"Making the {'ranking ' if ranking else ''}video for {label}",
                                         lambda p: da_produce.produce_one(settings, day, slot, p, ranking=ranking), self.render_lock)
         except JobFailed:
-            await channel.send(f"🏭 Couldn't make a video for {label}.",
+            await channel.send(f"🏭 Couldn't make a video for {label}. If Gemini is out of quota, write the script with any other "
+                               "LLM: dashboard → Dark Outliers → ✍️ Write it myself.",
                                view=view_of(button("daprod", f"{day.isoformat()} {slot}", "🎬 Try again now",
                                                    discord.ButtonStyle.success)))
             return
