@@ -195,6 +195,16 @@
     return out.join("");
   }
 
+  // When the Short goes out (the Plan tab's slot); the list is in that order, unplanned ones last.
+  function plannedPill(s) {
+    if (!s.planned) return '<span class="pill">Not planned</span> ';
+    const day = new Date(`${s.planned.date}T12:00:00`);
+    const today = new Date();
+    const diff = Math.round((new Date(day.toDateString()) - new Date(today.toDateString())) / 86400000);
+    const name = diff === 0 ? "Today" : diff === 1 ? "Tomorrow" : day.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" });
+    return `<span class="pill good">📅 ${esc(name)} ${esc(s.planned.slot)}</span> `;
+  }
+
   function renderList() {
     els.navCount.textContent = String(state.shorts.length);
     els.navCount.hidden = !state.shorts.length;
@@ -209,7 +219,7 @@
         <span class="ready-body">
           <span class="dl-title">${s.part ? `<span class="pill part">PART ${s.part}/${s.parts_total || 2}</span> ` : ""}${esc(s.title)}</span>
           <span class="dl-meta">${esc(s.game)} · ${s.duration_seconds ? `${Math.round(s.duration_seconds)}s` : ""}</span>
-          <span class="ready-badges">${badges(s)}</span>
+          <span class="ready-badges">${plannedPill(s)}${badges(s)}</span>
         </span>
       </button>`).join("");
   }
@@ -225,7 +235,7 @@
       a.setAttribute("download", s.filename);
     }
     els.title.textContent = s.title;
-    els.meta.innerHTML = `${esc(s.game)} · ${Math.round(s.duration_seconds || 0)}s${s.music_title ? ` · ♪ ${esc(s.music_title)}` : ""}`;
+    els.meta.innerHTML = `${plannedPill(s)}${esc(s.game)} · ${Math.round(s.duration_seconds || 0)}s${s.music_title ? ` · ♪ ${esc(s.music_title)}` : ""}`;
 
     const t = s.texts;
     els.source.textContent = t.source === "gemini" ? `Texts written by Gemini (${t.model})` : "Texts from the template (edit freely, or let Gemini improve them)";

@@ -746,14 +746,20 @@ def mark_ready(filename: str, req: ReadyRequest) -> dict[str, Any]:
 
 @app.get("/api/upload/shorts")
 def upload_queue() -> list[dict[str, Any]]:
-    """Shorts marked ready to upload, newest first, with their platform texts."""
+    """Shorts marked ready to upload, with their platform texts: the planned ones first in the order they go out
+    (each with its `planned` day and slot), then the others newest first."""
     settings = _base_settings()
     ready = [s for s in shorts.list_shorts(settings) if s.ready]
+    slots = {i.short: i for i in planner.load(settings).items if i.short and i.slot}
+    newest = sorted(ready, key=lambda s: s.ready_at or s.created_at, reverse=True)
+    planned = sorted((s for s in newest if s.filename in slots),
+                     key=lambda s: (slots[s.filename].date, slots[s.filename].slot))
     out = []
-    for s in sorted(ready, key=lambda s: s.ready_at or s.created_at, reverse=True):
+    for s in planned + [s for s in newest if s.filename not in slots]:
         if not s.texts:
             s = publish.texts_for(settings, s.filename)
-        out.append(_with_texts(s))
+        item = slots.get(s.filename)
+        out.append({**_with_texts(s), "planned": {"date": item.date.isoformat(), "slot": item.slot} if item else None})
     return out
 
 
