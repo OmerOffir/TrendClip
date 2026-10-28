@@ -19,10 +19,15 @@ Curation (the Dark Outliers content guidelines):
   exclusions  promos, meta posts and fiction by title here; gore without depth, fiction and recent
               politics / ongoing news are judged by Gemini when the script is written (REJECTED)
 
-Scores are 0-100 on every source so get_next_story() compares them fairly:
-  reddit     upvotes on a log scale (100 -> 50, 1,000 -> 75) or, from RSS, the rank in the month's top posts
+Scores are 0-100 on every source so get_next_story() compares them fairly. Famous cases come first: a
+story's fame is its Wikipedia article's page views (a topic people already search for), and a story
+without an article never scores above UNKNOWN_MAX_SCORE (the famous Devil's Triangle Short got 458 views,
+the obscure ones 18-86):
   wikipedia  page views over the last 30 days, on a log scale (300 -> 50, 3,000 -> 70, 30,000 -> 90)
-  gemini     Gemini's own 1-100 rating, capped at GEMINI_MAX_SCORE so real sources come first
+  reddit     upvotes on a log scale (100 -> 50, 1,000 -> 75) or, from RSS, the rank in the month's top
+             posts, capped at UNKNOWN_MAX_SCORE; a link post to Wikipedia scores as that article
+  gemini     the page views of the case's Wikipedia article (it becomes the story's source, with its
+             photos); Gemini's own 1-100 rating, capped at GEMINI_MAX_SCORE, when it has none
   rss        RSS_SCORE (the feeds have no engagement numbers)
 """
 
@@ -96,6 +101,7 @@ FEEDS = {"atlasobscura": "https://www.atlasobscura.com/feeds/latest", "listverse
 RSS_PILLAR = "outrage"
 RSS_SCORE = 55
 GEMINI_MAX_SCORE = 70
+UNKNOWN_MAX_SCORE = 75  # a story with no Wikipedia article: below every article with 5,600+ views a month
 REDDIT_PAUSE = 8.0  # seconds between Reddit feeds: the logged-out RSS limit is a few per minute
 WIKI_PAUSE = 1.0
 FEED_PAUSE = 2.0
@@ -194,6 +200,39 @@ def html_to_text(markup: str) -> str:
 
 def wiki_score(views: int) -> int:
     return min(100, round(20 * math.log10(max(views, 0) + 1)))
+
+
+def wiki_fame(titles: list[str], session: requests.Session | None = None) -> dict[str, dict]:
+    """{asked title: {"views", "url", "pageid"}} for the titles that have an English Wikipedia article
+    (redirects followed), with its views over the last 30 days. Never raises: {} when Wikipedia does not answer."""
+    session = session or _session()
+    out: dict[str, dict] = {}
+    for start in range(0, len(titles), 20):
+        batch = [t for t in titles[start:start + 20] if t.strip()]
+        if not batch:
+            continue
+        try:
+            r = get(session, WIKI_API, params={"action": "query", "titles": "|".join(batch), "redirects": 1,
+                                               "prop": "pageviews|info", "pvipdays": 30, "inprop": "url",
+                                               "format": "json", "formatversion": 2})
+            r.raise_for_status()
+            data = r.json().get("query", {})
+        except Exception as err:  # noqa: BLE001 - fame is a bonus
+            logger.warning("Wikipedia page views: %s", err)
+            continue
+        names = {t: t for t in batch}
+        for step in ("normalized", "redirects"):
+            for m in data.get(step, []):
+                for asked, now in names.items():
+                    if now == m.get("from"):
+                        names[asked] = m.get("to", now)
+        pages = {p.get("title"): p for p in data.get("pages", []) if not p.get("missing") and "pageid" in p}
+        for asked, now in names.items():
+            page = pages.get(now)
+            if page:
+                out[asked] = {"views": sum(v or 0 for v in (page.get("pageviews") or {}).values()),
+                              "url": page.get("fullurl", ""), "pageid": page["pageid"]}
+    return out
 
 
 def clean_extract(text: str) -> str:
@@ -342,7 +381,7 @@ def reddit_story(post: dict, sub: str, cfg: Sub, session: requests.Session | Non
     """The story of one post: its own text, or the Wikipedia article a link post points to."""
     if post["ups"] is not None and post["ups"] < MIN_UPVOTES:
         return None
-    score = upvote_score(post["ups"]) if post["ups"] is not None else max(40, 100 - 2 * post["rank"])
+    score = min(upvote_score(post["ups"]) if post["ups"] is not None else max(40, 100 - 2 * post["rank"]), UNKNOWN_MAX_SCORE)
     story = {"source_id": f"reddit_{post['id']}", "source_name": f"reddit/{sub}", "title": post["title"],
              "raw_text": post["text"], "url": post["url"], "score": score, "pillar": cfg.pillar}
     wiki = WIKI_LINK.match(post["link"])
@@ -355,6 +394,9 @@ def reddit_story(post: dict, sub: str, cfg: Sub, session: requests.Session | Non
         if not art or f"wikipedia_{art['pageid']}" in skip:
             return None
         # the same article from a Wikipedia category would be the same story: one source_id for both
+        fame = wiki_fame([art["title"]], session).get(art["title"])
+        if fame:
+            story["score"] = wiki_score(fame["views"])
         story.update(source_id=f"wikipedia_{art['pageid']}", title=art["title"], url=art["url"],
                      raw_text=f"{post['title']}\n\n{fit(art['text'], MAX_CHARS - len(post['title']) - 2)}")
     if screen(post["title"], story["raw_text"], cfg.keywords) or screen(story["title"], story["raw_text"]):
@@ -467,13 +509,16 @@ For each case:
 - story: 250-450 words of plain, factual text in chronological order: who, where, when (dates), what
   happened, what investigators found, the theories, and what is still unexplained. Only documented
   facts; write "reportedly" where sources disagree. Never invent names, quotes or details.
-- hook_score: 1-100, how gripping this case is for a 45-second Short.
+- hook_score: 1-100, how gripping this case is for a 30-second Short.
 
 Today is {today}. At least {anniversaries} of the cases must be events whose anniversary (same month
 and day, any year) falls within the next {window} days: for those, begin the story with
 "Anniversary: <Month day, year>" (the date of the event), then the facts. Timely stories get shown more.
 
-Prefer lesser-known cases over the most famous ones. Never: fiction or creepypastas (unless it is
+Prefer FAMOUS cases, the ones people already know by name and search for (Dyatlov Pass incident,
+Mary Celeste, Flight 19, Roanoke Colony, D. B. Cooper), told through their most unsettling detail:
+a known name stops the scroll, an unknown one does not. Every case must have its own English
+Wikipedia article under the title you give. Never: fiction or creepypastas (unless it is
 an internet urban legend, framed as one), gore without a story, recent political controversies or
 ongoing news (open trials, cases from the last two years). Do NOT use any of these cases:
 {avoid}"""
@@ -530,7 +575,10 @@ def anniversary_soon(text: str, today: dt.date | None = None, window: int = ANNI
     return when is not None and (when - (today or dt.date.today())).days <= window
 
 
-def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, today: dt.date | None = None) -> list[Story]:
+def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, today: dt.date | None = None,
+                 fame=None) -> list[Story]:
+    """`count` cases from Gemini, each scored by its Wikipedia article's page views (`fame`: wiki_fame,
+    replaceable in tests), which also becomes its source URL; an anniversary near today scores ANNIVERSARY_SCORE."""
     from google import genai
     from google.genai import errors, types
 
@@ -556,12 +604,19 @@ def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, to
     except errors.APIError as err:
         raise script_writer._explain(err, model) from err
     parsed = response.parsed if isinstance(response.parsed, GeminiCases) else GeminiCases.model_validate_json(response.text)
-    return [{
-        "source_id": f"gemini_{slug(c.title)}", "source_name": "gemini", "title": c.title.strip(),
-        "raw_text": c.story.strip(), "url": "",
-        "score": ANNIVERSARY_SCORE if anniversary_soon(c.story, today) else min(c.hook_score, GEMINI_MAX_SCORE),
-        "pillar": c.pillar,
-    } for c in parsed.cases if c.title.strip() and c.story.strip()]
+    cases = [c for c in parsed.cases if c.title.strip() and c.story.strip()]
+    known = (fame or wiki_fame)([c.title.strip() for c in cases])
+    out = []
+    for c in cases:
+        page = known.get(c.title.strip())
+        score = max(min(c.hook_score, GEMINI_MAX_SCORE), wiki_score(page["views"])) if page else min(c.hook_score, GEMINI_MAX_SCORE)
+        out.append({
+            "source_id": f"gemini_{slug(c.title)}", "source_name": "gemini", "title": c.title.strip(),
+            "raw_text": c.story.strip(), "url": page["url"] if page else "",
+            "score": ANNIVERSARY_SCORE if anniversary_soon(c.story, today) else score,
+            "pillar": c.pillar,
+        })
+    return out
 
 
 # --------------------------------------------------------------------------- run
@@ -587,9 +642,10 @@ def pillar_for(source_name: str) -> str:
 
 def recheck(db_path=None) -> dict[str, int]:
     """Bring the bank up to the current rules: give every story a pillar, cut NEW Wikipedia articles to
-    MAX_CHARS, and reject NEW stories that fail the fetch filters (the reason goes in the note)."""
+    MAX_CHARS, cap NEW stories with no Wikipedia article at UNKNOWN_MAX_SCORE (anniversaries keep their
+    place), and reject NEW stories that fail the fetch filters (the reason goes in the note)."""
     repository.init_db(db_path)
-    report = {"pillars": 0, "trimmed": 0, "rejected": 0}
+    report = {"pillars": 0, "trimmed": 0, "capped": 0, "rejected": 0}
     for s in repository.all_stories(db_path=db_path):
         if not s["pillar"]:
             repository.update_story(s["id"], db_path, pillar=pillar_for(s["source_name"] or ""))
@@ -597,6 +653,10 @@ def recheck(db_path=None) -> dict[str, int]:
         if s["status"] != "NEW":
             continue
         text = s["raw_text"] or ""
+        unknown = not WIKI_LINK.match(s["url"] or "") and not s["source_id"].startswith("wikipedia_")
+        if unknown and (s["score"] or 0) > UNKNOWN_MAX_SCORE and not anniversary_soon(text):
+            repository.update_story(s["id"], db_path, score=UNKNOWN_MAX_SCORE)
+            report["capped"] += 1
         if s["source_id"].startswith("wikipedia_") and len(text) > MAX_CHARS:
             repository.update_story(s["id"], db_path, raw_text=fit(text))
             report["trimmed"] += 1

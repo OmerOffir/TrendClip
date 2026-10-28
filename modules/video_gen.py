@@ -17,9 +17,10 @@ The beats are the hook and every scene. Flow:
   5. assembly   trendclip.video_assembler: frame 0 is the thumbnail (YouTube takes it for a video uploaded
                 through the API), so the title card is at full size there with the thumbnail headline
                 (Gemini's thumbnail_text, DA_COVER) over the middle for a second; karaoke captions (3 words, amber highlight), the scene's
-                overlay text flashing in above them, the title card for 3 s, the spoken "Follow for more dark
-                stories." with the red SUBSCRIBE button and the "Follow for more" banner over the last
-                seconds, dramatic music from music/dramatic under the voice.
+                overlay text flashing in above them, the title card for 3 s, dramatic music from
+                music/dramatic under the voice. The Short ends on the story's last line: no spoken "Follow
+                for more", SUBSCRIBE button or banner (they held up the last 5 s of a 29 s Short, and a
+                Short that ends on the story loops); DA_CTA_LINE / DA_CTA_STICKER / DA_END_CARD=auto bring them back.
 The story becomes USED, the video is posted in the channel's Discord channel (DISCORD_CHANNEL_ID in
 channels/darkarchives/channel.env; --quiet skips it) and story_<id>.json next to the video holds the
 title, description (source and credits), hashtags, beats and what drew the pictures.
@@ -54,10 +55,11 @@ DEFAULT_ENGINE = "kokoro"  # DA_TTS_ENGINE: kokoro (narration voice with word ti
 DEFAULT_RATE = "+10%"  # the edge engine: F5 (the Linux voice) is slow at its "normal"; 105 words should take about 46 s
 TAIL = 1.2  # seconds after the last word (the assembler's default 2 s drags for a Short)
 HASHTAGS = ["darkoutliers", "mystery", "unsolved", "truestory", "history", "shorts"]
-DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s (DA_END_CARD); with a handle: "@handle · Follow for more"
+DEFAULT_END_CARD = "Follow for more · dark stories"  # the banner over the last 3.5 s with DA_END_CARD=auto; with a handle: "@handle · Follow for more"
 CHANNEL_DIR = PROJECT_ROOT / "channels" / "darkarchives"
-DEFAULT_CTA_LINE = "Follow for more dark stories."  # spoken after the last scene (DA_CTA_LINE)
-DEFAULT_CTA_STICKER = "subscribe"  # the red button from the spoken line to the end (DA_CTA_STICKER: subscribe / follow / none)
+DEFAULT_CTA_LINE = "none"  # spoken after the last scene (DA_CTA_LINE, e.g. "Follow for more dark stories.")
+DEFAULT_CTA_STICKER = "none"  # the red button from the spoken line to the end (DA_CTA_STICKER: subscribe / follow / none)
+HOOK_FRAMING = ", close-up of the subject, centred, it fills the frame"  # the hook picture of scripts without hook_image_prompt
 ProgressFn = Callable[[float | None, str], None]
 
 
@@ -92,8 +94,9 @@ def spoken_text(script: script_gen.Script) -> str:
 
 
 def beats_of(script: script_gen.Script, cta_line: str = "") -> list[Beat]:
-    """The hook, then every scene; a spoken call to action belongs to the last beat (same picture)."""
-    hook_prompt = (script.scenes[0].image_prompt if script.scenes else script.title) + ", wide establishing shot"
+    """The hook, then every scene; a spoken call to action belongs to the last beat (same picture). The hook
+    is frame 0, the thumbnail: it shows the subject itself (Gemini's hook_image_prompt), not a scene-setter."""
+    hook_prompt = script.hook_image_prompt.strip() or (script.scenes[0].image_prompt if script.scenes else script.title) + HOOK_FRAMING
     beats = [Beat(0, "hook", script.hook_text, "", hook_prompt)]
     beats += [Beat(s.scene_id, f"scene {s.scene_id}", s.narration, s.overlay_text, s.image_prompt) for s in script.scenes]
     if cta_line.strip():
@@ -304,6 +307,13 @@ def delete_video(story_id: int, out_dir: Path | None = None, db_path=None) -> di
     return {"story_id": story_id, "removed": removed, "plan_items": len(plan_items), "status": status}
 
 
+def story_year(script: script_gen.Script) -> int | None:
+    """When the story happened: the first year the narration or the on-screen text names (for photos of the right era)."""
+    text = " ".join([script.hook_text, *(f"{s.narration} {s.overlay_text}" for s in script.scenes)])
+    years = [int(y) for y in re.findall(r"\b(1[0-9]{3}|20[0-9]{2})\b", text) if int(y) <= time.localtime().tm_year]
+    return years[0] if years else None
+
+
 def photo_slots(n_beats: int, n_photos: int) -> list[int]:
     """Which beats show real photos: scene 1, then the middle scene (never the hook)."""
     slots = [1] if n_beats > 1 else []
@@ -411,7 +421,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     photo_list: list[Picture] = []
     if want_photos and story.get("url"):
         progress(0.1, "Looking for the article's photos on Wikimedia Commons")
-        photo_list = scene_images.wikipedia_photos(story["url"], work / "pictures")
+        photo_list = scene_images.wikipedia_photos(story["url"], work / "pictures", year=story_year(script))
     slots = photo_slots(len(beats), len(photo_list))
     prompts = [b.image_prompt for b in beats]
     drawn, backend_used = scene_images.make_pictures(
@@ -436,8 +446,8 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
         for b in beats if b.overlay_text and b.duration > 1.0]
     title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
-    end_card = setting("DA_END_CARD", default_end_card())  # "·" breaks the line; "none" for no card
-    end_card = "" if off(end_card) else end_card
+    end_card = setting("DA_END_CARD", "none")  # "·" breaks the line; "auto" for the handle's banner
+    end_card = "" if off(end_card) else default_end_card() if end_card.lower() == "auto" else end_card
     overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
     cover = setting("DA_COVER", "auto")  # the headline on frame 0 (the thumbnail): auto, your words, or none
     cover = "" if off(cover) else cover_text(script) if cover.lower() == "auto" else cover.upper()

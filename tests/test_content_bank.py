@@ -48,7 +48,7 @@ def test_reddit_feed_parsing():
     s = stories[0]
     assert s["source_id"] == "reddit_abc123" and s["source_name"] == "reddit/UnresolvedMysteries"
     assert s["raw_text"].endswith("Second & last.") and "submitted by" not in s["raw_text"]
-    assert s["score"] == 100 and s["url"].endswith("/abc123/x/") and s["pillar"] == "mystery"
+    assert s["score"] == fetcher.UNKNOWN_MAX_SCORE and s["url"].endswith("/abc123/x/") and s["pillar"] == "mystery"
     long_post = fetcher.parse_reddit_feed(FEED.format(body="It was 1987. " * 400))[0]
     assert fetcher.reddit_story(long_post, "UnresolvedMysteries", cfg) is None  # over 3,500 characters
 
@@ -183,15 +183,17 @@ def test_old_bank_is_migrated_and_rechecked(tmp_path):
                 ("rss_listverse_x_1", "listverse/10 Bizarre Legends", "Flamel's Book", "He wrote a book. " * 20),
                 ("wikipedia_2", "wikipedia/Urban legends", "Urban legend", "Stories people tell. " * 20)]
         conn.executemany("INSERT INTO raw_stories (source_id, source_name, title, raw_text) VALUES (?, ?, ?, ?)", rows)
-    assert fetcher.recheck(db) == {"pillars": 6, "trimmed": 1, "rejected": 3}
+        conn.execute("UPDATE raw_stories SET score = 96 WHERE source_id IN ('reddit_a', 'wikipedia_1')")
+    assert fetcher.recheck(db) == {"pillars": 6, "trimmed": 1, "capped": 1, "rejected": 3}
     a, b, wiki, c, lv, topic = (repository.get_story(i, db) for i in range(1, 7))
     assert lv["status"] == "NEW" and lv["pillar"] == "outrage"  # its list article is on topic
     assert topic["status"] == "REJECTED" and "topic itself" in topic["note"]
-    assert (a["pillar"], a["status"]) == ("outrage", "NEW")
+    assert (a["pillar"], a["status"], a["score"]) == ("outrage", "NEW", fetcher.UNKNOWN_MAX_SCORE)  # no article: not famous
+    assert wiki["score"] == 96
     assert b["status"] == "REJECTED" and b["note"] == "fetch filter: too long (4,000 chars)"
     assert wiki["pillar"] == "history" and len(wiki["raw_text"]) <= 3500 and wiki["status"] == "NEW"
     assert c["status"] == "REJECTED" and "promo" in c["note"]
-    assert fetcher.recheck(db) == {"pillars": 0, "trimmed": 0, "rejected": 0}
+    assert fetcher.recheck(db) == {"pillars": 0, "trimmed": 0, "capped": 0, "rejected": 0}
 
 
 def test_gemini_pillar_split():
@@ -297,7 +299,7 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     assert result["status"] == "SCRIPT_READY" and repository.get_story(1, db)["status"] == "SCRIPT_READY"
     assert "150 words" in prompts[1] and "Cut words" in prompts[1]
     data = json.loads((tmp_path / "scripts" / "story_1.json").read_text())
-    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text", "ranking"]
+    assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text", "hook_image_prompt", "ranking"]
     assert data["story_id"] == 1 and data["total_word_count"] == 55 and data["estimated_duration_seconds"] == 24
     assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 9))
     assert list(data["scenes"][0]) == ["scene_id", "narration", "visual_keywords", "image_prompt", "overlay_text"]
@@ -366,6 +368,15 @@ def test_anniversary_stories_come_first_while_their_date_is_near(monkeypatch):
                         lambda client, model, parts, config, cb, err: (prompts.append(parts[0]) or (SimpleNamespace(parsed=cases, text=""), model)))
     monkeypatch.setattr(script_writer, "_generate_with_fallback",
                         lambda client, model, parts, config, cb, err: (prompts.append(parts[0]) or (SimpleNamespace(parsed=cases, text=""), model)))
-    stories = fetcher.fetch_gemini(5, ["Dyatlov"], client=object(), today=today)
+    stories = fetcher.fetch_gemini(5, ["Dyatlov"], client=object(), today=today, fame=lambda titles: {})
     assert "Today is 2026-10-26" in prompts[0] and "At least 2 of the cases" in prompts[0] and "- Dyatlov" in prompts[0]
+    assert "Prefer FAMOUS cases" in prompts[0]
     assert [(s["title"], s["score"]) for s in stories] == [("Flight 19", 70), ("Mary Celeste", 100), ("Other", 70)]
+
+    # a case with a Wikipedia article scores by its page views and takes the article as its source
+    fame = {"Flight 19": {"views": 40000, "url": "https://en.wikipedia.org/wiki/Flight_19", "pageid": 1},
+            "Other": {"views": 50, "url": "https://en.wikipedia.org/wiki/Other", "pageid": 2}}
+    stories = fetcher.fetch_gemini(5, [], client=object(), today=today, fame=lambda titles: fame)
+    assert [(s["title"], s["score"], s["url"]) for s in stories] == [
+        ("Flight 19", 92, "https://en.wikipedia.org/wiki/Flight_19"), ("Mary Celeste", 100, ""),
+        ("Other", 70, "https://en.wikipedia.org/wiki/Other")]

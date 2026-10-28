@@ -11,8 +11,9 @@ Where they come from (DA_IMAGE_BACKEND in .env):
   placeholder  Dark gradient cards: tests, and machines without a GPU or a paid key.
 
 Wikipedia stories also get real photos: `wikipedia_photos()` takes the article's own pictures from
-Wikimedia Commons (with their author and licence for the credits) and lays them on a blurred copy of
-themselves to fill the 9:16 frame, like the assembler's "blur" fit.
+Wikimedia Commons (with their author and licence for the credits) and crops them to fill the 9:16
+frame. A photo too wide to crop (MAX_PHOTO_ASPECT) or made long before the story (an artist who died
+centuries earlier) is left out and the scene keeps its drawn picture.
 """
 
 from __future__ import annotations
@@ -50,6 +51,8 @@ SKIP_FILE = re.compile(r"(icon|logo|flag|map|seal|coat[ _]of[ _]arms|emblem|symb
 SKIP_CATEGORY = re.compile(r"(\w*maps?\b|diagrams?|charts?\b|\btracks?\b|logos?\b|\bflags?\b|infographics?|drawings?\b|screenshots?|svg)", re.I)
 SKIP_DESCRIPTION = re.compile(r"^\W*(this |a |an )?(map|diagram|chart|graph|drawing|illustration|plot)\b", re.I)
 MIN_PHOTO_WIDTH = 500
+MAX_PHOTO_ASPECT = 1.4  # width / height: a 4:3 photo cropped to 9:16 keeps 42% of its width; a wider one loses the subject
+ERA_GAP = 60  # years: a picture whose artist's last year is this long before the story's is another era
 Progress = Callable[[str], None]
 
 
@@ -324,8 +327,16 @@ def _strip_html(text: str) -> str:
     return html.unescape(re.sub(r"<[^>]+>", "", text or "")).strip()
 
 
-def pick_commons_files(pages: list[dict], limit: int = 2) -> list[CommonsFile]:
-    """The usable photos out of an imageinfo query: JPEG/PNG, wide enough, not a map/flag/icon, biggest first."""
+def wrong_era(artist: str, year: int | None) -> bool:
+    """A picture by someone whose dates all end ERA_GAP years before the story ("Hartmann Schedel
+    (1440-1514)" for a 1980s story). No dates or no story year: not judged."""
+    years = [int(y) for y in re.findall(r"\b(1[0-9]{3}|20[0-9]{2})\b", artist or "")]
+    return bool(year and years) and max(years) < year - ERA_GAP
+
+
+def pick_commons_files(pages: list[dict], limit: int = 2, year: int | None = None) -> list[CommonsFile]:
+    """The usable photos out of an imageinfo query: JPEG/PNG, big enough, not wider than MAX_PHOTO_ASPECT
+    (it fills the 9:16 frame), not a map/flag/icon, not from another era than the story (`year`), biggest first."""
     out = []
     for page in pages:
         title = page.get("title", "")
@@ -335,16 +346,19 @@ def pick_commons_files(pages: list[dict], limit: int = 2) -> list[CommonsFile]:
         if info.get("mime") not in ("image/jpeg", "image/png", "image/tiff"):
             continue
         width, height = int(info.get("width") or 0), int(info.get("height") or 0)
-        if width < MIN_PHOTO_WIDTH or height < 300:
+        if width < MIN_PHOTO_WIDTH or height < 300 or width / height > MAX_PHOTO_ASPECT:
             continue
         meta = info.get("extmetadata") or {}
         if SKIP_CATEGORY.search(_strip_html((meta.get("Categories") or {}).get("value", ""))):
             continue
         if SKIP_DESCRIPTION.search(_strip_html((meta.get("ImageDescription") or {}).get("value", ""))):
             continue
+        artist = _strip_html((meta.get("Artist") or {}).get("value", ""))[:80]
+        if wrong_era(artist, year):
+            continue
         out.append(CommonsFile(
             title=title, url=info.get("thumburl") or info.get("url", ""), width=width, height=height,
-            artist=_strip_html((meta.get("Artist") or {}).get("value", ""))[:80],
+            artist=artist,
             licence=_strip_html((meta.get("LicenseShortName") or {}).get("value", ""))[:40],
             page=info.get("descriptionurl", ""),
         ))
@@ -352,7 +366,7 @@ def pick_commons_files(pages: list[dict], limit: int = 2) -> list[CommonsFile]:
     return out[:limit]
 
 
-def commons_files(url: str, limit: int = 2, timeout: float = 20) -> list[CommonsFile]:
+def commons_files(url: str, limit: int = 2, timeout: float = 20, year: int | None = None) -> list[CommonsFile]:
     """The best `limit` photos of the Wikipedia article at `url` (empty for other sources)."""
     import requests
 
@@ -370,35 +384,29 @@ def commons_files(url: str, limit: int = 2, timeout: float = 20) -> list[Commons
     if not names:
         return []
     r = requests.get(api, params={"action": "query", "prop": "imageinfo", "titles": "|".join(names[:40]),
-                                  "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 1600,
+                                  "iiprop": "url|size|mime|extmetadata", "iiurlwidth": 2600,
                                   "iiextmetadatafilter": "Artist|LicenseShortName|Categories|ImageDescription", "format": "json"},
                      headers=headers, timeout=timeout)
     r.raise_for_status()
-    return pick_commons_files(list(r.json().get("query", {}).get("pages", {}).values()), limit)
+    return pick_commons_files(list(r.json().get("query", {}).get("pages", {}).values()), limit, year)
 
 
 def frame_photo(photo, size: tuple[int, int] = SIZE):
-    """A photo of any shape in a 9:16 frame: the photo over a blurred, darkened copy of itself."""
-    from PIL import Image, ImageEnhance, ImageFilter, ImageOps
+    """A photo cropped to fill the 9:16 frame edge to edge (no bars: a small photo on a blurred band looked
+    like a slideshow), a little above the middle, where the subject usually is."""
+    from PIL import ImageOps
 
-    photo = ImageOps.exif_transpose(photo).convert("RGB")
-    w, h = size
-    back = ImageOps.fit(photo, size, method=3).filter(ImageFilter.GaussianBlur(42))
-    back = ImageEnhance.Brightness(back).enhance(0.45)
-    scale = min(w / photo.width, (h * 0.72) / photo.height)
-    front = photo.resize((max(1, round(photo.width * scale)), max(1, round(photo.height * scale))), Image.LANCZOS)
-    back.paste(front, ((w - front.width) // 2, round(h * 0.42 - front.height / 2)))
-    return back
+    return ImageOps.fit(ImageOps.exif_transpose(photo).convert("RGB"), size, method=3, centering=(0.5, 0.42))
 
 
-def wikipedia_photos(url: str, out_dir: Path, limit: int = 2, timeout: float = 20) -> list[Picture]:
-    """Download the article's best photos, framed 9:16, as out_dir/photo_<n>.jpg. Never raises: a story
-    without usable photos (or no network) gives []."""
+def wikipedia_photos(url: str, out_dir: Path, limit: int = 2, timeout: float = 20, year: int | None = None) -> list[Picture]:
+    """Download the article's best photos, cropped 9:16, as out_dir/photo_<n>.jpg; `year`: when the story
+    happened (pick_commons_files). Never raises: a story without usable photos (or no network) gives []."""
     import requests
     from PIL import Image
 
     try:
-        files = commons_files(url, limit, timeout)
+        files = commons_files(url, limit, timeout, year)
     except Exception as err:  # noqa: BLE001 - photos are a bonus
         logger.warning("Wikipedia photos for %s: %s", url, err)
         return []

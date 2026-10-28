@@ -49,6 +49,7 @@ class ScriptDraft(BaseModel):
     title: str = ""
     hook_text: str = ""
     thumbnail_text: str = Field("", description="2-4 words in CAPITALS for the first frame, the thumbnail.")
+    hook_image_prompt: str = Field("", description="The picture under the hook: the subject itself, close up.")
     scenes: list[SceneDraft] = Field(default_factory=list)
 
 
@@ -76,6 +77,7 @@ class Script(BaseModel):
     total_word_count: int
     scenes: list[Scene]
     thumbnail_text: str = ""  # the headline on frame 0 (scripts from before it existed: made from the hook)
+    hook_image_prompt: str = ""  # the picture on frame 0 (scripts from before it existed: scene 1's, close up)
     ranking: list[RankEntry] = []  # a ranking video: the scenes count down from the last place to rank 1
 
 
@@ -126,6 +128,12 @@ title: a curiosity-gap YouTube title, at most 60 characters, no clickbait lies.
 thumbnail_text: 2-4 words in CAPITALS over the first frame, which is the thumbnail people see before
 they press play: the single strongest curiosity gap of the story, concrete, no spoiler ("5 PLANES.
 NO WRECKAGE", "SHE WAS EMBALMED ALIVE?"). Not the title again.
+
+hook_image_prompt: the picture under the hook and the thumbnail, the first thing a scrolling viewer
+sees. It shows the exact thing the hook names, close up and filling the frame: the ghost ship with
+empty decks, the slashed tent in the snow, five bombers over a dark sea, a courtroom full of
+accused. Never a scene-setter (a desk, a lamp, an old book, files, an archive, an empty room) and
+never a real person's face; same style as the scene prompts.
 
 Set usable=false (with reject_reason, nothing else) if the SOURCE is any of these (today is {today}):
 - not a real dark story you can tell: an announcement, a podcast or show promo, a request for help, a
@@ -193,6 +201,7 @@ def finalize(story_id: int, draft: ScriptDraft) -> Script:
         title=draft.title.strip()[:100],
         hook_text=draft.hook_text.strip(),
         thumbnail_text=" ".join(draft.thumbnail_text.split()).upper()[:40],
+        hook_image_prompt=draft.hook_image_prompt.strip(),
         estimated_duration_seconds=round(n / WORDS_PER_SECOND),
         total_word_count=n,
         scenes=[Scene(scene_id=i, narration=s.narration.strip(),
@@ -271,7 +280,7 @@ def write_script(story: dict, client=None) -> tuple[Script | None, str]:
         ])) or "Fix those problems."
         draft = _ask(client, model, prompt + "\n\n" + FIX_PROMPT.format(
             problems="; ".join(problems), direction=direction,
-            draft=draft.model_dump_json(include={"title", "hook_text", "thumbnail_text", "scenes"})))
+            draft=draft.model_dump_json(include={"title", "hook_text", "thumbnail_text", "hook_image_prompt", "scenes"})))
     raise ScriptGenError(f"Gemini missed the rules {ATTEMPTS} times ({'; '.join(problems)})")
 
 

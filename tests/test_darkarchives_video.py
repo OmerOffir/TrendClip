@@ -57,8 +57,12 @@ def test_cta_line_joins_the_last_beat():
     assert video_gen.off("none") and video_gen.off(" ") and not video_gen.off("Follow")
 
 
-def test_cta_sticker_stays_until_the_end():
+def test_cta_sticker_stays_until_the_end(monkeypatch):
     from trendclip.config import get_settings
+
+    words = estimate_word_timings("One fact. Another fact here.", 4.0)
+    assert video_gen.cta_sticker(get_settings(), words, [], True, True) == ([], [])  # off by default: the Short ends on the story
+    monkeypatch.setenv("DA_CTA_STICKER", "subscribe")
 
     words = estimate_word_timings("One fact. Another fact here. Follow for more dark stories.", 6.0)
     overlays, used = video_gen.cta_sticker(get_settings(), words, [], True, True)
@@ -81,7 +85,7 @@ def test_commons_file_picker_and_article_title():
     assert scene_images.article_title("https://en.m.wikipedia.org/wiki/Dyatlov_Pass_incident") == ("en", "Dyatlov Pass incident")
     assert scene_images.article_title("https://reddit.com/r/x") is None
     pages = [
-        {"title": "File:Mary Celeste engraving.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 1200, "height": 800,
+        {"title": "File:Mary Celeste engraving.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 1000, "height": 800,
          "thumburl": "https://u/thumb.jpg", "url": "https://u/full.jpg", "descriptionurl": "https://commons/x",
          "extmetadata": {"Artist": {"value": "<a href='x'>Rudolph Ruzicka</a>"}, "LicenseShortName": {"value": "Public domain"}}}]},
         {"title": "File:Flag of Canada.svg", "imageinfo": [{"mime": "image/svg+xml", "width": 1200, "height": 600}]},
@@ -95,11 +99,30 @@ def test_commons_file_picker_and_article_title():
         {"title": "File:Deck.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 2200, "height": 1800, "thumburl": "https://u/d.jpg",
          "extmetadata": {"Categories": {"value": "Photographs by John|Flagships of the Royal Navy|Charter boats"}}}]},
     ]
+    pages.append({"title": "File:Wide panorama.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 4000, "height": 2000,
+                  "thumburl": "https://u/w.jpg"}]})  # too wide to fill a 9:16 frame
     picked = scene_images.pick_commons_files(pages, limit=2)
     assert [f.title for f in picked] == ["File:Deck.jpg", "File:Harbour.jpg"]
     assert [f.title for f in scene_images.pick_commons_files(pages, limit=9)][-1] == "File:Mary Celeste engraving.jpg"
     assert scene_images.pick_commons_files(pages, limit=9)[-1].credit == "Photo: Rudolph Ruzicka (Public domain), Wikimedia Commons"
     assert picked[0].credit == "Photo: Wikimedia Commons"
+    old = [{"title": "File:Woodcut.jpg", "imageinfo": [{"mime": "image/jpeg", "width": 1000, "height": 1000, "thumburl": "https://u/o.jpg",
+            "extmetadata": {"Artist": {"value": "Hartmann Schedel (1440-1514)"}}}]}]
+    assert scene_images.pick_commons_files(old, year=1980) == [] and len(scene_images.pick_commons_files(old, year=1490)) == 1
+    assert len(scene_images.pick_commons_files(old)) == 1
+
+
+def test_photos_fill_the_frame_and_the_hook_shows_the_subject():
+    from PIL import Image
+
+    framed = scene_images.frame_photo(Image.new("RGB", (1200, 900), (200, 30, 30)))
+    assert framed.size == (1080, 1920) and framed.getpixel((5, 5)) == framed.getpixel((540, 960)) == (200, 30, 30)
+    sc = _script()
+    assert video_gen.beats_of(sc)[0].image_prompt == "cinematic photo of scene 1" + video_gen.HOOK_FRAMING
+    sc.hook_image_prompt = "cinematic photo of an empty ship's deck, close-up"
+    assert video_gen.beats_of(sc)[0].image_prompt == sc.hook_image_prompt
+    sc.scenes[1].narration = "In December 1872 the ship was found."
+    assert video_gen.story_year(sc) == 1872 and video_gen.story_year(_script()) is None
 
 
 def test_grade_keeps_size_and_darkens_edges(tmp_path):
@@ -170,16 +193,16 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     video = tmp_path / "out" / "story_1.mp4"
     assert video.is_file() and info["filename"] == "story_1.mp4" and 4.8 <= media_duration(video) <= 6.5
     assert [b["label"] for b in info["beats"]] == ["hook", "scene 1", "scene 2", "scene 3"]
-    assert info["beats"][-1]["text"].endswith("Follow for more dark stories.") and info["cta_line"] == "Follow for more dark stories."
-    assert info["stickers"] == ["built-in subscribe button"] and info["end_card"] == "Follow for more · dark stories"
-    assert json.loads((tmp_path / "out" / "story_1" / "voice.words.json").read_text())[-1]["word"] == "stories."
+    assert info["beats"][-1]["text"].endswith("about the ship.") and info["cta_line"] == ""  # it ends on the story
+    assert info["stickers"] == [] and info["end_card"] == ""
+    assert json.loads((tmp_path / "out" / "story_1" / "voice.words.json").read_text())[-1]["word"] == "ship."
     assert info["pictures"] == "placeholder" and info["photos"] == [] and info["music"] is None
     assert (tmp_path / "out" / "story_1" / "pictures" / "beat_4.jpg").is_file()
     assert (tmp_path / "out" / "story_1" / "pictures" / "graded_beat_4.jpg").is_file()
     assert (tmp_path / "out" / "story_1" / "pictures" / "background.mp4").is_file()
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
     ass = (tmp_path / "out" / "story_1.ass").read_text()
-    assert ",EndCard," in ass and "Follow for more\\Ndark stories" in ass and ",Title," in ass and "BEAT 3" in ass
+    assert ",EndCard," not in ass and ",Title," in ass and "BEAT 3" in ass
     assert "0:00:00.00,0:00:00.80,Cover,,0,0,0,,{\\pos(540,960)\\fad(0,160)}A SHIP SAILED\\NFOR" in ass
     assert "{\\fad(0,300)}THE SHIP NOBODY\\NSTEERED" in ass and info["cover_text"] == "A SHIP SAILED FOR"
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
