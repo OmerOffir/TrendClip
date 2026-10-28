@@ -37,6 +37,12 @@ def test_check_video(monkeypatch):
     assert da_produce.check_video({**good, "words": 20}) == ["only 20 words"]
     monkeypatch.setenv("DA_ALLOW_PLACEHOLDER", "1")
     assert da_produce.check_video({**good, "pictures": "placeholder"}) == []
+    ranking = {**good, "duration_seconds": 55, "words": 120, "ranking": [{"rank": 1}]}
+    assert da_produce.check_video(ranking) == []  # a ranking runs longer
+    assert da_produce.check_video({**ranking, "duration_seconds": 61}) == ["61 s long (wanted 35-60)"]
+    assert da_produce.check_video({**ranking, "words": 60}) == ["only 60 words"]
+    monkeypatch.setenv("DA_RANK_MAX_SECONDS", "70")
+    assert da_produce.check_video({**ranking, "duration_seconds": 61}) == []
 
 
 def _bank(tmp_path, titles):

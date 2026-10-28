@@ -10,7 +10,7 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
      - its Shorts script (modules.script_gen; a story Gemini rejects is marked and the next one is tried),
      - the video (modules.video_gen),
      - a check (check_video): length between DA_MIN_SECONDS and DA_MAX_SECONDS (12-30 s: the owner
-       wants short videos first, for engagement), real pictures (not the
+       wants short stories, for engagement; a ranking 35-60 s), real pictures (not the
        placeholder cards), enough words; a video that fails is deleted and the next story is tried,
        MAX_STORY_TRIES stories per slot in all;
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
@@ -58,12 +58,15 @@ def daily_fetch() -> bool:
     return setting("DA_DAILY_FETCH", "1").strip().lower() not in ("0", "false", "off", "none")
 
 
-def length_limits() -> tuple[float, float]:
+def length_limits(ranking: bool = False) -> tuple[float, float]:
+    """(min, max) seconds a video may run: stories 12-30 s (DA_MIN_SECONDS / DA_MAX_SECONDS), rankings
+    35-60 s (DA_RANK_MIN_SECONDS / DA_RANK_MAX_SECONDS: five entries of about ten seconds)."""
+    names, default = (("DA_RANK_MIN_SECONDS", "DA_RANK_MAX_SECONDS"), (35.0, 60.0)) if ranking else (("DA_MIN_SECONDS", "DA_MAX_SECONDS"), (12.0, 30.0))
     try:
-        lo, hi = float(setting("DA_MIN_SECONDS", "12")), float(setting("DA_MAX_SECONDS", "30"))
+        lo, hi = float(setting(names[0], str(default[0]))), float(setting(names[1], str(default[1])))
     except ValueError:
-        lo, hi = 12.0, 30.0
-    return (lo, hi) if lo < hi else (12.0, 30.0)
+        lo, hi = default
+    return (lo, hi) if lo < hi else default
 
 
 def targets(settings, at: datetime, out_dir: Path | None = None) -> list[tuple[Day, str]]:
@@ -91,9 +94,11 @@ def refresh_bank(progress: ProgressFn = lambda f, m: None, db_path=None) -> dict
     return fetcher.run(fetcher.SOURCES, db_path=db_path, progress=each)
 
 
-def check_video(info: dict, min_words: int = 35) -> list[str]:
-    """Why a finished video should not go out (empty = fine)."""
-    lo, hi = length_limits()
+def check_video(info: dict, min_words: int | None = None) -> list[str]:
+    """Why a finished video should not go out (empty = fine). A ranking has its own length and words."""
+    ranking = bool(info.get("ranking"))
+    lo, hi = length_limits(ranking)
+    min_words = (90 if ranking else 35) if min_words is None else min_words
     problems = []
     seconds = float(info.get("duration_seconds") or 0)
     if not lo <= seconds <= hi:
