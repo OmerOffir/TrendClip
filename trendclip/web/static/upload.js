@@ -198,6 +198,7 @@
   // When the Short goes out (the Plan tab's slot); the list is in that order, unplanned ones last.
   function plannedPill(s) {
     if (!s.planned) return '<span class="pill">Not planned</span> ';
+    if (s.planned.past) return `<span class="pill">Was planned ${esc(s.planned.date.slice(5))} ${esc(s.planned.slot)}</span> `;
     const day = new Date(`${s.planned.date}T12:00:00`);
     const today = new Date();
     const diff = Math.round((new Date(day.toDateString()) - new Date(today.toDateString())) / 86400000);

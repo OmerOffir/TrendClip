@@ -253,19 +253,22 @@ def test_start_login_twice_drops_expired_flows(tmp_path, monkeypatch):
     publish._flows.clear()
 
 
-def test_the_upload_list_follows_the_plan(client):
-    from datetime import date
+def test_the_upload_list_follows_the_plan(client, monkeypatch):
+    from datetime import date, datetime
 
     from trendclip import planner
 
     http, settings = client
-    for name in ("level2.mp4", "level3.mp4", "riddle.mp4", "loose.mp4"):
+    for name in ("old.mp4", "level2.mp4", "level3.mp4", "riddle.mp4", "loose.mp4"):
         add_short(settings, name)
         http.post(f"/api/shorts/{name}/ready", json={"ready": True})
     for name, day, slot in (("level3.mp4", date(2026, 10, 29), "23:00"), ("level2.mp4", date(2026, 10, 29), "14:30"),
-                            ("riddle.mp4", date(2026, 10, 28), "23:00")):
+                            ("riddle.mp4", date(2026, 10, 28), "23:00"), ("old.mp4", date(2026, 10, 20), "14:30")):
         planner.add_item(settings, planner.ItemRequest(date=day, slot=slot, short=name))
+    now = datetime(2026, 10, 28, 22, 30, tzinfo=settings.tz)
+    monkeypatch.setattr(web.assistant, "now", lambda s: now)
     queue = http.get("/api/upload/shorts").json()
-    # The newest (level3, loose) no longer comes first: what goes out next does, the unplanned last.
-    assert [s["filename"] for s in queue] == ["riddle.mp4", "level2.mp4", "level3.mp4", "loose.mp4"]
-    assert queue[0]["planned"] == {"date": "2026-10-28", "slot": "23:00"} and queue[-1]["planned"] is None
+    # The newest (level3, loose) no longer comes first: what goes out next does; gone-by and unplanned last.
+    assert [s["filename"] for s in queue] == ["riddle.mp4", "level2.mp4", "level3.mp4", "loose.mp4", "old.mp4"]
+    assert queue[0]["planned"] == {"date": "2026-10-28", "slot": "23:00", "past": False}
+    assert queue[3]["planned"] is None and queue[4]["planned"]["past"] is True
