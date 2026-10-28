@@ -1183,7 +1183,8 @@ def gamer_question(text: str, options: tuple[str, str, str]) -> str:
 
 def gamer_title(title: str, game: str) -> str:
     """The LLM's title when it names the game without a dare (not shouted in capitals), else a fans' line."""
-    title = " ".join(re.sub(r"[^\w\s'’!?,.&%:-]", "", title or "").split()).strip(" -:,")
+    title = re.sub(r"\b(level|lvl|lv)\.?\s*\d+\b", "", title or "", flags=re.I)  # the video adds its own level
+    title = " ".join(re.sub(r"[^\w\s'’!?,.&%:-]", "", title).split()).strip(" -:,|")
     if title.isupper():
         title = title.title()
     words = set(re.findall(r"[a-z0-9]+", title.lower()))

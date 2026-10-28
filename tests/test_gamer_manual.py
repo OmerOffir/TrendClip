@@ -157,6 +157,8 @@ def test_questions_titles_and_banners_from_hand_written_answers_are_cleaned(tmp_
     assert quiz.gamer_title("ONLY 4% CAN KEEP UP", "Minecraft") == "Real Minecraft Fans Know This"
     assert quiz.gamer_title("Minecraft Veterans Beat This Instantly 🧠", "Minecraft") == "Minecraft Veterans Beat This Instantly"
     assert quiz.gamer_title("GTA Fans Always Miss This", gta) == "GTA Fans Always Miss This"
+    assert quiz.gamer_title("Real Minecraft Players Know This Level 4", "Minecraft") == "Real Minecraft Players Know This"
+    assert quiz.gamer_title("GTA V Fans: Level 6 🎮", gta) == "GTA V Fans"
     assert quiz.gamer_card(3, "BETA ENDING", gta) == "LEVEL 3 - GTA V FANS ONLY"
     assert quiz.gamer_card(3, "CS2", "Counter-Strike 2") == "LEVEL 3 - CS2 FANS ONLY"
     s = make_settings(tmp_path)
