@@ -905,3 +905,24 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .ch-hub-head .spacer { flex: 1; }
 .ch-hub-head button { width: auto; margin: 0; }
 @media (max-width: 700px) { .bw-slot { grid-template-columns: 48px minmax(0, 1fr); } .bw-slot .bw-btns { grid-column: 1 / -1; justify-content: flex-start; } }
+
+/* Upcoming: every channel's slots in one list */
+.ws-mark-up { background: linear-gradient(135deg, #1f4e79, #2f8f83); }
+.up-list { display: grid; gap: 14px; }
+.up-day { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
+.up-day.today { border-color: rgba(61, 220, 151, 0.5); }
+.up-date { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.up-date small { color: var(--muted); }
+.up-row { display: grid; grid-template-columns: 56px 44px 1fr auto; align-items: center; gap: 10px; padding: 7px 4px; border-top: 1px solid var(--border); }
+.up-row:first-of-type { border-top: 0; }
+.up-row .time { font-variant-numeric: tabular-nums; font-weight: 600; }
+.up-row .mark { font-size: 11px; font-weight: 700; letter-spacing: 0.04em; padding: 3px 6px; border-radius: 6px; color: #fff; text-align: center; }
+.up-row .mark.sidequestlogic { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+.up-row .mark.darkarchives { background: linear-gradient(135deg, #2b2d42, #6d1a2b); }
+.up-row .mark.borderlinewhy { background: linear-gradient(135deg, #1b5e20, #0f3d5e); }
+.up-row.empty .title { color: var(--muted); font-style: italic; }
+.up-row.passed { opacity: 0.55; }
+.up-row.twice { background: rgba(242, 163, 58, 0.12); }
+.up-row .title small { color: var(--muted); margin-left: 6px; }
+.up-row .actions { display: flex; gap: 6px; align-items: center; }
+@media (max-width: 640px) { .up-row { grid-template-columns: 50px 40px 1fr; } .up-row .actions { grid-column: 1 / -1; } }

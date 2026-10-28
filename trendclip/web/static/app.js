@@ -817,6 +817,7 @@
     document.querySelectorAll("[data-workspace-panel]").forEach((p) => { p.hidden = p.dataset.workspacePanel !== id; });
     document.body.dataset.workspace = id;
     localStorage.setItem("trendclip.workspace", id);
+    document.dispatchEvent(new CustomEvent("trendclip:workspace", { detail: { workspace: id } }));
   }
   workspaces.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-workspace]:not(:disabled)");

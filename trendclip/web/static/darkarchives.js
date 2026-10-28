@@ -649,7 +649,9 @@
     plan.hint.textContent = d.auto_post
       ? `The Discord bot uploads each slot's video to the Dark Outliers channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
       : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`;
-    const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube) && !(v.sent && v.sent.hub));
+    // the empty slot's dropdown: videos not on YouTube, not sent to the hub, and not planned already (a video
+    // planned twice went out twice once; a planned one shows its date on its card in Videos)
+    const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube) && !(v.sent && v.sent.hub) && !v.planned.length);
     const byKey = {};
     d.items.forEach((i) => { byKey[`${i.date} ${i.slot}`] = i; });
     const start = new Date(now.getTime() + plan.offset * DAY_MS);
@@ -676,12 +678,12 @@
               ${yt.done ? "" : `<button type="button" class="btn-ghost" data-posted="${item.id}" title="I uploaded it myself">Mark posted</button>`}
               <button type="button" class="btn-ghost" data-remove="${item.id}" title="Take it off the plan">✕</button></div>`;
           }
-          const options = unplanned.map((v) => `<option value="${v.story_id}">${esc(v.title)} (${v.duration_seconds}s${v.planned.length ? ", planned " + esc(v.planned[0]) : ""})</option>`).join("");
+          const options = unplanned.map((v) => `<option value="${v.story_id}">${esc(v.title)} (${v.duration_seconds}s)</option>`).join("");
           return `<div class="da-plan-slot"><span class="time">${slot}</span>
             ${passed ? '<span class="hint">passed</span>' : options
               ? `<select aria-label="Video for ${iso} ${slot}"><option value="">— pick a video —</option>${options}</select>
                  <button type="button" class="btn-secondary" data-add="${iso}" data-slot="${slot}">Add</button>`
-              : '<span class="hint">free · make a video first</span>'}</div>`;
+              : '<span class="hint">free · every finished video is planned already: make a new one</span>'}</div>`;
         }).join("")}</div>
       </div>`).join("");
   }

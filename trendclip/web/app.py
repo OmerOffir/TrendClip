@@ -702,6 +702,15 @@ def get_plan() -> dict[str, Any]:
     return planner.view(_base_settings())
 
 
+@app.get("/api/upcoming")
+def get_upcoming() -> dict[str, Any]:
+    """Every channel's upload slots for the coming week in one list: the planned video and its state, or
+    the slot shown empty (modules.upcoming)."""
+    from modules import upcoming
+
+    return upcoming.view(_base_settings())
+
+
 def _plan_item_or_http(fn, *args):
     settings = _base_settings()
     try:
