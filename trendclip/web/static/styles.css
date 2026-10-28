@@ -925,4 +925,5 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .up-row.twice { background: rgba(242, 163, 58, 0.12); }
 .up-row .title small { color: var(--muted); margin-left: 6px; }
 .up-row .actions { display: flex; gap: 6px; align-items: center; }
+.up-row .pill { white-space: nowrap; }
 @media (max-width: 640px) { .up-row { grid-template-columns: 50px 40px 1fr; } .up-row .actions { grid-column: 1 / -1; } }
