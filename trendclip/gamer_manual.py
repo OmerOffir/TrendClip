@@ -5,8 +5,8 @@ quota or you'd rather use another model. The steps are Gemini's own, with you ca
              paste the LLM's JSON with a few candidate questions
   2. facts   the fact-check prompt (better in a second LLM with web search); you paste its "1: PASS" lines.
              None passed: back to 1 with the reasons, and the rejected questions are never asked for again
-  3. ready   the first question that passed becomes the next level's Short over no-copyright gameplay of its
-             own game (assistant.create_gamer_short), planned in the slot you pick
+  3. ready   every question that passed can become a Short (you tick which): each is the next level, over
+             new no-copyright gameplay of its own game (assistant.create_gamer_short), in the next free slot
 
 Each session is a folder output/gamer_manual/<id>/ with state.json, so it survives a restart.
 """
@@ -73,6 +73,13 @@ def _save(folder: Path, state: dict[str, Any]) -> None:
     (folder / "state.json").write_text(json.dumps(state, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
+def _made(state: dict[str, Any]) -> dict[str, str]:
+    """{question index: video filename}; a session from before several videos per session made only its chosen one."""
+    if state.get("video") and not state.get("made"):
+        return {str(state.get("chosen") or 0): state["video"]}
+    return dict(state.get("made") or {})
+
+
 def _candidates(state: dict[str, Any]) -> list[quiz.GeminiGamer]:
     return [quiz.GeminiGamer.model_validate(c) for c in state.get("candidates") or []]
 
@@ -114,8 +121,12 @@ def answer(settings: Settings, sid: str, text: str) -> dict[str, Any]:
     asked = {a.lower() for a in quiz.gamer_asked(settings) + state["rejected"]}
     usable, problems = [], []
     for c in batch.candidates:
-        if not quiz._trivia_options(c):
+        options = quiz._trivia_options(c)
+        if not options:
             problems.append(f"{c.question!r}: needs three short, different options")
+        elif not quiz.gamer_question(c.question, options):
+            problems.append(f"{c.question!r}: the question alone (without the options) must be at most "
+                            f"{quiz.GAMER_MAX_WORDS} words")
         elif f"{c.question} ({c.correct})".lower() in asked:
             problems.append(f"{c.question!r}: already asked")
         else:
@@ -140,7 +151,7 @@ def facts(settings: Settings, sid: str, text: str) -> dict[str, Any]:
     verdicts = quiz.read_verdicts(text, len(candidates))
     passed = [i for i, (ok, _) in enumerate(verdicts) if ok]
     if passed:
-        state.update(step="ready", verdicts=verdicts, chosen=passed[0], problems=[])
+        state.update(step="ready", verdicts=verdicts, made={}, problems=[])
     else:
         state.update(step="write", verdicts=verdicts, candidates=[],
                      rejected=state["rejected"] + [f"{c.question} ({c.correct})" for c in candidates],
@@ -149,29 +160,31 @@ def facts(settings: Settings, sid: str, text: str) -> dict[str, Any]:
     return view(settings, sid)
 
 
-def choose(settings: Settings, sid: str, index: int) -> dict[str, Any]:
-    """Make another question that passed the fact check the one for the video."""
-    folder = _folder(settings, sid)
-    state = _state(folder)
-    if state["step"] != "ready" or not (0 <= index < len(state["verdicts"])) or not state["verdicts"][index][0]:
-        raise ManualError("Only a question that passed the fact check can be chosen")
-    state["chosen"] = index
-    _save(folder, state)
-    return view(settings, sid)
-
-
-def question(settings: Settings, sid: str) -> tuple[str, quiz.GeminiGamer, str]:
-    """(game, the chosen question, its shape) of a ready session."""
+def to_make(settings: Settings, sid: str, indices: list[int]) -> tuple[str, str, list[tuple[int, quiz.GeminiGamer]]]:
+    """(game, shape, [(index, question)]) for the chosen questions: each must have passed and not be made yet."""
     state = _state(_folder(settings, sid))
-    if state["step"] != "ready":
+    if state["step"] not in ("ready", "made"):
         raise ManualError("No question has passed the fact check yet")
-    return state["game"], _candidates(state)[state["chosen"]], state["shape"]
+    candidates, verdicts, made = _candidates(state), state["verdicts"], _made(state)
+    picked = []
+    for i in dict.fromkeys(indices):
+        if not (0 <= i < len(candidates)) or not verdicts[i][0]:
+            raise ManualError(f"Question {i + 1} didn't pass the fact check")
+        if str(i) in made:
+            raise ManualError(f"Question {i + 1} is already a video ({made[str(i)]})")
+        picked.append((i, candidates[i]))
+    if not picked:
+        raise ManualError("Tick at least one question")
+    return state["game"], state["shape"], picked
 
 
-def mark_made(settings: Settings, sid: str, filename: str) -> None:
+def mark_made(settings: Settings, sid: str, index: int, filename: str) -> None:
+    """Question `index` is a video now; the session is done once every question that passed is."""
     folder = _folder(settings, sid)
     state = _state(folder)
-    state.update(step="made", video=filename)
+    made = {**_made(state), str(index): filename}
+    passed = {str(i) for i, (ok, _) in enumerate(state["verdicts"]) if ok}
+    state.update(made=made, step="made" if passed <= set(made) else "ready")
     _save(folder, state)
 
 
@@ -182,7 +195,7 @@ def _prompt(settings: Settings, state: dict[str, Any]) -> str:
     """The prompt to copy for this step (each is whole, so a fresh chat or another LLM works too)."""
     if state["step"] == "write":
         asked = quiz.gamer_asked(settings) + state["rejected"]
-        return "\n\n".join([quiz.QUIZ_INSTRUCTION, quiz.gamer_prompt(settings, state["game"], state["shape"], asked),
+        return "\n\n".join([quiz.GAMER_INTRO, quiz.gamer_prompt(settings, state["game"], state["shape"], asked),
                             JSON_FORMAT.replace("{count}", str(quiz.GAMER_CANDIDATES))])
     if state["step"] == "facts":
         return quiz.GAMER_CHECK.format(candidates=quiz.check_listing(_candidates(state))) + "\n" + FACTS_FORMAT
@@ -191,16 +204,17 @@ def _prompt(settings: Settings, state: dict[str, Any]) -> str:
 
 def view(settings: Settings, sid: str) -> dict[str, Any]:
     state = _state(_folder(settings, sid))
-    verdicts = state.get("verdicts") or []
+    verdicts, made = state.get("verdicts") or [], _made(state)
     questions = []
     for i, c in enumerate(_candidates(state)):
         ok, why = verdicts[i] if i < len(verdicts) else (None, "")
-        questions.append({"question": c.question, "options": [c.trap, c.distractor, c.correct], "correct": c.correct,
-                          "fact": c.fact, "title": c.title, "passed": ok, "why": why})
+        options = quiz._trivia_options(c)
+        questions.append({"question": c.question, "spoken": quiz.gamer_question(c.question, options) if options else "",
+                          "options": [c.trap, c.distractor, c.correct], "correct": c.correct, "fact": c.fact,
+                          "passed": ok, "why": why, "video": made.get(str(i))})
     return {"id": sid, "game": state["game"], "shape": state["shape"], "step": state["step"],
             "level": quiz.gamer_level(settings), "prompt": _prompt(settings, state), "problems": state.get("problems") or [],
-            "questions": questions, "chosen": state.get("chosen"), "video": state.get("video"),
-            "created_at": state.get("created_at", "")}
+            "questions": questions, "created_at": state.get("created_at", "")}
 
 
 def sessions(settings: Settings) -> list[dict[str, Any]]:

@@ -557,9 +557,17 @@ What makes a candidate good:
   "it depends" (platform, edition, game mode or patch): say which when it matters ("in Java Edition").
 - About {game} itself (or its series), never a generic gaming question.
 - Never current player counts, sales, prices of real money, esports results or "most popular".
-- Every option short and easy to say, written as spoken after "Is it ...?".
+- Every option short and easy to say, written as spoken after "Is it ...?"; numbers as digits ("16").
+- The question alone, at most 14 words: never the options in it (the video reads "Is it A? B? Or C?"),
+  and no dare in it ("Only 3% ...", "Don't pause", "You have five seconds").
+- The title names the game and speaks to its fans ("Real Minecraft Players Know This"); no dares
+  ("Stop", "Don't pause", "Only 3%"). short_name is just the game's short name (MINECRAFT, GTA), not the topic.
 - Not one of these, already asked on the channel: {used}.
 {notes}"""
+
+GAMER_INTRO = """You write questions for "Gamer IQ", a YouTube Shorts series: each video asks the fans of one game a
+question about that game while its gameplay plays in the background, reads three options, counts down from 3
+and asks viewers to comment their answer. Every video is the next numbered level. Plain English."""
 
 GAMER_CHECK = """Fact-check these video game questions with Google Search. For each candidate, PASS only if ALL hold:
 1. The claimed correct answer is true in the current version of the game, by the game's wiki or its makers.
@@ -1139,10 +1147,56 @@ def pick_gamer_shape(settings: Settings, rng: random.Random) -> str:
     return rng.choice([s for s in GAMER_SHAPES if s not in recent] or list(GAMER_SHAPES))
 
 
+GAMER_MAX_WORDS = 16
+_OPTION_ASK = re.compile(r"^(is it|or|was it|are they)\b", re.I)
+_PURE_DARE = re.compile(r"^(stop|don'?t pause|do not pause|no pausing|quick|think fast|be honest)\b", re.I)
+_GAMER_DARE = re.compile(r"\d+\s*%|\b(stop|don'?t pause|do not pause|five seconds|bet you|nobody|instincts?)\b", re.I)
+
+
+def game_name(game: str) -> str:
+    """The game as fans say it: "GTA V / Online" -> "GTA V"."""
+    return re.split(r"[/:(]", game)[0].strip() or game.strip()
+
+
+def _game_words(game: str) -> set[str]:
+    words = [w for w in re.split(r"[\s/:()-]+", game.lower()) if w]
+    initials = "".join(w[0] for w in words if w[0].isalnum())
+    return {w for w in words if len(w) > 1 or w.isdigit()} | {initials}
+
+
+def gamer_question(text: str, options: tuple[str, str, str]) -> str:
+    """The question as spoken before the options: without the options an LLM wrote into it ("Is it A, B or C?")
+    or a bare dare ("Don't pause."); "" when what is left is no usable question or too long to speak."""
+    sentences = re.findall(r"[^.!?]+[.!?]*", " ".join((text or "").split()))
+    keep = []
+    for sentence in (x.strip() for x in sentences):
+        named = sum(bool(re.search(rf"\b{re.escape(o)}\b", sentence, re.I)) for o in options)
+        if not sentence or _OPTION_ASK.search(sentence) or named >= 2 or (
+                _PURE_DARE.search(sentence) and len(sentence.split()) <= 4):
+            continue
+        keep.append(sentence)
+    question = " ".join(keep).strip().rstrip(",;:")
+    if not question or len(question.split()) > GAMER_MAX_WORDS:
+        return ""
+    return question if question[-1] in ".!?" else question + "?"
+
+
+def gamer_title(title: str, game: str) -> str:
+    """The LLM's title when it names the game without a dare (not shouted in capitals), else a fans' line."""
+    title = " ".join(re.sub(r"[^\w\s'’!?,.&%:-]", "", title or "").split()).strip(" -:,")
+    if title.isupper():
+        title = title.title()
+    words = set(re.findall(r"[a-z0-9]+", title.lower()))
+    if not title or len(title) > 50 or _GAMER_DARE.search(title) or not words & _game_words(game):
+        return f"Real {game_name(game)} Fans Know This"
+    return title
+
+
 def gamer_card(level: int, short_name: str, game: str) -> str:
-    """The frame-0 banner: the level (a series to come back to) and who it is for."""
-    name = " ".join(re.sub(r"[^\w\s&-]", " ", short_name or "").split()).upper()[:12]
-    name = name or re.split(r"[/:(]", game)[0].strip().upper()[:12] or "GAMERS"
+    """The frame-0 banner: the level (a series to come back to) and who it is for (the game, never the topic)."""
+    name = " ".join(re.sub(r"[^\w\s&-]", " ", short_name or "").split()).upper()
+    if not name or len(name) > 12 or not set(name.lower().split()) & _game_words(game):
+        name = game_name(game).upper()[:12] or "GAMERS"
     return f"LEVEL {level} - {name} FANS ONLY"
 
 
@@ -1171,7 +1225,7 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     result = None
     for _ in range(TRIVIA_ROUNDS):
         batch, model = _ask(client, model, GeminiGamerSet, gamer_prompt(settings, game, shape, asked, notes), progress)
-        usable = [c for c in batch.candidates if _trivia_options(c)]
+        usable = [c for c in batch.candidates if _trivia_options(c) and gamer_question(c.question, _trivia_options(c))]
         if not usable:
             continue
         progress(None, f"Fact-checking the {game} questions on Google")
@@ -1190,17 +1244,23 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
 
 
 def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: str, model: str,
-                 format: str = "short", rng: random.Random | None = None) -> ShortScript:
-    """The Short of one checked Gamer IQ question, as the next level (recorded in the history)."""
+                 format: str = "short", rng: random.Random | None = None, level: int | None = None,
+                 record: bool = True) -> ShortScript:
+    """The Short of one checked Gamer IQ question, as the next level (recorded in the history), or as `level`
+    without recording it (a level made again)."""
+    from . import script_writer as sw
     from .stickers import Reaction
 
     rng = rng or random.Random()
-    level = gamer_level(settings)
+    level = level or gamer_level(settings)
     trap, distractor, correct = _trivia_options(result)
-    question = (_one_line(result.question, 14).rstrip(".!?") or "Which one is it") + "?"
+    question = gamer_question(result.question, (trap, distractor, correct))
+    if not question:
+        raise sw.ScriptError(f"The question is too long to speak or only lists the options: {result.question!r}")
     options = [trap, distractor, correct]
     rng.shuffle(options)
-    _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))
+    if record:
+        _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))
     hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
     asks = [f"Is it {options[0]}?", f"{options[1][:1].upper()}{options[1][1:]}?", f"Or {options[2]}?"]
     # Like the trivia trap: the question is the first word spoken and the Short loops back into it.
@@ -1216,8 +1276,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
     flashes += [*COUNTDOWN_FLASHES, got_it(end)]
     pinned = (public_pin(question, hint) + f"\n🏆 First correct answer gets 10 leaderboard points. "
               f"Level {level + 1} drops next!")
-    title = re.sub(r"[^\w\s'’!?,.&:-]", "", result.title).strip()[:50].rstrip(" -:,")
-    pack = result.model_copy(update={"title": f"{title or GAMER_HOOK.format(game=game)} | Level {level} 🎮"})
+    pack = result.model_copy(update={"title": f"{gamer_title(result.title, game)} | Level {level} 🎮"})
     script = _script(settings, game, model, "gamer", format, " ".join(lines), GAMER_HOOK.format(game=game), flashes,
                      correct, pinned, pack, on_screen=f"Answer: {correct} (trap: {trap}). {result.fact.strip()}",
                      card=gamer_card(level, result.short_name, game), end_card=LOOP_CARD)

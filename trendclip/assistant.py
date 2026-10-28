@@ -198,13 +198,15 @@ def create_auto_short(settings: Settings, game: str | None, progress: ProgressFn
 
 
 def create_gamer_short(settings: Settings, game: str, question: "quiz.GeminiGamer", shape: str,
-                       progress: ProgressFn = _noop, model: str = "manual") -> shorts.ShortVideo:
+                       progress: ProgressFn = _noop, model: str = "manual", level: int | None = None) -> shorts.ShortVideo:
     """A Gamer IQ Short from a question that is already written and checked (by hand, with any LLM), over
-    gameplay of its own game only."""
+    gameplay of its own game only: the next level, or `level` when a video is made again."""
+    script = quiz.gamer_script(settings, game, question, shape=shape, model=model, level=level, record=False)
     clip = fresh_clip(settings, game, progress, only=(game,))
     if clip.game != game:
         raise DownloadError(f"No {game} gameplay could be downloaded, and the question is about {game}")
-    script = quiz.gamer_script(settings, game, question, shape=shape, model=model)
+    if level is None:  # recorded only once the clip is there, so a failed download doesn't use up a level
+        script = quiz.gamer_script(settings, game, question, shape=shape, model=model)
     return _render_script(settings, clip, script, progress, "gamer")
 
 

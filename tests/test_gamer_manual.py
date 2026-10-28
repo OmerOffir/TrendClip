@@ -26,7 +26,7 @@ def test_write_it_myself_prompt_answer_fact_check_then_ready(tmp_path):
     view = gamer_manual.start(s, "Minecraft", random.Random(1))
     assert view["step"] == "write" and view["level"] == 1
     assert "about Minecraft" in view["prompt"] and '"candidates"' in view["prompt"] and "Write 4 candidates" in view["prompt"]
-    assert quiz.QUIZ_INSTRUCTION[:40] in view["prompt"]  # no system prompt by hand: it leads the prompt
+    assert quiz.GAMER_INTRO[:40] in view["prompt"] and "Only 3%" not in view["prompt"].split("What makes")[0]
 
     bad = gamer(trap="10")  # two options are the same
     pasted = "Sure! Here you go:\n```json\n" + candidates(gamer(), bad).replace('"10"', '"10",', 0) + "\n```"
@@ -37,9 +37,9 @@ def test_write_it_myself_prompt_answer_fact_check_then_ready(tmp_path):
     with pytest.raises(gamer_manual.ManualError, match="verdict lines"):
         gamer_manual.facts(s, view["id"], "Looks right to me")
     view = gamer_manual.facts(s, view["id"], "**1: PASS** - checked on the wiki")
-    assert view["step"] == "ready" and view["chosen"] == 0 and view["questions"][0]["passed"] is True
-    game, question, shape = gamer_manual.question(s, view["id"])
-    assert game == "Minecraft" and question.correct == "10" and shape in quiz.GAMER_SHAPES
+    assert view["step"] == "ready" and view["questions"][0]["passed"] is True
+    game, shape, picked = gamer_manual.to_make(s, view["id"], [0])
+    assert game == "Minecraft" and picked[0][1].correct == "10" and shape in quiz.GAMER_SHAPES
     assert gamer_manual.sessions(s)[0]["id"] == view["id"]
 
 
@@ -72,35 +72,97 @@ def test_a_manual_question_becomes_the_next_level_over_its_own_game(tmp_path, mo
         assistant.create_gamer_short(s, "Minecraft", gamer(), "number")
 
 
-def test_the_dashboard_runs_the_whole_flow(tmp_path, monkeypatch):
+def test_the_dashboard_makes_every_ticked_question_in_the_next_free_slots(tmp_path, monkeypatch):
+    import time
+
     s = make_settings(tmp_path)
     monkeypatch.setattr(web, "_base_settings", lambda: s)
     monkeypatch.setattr(web.video_downloader, "get_library", lambda settings: (_ for _ in ()).throw(RuntimeError("offline")))
     client = TestClient(web.app)
     listing = client.get("/api/gamer/manual").json()
-    assert listing["games"] == ["Minecraft"] and listing["level"] == 1 and listing["slots"]
+    assert listing["games"] == ["Minecraft"] and listing["level"] == 1 and len(listing["slots"]) >= 3
     sid = client.post("/api/gamer/manual", json={"game": "Minecraft"}).json()["id"]
     assert client.post(f"/api/gamer/manual/{sid}/answer", json={"text": "no json here"}).status_code == 400
-    client.post(f"/api/gamer/manual/{sid}/answer", json={"text": candidates(gamer(), gamer(question="Q2", correct="7"))})
-    view = client.post(f"/api/gamer/manual/{sid}/facts", json={"text": "1: FAIL: no\n2: PASS"}).json()
-    assert view["chosen"] == 1
-    assert client.post(f"/api/gamer/manual/{sid}/choose", json={"index": 0}).status_code == 400  # it failed
-    made, name = {}, add_short(s, "mc.mp4")
-    monkeypatch.setattr(assistant, "create_gamer_short", lambda settings, game, q, shape, progress: made.update(
-        game=game, q=q.question) or web.shorts.get_short(settings, name))
-    slot = listing["slots"][0]
-    job = client.post(f"/api/gamer/manual/{sid}/make", json=slot).json()
+    qs = [gamer(), gamer(question="Q2 in Minecraft", correct="7"), gamer(question="Q3 in Minecraft", correct="8"),
+          gamer(question="Q4 in Minecraft", correct="9")]
+    client.post(f"/api/gamer/manual/{sid}/answer", json={"text": candidates(*qs)})
+    view = client.post(f"/api/gamer/manual/{sid}/facts", json={"text": "1: PASS\n2: FAIL: no\n3: PASS\n4: PASS"}).json()
+    assert view["step"] == "ready"
+    assert client.post(f"/api/gamer/manual/{sid}/make", json={"indices": [1]}).status_code == 400  # it failed
+    made = []
+
+    def create(settings, game, q, shape, progress):
+        made.append(q.question)
+        name = add_short(settings, f"mc{len(made)}.mp4")
+        if q.question.startswith("Q4"):
+            raise RuntimeError("download failed")
+        return web.shorts.get_short(settings, name)
+
+    monkeypatch.setattr(assistant, "create_gamer_short", create)
+    body = client.post(f"/api/gamer/manual/{sid}/make", json={"indices": [0, 2, 3]}).json()
+    expected = [(x["day"], x["slot"]) for x in listing["slots"][:3]]
+    assert [(j["index"], j["day"], j["slot"]) for j in body["jobs"]] == [(i, *e) for i, e in zip([0, 2, 3], expected)]
+    for job in body["jobs"]:
+        for _ in range(100):
+            state = client.get(f"/api/create/jobs/{job['id']}").json()
+            if state["status"] in ("done", "error"):
+                break
+            time.sleep(0.05)
+    assert made == ["How many obsidian blocks make the smallest Nether portal", "Q3 in Minecraft", "Q4 in Minecraft"]
+    view = client.get(f"/api/gamer/manual/{sid}").json()
+    assert [q["video"] for q in view["questions"]] == ["mc1.mp4", None, "mc2.mp4", None]
+    assert view["step"] == "ready"  # Q4 failed: it can be made again
+    for (day, slot), name in zip(expected[:2], ["mc1.mp4", "mc2.mp4"]):
+        assert planner.slot_item(s, date.fromisoformat(day), slot).short == name
+    assert client.post(f"/api/gamer/manual/{sid}/make", json={"indices": [0]}).status_code == 400  # already made
+    monkeypatch.setattr(assistant, "create_gamer_short", lambda settings, game, q, shape, progress: web.shorts.get_short(
+        settings, add_short(settings, "mc9.mp4")))
+    job = client.post(f"/api/gamer/manual/{sid}/make", json={"indices": [3], "plan": False}).json()["jobs"][0]
+    assert job["day"] is None
     for _ in range(100):
-        state = client.get(f"/api/create/jobs/{job['id']}").json()
-        if state["status"] in ("done", "error"):
+        if client.get(f"/api/create/jobs/{job['id']}").json()["status"] == "done":
             break
-        import time
         time.sleep(0.05)
-    assert state["status"] == "done", state
-    assert made == {"game": "Minecraft", "q": "Q2"}
     assert client.get(f"/api/gamer/manual/{sid}").json()["step"] == "made"
-    item = planner.slot_item(s, date.fromisoformat(slot["day"]), slot["slot"])
-    assert item and item.short == "mc.mp4"
+    assert not any(i.short == "mc9.mp4" for i in planner.load(s).items)  # not planned: it waits in Upload
+
+
+def test_a_session_from_before_several_videos_keeps_its_made_question(tmp_path):
+    s = make_settings(tmp_path)
+    sid = gamer_manual.start(s, "Minecraft")["id"]
+    gamer_manual.answer(s, sid, candidates(gamer(), gamer(question="Q2 in Minecraft", correct="7")))
+    gamer_manual.facts(s, sid, "1: PASS\n2: PASS")
+    folder = gamer_manual.root(s) / sid
+    state = json.loads((folder / "state.json").read_text())
+    state.update(step="made", chosen=0, video="old.mp4")
+    state.pop("made")
+    (folder / "state.json").write_text(json.dumps(state))
+    assert [q["video"] for q in gamer_manual.view(s, sid)["questions"]] == ["old.mp4", None]
+    with pytest.raises(gamer_manual.ManualError, match="already a video"):
+        gamer_manual.to_make(s, sid, [0])
+    assert gamer_manual.to_make(s, sid, [1])[2][0][0] == 1
+
+
+def test_questions_titles_and_banners_from_hand_written_answers_are_cleaned(tmp_path):
+    gta = "GTA V / Online"
+    assert quiz.gamer_question("Find the fake Minecraft mob in five seconds. Is it the Zoglin, the Stray, or the Wraith?",
+                               ("Zoglin", "Stray", "Wraith")) == "Find the fake Minecraft mob in five seconds."
+    assert quiz.gamer_question("Don't pause. Spot the fake Minecraft block right now. Is it A1, B2, or C3?",
+                               ("A1", "B2", "C3")) == "Spot the fake Minecraft block right now."
+    assert quiz.gamer_question("What does the JB700's name mean in GTA 5", ("x", "y", "z")) == "What does the JB700's name mean in GTA 5?"
+    long = ("Which protagonist was originally supposed to die and be replaced by Lamar in the beta version of GTA 5's "
+            "Deathwish ending? Is it Michael, Trevor, or Franklin?")
+    assert quiz.gamer_question(long, ("Trevor", "Michael", "Franklin")) == ""  # never cut mid-sentence
+    assert quiz.gamer_title("STOP. DO NOT PAUSE THIS 🛑", gta) == "Real GTA V Fans Know This"
+    assert quiz.gamer_title("ONLY 4% CAN KEEP UP", "Minecraft") == "Real Minecraft Fans Know This"
+    assert quiz.gamer_title("Minecraft Veterans Beat This Instantly 🧠", "Minecraft") == "Minecraft Veterans Beat This Instantly"
+    assert quiz.gamer_title("GTA Fans Always Miss This", gta) == "GTA Fans Always Miss This"
+    assert quiz.gamer_card(3, "BETA ENDING", gta) == "LEVEL 3 - GTA V FANS ONLY"
+    assert quiz.gamer_card(3, "CS2", "Counter-Strike 2") == "LEVEL 3 - CS2 FANS ONLY"
+    s = make_settings(tmp_path)
+    sid = gamer_manual.start(s, gta)["id"]
+    view = gamer_manual.answer(s, sid, candidates(gamer(question=long, trap="Trevor", distractor="Michael", correct="Franklin")))
+    assert view["step"] == "write" and "at most 16 words" in view["problems"][0]
 
 
 def test_a_gamer_iq_out_of_quota_becomes_a_math_challenge(tmp_path, monkeypatch):

@@ -1,5 +1,6 @@
-// SideQuestLogic "Write it myself": a Gamer IQ question written with any LLM. You carry each prompt to the LLM
-// and paste its answer back; the fact check, then the video over the game's own gameplay (trendclip/gamer_manual.py).
+// SideQuestLogic "Write it myself": Gamer IQ questions written with any LLM. You carry each prompt to the LLM and
+// paste its answer back; the fact check, then a video for each ticked question that passed, each the next level in
+// the next free slot, over the game's own gameplay (trendclip/gamer_manual.py).
 (() => {
   const { api, esc } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
@@ -44,21 +45,39 @@
         <button type="button" class="btn-primary" data-w="${act}">${button}</button></div>`;
   }
 
+  const makeable = (s) => s.questions.map((q, i) => [q, i]).filter(([q]) => q.passed && !q.video);
+
   function questions(s) {
     if (!s.questions.length) return "";
+    const ready = ["ready", "made"].includes(s.step);
     const rows = s.questions.map((q, i) => {
       const mark = q.passed === true ? "✅" : q.passed === false ? "❌" : "·";
-      const pick = s.step === "ready" && q.passed
-        ? ` <label class="hint"><input type="radio" name="gwChosen" value="${i}"${i === s.chosen ? " checked" : ""}> use this one</label>` : "";
+      const tick = ready && q.passed && !q.video ? `<input type="checkbox" data-w="pick" value="${i}" checked> ` : "";
+      const said = q.spoken && q.spoken !== q.question ? `<br><small class="hint">Spoken: “${esc(q.spoken)}”</small>` : "";
       const why = q.passed === false && q.why ? ` <small class="hint">${esc(q.why)}</small>` : "";
-      return `<li>${mark} <b>${esc(q.question)}</b> ${esc(q.options.join(" / "))} → <b>${esc(q.correct)}</b>${pick}${why}</li>`;
+      const made = q.video ? ` <span class="pill good">🎬 ${esc(q.video)}</span>` : "";
+      const slot = tick ? ' <span class="hint" data-w="slotof"></span>' : "";
+      return `<li><label>${tick}${mark} <b>${esc(q.question)}</b> ${esc(q.options.join(" / "))} → <b>${esc(q.correct)}</b></label>${made}${slot}${why}${said}</li>`;
     }).join("");
     return `<details class="bw-w-preview" open><summary>${s.questions.length} question${s.questions.length === 1 ? "" : "s"}</summary><ol>${rows}</ol></details>`;
   }
 
-  function slotPicker() {
-    const options = slots.map((r) => `<option value="${esc(r.day)} ${esc(r.slot)}">${esc(r.day)} ${esc(r.slot)}</option>`).join("");
-    return `<select data-w="slot" aria-label="Slot">${options}<option value="">Don't plan it (it waits in Upload)</option></select>`;
+  // Which slot each ticked question takes: the free slots in order, as the server assigns them.
+  function showSlots() {
+    const plan = box.querySelector('input[data-w="plan"]')?.checked;
+    const picked = [...box.querySelectorAll('input[data-w="pick"]')];
+    let n = 0;
+    for (const input of picked) {
+      const note = input.closest("li").querySelector('[data-w="slotof"]');
+      const slot = input.checked && plan ? slots[n++] : null;
+      note.textContent = !input.checked ? "" : slot ? `→ ${slot.day} ${slot.slot}` : plan ? "→ no free slot: waits in Upload" : "→ waits in Upload";
+    }
+    const btn = box.querySelector('button[data-w="make"]');
+    if (btn) {
+      const count = picked.filter((i) => i.checked).length;
+      btn.disabled = !count;
+      btn.textContent = `🎬 Make ${count} video${count === 1 ? "" : "s"}`;
+    }
   }
 
   function render(s) {
@@ -79,13 +98,17 @@
       body += promptBlock(s, "Copy this fact-check prompt into a second LLM (one with web search is best)");
       body += pasteBlock("Paste the fact checker's answer", "facts", "🔎 Read the verdicts", "1: PASS\n2: FAIL: reason");
     }
-    if (s.step === "ready") {
-      body += `<div class="bw-w-step"><b>✅ Ready: Level ${s.level}</b><span class="hint">The video is made over new no-copyright ${esc(s.game)} gameplay, then planned in the slot</span>
-        <div class="bw-w-make">${slotPicker()}<button type="button" class="btn-primary" data-w="make">🎬 Make the video</button><span class="hint" data-w="status"></span></div></div>`;
+    const left = makeable(s);
+    if (["ready", "made"].includes(s.step) && left.length) {
+      body += `<div class="bw-w-step"><b>✅ Tick the questions to make (from Level ${s.level})</b><span class="hint">Each becomes the next level, over new no-copyright ${esc(s.game)} gameplay, one after the other</span>
+        <div class="bw-w-make"><label class="hint"><input type="checkbox" data-w="plan" checked> Plan each in the next free slot</label>
+        <button type="button" class="btn-primary" data-w="make">🎬 Make videos</button></div><ul class="hint" data-w="jobs"></ul></div>`;
+    } else if (s.step === "made") {
+      body += '<div class="bw-w-step"><b>🎬 Every question that passed is a video</b><span class="hint">They are in Upload, and in Plan when planned. Start a new question for more.</span></div>';
     }
-    if (s.step === "made") body += `<div class="bw-w-step"><b>🎬 Made: ${esc(s.video || "")}</b><span class="hint">It's in Upload (and in Plan when a slot was picked)</span></div>`;
     box.innerHTML = `<div class="bw-w-head"><b>${esc(s.game)}</b><span class="hint">Shape: ${esc(SHAPES[s.shape] || s.shape)}</span>${steps}</div>
       ${questions(s)}${body}`;
+    showSlots();
   }
 
   async function act(fn) {
@@ -100,19 +123,21 @@
     busy = false;
   }
 
-  async function watchMake(jobId, status) {
-    const { body: job } = await api(`/api/create/jobs/${encodeURIComponent(jobId)}`);
-    if (job.status === "queued" || job.status === "running") {
-      status.textContent = `${job.message}${job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : ""}…`;
-      return setTimeout(() => watchMake(jobId, status), 3000);
-    }
-    if (job.status === "error") {
-      status.textContent = `❌ ${job.error}`;
-      box.querySelector('[data-w="make"]').disabled = false;
-      return;
-    }
-    open(current.id);
+  // One line per video; the panel reloads once every job has finished.
+  async function watchMake(jobs, list) {
+    const states = await Promise.all(jobs.map((j) => api(`/api/create/jobs/${encodeURIComponent(j.id)}`).then((r) => r.body)));
+    list.innerHTML = states.map((job, n) => {
+      const q = current.questions[jobs[n].index];
+      const where = jobs[n].day ? ` → ${jobs[n].day} ${jobs[n].slot}` : "";
+      const state = job.status === "done" ? "✅ made" : job.status === "error" ? `❌ ${esc(job.error)}`
+        : job.status === "queued" ? "waiting" : `${esc(job.message)}${job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : ""}…`;
+      return `<li>${esc(q.question)}${esc(where)}: ${state}</li>`;
+    }).join("");
+    if (states.some((j) => j.status === "queued" || j.status === "running")) return setTimeout(() => watchMake(jobs, list), 3000);
+    const failed = states.filter((j) => j.status === "error").length;
+    await open(current.id);
     load();
+    if (failed) showError(`${failed} video${failed === 1 ? "" : "s"} failed; ${failed === 1 ? "its question is" : "their questions are"} still ticked, try again.`);
   }
 
   box.addEventListener("click", (e) => {
@@ -134,19 +159,20 @@
       });
     }
     if (what === "make") {
-      const value = box.querySelector('select[data-w="slot"]').value;
-      const [day, slot] = value ? value.split(" ") : [];
+      const indices = [...box.querySelectorAll('input[data-w="pick"]:checked')].map((i) => Number(i.value));
+      const plan = box.querySelector('input[data-w="plan"]').checked;
+      if (!indices.length) return;
       return act(async () => {
         btn.disabled = true;
-        const { body: job } = await post(`/api/gamer/manual/${encodeURIComponent(current.id)}/make`, day ? { day, slot } : {});
-        watchMake(job.id, box.querySelector('[data-w="status"]'));
+        box.querySelectorAll('input[data-w]').forEach((i) => { i.disabled = true; });
+        const { body } = await post(`/api/gamer/manual/${encodeURIComponent(current.id)}/make`, { indices, plan });
+        watchMake(body.jobs, box.querySelector('[data-w="jobs"]'));
       });
     }
   });
 
   box.addEventListener("change", (e) => {
-    if (e.target.name !== "gwChosen") return;
-    act(async () => render((await post(`/api/gamer/manual/${encodeURIComponent(current.id)}/choose`, { index: Number(e.target.value) })).body));
+    if (e.target.matches('input[data-w="pick"], input[data-w="plan"]')) showSlots();
   });
 
   async function open(id) {

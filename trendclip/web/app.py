@@ -601,13 +601,9 @@ class GamerManualText(BaseModel):
     text: str = Field(min_length=2, max_length=100_000)
 
 
-class GamerManualChoice(BaseModel):
-    index: int = Field(ge=0, le=20)
-
-
 class GamerManualMake(BaseModel):
-    day: Day | None = None
-    slot: planner.Slot | None = None
+    indices: list[int] = Field(min_length=1, max_length=20)
+    plan: bool = True  # each video in the next free slot; False: they wait in Upload
 
 
 def _gamer_manual(fn, *args):
@@ -617,7 +613,14 @@ def _gamer_manual(fn, *args):
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
-GAMER_MANUAL_DAYS = 7
+GAMER_MANUAL_DAYS = 14
+
+
+def _free_slots(settings: Settings) -> list[tuple[Day, str]]:
+    """The free upload slots still ahead, in order, over the next GAMER_MANUAL_DAYS days."""
+    now = assistant.now(settings)
+    return [(d, s) for d in (now.date() + timedelta(days=i) for i in range(GAMER_MANUAL_DAYS))
+            for s in planner.free_slots(settings, d) if planner.slot_time(settings, d, s) > now]
 
 
 @app.get("/api/gamer/manual")
@@ -629,9 +632,7 @@ def gamer_manual_list() -> dict[str, Any]:
     except Exception:  # noqa: BLE001 - no library: the game is typed
         counts = {}
     games = sorted((g for g, n in counts.items() if n), key=lambda g: (g != "Minecraft", -counts[g], g))
-    now = assistant.now(settings)
-    slots = [{"day": d.isoformat(), "slot": s} for d in (now.date() + timedelta(days=i) for i in range(GAMER_MANUAL_DAYS))
-             for s in planner.free_slots(settings, d) if planner.slot_time(settings, d, s) > now]
+    slots = [{"day": d.isoformat(), "slot": s} for d, s in _free_slots(settings)]
     return {"sessions": gamer_manual.sessions(settings), "games": games or ["Minecraft"], "slots": slots,
             "level": quiz.gamer_level(settings)}
 
@@ -656,28 +657,32 @@ def gamer_manual_facts(sid: str, req: GamerManualText) -> dict[str, Any]:
     return _gamer_manual(gamer_manual.facts, sid, req.text)
 
 
-@app.post("/api/gamer/manual/{sid}/choose")
-def gamer_manual_choose(sid: str, req: GamerManualChoice) -> dict[str, Any]:
-    return _gamer_manual(gamer_manual.choose, sid, req.index)
-
-
 @app.post("/api/gamer/manual/{sid}/make", status_code=202)
 def gamer_manual_make(sid: str, req: GamerManualMake) -> dict[str, Any]:
-    """Make the Short of the chosen question (a render job, polled at /api/create/jobs/{id}) and plan it in
-    the slot (none: it waits in Upload)."""
+    """A Short for each ticked question, one render job each (polled at /api/create/jobs/{id}), made in order
+    so the levels follow the slots; each is planned in the next free slot (`plan`), else waits in Upload."""
     settings = _base_settings()
-    game, question, shape = _gamer_manual(gamer_manual.question, sid)
-    if req.day and req.slot and planner.slot_item(settings, req.day, req.slot):
-        raise HTTPException(status_code=409, detail=f"{req.day} {req.slot} already has a video")
+    game, shape, picked = _gamer_manual(gamer_manual.to_make, sid, req.indices)
+    slots = _free_slots(settings) if req.plan else []
 
-    def run(progress):
-        short = assistant.create_gamer_short(settings, game, question, shape, progress)
-        gamer_manual.mark_made(settings, sid, short.filename)
-        if req.day and req.slot and not planner.slot_item(settings, req.day, req.slot):
-            assistant.plan_short(settings, short.filename, req.day, req.slot)
-        return short
+    def job(index, question, slot):
+        def run(progress):
+            short = assistant.create_gamer_short(settings, game, question, shape, progress)
+            gamer_manual.mark_made(settings, sid, index, short.filename)
+            if slot:  # taken meanwhile (the bot's production run): the next free one
+                free = slot if not planner.slot_item(settings, *slot) else next(iter(_free_slots(settings)), None)
+                if free:
+                    assistant.plan_short(settings, short.filename, *free)
+            return short
+        return run
 
-    return _create.submit_call(game, run).model_dump(mode="json")
+    jobs = []
+    for n, (index, question) in enumerate(picked):
+        slot = slots[n] if n < len(slots) else None
+        created = _create.submit_call(game, job(index, question, slot))
+        jobs.append({"id": created.id, "index": index, "day": slot[0].isoformat() if slot else None,
+                     "slot": slot[1] if slot else None})
+    return {"jobs": jobs}
 
 
 @app.get("/api/shorts")
