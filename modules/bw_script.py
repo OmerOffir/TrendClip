@@ -93,12 +93,49 @@ def _get(url: str, params: dict | None = None, timeout: float = 20, tries: int =
     return r
 
 
+# Wikipedia's Action API (api.php) is the first choice; when it fails (it had hours of random 503s on
+# 2026-10-28 while the rest of the site worked), the same answers come from the REST API and the article page.
+REST = "https://en.wikipedia.org/api/rest_v1/page/{kind}/{title}"
+CUT_AT = ("See_also", "References", "Notes", "Further_reading", "External_links", "Citations", "Bibliography", "Sources",
+          "Notes_and_references", "Footnotes")
+
+
+def _rest(kind: str, title: str):
+    """GET a REST endpoint for `title`; None on a 404 (no such page)."""
+    import requests
+    from urllib.parse import quote
+
+    url = REST.format(kind=kind, title=quote(title.replace(" ", "_"), safe=""))
+    try:
+        return _get(url)
+    except requests.HTTPError as err:
+        if err.response is not None and err.response.status_code == 404:
+            return None
+        raise
+
+
+def _fallback(what: str, first, second):
+    """`first()`, else `second()` when the first raises; the second one's error is the one raised."""
+    try:
+        return first()
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Wikipedia API failed for %s (%s); trying the REST API", what, err)
+        return second()
+
+
 def article_exists(title: str) -> str | None:
     """The article's canonical title, or None when English Wikipedia has no such page (a network error raises)."""
-    data = _get(WIKI_API, {"action": "query", "titles": title, "redirects": 1, "format": "json", "formatversion": 2}).json()
-    pages = data.get("query", {}).get("pages", [])
-    page = pages[0] if pages else {}
-    return None if page.get("missing") or page.get("invalid") or not page.get("title") else page["title"]
+    def api():
+        data = _get(WIKI_API, {"action": "query", "titles": title, "redirects": 1, "format": "json", "formatversion": 2}).json()
+        pages = data.get("query", {}).get("pages", [])
+        page = pages[0] if pages else {}
+        return None if page.get("missing") or page.get("invalid") or not page.get("title") else page["title"]
+
+    def rest():
+        r = _rest("summary", title)
+        return None if r is None else (r.json().get("title") or None)
+
+    return _fallback(f"the title {title!r}", api, rest)
 
 
 class _Text(HTMLParser):
@@ -144,19 +181,47 @@ def page_text(raw: str) -> tuple[str, str]:
     return html.unescape(parser.title.strip())[:200], text
 
 
+def article_html(title: str) -> str:
+    """The article as HTML from the REST API ("" when it has no such page)."""
+    r = _rest("html", title)
+    return "" if r is None else r.text
+
+
+def html_text(raw: str) -> str:
+    """The readable text of an article's HTML, up to its See also / References headings, footnote marks dropped."""
+    cut = re.search(r'<h2[^>]*\bid="(?:%s)"' % "|".join(CUT_AT), raw)
+    body = raw[: cut.start()] if cut else raw
+    body = re.sub(r'<sup[^>]*class="[^"]*reference[^"]*"[^>]*>.*?</sup>', "", body, flags=re.S)
+    return page_text(body)[1]
+
+
 def wiki_text(title: str) -> tuple[str, str]:
-    data = _get(WIKI_API, {"action": "query", "prop": "extracts", "explaintext": 1, "titles": title, "redirects": 1,
-                           "format": "json", "formatversion": 2}).json()
-    page = (data.get("query", {}).get("pages") or [{}])[0]
-    text = page.get("extract") or ""
-    text = re.split(r"\n== (See also|References|Notes|Further reading|External links|Citations|Bibliography) ==", text)[0]
-    return page.get("title", title), text[:ARTICLE_CHARS]
+    def api():
+        data = _get(WIKI_API, {"action": "query", "prop": "extracts", "explaintext": 1, "titles": title, "redirects": 1,
+                               "format": "json", "formatversion": 2}).json()
+        page = (data.get("query", {}).get("pages") or [{}])[0]
+        text = page.get("extract") or ""
+        text = re.split(r"\n== (See also|References|Notes|Further reading|External links|Citations|Bibliography) ==", text)[0]
+        return page.get("title", title), text
+
+    def rest():
+        return title, html_text(article_html(title))
+
+    real, text = _fallback(f"the text of {title!r}", api, rest)
+    return real, text[:ARTICLE_CHARS]
 
 
 def cited_links(title: str) -> list[str]:
-    data = _get(WIKI_API, {"action": "parse", "page": title, "prop": "externallinks", "redirects": 1, "format": "json",
-                           "formatversion": 2}).json()
-    links = data.get("parse", {}).get("externallinks", [])
+    def api():
+        data = _get(WIKI_API, {"action": "parse", "page": title, "prop": "externallinks", "redirects": 1, "format": "json",
+                               "formatversion": 2}).json()
+        return data.get("parse", {}).get("externallinks", [])
+
+    def rest():
+        found = re.findall(r'rel="mw:ExtLink[^"]*"[^>]*?href="(https?://[^"]+)"', article_html(title))
+        return [html.unescape(u) for u in found]
+
+    links = _fallback(f"the links of {title!r}", api, rest)
     out = []
     for url in links:
         low = url.lower()
@@ -176,7 +241,10 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
     if not title:
         raise ScriptError(f"No Wikipedia article called {topic.article!r}")
     progress(f"Reading Wikipedia: {title}")
-    real, text = wiki_text(title)
+    try:
+        real, text = wiki_text(title)
+    except Exception as err:  # noqa: BLE001 - both Wikipedia routes failed: try the topic again later
+        raise TryLater(f"Wikipedia did not answer ({err})") from err
     if len(text) < MIN_SOURCE_CHARS:
         raise ScriptError(f"The Wikipedia article {real!r} is too short")
     out = Research(topic, real, [Source(1, f"https://en.wikipedia.org/wiki/{real.replace(' ', '_')}", f"{real} - Wikipedia", text)])

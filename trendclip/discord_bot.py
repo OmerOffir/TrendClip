@@ -36,6 +36,8 @@ CREATE_ATTEMPTS = 3      # a random video that fails (ffmpeg, a bad clip, Gemini
 EMERGENCY_ATTEMPTS = 10  # the emergency video keeps trying until it has one (a cap so a broken setup can't loop forever)
 PRODUCE_ATTEMPTS = 5     # the morning production run has all day: a failed video is made again from scratch
 BW_ATTEMPTS = 2          # a Borderline Why video: one more try (Gemini busy, a topic without sources)
+BW_RETRY_MINUTES = 30    # Wikipedia or Gemini down / out of quota: the video is tried again this much later...
+BW_RETRY_UNTIL = timedelta(hours=1)  # ...until this long before its slot
 RETRY_WAIT = 10.0        # seconds between attempts
 PROGRESS_EVERY = 4.0  # seconds between progress message edits (Discord rate limits edits)
 REMINDER_ORDER = ("post", "emergency", "slot", "produce", "morning", "leaderboard")  # most time-critical first
@@ -779,10 +781,20 @@ class TrendClipBot(discord.Client):
         try:
             info = await self.run_job(channel, f"🗺️ Borderline Why video for {label}", lambda p: bw_channel.make(settings, job, p),
                                       self.render_lock, attempts=BW_ATTEMPTS, give_up=late)
-        except JobFailed:
-            await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.",
-                               view=view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Try again now",
-                                                   discord.ButtonStyle.success)))
+        except JobFailed as failed:
+            from modules import bw_script
+
+            try_again = view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Try again now", discord.ButtonStyle.success))
+            retry_at = assistant.now(settings) + timedelta(minutes=BW_RETRY_MINUTES)
+            if isinstance(failed.__cause__, bw_script.TryLater) and retry_at <= job.post_at - BW_RETRY_UNTIL:
+                # Wikipedia down, Gemini busy or out of quota: not the topic's fault, so wait and try again by itself
+                await channel.send(f"⏳ Wikipedia or Gemini is not answering ({clip_text(str(failed), 200)}). "
+                                   f"I'll try the {label} video again at {retry_at:%H:%M} by myself.", view=try_again)
+                await asyncio.sleep((retry_at - assistant.now(settings)).total_seconds())
+                if await asyncio.to_thread(bw_channel.load_info, job.key) is None:
+                    await self.borderlinewhy_make(job)
+                return
+            await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.", view=try_again)
             return
         await self.send_file_video(channel, bw_channel.video_path(info["key"]),
                                    bw_channel.video_line(info) + "\n" + bw_channel.video_note(info), bw_view(info["key"]))

@@ -264,7 +264,7 @@ COUNTRY_ALIASES = {
 
 WIKI_POINTS = DATA_DIR / "wiki_points.json"
 WIKI_API = "https://en.wikipedia.org/w/api.php"
-USER_AGENT = "TrendClip-BorderlineWhy/1.0 (map videos; contact via the channel)"
+USER_AGENT = "TrendClip-BorderlineWhy/1.0 (https://www.youtube.com/@BorderlineWhy)"  # Wikimedia wants a way to reach us
 
 
 def wiki_point(name: str, timeout: float = 15) -> Feature | None:
@@ -288,9 +288,22 @@ def wiki_point(name: str, timeout: float = 15) -> Feature | None:
             pages = r.json().get("query", {}).get("pages", [])
             coords = next((p["coordinates"][0] for p in pages if p.get("coordinates")), None)
             cache[key] = [float(coords["lon"]), float(coords["lat"])] if coords else None
-        except Exception as err:  # noqa: BLE001 - not cached: try again next time
-            logger.warning("Wikipedia coordinates for %r failed: %s", name, err)
-            return None
+        except Exception as err:  # noqa: BLE001 - the API is down: the REST summary has the coordinates too
+            logger.warning("Wikipedia coordinates for %r failed (%s); trying the REST API", name, err)
+            try:
+                from urllib.parse import quote
+
+                r = requests.get(f"https://en.wikipedia.org/api/rest_v1/page/summary/{quote(name.replace(' ', '_'), safe='')}",
+                                 headers={"User-Agent": USER_AGENT}, timeout=timeout)
+                if r.status_code == 404:
+                    cache[key] = None
+                else:
+                    r.raise_for_status()
+                    coords = r.json().get("coordinates")
+                    cache[key] = [float(coords["lon"]), float(coords["lat"])] if coords else None
+            except Exception as err2:  # noqa: BLE001 - not cached: try again next time
+                logger.warning("Wikipedia REST coordinates for %r failed: %s", name, err2)
+                return None
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         WIKI_POINTS.write_text(json.dumps(cache, indent=1, sort_keys=True), encoding="utf-8")
     value = cache.get(key)

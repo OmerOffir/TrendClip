@@ -442,3 +442,62 @@ def test_plan_days_states_and_extra_videos(settings, tmp_path, world, monkeypatc
     assert tomorrow == {"14:30": "later", "23:00": "later"}
     later = datetime(2026, 11, 3, 1, 0, tzinfo=settings.tz)
     assert {r["slot"]: r["state"] for r in bw_channel.plan_days(settings, later, 1, 0, tmp_path)[0]["slots"]}["23:00"] == "missed"
+
+
+class _Resp:
+    def __init__(self, status, payload=None, text=""):
+        self.status_code, self._payload, self.text = status, payload, text
+        self.headers = {}
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        import requests
+
+        if self.status_code >= 400:
+            raise requests.HTTPError(f"{self.status_code}", response=self)
+
+
+ARTICLE_HTML = ("<html><body><p>Llívia is a Spanish town completely surrounded by French territory in the Pyrenees.<sup class=\"reference\">[1]</sup></p>"
+                "<p>It stayed Spanish because the 1659 treaty gave France villages, and Llívia was a town.</p>"
+                "<a rel=\"mw:ExtLink nofollow\" href=\"https://treaties.example.org/llivia\">x</a>"
+                "<h2 id=\"References\">References</h2><p>Cited reference text that must not be part of the article body here.</p>"
+                "<a rel=\"mw:ExtLink\" href=\"https://news.example.com/a?x=1&amp;y=2\">y</a></body></html>")
+
+
+def test_wikipedia_falls_back_to_the_rest_api_when_the_action_api_fails(monkeypatch):
+    import requests
+
+    calls = []
+
+    def fake_get(url, params=None, timeout=20, tries=4):
+        calls.append(url)
+        if "api.php" in url:
+            raise requests.HTTPError("503 Service Unavailable")
+        if "/summary/Ll%C3%ADvia" in url:
+            return _Resp(200, {"title": "Llívia"})
+        if "/html/Ll%C3%ADvia" in url:
+            return _Resp(200, text=ARTICLE_HTML)
+        _Resp(404).raise_for_status()  # like the real _get: a 404 raises
+
+    monkeypatch.setattr(bw_script, "_get", fake_get)
+    assert bw_script.article_exists("Llívia") == "Llívia"
+    assert bw_script.article_exists("No such page") is None  # a 404 is "missing", not an error
+    title, text = bw_script.wiki_text("Llívia")
+    assert "completely surrounded by French territory" in text and "[1]" not in text and "Cited reference" not in text
+    links = bw_script.cited_links("Llívia")
+    assert links == ["https://treaties.example.org/llivia", "https://news.example.com/a?x=1&y=2"]
+
+
+def test_research_says_try_later_when_both_wikipedia_routes_fail(monkeypatch):
+    import requests
+
+    monkeypatch.setattr(bw_script, "article_exists", lambda title: title)
+
+    def down(url, params=None, timeout=20, tries=4):
+        raise requests.HTTPError("503 Service Unavailable")
+
+    monkeypatch.setattr(bw_script, "_get", down)
+    with pytest.raises(bw_script.TryLater):
+        bw_script.research(bw_topics.Topic(question="Why?", article="Llívia"))
