@@ -334,7 +334,9 @@ THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
 - Build curiosity: what makes the situation odd, why the obvious answer is wrong; then a clear, satisfying answer
   near the end. No filler, no forced suspense, no exaggeration, no call to action, no "subscribe" or "follow".
 - Simple, natural, spoken English. Short connected sentences (at most {max_sentence} words). Every sentence adds
-  information. Keep uncertainty where the sources are uncertain ("about", "historians think").
+  information that helps answer the question. Never add a side fact (an older history, a famous name, a trivia
+  detail) just because a source mentions it or to cite another source; if the only other source covers side
+  details, cite it for a fact that matters or leave it out. Keep uncertainty where the sources are uncertain ("about", "historians think").
 - Numbers as digits (1783, 49th, 123).
 
 THE SCENES ({min_scenes}-{max_scenes})
@@ -357,7 +359,8 @@ must be the whole narration.
 
 THE CLAIMS
 List every fact the narration states (5-12 claims). For each, the id of the source that supports it and an EXACT
-quote copied from that source (no changes, no "..."). Use at least two different sources when there is more than one.
+quote copied from that source (no changes, no "..."). At least two different sources must back facts that matter
+to the answer. If no second source supports anything that matters, set usable to false.
 
 Today is {today}. Write in English.
 
@@ -371,9 +374,10 @@ Fix every one and return the whole draft again. Your previous draft:
 {draft}
 """
 
-VERIFY_PROMPT = """Check a YouTube narration against its sources. List every statement in the narration that the
-sources do not clearly support (a wrong number, a date, a cause, a name, an exaggeration). Simple framing like
-"here's why" needs no support. Return an empty list when everything is supported.
+VERIFY_PROMPT = """Check a YouTube narration that answers the question "{question}" against its sources. List:
+- every statement the sources do not clearly support (a wrong number, a date, a cause, a name, an exaggeration);
+- every sentence that does not help answer the question (a side fact or tangent), marked "OFF TOPIC: ...".
+Simple framing like "here's why" needs no support. Return an empty list when everything is supported and on topic.
 
 NARRATION
 {narration}
@@ -521,7 +525,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
 
 
 def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
-    found = _ask(client, model, VERIFY_PROMPT.format(narration=narration(draft), sources=sources_block(res)), Check, temperature=0.0)
+    found = _ask(client, model, VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), sources=sources_block(res)),
+                  Check, temperature=0.0)
     return [u for u in found.unsupported if u.strip()]
 
 
@@ -548,8 +553,8 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
             unsupported = verify(client, model, draft, res)
             if not unsupported:
                 break
-            problems = ["the checker found statements the sources do not support (remove or correct them): "
-                        + " | ".join(unsupported[:5])]
+            problems = ["the checker found statements the sources do not support or that are off topic (remove or correct "
+                        "them): " + " | ".join(unsupported[:5])]
         logger.info("Borderline Why draft, attempt %d: %s", attempt, "; ".join(problems))
         if attempt == ATTEMPTS:
             raise ScriptError(f"The script missed the rules {ATTEMPTS} times: " + "; ".join(problems))

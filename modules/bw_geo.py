@@ -39,6 +39,12 @@ FILES = {
     "places": "ne_10m_populated_places_simple",
 }
 STEPS = (1, 2, 4, 8, 16, 32)  # vertex decimation levels, picked by zoom
+NEAR = 2.0  # degrees: a part this close to the main land belongs in the camera's box (Feature.bbox)
+
+
+def _union(boxes) -> tuple[float, float, float, float]:
+    boxes = list(boxes)
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
 class GeoError(RuntimeError):
@@ -80,17 +86,24 @@ class Feature:
         return self.kind == "river"
 
     def bbox(self, main_only: bool = True) -> tuple[float, float, float, float]:
-        """The box around the feature. `main_only`: only the parts at least 5% the size of its biggest one,
-        so a country's far islands (Alaska's Aleutians, France overseas) do not zoom the camera out."""
+        """The box around the feature. `main_only`: its biggest part and every part chained to it by gaps of at
+        most NEAR degrees, so an archipelago (Indonesia, Japan) stays whole while far territories (French Guiana,
+        Alaska, Hawaii, the Canaries, Svalbard) do not zoom the camera out to half the world."""
         if not self.parts:
             x, y = self.point or (0.0, 0.0)
             return (x, y, x, y)
-        parts = self.parts
-        if main_only and not self.is_line:
-            biggest = max(p.area for p in parts)
-            parts = [p for p in parts if p.area >= 0.05 * biggest] or parts
-        return (min(p.bbox[0] for p in parts), min(p.bbox[1] for p in parts),
-                max(p.bbox[2] for p in parts), max(p.bbox[3] for p in parts))
+        if not main_only or self.is_line:
+            return _union([p.bbox for p in self.parts])
+        rest = sorted((p.bbox for p in self.parts), key=lambda b: -(b[2] - b[0]) * (b[3] - b[1]))
+        box = rest.pop(0)
+        grew = True
+        while grew:
+            near = [b for b in rest if max(b[0] - box[2], box[0] - b[2], b[1] - box[3], box[1] - b[3]) <= NEAR]
+            grew = bool(near)
+            if grew:
+                box = _union([box, *near])
+                rest = [b for b in rest if b not in near]
+        return box
 
     def label_point(self) -> tuple[float, float]:
         if self.point:

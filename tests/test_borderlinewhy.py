@@ -58,6 +58,12 @@ def test_bbox_ignores_far_islands():
     f = bw_geo.Feature("country", "X", parts=[main, island])
     assert f.bbox() == (-100, 40, -80, 50)
     assert f.bbox(main_only=False)[2] == 171
+    # France with French Guiana (as big as 5% of it, but an ocean away) frames only the mainland and Corsica
+    france = bw_geo.Feature("country", "France", parts=[_square(-5, 42, 8, 51), _square(8.5, 41.4, 9.6, 43), _square(-54.6, 2.1, -51.6, 5.8)])
+    assert france.bbox() == (-5, 41.4, 9.6, 51)
+    # an archipelago chained by narrow straits stays whole
+    chain = bw_geo.Feature("country", "Isles", parts=[_square(95, -6, 106, 6), _square(105.5, -9, 115, -6.5), _square(116, -9, 125, -8)])
+    assert chain.bbox() == (95, -9, 125, 6)
 
 
 # --------------------------------------------------------------------------- timing and views
