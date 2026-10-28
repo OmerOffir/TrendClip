@@ -894,4 +894,14 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .bw-slot .bw-btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
 .bw-slot .bw-btns button { width: auto; margin: 0; padding: 6px 10px; font-size: 12px; }
 .bw-slot .bw-btns a { font-size: 12px; align-self: center; }
+/* Dark Outliers / Borderline Why plans: inline player, the Send to Linux picker and Linux's plan */
+.ch-watch { display: flex; align-items: flex-end; gap: 10px; padding: 8px 0 8px 56px; }
+.ch-watch video { width: 220px; max-height: 390px; aspect-ratio: 9 / 16; background: #000; border-radius: 10px; }
+.ch-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0 8px 56px; font-size: 13px; }
+.ch-picker select { max-width: 220px; }
+.ch-picker button { width: auto; margin: 0; padding: 4px 10px; font-size: 12px; }
+.ch-hub { margin-top: 14px; }
+.ch-hub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+.ch-hub-head .spacer { flex: 1; }
+.ch-hub-head button { width: auto; margin: 0; }
 @media (max-width: 700px) { .bw-slot { grid-template-columns: 48px minmax(0, 1fr); } .bw-slot .bw-btns { grid-column: 1 / -1; justify-content: flex-start; } }

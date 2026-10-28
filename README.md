@@ -551,6 +551,23 @@ is already taken (also if it was taken in the meantime) with the free ones, or s
 marks it ready, plans it at that time and says so in the reminders channel. The transfer
 messages are deleted afterwards.
 
+**Dark Outliers and Borderline Why** work the same way from their Plan tabs. Every planned video
+has **▶ Watch**, which plays it right there. On the sender it also has **📤 Send to Linux**, which
+offers the hub's free times for that channel. Below the plan are **📤 Send plan to Linux (n)**,
+which sends every upcoming video at its own day and time, and **🐧 Linux plan**, which shows the
+hub's week for that channel.
+
+- **Dark Outliers.** The video goes with its story and script. The hub finds the story in its own
+  bank by `source_id`, or adds it, and marks it USED, along with the stories a ranking counts down.
+  It saves the video as `story_<hub id>.mp4`, plans it, and posts it in the channel's Discord
+  channel with "Don't post this". A story the hub has already made a video of is refused.
+- **Borderline Why.** The video becomes the video for that slot on the hub, so the bot won't make
+  one there. It is posted with Approve, Don't post and Upload now. A slot that already has a video,
+  or is being made right now, is not offered.
+
+A sent video leaves the sender's Dark Outliers plan. On Borderline Why it is marked "On Linux plan",
+and its Approve and Upload buttons go away on the sender.
+
 The sender only uses Discord's REST API with the bot token, never logs in as the bot, and
 `run.sh` doesn't start the bot there, so NPC_Steve answers from the hub only.
 

@@ -10,6 +10,12 @@ Messages (all written by the bot itself; the hub ignores anyone else's):
     tc-hub plan <nonce>                                          -> tc-hub week <nonce> {} + plan.json
     tc-hub part <nonce> <i>/<n>          + attachment: a piece of the MP4 (Discord caps files at 10 MB)
     tc-hub send <nonce> <date> <slot> <filename> <part ids>  + short.json -> tc-hub done|fail <nonce> {...}
+
+The other channels (Dark Outliers, Borderline Why) go the same way, with the channel's name after the
+nonce (modules/channel_hub.py does their side):
+    tc-hub cask <nonce> <channel>                                -> tc-hub free <nonce> {"free": [...]}
+    tc-hub cplan <nonce> <channel>                               -> tc-hub week <nonce> {} + plan.json
+    tc-hub csend <nonce> <channel> <date> <slot> <part ids>  + bundle.json -> tc-hub done|fail <nonce> {...}
 """
 
 from __future__ import annotations
@@ -33,7 +39,8 @@ from .models import utcnow
 logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
-REQUESTS = ("ask", "send", "plan")
+REQUESTS = ("ask", "send", "plan", "cask", "cplan", "csend")
+CHANNEL_REQUESTS = ("cask", "cplan", "csend")
 REPLIES = ("free", "week", "done", "fail")  # never a request word, or the hub would answer itself
 FREE_DAYS = 7
 PART_BYTES = 8 * 1024 * 1024
@@ -138,6 +145,15 @@ def plan_view(settings: Settings, days: int = FREE_DAYS, now: datetime | None = 
     }
 
 
+async def read_parts(channel: Any, ids: list[str], out_path: Path) -> None:
+    """Hub side: join the video pieces posted as messages `ids` into `out_path`."""
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with out_path.open("wb") as out:
+        for mid in ids:
+            part = await channel.fetch_message(int(mid))
+            out.write(await part.attachments[0].read())
+
+
 def _reply(op: str, nonce: str, data: dict[str, Any]) -> str:
     return f"{PREFIX} {op} {nonce} {json.dumps(data, ensure_ascii=False)}"
 
@@ -156,6 +172,11 @@ async def handle(settings: Settings, message: Any,
     async .fetch_message(id), as discord.py's objects have."""
     words = message.content.split(" ")
     op, nonce = words[1], words[2]
+    if op in CHANNEL_REQUESTS:
+        from modules import channel_hub
+
+        reply, attach = await channel_hub.handle(settings, words, message, channel)
+        return reply, None, attach
     if op == "ask":
         return _reply("free", nonce, {"free": free_slots(settings)}), None, None
     if op == "plan":
@@ -167,11 +188,7 @@ async def handle(settings: Settings, message: Any,
             raise HubError("The send message is incomplete")
         day, slot, filename, ids = Day.fromisoformat(words[3]), words[4], words[5], words[6].split(",")
         meta = json.loads(await message.attachments[0].read())
-        settings.shorts_dir.mkdir(parents=True, exist_ok=True)
-        with partial.open("wb") as out:
-            for mid in ids:
-                part = await channel.fetch_message(int(mid))
-                out.write(await part.attachments[0].read())
+        await read_parts(channel, ids, partial)
         item = await asyncio.to_thread(receive, settings, filename, day, slot, meta, partial)
     except HubError as err:
         return _reply("fail", nonce, {"message": str(err), "free": err.free}), None, None
@@ -262,16 +279,33 @@ def _require_sender(settings: Settings) -> None:
         raise HubError("Set HUB_ROLE=sender, DISCORD_BOT_TOKEN and a hub channel in .env to send videos", 400)
 
 
-def _ask(settings: Settings, op: str) -> dict[str, Any]:
+def _ask(settings: Settings, op: str, *args: str) -> dict[str, Any]:
     _require_sender(settings)
     rest = Rest(settings)
     nonce = secrets.token_hex(4)
-    ask = rest.post(f"{PREFIX} {op} {nonce}")
+    ask = rest.post(" ".join([PREFIX, op, nonce, *args]))
     try:
         _, data = _await_reply(rest, nonce, ask, ASK_WAIT)
     finally:
         rest.delete(ask)
     return data
+
+
+def send_parts(settings: Settings, data: bytes, request: str, meta: tuple[str, bytes]) -> tuple[str, dict[str, Any]]:
+    """Sending side: post `data` in PART_BYTES pieces, then `request` + " <part ids>" with the `meta` file,
+    and wait for the hub's answer. Every message is deleted afterwards. (op, reply)."""
+    rest = Rest(settings)
+    nonce = secrets.token_hex(4)
+    pieces = [data[i:i + PART_BYTES] for i in range(0, len(data), PART_BYTES)]
+    posted: list[str] = []
+    try:
+        for i, piece in enumerate(pieces, 1):
+            posted.append(rest.post(f"{PREFIX} part {nonce} {i}/{len(pieces)}", (f"{nonce}.part{i}", piece)))
+        posted.append(rest.post(request.replace("{nonce}", nonce, 1) + " " + ",".join(posted), meta))
+        return _await_reply(rest, nonce, posted[-1], SEND_WAIT)
+    finally:
+        for mid in posted:
+            rest.delete(mid)
 
 
 def remote_free(settings: Settings) -> list[dict[str, str]]:
@@ -297,21 +331,9 @@ def send(settings: Settings, req: SendRequest) -> dict[str, Any]:
     free = remote_free(settings)
     if {"date": req.date.isoformat(), "slot": req.slot} not in free:
         raise HubError(f"{req.date.isoformat()} {req.slot} is already taken on the hub. Pick another time.", 409, free)
-    rest = Rest(settings)
-    nonce = secrets.token_hex(4)
-    data = path.read_bytes()
-    pieces = [data[i:i + PART_BYTES] for i in range(0, len(data), PART_BYTES)]
-    posted: list[str] = []
-    try:
-        for i, piece in enumerate(pieces, 1):
-            posted.append(rest.post(f"{PREFIX} part {nonce} {i}/{len(pieces)}", (f"{nonce}.part{i}", piece)))
-        posted.append(rest.post(
-            f"{PREFIX} send {nonce} {req.date.isoformat()} {req.slot} {req.filename} {','.join(posted)}",
-            ("short.json", short.model_dump_json().encode("utf-8"))))
-        op, reply = _await_reply(rest, nonce, posted[-1], SEND_WAIT)
-    finally:
-        for mid in posted:
-            rest.delete(mid)
+    op, reply = send_parts(settings, path.read_bytes(),
+                           f"{PREFIX} send {{nonce}} {req.date.isoformat()} {req.slot} {req.filename}",
+                           ("short.json", short.model_dump_json().encode("utf-8")))
     if op != "done":
         raise HubError(reply.get("message") or "The hub refused the video", 409, reply.get("free"))
     shorts.update_short(settings, req.filename, lambda s: s.sent.__setitem__(

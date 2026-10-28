@@ -193,3 +193,10 @@ def get_story(story_id: int, db_path: Path | str | None = None) -> dict | None:
     with closing(_connect(db_path)) as conn:
         row = conn.execute("SELECT * FROM raw_stories WHERE id = ?", (story_id,)).fetchone()
         return dict(row) if row else None
+
+
+def find_source(source_id: str, db_path: Path | str | None = None) -> dict | None:
+    """The story saved under `source_id` (the same story has the same source_id on every machine)."""
+    with closing(_connect(db_path)) as conn:
+        row = conn.execute("SELECT * FROM raw_stories WHERE source_id = ?", (source_id,)).fetchone()
+        return dict(row) if row else None

@@ -220,9 +220,15 @@
       ? `<b>${esc(v.title)}</b><small>${Math.round(v.duration_seconds || 0)} s${v.check.length ? ` · ${esc(v.check.join("; "))}` : ""}${r.extra ? " · made for an earlier slot time" : ""}</small>`
       : `<b class="hint">${r.state === "later" ? `Made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}` : r.state === "due" ? "The bot is making it" : "Nothing was made"}</b>`;
     const btns = [];
+    const sent = v && v.sent;
+    if (sent) btns.push(`<span class="pill good">✅ On Linux plan · ${esc(sent.date)} ${esc(sent.slot)}</span>`);
     if (up) btns.push(`<a href="${esc(up.url)}" target="_blank" rel="noopener">Watch ↗</a>`);
-    if (v && r.state === "waiting") btns.push(`<button type="button" class="btn-primary" data-act="approve" data-key="${esc(v.key)}">✅ Approve</button>`);
-    if (v && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
+    else if (v) btns.push(`<button type="button" class="btn-ghost" data-act="watch" data-key="${esc(v.key)}" data-t="${esc(v.created_at || "")}">▶ Watch</button>`);
+    if (v && state.sender && !up && !sent && !past && !["vetoed", "blocked", "missed"].includes(r.state)) {
+      btns.push(`<button type="button" class="btn-secondary" data-act="hub" data-key="${esc(v.key)}" title="The Linux machine posts it instead">📤 Send to Linux</button>`);
+    }
+    if (v && !sent && r.state === "waiting") btns.push(`<button type="button" class="btn-primary" data-act="approve" data-key="${esc(v.key)}">✅ Approve</button>`);
+    if (v && !sent && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
     if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
     if (!up && !r.extra && r.key !== making && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
     return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
@@ -230,9 +236,13 @@
       <span class="bw-btns">${btns.join("")}</span></div>`;
   }
 
+  const { channelHub } = window.TrendClip;
+  const linux = channelHub.mount($("bwHub"), "borderlinewhy", () => loadPlan());
   async function loadPlan() {
     try {
-      const { body } = await api("/api/borderlinewhy/plan");
+      const [{ body }, sender] = await Promise.all([api("/api/borderlinewhy/plan"), channelHub.sender()]);
+      state.sender = sender;
+      linux.counts();
       plan.hint.innerHTML = `Slots <b>${esc(body.slots.join(" and "))}</b> (${esc(body.timezone)}). Each video is made ${body.lead_hours} h before its slot and posted in Discord;`
         + ` ${body.require_approval ? "it goes to YouTube at the slot only after <b>Approve</b>" : "it goes out at the slot unless stopped"} (as ${esc(body.privacy)})`;
       plan.nav.textContent = body.waiting;
@@ -254,6 +264,9 @@
     const btn = e.target.closest("button[data-act]");
     if (!btn) return;
     const { act, key, day, slot } = btn.dataset;
+    const row = btn.closest(".bw-slot");
+    if (act === "watch") return channelHub.watch(row, `/api/borderlinewhy/videos/${encodeURIComponent(key)}/video.mp4?t=${encodeURIComponent(btn.dataset.t || "")}`);
+    if (act === "hub") return channelHub.picker(row, "borderlinewhy", key, () => { setTimeout(loadPlan, 1500); linux.refresh(); });
     try {
       if (act === "approve") {
         const { body } = await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/approve`);
@@ -323,7 +336,7 @@
     });
     document.querySelectorAll("[data-bw-panel]").forEach((p) => { p.hidden = p.dataset.bwPanel !== name; });
     if (name === "topics") loadTopics();
-    if (name === "plan") loadPlan();
+    if (name === "plan") { loadPlan(); linux.refresh(); }
   }
   $("bwNav").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-bw-view]");

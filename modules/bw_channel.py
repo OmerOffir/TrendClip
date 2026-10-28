@@ -205,7 +205,8 @@ def _plan_video(info: dict | None) -> dict | None:
     if info is None:
         return None
     return {"key": info["key"], "title": info.get("title", ""), "duration_seconds": info.get("duration_seconds"),
-            "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"), "question": info.get("question", "")}
+            "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"), "question": info.get("question", ""),
+            "sent": (info.get("sent") or {}).get("hub"), "created_at": info.get("created_at", "")}
 
 
 # --------------------------------------------------------------------------- files

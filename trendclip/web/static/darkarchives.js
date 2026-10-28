@@ -461,7 +461,7 @@
     });
     document.querySelectorAll("[data-da-panel]").forEach((p) => { p.hidden = p.dataset.daPanel !== name; });
     if (name === "videos") loadVideos();
-    if (name === "plan") loadPlan();
+    if (name === "plan") { loadPlan(); linux.refresh(); }
   }
   $("daNav").addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-da-view]");
@@ -555,7 +555,8 @@
             <b>${esc(v.title)}</b>
             <div class="pills"><span class="pill">${v.duration_seconds}s</span><span class="pill">story ${v.story_id}</span>
               ${up ? `<span class="pill good">▶️ YouTube · ${esc(up.privacy)}</span>` : '<span class="pill">not on YouTube</span>'}
-              ${v.planned.length ? v.planned.map((p) => `<span class="pill">📅 ${esc(p)}</span>`).join("") : '<span class="pill">not planned</span>'}</div>
+              ${v.sent && v.sent.hub ? `<span class="pill good">✅ On Linux plan · ${esc(v.sent.hub.date)} ${esc(v.sent.hub.slot)}</span>`
+                : v.planned.length ? v.planned.map((p) => `<span class="pill">📅 ${esc(p)}</span>`).join("") : '<span class="pill">not planned</span>'}</div>
             <span class="hint">made ${esc(fmtWhen(v.created_at))} · pictures: ${esc(v.pictures || "")}${v.photos && v.photos.length ? ` · ${v.photos.length} photo${v.photos.length > 1 ? "s" : ""}` : ""}${v.music ? ` · 🎵 ${esc(v.music.title)}` : ""}</span>
             ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a> · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a></span>` : ""}
             <div class="da-yt-text">
@@ -648,7 +649,7 @@
     plan.hint.textContent = d.auto_post
       ? `The Discord bot uploads each slot's video to the Dark Outliers channel at its time (${d.slots.join(", ")}, as ${d.privacy}) and reports in its Discord channel`
       : `Automatic posting is off (DA_AUTO_POST): upload each planned video yourself from Videos`;
-    const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube));
+    const unplanned = d.videos.filter((v) => !(v.uploads && v.uploads.youtube) && !(v.sent && v.sent.hub));
     const byKey = {};
     d.items.forEach((i) => { byKey[`${i.date} ${i.slot}`] = i; });
     const start = new Date(now.getTime() + plan.offset * DAY_MS);
@@ -670,6 +671,8 @@
               ${yt.done ? `<span class="pill good">▶️ on YouTube${yt.privacy ? ` · ${esc(yt.privacy)}` : ""}</span>${yt.url ? ` <a class="hint" href="${esc(yt.url)}" target="_blank" rel="noopener">open ↗</a>` : ""}`
                 : passed ? '<span class="pill">⚠️ not posted</span>' : '<span class="pill">⏳ waits for its time</span>'}
               <span class="spacer"></span>
+              ${item.video_missing ? "" : `<button type="button" class="btn-ghost" data-watch="${item.story_id}" title="Play it here">▶ Watch</button>`}
+              ${plan.sender && !yt.done && !passed && !item.video_missing ? `<button type="button" class="btn-secondary" data-hub="${item.story_id}" title="The Linux machine posts it instead">📤 Send to Linux</button>` : ""}
               ${yt.done ? "" : `<button type="button" class="btn-ghost" data-posted="${item.id}" title="I uploaded it myself">Mark posted</button>`}
               <button type="button" class="btn-ghost" data-remove="${item.id}" title="Take it off the plan">✕</button></div>`;
           }
@@ -741,12 +744,16 @@
     if (e.target.closest("#daInsightsRefresh")) renderInsights(true);
   });
 
+  const { channelHub } = window.TrendClip;
+  const linux = channelHub.mount($("daHub"), "darkarchives", () => loadPlan());
   async function loadPlan() {
     try {
-      const { body } = await api("/api/darkarchives/plan");
+      const [{ body }, sender] = await Promise.all([api("/api/darkarchives/plan"), channelHub.sender()]);
       plan.data = body;
+      plan.sender = sender;
       plan.error.hidden = true;
       renderPlan();
+      linux.counts();
       renderProduce();
       renderInsights();
     } catch (err) {
@@ -768,6 +775,10 @@
 
   plan.box.addEventListener("click", (e) => {
     const json = (data) => ({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    const watchBtn = e.target.closest("button[data-watch]");
+    if (watchBtn) return channelHub.watch(watchBtn.closest(".da-plan-slot"), `/api/darkarchives/stories/${watchBtn.dataset.watch}/video`);
+    const hubBtn = e.target.closest("button[data-hub]");
+    if (hubBtn) return channelHub.picker(hubBtn.closest(".da-plan-slot"), "darkarchives", hubBtn.dataset.hub, () => { setTimeout(loadPlan, 1500); linux.refresh(); });
     const add = e.target.closest("button[data-add]");
     if (add) {
       const sel = add.parentElement.querySelector("select");

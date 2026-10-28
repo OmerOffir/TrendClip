@@ -9,6 +9,7 @@ import logging
 import threading
 import time
 from contextlib import asynccontextmanager
+from datetime import date as Day
 from pathlib import Path
 from typing import Any, Literal
 
@@ -862,6 +863,68 @@ def hub_send(req: hub.SendRequest) -> dict[str, Any]:
     _short_or_http(settings, req.filename)
     try:
         return hub.send(settings, req)
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+class ChannelSendRequest(BaseModel):
+    ref: str = Field(min_length=1, max_length=40)
+    date: Day
+    slot: str = Field(pattern=r"^\d{2}:\d{2}$")
+
+
+@app.get("/api/channel-hub/{name}/free")
+def channel_hub_free(name: str) -> dict[str, Any]:
+    """On the sending machine: the hub's open times for Dark Outliers / Borderline Why."""
+    from modules import channel_hub
+
+    try:
+        return {"free": channel_hub.remote_free(_base_settings(), name)}
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+@app.get("/api/channel-hub/{name}/plan")
+def channel_hub_plan(name: str) -> dict[str, Any]:
+    """On the sending machine: the hub's plan of that channel for the coming week, and what Send plan would send."""
+    from modules import channel_hub
+
+    settings = _base_settings()
+    try:
+        return {**channel_hub.remote_plan(settings, name), "local": channel_hub.planned(settings, name)}
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+@app.get("/api/channel-hub/{name}/planned")
+def channel_hub_planned(name: str) -> dict[str, Any]:
+    """This machine's upcoming videos of that channel that "Send plan to Linux" would send."""
+    from modules import channel_hub
+
+    try:
+        return {"items": channel_hub.planned(_base_settings(), name)}
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+@app.post("/api/channel-hub/{name}/send")
+def channel_hub_send(name: str, req: ChannelSendRequest) -> dict[str, Any]:
+    """On the sending machine: send one Dark Outliers / Borderline Why video to the hub's plan."""
+    from modules import channel_hub
+
+    try:
+        return channel_hub.send(_base_settings(), name, req.ref, req.date, req.slot)
+    except hub.HubError as err:
+        raise _hub_http(err) from err
+
+
+@app.post("/api/channel-hub/{name}/send-plan")
+def channel_hub_send_plan(name: str) -> dict[str, Any]:
+    """On the sending machine: every upcoming video of that channel goes to the hub at its own time."""
+    from modules import channel_hub
+
+    try:
+        return {"results": channel_hub.send_plan(_base_settings(), name)}
     except hub.HubError as err:
         raise _hub_http(err) from err
 
