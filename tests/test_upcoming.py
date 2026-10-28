@@ -63,3 +63,31 @@ def test_upcoming_endpoint(monkeypatch):
 
     monkeypatch.setattr(upcoming, "view", lambda settings, now=None: {"now": "2026-10-28T13:00", "days": [], "empty": 0, "twice": 0, "channels": {}})
     assert TestClient(web.app).get("/api/upcoming").json()["empty"] == 0
+
+
+def test_upcoming_on_the_sender_is_the_linux_week(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from trendclip import hub
+    from trendclip.web import app as web
+
+    web._UPCOMING_CACHE.clear()
+    asks = []
+    monkeypatch.setattr(hub, "is_sender", lambda settings: True)
+    monkeypatch.setattr(upcoming, "local_unsent", lambda settings: [{"channel": "darkarchives", "title": "Here only"}])
+    monkeypatch.setattr(hub, "remote_upcoming", lambda settings: asks.append(1) or {"days": [], "empty": 5, "twice": 0})
+    client = TestClient(web.app)
+    body = client.get("/api/upcoming").json()
+    assert body["source"] == "linux" and body["empty"] == 5 and body["local"][0]["title"] == "Here only"
+    client.get("/api/upcoming")
+    client.get("/api/upcoming?fresh=1")
+    assert len(asks) == 2  # the second call came from the cache
+
+    def down(settings):
+        raise hub.HubError("The Linux bot didn't answer.", 504)
+
+    web._UPCOMING_CACHE.clear()
+    monkeypatch.setattr(hub, "remote_upcoming", down)
+    monkeypatch.setattr(upcoming, "view", lambda settings, now=None: {"days": [], "empty": 0, "twice": 0})
+    body = client.get("/api/upcoming").json()
+    assert body["source"] == "here" and "didn't answer" in body["hub_error"]

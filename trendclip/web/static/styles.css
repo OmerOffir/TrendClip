@@ -909,6 +909,11 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 /* Upcoming: every channel's slots in one list */
 .ws-mark-up { background: linear-gradient(135deg, #1f4e79, #2f8f83); }
 .up-list { display: grid; gap: 14px; }
+.up-source { display: inline-block; margin-right: 6px; }
+.up-local { border: 1px dashed var(--border); border-radius: 12px; padding: 10px 12px; margin-bottom: 14px; display: grid; gap: 8px; }
+.up-local-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.up-local-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.up-local-group ul { margin: 0; padding-left: 18px; flex-basis: 100%; color: var(--muted); }
 .up-day { border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .up-day.today { border-color: rgba(61, 220, 151, 0.5); }
 .up-date { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }

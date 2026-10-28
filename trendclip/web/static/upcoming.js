@@ -6,6 +6,9 @@
   const error = $("upError");
   const hint = $("upHint");
   const nav = $("upNavEmpty");
+  const local = $("upLocal");
+  const SEND_PLAN = { sidequestlogic: "/api/hub/send-plan", darkarchives: "/api/channel-hub/darkarchives/send-plan",
+    borderlinewhy: "/api/channel-hub/borderlinewhy/send-plan" };
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const STATES = {
     waits: ["⏳ waits for its time", ""], posted: ["▶️ on YouTube", "good"], late: ["⚠️ not posted", "warn"],
@@ -23,7 +26,10 @@
     nav.textContent = data.empty;
     nav.hidden = !data.empty;
     const twice = data.twice ? ` · <b class="da-note" style="display:inline">${data.twice} slot${data.twice > 1 ? "s" : ""} hold a video that is planned twice</b>` : "";
-    hint.innerHTML = `${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.`;
+    const source = data.source === "linux" ? '<span class="pill good up-source">🐧 Linux plan</span>'
+      : data.hub_error ? '<span class="pill warn up-source">This machine only</span>' : "";
+    hint.innerHTML = `${source}${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.`;
+    renderLocal(data);
     list.innerHTML = data.days.map((day) => `
       <div class="up-day${day.today ? " today" : ""}">
         <div class="up-date"><b>${esc(dayLabel(day.day))}</b><small>${esc(day.day)}${day.today ? " · today" : ""}</small></div>
@@ -42,9 +48,45 @@
       </div>`).join("");
   }
 
-  async function load() {
+  // On the sending machine: what is planned here and not on Linux yet, with each channel's "Send plan to Linux".
+  function renderLocal(data) {
+    const rows = data.local || [];
+    const why = data.hub_error ? `<div class="da-note">Couldn't get the Linux week, showing this machine's: ${esc(data.hub_error)}</div>` : "";
+    local.hidden = !rows.length && !why;
+    if (local.hidden) return;
+    const groups = {};
+    rows.forEach((r) => (groups[r.channel] = groups[r.channel] || []).push(r));
+    local.innerHTML = why + (rows.length ? `<div class="up-local-head"><b>💻 On this machine, not on Linux yet</b>
+        <span class="hint">Each goes to Linux at its own day and time; Linux posts it</span></div>`
+      + Object.entries(groups).map(([channel, items]) => `<div class="up-local-group">
+        <b>${esc(items[0].label)}</b> · ${items.length} video${items.length === 1 ? "" : "s"}
+        <button type="button" class="btn-primary" data-send="${esc(channel)}">📤 Send to Linux</button>
+        <span class="hint" data-result="${esc(channel)}"></span>
+        <ul>${items.map((r) => `<li>${esc(r.day)} ${esc(r.time || "no time")} · ${esc(r.title)}</li>`).join("")}</ul></div>`).join("") : "");
+  }
+
+  async function send(btn) {
+    const channel = btn.dataset.send;
+    const out = local.querySelector(`[data-result="${channel}"]`);
+    if (!confirm("Send these videos to the Linux plan at the same day and time?\nEach one Linux takes leaves this machine's plan.")) return;
+    btn.disabled = true;
+    out.textContent = "Sending through Discord…";
     try {
-      const res = await fetch("/api/upcoming");
+      const res = await fetch(SEND_PLAN[channel], { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      const body = await res.json();
+      if (!res.ok) throw new Error((body.detail && (body.detail.message || body.detail)) || res.statusText);
+      const bad = body.results.filter((r) => !r.ok);
+      out.textContent = `✅ ${body.results.length - bad.length} sent` + (bad.length ? ` · ⚠️ ${bad.map((r) => `${r.title}: ${r.message}`).join(" | ")}` : "");
+      load(true);
+    } catch (err) {
+      out.textContent = `⚠️ ${err.message}`;
+      btn.disabled = false;
+    }
+  }
+
+  async function load(fresh) {
+    try {
+      const res = await fetch(`/api/upcoming${fresh ? "?fresh=1" : ""}`);
       const body = await res.json();
       if (!res.ok) throw new Error(body.detail || res.statusText);
       error.hidden = true;
@@ -55,6 +97,10 @@
     }
   }
 
+  local.addEventListener("click", (e) => {
+    const btn = e.target.closest("button[data-send]");
+    if (btn) send(btn);
+  });
   list.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-go]");
     if (!btn) return;
@@ -63,7 +109,7 @@
     const [view, attr] = PLAN_VIEW[channel];
     document.querySelector(`[${attr}="${view}"]`)?.click();
   });
-  $("upRefresh").addEventListener("click", load);
+  $("upRefresh").addEventListener("click", () => load(true));
   document.addEventListener("trendclip:workspace", (e) => { if (e.detail.workspace === "upcoming") load(); });
   if (document.body.dataset.workspace === "upcoming") load();
   else fetch("/api/upcoming").then((r) => r.json()).then((d) => { if (d && d.empty !== undefined) { nav.textContent = d.empty; nav.hidden = !d.empty; } }).catch(() => {});

@@ -16,6 +16,9 @@ nonce (modules/channel_hub.py does their side):
     tc-hub cask <nonce> <channel>                                -> tc-hub free <nonce> {"free": [...]}
     tc-hub cplan <nonce> <channel>                               -> tc-hub week <nonce> {} + plan.json
     tc-hub csend <nonce> <channel> <date> <slot> <part ids>  + bundle.json -> tc-hub done|fail <nonce> {...}
+
+And the Upcoming tab (every channel's week, modules/upcoming.py):
+    tc-hub uplan <nonce>                                         -> tc-hub week <nonce> {} + upcoming.json
 """
 
 from __future__ import annotations
@@ -39,7 +42,7 @@ from .models import utcnow
 logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
-REQUESTS = ("ask", "send", "plan", "cask", "cplan", "csend")
+REQUESTS = ("ask", "send", "plan", "uplan", "cask", "cplan", "csend")
 CHANNEL_REQUESTS = ("cask", "cplan", "csend")
 REPLIES = ("free", "week", "done", "fail")  # never a request word, or the hub would answer itself
 FREE_DAYS = 7
@@ -182,6 +185,11 @@ async def handle(settings: Settings, message: Any,
     if op == "plan":
         plan = json.dumps(plan_view(settings), ensure_ascii=False).encode("utf-8")
         return _reply("week", nonce, {}), None, ("plan.json", plan)
+    if op == "uplan":
+        from modules import upcoming
+
+        week = await asyncio.to_thread(upcoming.view, settings)
+        return _reply("week", nonce, {}), None, ("upcoming.json", json.dumps(week, ensure_ascii=False).encode("utf-8"))
     partial = settings.shorts_dir / f".incoming-{nonce}.part"
     try:
         if len(words) != 7 or not message.attachments:
@@ -321,6 +329,21 @@ def remote_plan(settings: Settings) -> dict[str, Any]:
     return data["file"]
 
 
+def remote_upcoming(settings: Settings) -> dict[str, Any]:
+    """Sending side: the hub's Upcoming view, every channel's week (modules.upcoming.view)."""
+    data = _ask(settings, "uplan")
+    if "file" not in data:
+        raise HubError("The Linux bot answered without its week. Update the code there (git pull) and restart it.", 502)
+    return data["file"]
+
+
+def planned(settings: Settings) -> list[planner.PlanItem]:
+    """This machine's planned Shorts that "Send plan to Linux" sends: from today on, with a video, not posted."""
+    today = datetime.now(settings.tz).date()
+    return [i for i in sorted(planner.load(settings).items, key=lambda i: (i.date, i.slot or ""))
+            if i.date >= today and i.short and not i.posted]
+
+
 def send(settings: Settings, req: SendRequest) -> dict[str, Any]:
     """Sending side: check the time on the hub, then post the Short to it in 8 MB pieces."""
     path = shorts.short_path(settings, req.filename)
@@ -345,11 +368,8 @@ def send_plan(settings: Settings) -> list[dict[str, Any]]:
     """Sending side: send every upcoming planned Short to the hub at its planned time. Each one the hub
     takes leaves this machine's plan (the hub's plan is the one that counts); refused ones stay."""
     _require_sender(settings)
-    today = datetime.now(settings.tz).date()
     results = []
-    for item in sorted(planner.load(settings).items, key=lambda i: (i.date, i.slot or "")):
-        if item.date < today or not item.short or item.posted:
-            continue
+    for item in planned(settings):
         line = {"title": item.title, "date": item.date.isoformat(), "slot": item.slot, "ok": False}
         if item.slot is None:
             results.append({**line, "message": "No upload time; give it 14:30 or 23:00 first."})

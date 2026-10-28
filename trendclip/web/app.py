@@ -702,13 +702,31 @@ def get_plan() -> dict[str, Any]:
     return planner.view(_base_settings())
 
 
+_UPCOMING_CACHE: dict[str, Any] = {}
+UPCOMING_CACHE_SECONDS = 60  # the sender asks Linux through Discord: the tab badge and the tab share one answer
+
+
 @app.get("/api/upcoming")
-def get_upcoming() -> dict[str, Any]:
+def get_upcoming(fresh: bool = False) -> dict[str, Any]:
     """Every channel's upload slots for the coming week in one list: the planned video and its state, or
-    the slot shown empty (modules.upcoming)."""
+    the slot shown empty (modules.upcoming). On the sending machine it is the Linux machine's week, asked
+    through Discord (the plan that counts), with this machine's videos not sent there yet; if Linux doesn't
+    answer, this machine's own week with the reason."""
     from modules import upcoming
 
-    return upcoming.view(_base_settings())
+    settings = _base_settings()
+    if not hub.is_sender(settings):
+        return {**upcoming.view(settings), "source": "here"}
+    local = upcoming.local_unsent(settings)
+    cached = _UPCOMING_CACHE.get("linux")
+    if cached and not fresh and time.monotonic() - cached[0] < UPCOMING_CACHE_SECONDS:
+        return {**cached[1], "source": "linux", "local": local}
+    try:
+        week = hub.remote_upcoming(settings)
+        _UPCOMING_CACHE["linux"] = (time.monotonic(), week)
+        return {**week, "source": "linux", "local": local}
+    except hub.HubError as err:
+        return {**upcoming.view(settings), "source": "here", "local": local, "hub_error": str(err)}
 
 
 def _plan_item_or_http(fn, *args):

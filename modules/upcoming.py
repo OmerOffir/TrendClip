@@ -128,6 +128,23 @@ def view(settings, now: datetime | None = None) -> dict[str, Any]:
             "channels": CHANNELS}
 
 
+def local_unsent(settings) -> list[dict[str, Any]]:
+    """On the sending machine: the videos planned here that are not on the Linux plan yet, per channel
+    (what each channel's "Send plan to Linux" sends)."""
+    from modules import channel_hub
+    from trendclip import hub
+
+    out = [{"channel": "sidequestlogic", "label": CHANNELS["sidequestlogic"], "day": i.date.isoformat(),
+            "time": i.slot or "", "title": i.title} for i in hub.planned(settings)]
+    for name in ("darkarchives", "borderlinewhy"):
+        try:
+            out += [{"channel": name, "label": CHANNELS[name], "day": p["date"], "time": p["slot"], "title": p["title"]}
+                    for p in channel_hub.planned(settings, name)]
+        except Exception:  # noqa: BLE001 - one channel's trouble never hides the others
+            continue
+    return sorted(out, key=lambda r: (r["day"], r["time"], r["channel"]))
+
+
 def _source_name(source) -> str:
     code = source.__code__.co_names
     return "sidequestlogic" if "sidequest_rows" in code else "darkarchives" if "dark_rows" in code else "borderlinewhy"

@@ -195,3 +195,19 @@ def test_only_ask_and_send_are_requests():
     assert not any(hub.is_request(f"tc-hub {op} ab12 {{}}") for op in hub.REPLIES)
     assert not hub.is_request("tc-hub part ab12 1/2")
     assert not hub.is_request("hello")
+
+
+def test_the_mac_sees_the_linux_upcoming_week(linux, mac, tomorrow, discord, monkeypatch):
+    from modules import upcoming
+
+    seen = []
+    monkeypatch.setattr(upcoming, "view", lambda settings, now=None: seen.append(settings) or {"days": [], "empty": 3})
+    assert hub.remote_upcoming(mac) == {"days": [], "empty": 3}
+    assert seen == [linux] and discord.messages == {}
+
+
+def test_planned_is_what_send_plan_sends(mac, tomorrow):
+    add_short(mac, name="b.mp4")
+    planner.add_item(mac, planner.ItemRequest(date=tomorrow, slot="14:30", short="b.mp4"))
+    planner.add_item(mac, planner.ItemRequest(date=tomorrow, slot="23:00", title="no video yet"))
+    assert [i.short for i in hub.planned(mac)] == ["b.mp4"]
