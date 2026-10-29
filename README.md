@@ -420,8 +420,9 @@ real transparent background. Each becomes a sticker (white outline, soft shadow)
   Shorts buttons on the right and bottom.
 - **Toggles:** **Reaction stickers** and **CTA sticker**, per short or series.
 
-Meme images are usually copyrighted. Short reaction clips are common on Shorts, but YouTube can
-still flag them, so prefer stickers you made or that have a free licence.
+Only stickers you made go in `stickers/`. The folder's movie and TV reaction memes were removed on
+2026-10-29 for copyright, so until you add your own the videos have no reaction stickers; the
+built-in subscribe button is drawn by the code and stays.
 
 **Edit a Short:** press **✏️ Edit** on it in *Your Shorts*. Its settings load back into the form, so you
 can change the script, title, description, title card, end banner, pop-ups, stickers, voice, caption
