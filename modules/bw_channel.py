@@ -3,9 +3,9 @@ Discord channel, and its day: one video per BW_SLOTS time (default 14:30 and 23:
 
 BW_LEAD hours before the slot (default 8) the bot makes the video: the next topic (a hand-checked script from
 output/borderlinewhy/queue/ first, else the topic list), its research and checked script, the voice, the maps,
-the render. The video is posted in the channel's Discord channel with Approve / Don't post / Upload now. At the
-slot's time it goes to YouTube only when it was approved (BW_REQUIRE_APPROVAL, default on); approving later
-uploads it at once. A video outside MIN_SECONDS-MAX_SECONDS never goes out.
+the render. The video is posted in the channel's Discord channel with Don't post / Upload now and goes to YouTube
+at the slot's time by itself, like the other channels. With BW_REQUIRE_APPROVAL=1 (default off since 2026-10-29)
+it goes out only when approved (an Approve button too); approving later uploads it at once. A video outside MIN_SECONDS-MAX_SECONDS never goes out.
 
 Files: output/borderlinewhy/<date>_<HHMM>/ (script.json, voice.mp3, video.mp4, info.json); `key` below is that
 folder's name.
@@ -78,7 +78,7 @@ def auto_post() -> bool:
 
 
 def require_approval() -> bool:
-    return _on("BW_REQUIRE_APPROVAL")
+    return _on("BW_REQUIRE_APPROVAL", "0")
 
 
 def upload_privacy() -> str:
@@ -562,8 +562,10 @@ def announce_video(info: dict, settings=None, out_dir: Path | None = None) -> st
         path = video_path(info["key"], out_dir)
         small = assistant.fit_for_discord(path, path.parent / "discord" / path.name)
         b = channel_common.button
-        components = channel_common.rows(b("bwok", info["key"], "✅ Approve", "success"), b("bwveto", info["key"], "🚫 Don't post this", "danger"),
-                                         b("bwup", info["key"], "⬆️ Upload now", "primary"))
+        buttons = [b("bwveto", info["key"], "🚫 Don't post this", "danger"), b("bwup", info["key"], "⬆️ Upload now", "primary")]
+        if require_approval():
+            buttons.insert(0, b("bwok", info["key"], "✅ Approve", "success"))
+        components = channel_common.rows(*buttons)
         return rest.post(video_line(info) + "\n" + video_note(info), (f"{info['key']}.mp4", small.read_bytes()), components)
     except Exception as err:  # noqa: BLE001
         logger.warning("Discord post for Borderline Why %s failed: %s", info.get("key"), err)

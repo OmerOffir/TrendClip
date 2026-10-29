@@ -369,6 +369,7 @@ class FakeYouTube:
 
 
 def test_approval_gates_the_upload(settings, tmp_path, world, monkeypatch):
+    monkeypatch.setenv("BW_REQUIRE_APPROVAL", "1")
     job, info, _ = _make(settings, tmp_path, world)
     uploads = []
 
@@ -388,6 +389,15 @@ def test_approval_gates_the_upload(settings, tmp_path, world, monkeypatch):
     assert len(uploads) == 1
     hidden = bw_channel.veto(job.key, tmp_path, yt)
     assert hidden["hidden"] and yt.updates[0]["status"]["privacyStatus"] == "private"
+
+
+def test_without_approval_it_goes_out_by_itself(settings, tmp_path, world, monkeypatch):
+    job, info, _ = _make(settings, tmp_path, world)
+    assert not bw_channel.require_approval() and "goes out by itself" in bw_channel.video_note(info)
+    monkeypatch.setattr(bw_channel.publish, "upload_file",
+                        lambda path, req, as_short, progress, youtube: {"video_id": "v", "url": "https://youtu.be/v", "privacy": req.privacy})
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
+    assert bw_channel.publish_if_allowed(job.key, out_dir=tmp_path, youtube=FakeYouTube())["url"] == "https://youtu.be/v"
 
 
 def test_approving_after_the_slot_uploads_at_once(settings, tmp_path, world, monkeypatch):
@@ -457,7 +467,7 @@ def test_tab_endpoints(tmp_path, monkeypatch, settings, world):
     job, info, _ = _make(settings, tmp_path, world)
     client = TestClient(app)
     body = client.get("/api/borderlinewhy/videos").json()
-    assert body["videos"][0]["key"] == job.key and body["videos"][0]["state"] == "waiting"
+    assert body["videos"][0]["key"] == job.key and body["videos"][0]["state"] == "approved"
     assert "Sources:" in body["videos"][0]["youtube"]["description"]
     assert client.get(f"/api/borderlinewhy/videos/{job.key}/video.mp4").status_code == 200
     assert client.get("/api/borderlinewhy/videos/nope/video.mp4").status_code == 404
@@ -491,7 +501,7 @@ def test_plan_days_states_and_extra_videos(settings, tmp_path, world, monkeypatc
     today = days[0]
     assert today["today"] and [r["slot"] for r in today["slots"]] == ["14:30", "19:00", "23:00"]
     by = {r["slot"]: r for r in today["slots"]}
-    assert by["14:30"]["state"] == "waiting" and by["14:30"]["video"]["title"] == SCRIPT["title"]
+    assert by["14:30"]["state"] == "approved" and by["14:30"]["video"]["title"] == SCRIPT["title"]
     assert by["19:00"]["state"] == "posted" and by["19:00"]["extra"]
     assert by["23:00"]["state"] == "due"  # made 8 h before: 15:00, so it is being made
     tomorrow = {r["slot"]: r["state"] for r in days[1]["slots"]}
