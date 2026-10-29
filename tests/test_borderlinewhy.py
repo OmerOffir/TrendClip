@@ -563,11 +563,13 @@ def test_research_says_try_later_when_both_wikipedia_routes_fail(monkeypatch):
 
 
 @pytest.fixture
-def fx_offline(monkeypatch):
-    """bw_fx without the network: a plain-color world picture, made-up flags and icons."""
+def fx_offline(monkeypatch, tmp_path):
+    """bw_fx without the network: a plain-color world picture, made-up flags and icons, none of the owner's."""
     from PIL import Image
 
     from modules import bw_fx
+
+    monkeypatch.setattr(bw_fx, "CUSTOM_DIR", tmp_path / "no-custom-icons")
 
     class FakeSat:
         globe_tex = np.full((64, 128, 3), (40, 120, 60), np.uint8)
@@ -677,9 +679,10 @@ def test_satellite_look_falls_back_to_flat_when_nasa_is_down(world, monkeypatch,
     assert used and set(used) == {"Renderer"}
 
 
-def test_check_wants_known_icons_and_flags_on_poles(world):
+def test_check_wants_known_icons_and_flags_on_poles(world, monkeypatch, tmp_path):
     from modules import bw_fx
 
+    monkeypatch.setattr(bw_fx, "CUSTOM_DIR", tmp_path / "no-custom-icons")
     assert bw_fx.icon_code("Money Bag") == "1f4b0" and bw_fx.icon_code("1f697") == "1f697" and bw_fx.icon_code("unicorn") == ""
     assert bw_fx.flag_name("Canada") == "Flag of Canada.svg" and bw_fx.flag_name("Flag_of_Canada.svg") == "Flag of Canada.svg"
     draft = _draft()
@@ -766,3 +769,68 @@ def test_a_manual_script_is_made_with_its_origin(settings, tmp_path, world, monk
     monkeypatch.setitem(SCRIPT, "origin", "manual")
     job, info, rendered = _make(settings, tmp_path, world)
     assert info["origin"] == "manual" and "origin" not in json.loads((tmp_path / job.key / "script.json").read_text())
+
+
+def _custom_gif(path, frames=6, size=(80, 40), fade_out=0):
+    """A wide transparent GIF: a square that moves right frame by frame; the last `fade_out` frames nearly empty."""
+    from PIL import Image, ImageDraw
+
+    ims = []
+    for n in range(frames):
+        im = Image.new("RGBA", size, (0, 0, 0, 0))
+        if n < frames - fade_out:
+            ImageDraw.Draw(im).rectangle([10 + n * 4, 8, 30 + n * 4, 32], fill=(200, 30, 30, 255))
+        else:
+            ImageDraw.Draw(im).point((0, 0), fill=(200, 30, 30, 255))
+        ims.append(im)
+    ims[0].save(path, save_all=True, append_images=ims[1:], duration=500, loop=0, disposal=2)
+
+
+def test_owner_icons_replace_noto_and_add_names(world, monkeypatch, tmp_path):
+    """A GIF named like an icon in stickers/borderlinewhy is what the renderer draws for it, a new name becomes
+    an icon the script may use, the Noto icons stay for the rest; frames keep their shape and end on the picture."""
+    from modules import bw_fx, bw_script
+
+    folder = tmp_path / "borderlinewhy"
+    folder.mkdir()
+    _custom_gif(folder / "lock.gif", fade_out=1)
+    _custom_gif(folder / "War.gif", frames=1)
+    (folder / "notes.txt").write_text("not an icon")
+    monkeypatch.setattr(bw_fx, "CUSTOM_DIR", folder)
+    monkeypatch.setattr(bw_fx, "_anims", {})
+    monkeypatch.setattr(bw_fx, "_icons", {})
+    assert bw_fx.icon_names()[-1] == "war" and "lock" in bw_fx.icon_names() and bw_fx.icon_names().count("lock") == 1
+    assert bw_fx.icon_code("lock") == "lock" and bw_fx.icon_code("1f512") == "lock" and bw_fx.icon_code("WAR") == "war"
+    assert bw_fx.icon_code("car") == "1f697" and bw_fx.icon_code("unicorn") == ""
+    frames, ends = bw_fx.anim_frames("lock", 100)
+    assert len(frames) == 5 and ends == pytest.approx([0.5, 1.0, 1.5, 2.0, 2.5])  # the near-empty last frame dropped
+    assert all(f.size == frames[0].size for f in frames) and frames[0].height == 130 and 130 < frames[0].width <= 312
+    im, animated = bw_fx.icon_frame("lock", 100, 1.2)
+    assert animated and im is frames[2]
+    assert bw_fx.anim_frames("war", 100) is None  # one frame: a still icon
+    still, animated = bw_fx.icon_frame("war", 100, 0.5)
+    assert not animated and still.height == 130
+    draft = _draft()
+    draft.scenes[0].elements += [bw_script.ElementDraft(kind="icon", icon="war"), bw_script.ElementDraft(kind="icon", icon="lock")]
+    assert "unknown icon" not in " ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "war" in bw_script.write_prompt(_research())
+
+
+def test_owner_icon_draws_wide_on_the_frame(monkeypatch, tmp_path):
+    """A wide custom icon is drawn at its own shape (not squashed square), stacked copies and the pop-in included."""
+    from PIL import Image
+
+    from modules import bw_fx, bw_render
+
+    folder = tmp_path / "borderlinewhy"
+    folder.mkdir()
+    _custom_gif(folder / "wave.gif")
+    monkeypatch.setattr(bw_fx, "CUSTOM_DIR", folder)
+    monkeypatch.setattr(bw_fx, "_anims", {})
+    monkeypatch.setattr(bw_fx, "_icons", {})
+    el = bw_render.Element(kind="icon", at=0.0, opts={"icon": bw_fx.icon_code("wave"), "x": 540, "y": 900, "count": 2})
+    for t, wide in ((0.1, False), (2.0, True)):  # popping in it is tiny; grown, wider than tall
+        ov = Image.new("RGBA", (bw_render.W, bw_render.H), (0, 0, 0, 0))
+        bw_fx.FxRenderer.icon(bw_fx.FxRenderer.__new__(bw_fx.FxRenderer), ov, el, (540, 900), t)
+        box = ov.getbbox()
+        assert box and (box[2] - box[0] > 300) == wide and box[2] - box[0] > box[3] - box[1]

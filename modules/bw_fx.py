@@ -42,7 +42,7 @@ ICON_URL = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/3D/png
 ANIM_URL = "https://fonts.gstatic.com/s/e/notoemoji/latest/{code}/512.webp"  # Animated Noto Emoji, CC BY 4.0
 HAND_URL = "https://github.com/google/fonts/raw/main/ofl/patrickhand/PatrickHand-Regular.ttf"  # SIL Open Font License
 
-# the icons a script may name (Noto 3D emoji code points)
+# the icons a script may name (Noto 3D emoji code points); the owner's own files in CUSTOM_DIR come first
 ICONS = dict(
     car="1f697", truck="1f69a", train="1f682", plane="2708", ship="1f6a2", sailboat="26f5", canoe="1f6f6", horse="1f40e",
     camel="1f42b", walking="1f6b6", money_bag="1f4b0", cash="1f4b5", coin="1fa99", medal="1f947", gem="1f48e", oil="1f6e2",
@@ -259,6 +259,62 @@ def globe_image(cam: GlobeCam) -> Image.Image:
 _flags: dict[str, Image.Image] = {}
 _icons: dict[tuple[str, int], Image.Image] = {}
 
+# The owner's own icons: a GIF / WebP / PNG per icon name (lock.gif, war.gif), any size, transparent background.
+# One named like a Noto icon replaces it; a new name becomes an icon a script may use. Not the stickers folder
+# itself, whose files are SideQuestLogic's reaction stickers (scanned and tagged with Gemini).
+CUSTOM_DIR = bw_geo.PROJECT_ROOT / "stickers" / "borderlinewhy"
+CUSTOM_EXT = (".gif", ".webp", ".png", ".apng")
+
+
+def _key(name: str) -> str:
+    return name.strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def custom_icons() -> dict[str, Path]:
+    """The owner's icon files by icon name (the file's stem)."""
+    try:
+        files = sorted(CUSTOM_DIR.iterdir())
+    except OSError:
+        return {}
+    out: dict[str, Path] = {}
+    for path in files:
+        if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith("."):
+            out.setdefault(_key(path.stem), path)
+    return out
+
+
+def icon_names() -> list[str]:
+    """Every icon name a script may use: the Noto ones, then the owner's own."""
+    return list(ICONS) + [name for name in custom_icons() if name not in ICONS]
+
+
+def _custom_frames(path: Path, size: int) -> tuple[list[Image.Image], list[float]]:
+    """A custom icon's frames cropped to what is drawn and fitted to the icon's `size`: a flat drawing reads
+    smaller than a chunky emoji, so it gets a third more (height, or width 2.4 x that for a wide picture);
+    trailing near-empty frames are dropped so a loop ends on the picture."""
+    size = round(size * 1.3)
+    im = Image.open(path)
+    raw, ends, end = [], [], 0.0
+    for n in range(getattr(im, "n_frames", 1)):
+        im.seek(n)
+        raw.append(im.convert("RGBA"))
+        end += max(0.02, (im.info.get("duration") or 40) / 1000)
+        ends.append(end)
+    cover = [sum(f.getchannel("A").histogram()[128:]) for f in raw]
+    keep = len(raw)
+    while keep > 1 and cover[keep - 1] < 0.3 * max(cover):
+        keep -= 1
+    raw, ends = raw[:keep], ends[:keep]
+    boxes = [f.getchannel("A").getbbox() for f in raw]
+    boxes = [b for b in boxes if b] or [(0, 0, im.width, im.height)]
+    pad = max(2, im.width // 50)
+    box = (max(0, min(b[0] for b in boxes) - pad), max(0, min(b[1] for b in boxes) - pad),
+           min(im.width, max(b[2] for b in boxes) + pad), min(im.height, max(b[3] for b in boxes) + pad))
+    w, h = box[2] - box[0], box[3] - box[1]
+    scale = size / max(h, w / 2.4)
+    wh = (max(1, round(w * scale)), max(1, round(h * scale)))
+    return [f.crop(box).resize(wh, Image.LANCZOS) for f in raw], ends
+
 
 def flag_image(name: str) -> Image.Image:
     if name not in _flags:
@@ -270,6 +326,10 @@ def flag_image(name: str) -> Image.Image:
 def icon_image(code: str, size: int) -> Image.Image:
     key = (code, size)
     if key not in _icons:
+        custom = custom_icons().get(code)
+        if custom is not None:
+            _icons[key] = _custom_frames(custom, size)[0][0]
+            return _icons[key]
         if (code, 512) not in _icons:
             _icons[(code, 512)] = Image.open(_cached(FX_DIR / "icons" / f"{code}.png", ICON_URL.format(code=code))).convert("RGBA")
         _icons[key] = _icons[(code, 512)].resize((size, size), Image.LANCZOS)
@@ -280,12 +340,23 @@ _anims: dict[tuple[str, int], tuple[list[Image.Image], list[float]] | None] = {}
 
 
 def anim_frames(code: str, size: int) -> tuple[list[Image.Image], list[float]] | None:
-    """The animated Noto version of an icon (frames at `size` and each frame's end time), cached in
-    assets/bw_fx/anim/; None when there is none (remembered) or it can't be fetched now (the still icon is used)."""
+    """The animated version of an icon (frames at `size` and each frame's end time): the owner's own file in
+    CUSTOM_DIR, else Noto's, cached in assets/bw_fx/anim/; None when there is none (remembered) or it can't be
+    fetched now (the still icon is used)."""
     key = (code, size)
     if key in _anims:
         return _anims[key]
     _anims[key] = None
+    custom = custom_icons().get(code)
+    if custom is not None:
+        try:
+            frames, ends = _custom_frames(custom, size)
+        except Exception as err:  # noqa: BLE001 - a broken file: the Noto icon
+            logger.warning("Custom icon %s unreadable: %s", custom.name, err)
+            return None
+        if len(frames) > 1:
+            _anims[key] = (frames, ends)
+        return _anims[key]
     folder = FX_DIR / "anim"
     path, none = folder / f"{code}.webp", folder / f"{code}.none"
     if none.is_file():
@@ -417,11 +488,18 @@ def wave(img: Image.Image, t: float, amp: float = 0.03) -> Image.Image:
 
 
 def icon_code(name: str) -> str:
-    """A script's icon name (or a code point) to its code point; empty when unknown."""
-    key = name.strip().lower().replace(" ", "_").replace("-", "_")
+    """A script's icon name (or a code point) to what the renderer draws it from: the name when the owner has
+    a file for it (stickers/borderlinewhy), else the Noto code point; empty when unknown."""
+    key = _key(name)
+    custom = custom_icons()
+    if key in custom:
+        return key
     if key in ICONS:
         return ICONS[key]
-    return key if key in ICONS.values() else ""
+    if key in ICONS.values():
+        name = next(n for n, c in ICONS.items() if c == key)
+        return name if name in custom else key
+    return ""
 
 
 def flag_name(name: str) -> str:
@@ -898,17 +976,18 @@ class FxRenderer(Renderer):
             if not animated:  # a still icon rocks and breathes a little
                 im = im.rotate(6 * math.sin(2.1 * t + k + el.at), resample=Image.BILINEAR)
                 px = int(px * (1 + 0.04 * math.sin(3.3 * t + el.at)))
-            if px != size:
-                im = im.resize((px, px), Image.BILINEAR)
+            if px != size:  # a custom icon may be wider than tall: scale it by the same factor
+                im = im.resize((max(1, im.width * px // size), max(1, im.height * px // size)), Image.BILINEAR)
             if flip or el.opts.get("flip"):
                 im = im.transpose(Image.FLIP_LEFT_RIGHT)
             bob = 5 * math.sin(2.4 * t + k + el.at)
             x = xy[0] + (k - (n - 1) / 2) * size * 0.55
             y = xy[1] - k * size * 0.12 + bob
-            sh = Image.new("RGBA", (px, px // 3), (0, 0, 0, 0))
-            ImageDraw.Draw(sh).ellipse([px * 0.15, 0, px * 0.85, px // 3 - 1], fill=(0, 0, 0, int(90 * min(1, s))))
-            ov.alpha_composite(sh.filter(ImageFilter.GaussianBlur(6)), (int(x - px / 2), int(y + px * 0.38)))
-            ov.alpha_composite(im, (int(x - px / 2), int(y - px / 2)))
+            w, h = im.size
+            sh = Image.new("RGBA", (w, max(2, h // 3)), (0, 0, 0, 0))
+            ImageDraw.Draw(sh).ellipse([w * 0.15, 0, w * 0.85, max(2, h // 3) - 1], fill=(0, 0, 0, int(90 * min(1, s))))
+            ov.alpha_composite(sh.filter(ImageFilter.GaussianBlur(6)), (int(x - w / 2), int(y + h * 0.38)))
+            ov.alpha_composite(im, (int(x - w / 2), int(y - h / 2)))
         if el.text:
             text(ov, (xy[0], xy[1] + size * 0.75), el.text.upper(), 46, a=min(1.0, max(0.0, u - 0.5)), max_width=W - 80)
 

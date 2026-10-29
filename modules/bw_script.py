@@ -603,7 +603,7 @@ def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
     return PROMPT.format(question=res.topic.question, min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
-                         min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.ICONS),
+                         min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
                          today=today or dt.date.today().isoformat(), sources=sources_block(res))
 
 
