@@ -20,8 +20,8 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (__version__, analytics, assistant, gamer_manual, gamer_queue, gamer_week, hub, instagram, music, planner, publish, quiz,
-                script_writer, shorts, stickers, video_downloader, voiceover)
+from .. import (__version__, analytics, assistant, gamer_manual, gamer_queue, gamer_week, hub, instagram, kokoro_voice, music, planner,
+                publish, quiz, script_writer, shorts, stickers, video_downloader, voiceover)
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
 from ..youtube_client import YouTubeAPIError, YouTubeAuthError, YouTubeQuotaError
@@ -440,7 +440,8 @@ def create_status() -> dict[str, Any]:
     return {
         "gemini_enabled": script_writer.gemini_api_key(settings) is not None,
         "gemini_model": script_writer.gemini_model(settings),
-        "voice": settings.tts_voice,
+        "engine": shorts.voice_engine(settings),
+        "voice": shorts.default_voice(settings),
         "rate": settings.tts_rate,
         "target_seconds": settings.short_target_seconds,
         "words_per_second": script_writer.WORDS_PER_SECOND,
@@ -451,6 +452,9 @@ def create_status() -> dict[str, Any]:
 
 @app.get("/api/create/voices")
 def create_voices() -> list[dict[str, Any]]:
+    """The voices of the engine in use: Kokoro's English voices, or Microsoft's Edge list."""
+    if shorts.voice_engine(_base_settings()) == "kokoro":
+        return kokoro_voice.list_voices()
     try:
         return voiceover.list_voices("en-")
     except voiceover.VoiceError as err:

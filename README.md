@@ -318,14 +318,13 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    "Follow …" ending.
    **Long videos** use the same four beats stretched across the chosen length (three escalations, a
    twist, then the replay loop) instead of a spoken question and follow line.
-3. **Voice & style:** (edge-tts needs the internet; a failed request is retried for about 30 s
-   before the "Voice generation failed" error, which then says when the voice server can't be
-   reached. A 403 from Microsoft, which is what Europe and Israel get from the old Edge voice
-   call, switches to F5-TTS on the NVIDIA GPU instead — no VPN. Install it once with
-   `requirements-gpu.txt`. The first video downloads the model. It copies the Edge recording in
-   `trendclip/voices/ref.wav`, so the speaker stays close to the Edge voice. Machines Microsoft
-   still accepts keep the Edge voice.) a free edge-tts
-   voice (47 English voices) with exact word timings, speed,
+3. **Voice & style:** the voice is **Kokoro** (open source, on the machine's GPU, 27 English voices,
+   a timestamp for every word) whenever it is installed (`requirements-gpu.txt`); `TTS_ENGINE=edge`
+   or a machine without Kokoro uses the free Microsoft Edge voice instead (edge-tts needs the
+   internet; a failed request is retried for about 30 s before the "Voice generation failed" error,
+   and a 403 from Microsoft switches to F5-TTS on the GPU, which copies the Edge recording in
+   `trendclip/voices/ref.wav`). The Create tab lists the voices of the engine in use; `TTS_RATE`
+   (+5%) is the Edge rate and Kokoro's speed (1.05) alike. Then speed,
    highlight colour, words per line, crop/blur layout and **Gameplay speed** (×1 / ×1.25 / ×1.5: only the
    background footage plays faster, the voice and music keep their speed). Trend tab downloads are 1.5× the chosen clip length (30 s → 45 s),
    so a clip still covers the full video at ×1.5. **Create Short** renders in the background.

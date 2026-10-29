@@ -1,6 +1,12 @@
 import pytest
 
-from trendclip import stickers
+from trendclip import kokoro_voice, stickers
+
+
+@pytest.fixture(autouse=True)
+def no_kokoro(monkeypatch):
+    """Tests see the Edge voice unless they ask for Kokoro: the same path on the Mac and the hub GPU."""
+    monkeypatch.setattr(kokoro_voice, "available", lambda: False)
 
 
 @pytest.fixture(autouse=True)

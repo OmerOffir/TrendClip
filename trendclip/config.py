@@ -36,6 +36,7 @@ _ENV_MAP: dict[str, str] = {
     "assets_dir": "ASSETS_DIR",
     "gemini_api_key": "GEMINI_API_KEY",
     "gemini_model": "GEMINI_MODEL",
+    "tts_engine": "TTS_ENGINE",
     "tts_voice": "TTS_VOICE",
     "tts_rate": "TTS_RATE",
     "short_target_seconds": "SHORT_TARGET_SECONDS",
@@ -124,9 +125,12 @@ class Settings(BaseModel):
     # Your own background music, sorted by story mood: music/funny and music/chill (lo-fi / quirky only).
     music_library_dir: Path = PROJECT_ROOT / "music"
 
-    # Create tab: Gemini writes the script, edge-tts speaks it.
+    # Create tab: Gemini writes the script; Kokoro (open source, on the GPU) speaks it when installed,
+    # else the Edge voice. TTS_ENGINE: auto / kokoro / edge. TTS_VOICE names a voice of the engine in use
+    # (am_michael... for Kokoro, en-US-...Neural for Edge); a voice of the other engine falls back to its default.
     gemini_api_key: SecretStr | None = None
     gemini_model: str = DEFAULT_GEMINI_MODEL
+    tts_engine: Literal["auto", "kokoro", "edge"] = "auto"
     tts_voice: str = DEFAULT_TTS_VOICE
     tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
     short_target_seconds: int = Field(22, ge=10, le=180)  # up to 30: the viral 18-22 s rules

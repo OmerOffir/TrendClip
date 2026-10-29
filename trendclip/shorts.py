@@ -1,4 +1,5 @@
-"""Create tab backend: Gemini script → edge-tts voiceover → karaoke Short, run as background jobs."""
+"""Create tab backend: Gemini script → voiceover (Kokoro on the GPU, or the Edge voice) → karaoke Short, run as
+background jobs."""
 
 from __future__ import annotations
 
@@ -16,8 +17,8 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import music, popups, quiz, script_writer, stickers, video_assembler, video_downloader, voiceover
-from .config import Settings
+from . import kokoro_voice, music, popups, quiz, script_writer, stickers, video_assembler, video_downloader, voiceover
+from .config import DEFAULT_TTS_VOICE, Settings
 from .models import utcnow
 from .popups import Popup
 from .quiz import Flash
@@ -302,6 +303,32 @@ def _load_words(path: Path) -> list[video_assembler.Word]:
     return [video_assembler.Word(w["word"], w["start"], w["end"]) for w in json.loads(path.read_text(encoding="utf-8"))]
 
 
+def voice_engine(settings: Settings) -> str:
+    """"kokoro" (open source, on this machine's GPU) or "edge" (Microsoft's online voice): TTS_ENGINE, where
+    "auto" takes Kokoro whenever it is installed."""
+    engine = settings.tts_engine
+    if engine == "auto":
+        engine = "kokoro" if kokoro_voice.available() else "edge"
+    return engine
+
+
+def default_voice(settings: Settings, engine: str | None = None) -> str:
+    """TTS_VOICE when it belongs to the engine in use, else that engine's default (am_michael / Andrew)."""
+    engine = engine or voice_engine(settings)
+    voice = settings.tts_voice
+    if engine == "kokoro":
+        return voice if kokoro_voice.is_voice(voice) else kokoro_voice.QUIZ_VOICE
+    return voice if not kokoro_voice.is_voice(voice) else DEFAULT_TTS_VOICE
+
+
+def pick_voice(settings: Settings, requested: str | None, engine: str | None = None) -> str:
+    """The requested voice when it belongs to the engine in use, else the default."""
+    engine = engine or voice_engine(settings)
+    if requested and kokoro_voice.is_voice(requested) == (engine == "kokoro"):
+        return requested
+    return default_voice(settings, engine)
+
+
 def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
                  voice_from: Path | None = None) -> ShortVideo:
     """`voice_from`: an existing voiceover MP3 (+ .words.json) with the same script, voice and speed."""
@@ -310,10 +337,11 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     out_dir = settings.shorts_dir
     out_dir.mkdir(parents=True, exist_ok=True)
     base = out_dir / (req.output_name or f"{_slug(req.game)}_{time.strftime('%Y%m%d-%H%M%S')}")
-    voice = req.voice or settings.tts_voice
+    engine = voice_engine(settings)
+    voice = pick_voice(settings, req.voice, engine)
     chosen_rate = req.rate or settings.tts_rate
     rate = quiz.quiz_rate(chosen_rate) if req.flashes else chosen_rate
-    if req.flashes:
+    if req.flashes and engine == "edge":
         voice = quiz.english_voice(voice)
 
     track = resolve_music(settings, req, progress)
@@ -323,6 +351,10 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         shutil.copyfile(voice_from, base.with_suffix(".mp3"))
         shutil.copyfile(voice_from.with_suffix(".words.json"), base.with_suffix(".words.json"))
         words = _load_words(base.with_suffix(".words.json"))
+    elif engine == "kokoro":
+        progress(None, f"Recording the voiceover (Kokoro {voice})")
+        words = kokoro_voice.synthesize(req.script, base.with_suffix(".mp3"), voice, kokoro_voice.speed_from_rate(rate))
+        kokoro_voice.unload()
     else:
         progress(None, f"Recording the voiceover ({voice})")
         words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate, local_rate=chosen_rate)
@@ -407,10 +439,10 @@ def rerender_short(settings: Settings, filename: str, req: RenderRequest, progre
     old = get_short(settings, filename)
     old_path = short_path(settings, filename)
     prev, _ = edit_settings(settings, old)
-    voice = req.voice or settings.tts_voice
+    voice = pick_voice(settings, req.voice)
     rate = req.rate or settings.tts_rate
     same_voice = (prev.get("script", "").strip() == req.script.strip()
-                  and (prev.get("voice") or settings.tts_voice) == voice
+                  and (prev.get("voice") or default_voice(settings)) == voice
                   and (prev.get("rate") or settings.tts_rate) == rate)
     mp3 = old_path.with_suffix(".mp3")
     voice_from = mp3 if same_voice and mp3.is_file() and mp3.with_suffix(".words.json").is_file() else None

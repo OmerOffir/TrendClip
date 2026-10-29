@@ -1,7 +1,8 @@
 """Kokoro: an open-source narration voice (hexgrad/Kokoro-82M) that runs on the GPU or CPU, reads where the
 sentences stop, and gives a timestamp for every word, so the captions follow the voice exactly.
 
-Dark Outliers uses it (DA_TTS_ENGINE=kokoro, DA_TTS_VOICE, DA_TTS_SPEED). The script goes in as one
+All three channels use it: SideQuestLogic (TTS_ENGINE / TTS_VOICE / TTS_RATE, the Edge "+5%" read as speed
+1.05), Dark Outliers (DA_TTS_ENGINE, DA_TTS_VOICE, DA_TTS_SPEED) and Borderline Why (BW_TTS_VOICE, BW_TTS_SPEED). The script goes in as one
 paragraph (Kokoro paces a paragraph naturally and splits it into chunks of a few sentences itself); the
 silence at every chunk's edges is trimmed and a short pause put between chunks. Install on the machine that makes the videos:
     .venv/bin/pip install "kokoro>=0.9.4" soundfile    (requirements-gpu.txt); the weights download on first use.
@@ -24,8 +25,22 @@ SAMPLE_RATE = 24000
 DEFAULT_VOICE = "bm_george"
 DEFAULT_SPEED = 0.95
 PAUSE = 0.25  # seconds of silence between the chunks Kokoro splits the text into (a few sentences each)
-VOICES = ("am_michael", "am_onyx", "am_adam", "am_echo", "bm_george", "bm_lewis", "bm_daniel", "af_heart", "af_bella",
-          "bf_emma", "bf_isabella")
+# (name, label, gender): the English voices of Kokoro-82M, American first, the better-graded ones at the top.
+VOICES_INFO = (
+    ("am_michael", "Michael", "Male"), ("am_fenrir", "Fenrir", "Male"), ("am_puck", "Puck", "Male"),
+    ("am_adam", "Adam", "Male"), ("am_onyx", "Onyx", "Male"), ("am_echo", "Echo", "Male"),
+    ("am_eric", "Eric", "Male"), ("am_liam", "Liam", "Male"),
+    ("af_heart", "Heart", "Female"), ("af_bella", "Bella", "Female"), ("af_nicole", "Nicole", "Female"),
+    ("af_aoede", "Aoede", "Female"), ("af_kore", "Kore", "Female"), ("af_sarah", "Sarah", "Female"),
+    ("af_nova", "Nova", "Female"), ("af_sky", "Sky", "Female"), ("af_alloy", "Alloy", "Female"),
+    ("af_jessica", "Jessica", "Female"), ("af_river", "River", "Female"),
+    ("bm_george", "George", "Male"), ("bm_fable", "Fable", "Male"), ("bm_lewis", "Lewis", "Male"),
+    ("bm_daniel", "Daniel", "Male"),
+    ("bf_emma", "Emma", "Female"), ("bf_isabella", "Isabella", "Female"), ("bf_alice", "Alice", "Female"),
+    ("bf_lily", "Lily", "Female"),
+)
+VOICES = tuple(name for name, _, _ in VOICES_INFO)
+QUIZ_VOICE = "am_michael"  # SideQuestLogic's default: an American male, like the Edge voice it replaces
 INSTALL = 'Kokoro is not installed: .venv/bin/pip install "kokoro>=0.9.4" soundfile (see requirements-gpu.txt)'
 
 _pipeline: Any = None
@@ -37,6 +52,23 @@ def available() -> bool:
     except ImportError:
         return False
     return True
+
+
+def is_voice(name: str) -> bool:
+    """True for a Kokoro voice name (am_michael), false for an Edge one (en-US-AndrewNeural) or nothing."""
+    return bool(re.fullmatch(r"[ab][fm]_[a-z]+", (name or "").strip().lower()))
+
+
+def list_voices() -> list[dict]:
+    """The English voices in the shape the Create tab's picker wants: [{name, label, gender, locale}]."""
+    return [{"name": name, "label": f"{label} · {gender.lower()} · Kokoro", "gender": gender,
+             "locale": "American" if name.startswith("a") else "British"} for name, label, gender in VOICES_INFO]
+
+
+def speed_from_rate(rate: str, default: float = 1.0) -> float:
+    """An Edge rate ("+5%") as a Kokoro speed (1.05), so TTS_RATE keeps its meaning across the engines."""
+    m = re.fullmatch(r"\s*([+-]?\d{1,3})%\s*", rate or "")
+    return round(default + int(m.group(1)) / 100, 2) if m else default
 
 
 def _load():

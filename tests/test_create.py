@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from trendclip import script_writer, shorts, voiceover
+from trendclip import kokoro_voice, script_writer, shorts, voiceover
 from trendclip.config import Settings
 from trendclip.video_assembler import Word
 from trendclip.video_downloader import BackgroundClip
@@ -399,3 +399,63 @@ def test_create_endpoints(client, monkeypatch):
     assert state["status"] == "done" and state["result"]["title"] == "T"
     assert http.get("/api/shorts").json() == []
     assert http.delete("/api/shorts/none.mp4").status_code == 404
+
+
+def test_kokoro_speaks_the_short_when_installed(tmp_path, monkeypatch):
+    """TTS_ENGINE=auto takes Kokoro when it is installed; TTS_RATE becomes its speed, the quiz pace included,
+    and an Edge voice name left in TTS_VOICE falls back to Kokoro's quiz voice."""
+    settings = make_settings(tmp_path)
+    clip = add_clip(settings)
+    spoken, unloaded = [], []
+    monkeypatch.setattr(kokoro_voice, "available", lambda: True)
+    assert shorts.voice_engine(settings) == "kokoro" and shorts.default_voice(settings) == "am_michael"
+
+    def fake_kokoro(text, mp3, voice, speed):
+        spoken.append((text, voice, speed))
+        mp3.write_bytes(b"mp3")
+        mp3.with_suffix(".words.json").write_text('[{"word": "hi", "start": 0, "end": 0.5}]')
+        return [Word("hi", 0, 0.5)]
+
+    monkeypatch.setattr(kokoro_voice, "synthesize", fake_kokoro)
+    monkeypatch.setattr(kokoro_voice, "unload", lambda: unloaded.append(True))
+    monkeypatch.setattr(shorts.voiceover, "synthesize", lambda *a, **k: pytest.fail("Edge was called"))
+    monkeypatch.setattr(shorts.video_assembler, "assemble_video", lambda bg, voice, words, out, **kw: (out.write_bytes(b"v"), out)[1])
+    monkeypatch.setattr(shorts.video_assembler, "media_duration", lambda p: 20.0)
+    base = dict(clip=clip, game="Minecraft", script="Hello there friends", title="T", description="D", hashtags=["#shorts"])
+    short = shorts.render_short(settings, shorts.RenderRequest(**base, output_name="a"), lambda f, m: None)
+    assert spoken == [("Hello there friends", "am_michael", 1.05)] and unloaded == [True] and short.voice == "am_michael"
+    # A Kokoro voice from the picker is used as it is; an Edge voice name is not.
+    shorts.render_short(settings, shorts.RenderRequest(**base, voice="am_puck", rate="-5%", output_name="b"), lambda f, m: None)
+    shorts.render_short(settings, shorts.RenderRequest(**base, voice="en-US-AvaNeural", output_name="c"), lambda f, m: None)
+    assert [(v, s) for _, v, s in spoken[1:]] == [("am_puck", 0.95), ("am_michael", 1.05)]
+    # The quiz pace (at least +5%) applies to Kokoro too, and the Edge-only English-voice swap does not.
+    settings2 = Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output", tts_rate="+0%")
+    monkeypatch.setattr(shorts.quiz, "schedule_flashes", lambda flashes, words: [])
+    quiz_req = shorts.RenderRequest(**base, output_name="d", flashes=[{"word": "hi", "text": "7"}])
+    shorts.render_short(settings2, quiz_req, lambda f, m: None)
+    assert spoken[-1][1:] == ("am_michael", 1.05)
+
+
+def test_edge_stays_when_asked_or_when_kokoro_is_missing(tmp_path):
+    settings = make_settings(tmp_path)  # conftest: Kokoro not installed
+    assert shorts.voice_engine(settings) == "edge"
+    assert shorts.default_voice(settings) == "en-US-AndrewMultilingualNeural"
+    assert shorts.pick_voice(settings, "am_puck") == "en-US-AndrewMultilingualNeural"  # a Kokoro name under Edge
+    forced = Settings(youtube_api_key="k", assets_dir=tmp_path / "a", output_dir=tmp_path / "o", tts_engine="edge", tts_voice="am_michael")
+    assert shorts.default_voice(forced) == "en-US-AndrewMultilingualNeural"
+    assert kokoro_voice.speed_from_rate("+5%") == 1.05 and kokoro_voice.speed_from_rate("+12%") == 1.12
+    assert kokoro_voice.is_voice("bf_emma") and not kokoro_voice.is_voice("en-GB-RyanNeural")
+
+
+def test_create_status_and_voices_follow_the_engine(monkeypatch):
+    monkeypatch.setattr(web, "_base_settings", lambda: Settings(youtube_api_key="k"))
+    client = TestClient(web.app)
+    monkeypatch.setattr(voiceover, "list_voices", lambda prefix: [{"name": "en-US-AndrewNeural", "label": "Andrew", "gender": "Male", "locale": "en-US"}])
+    assert client.get("/api/create/status").json()["engine"] == "edge"
+    assert client.get("/api/create/voices").json()[0]["name"] == "en-US-AndrewNeural"
+    monkeypatch.setattr(kokoro_voice, "available", lambda: True)
+    status = client.get("/api/create/status").json()
+    assert status["engine"] == "kokoro" and status["voice"] == "am_michael"
+    voices = client.get("/api/create/voices").json()
+    assert voices[0]["name"] == "am_michael" and {v["locale"] for v in voices} == {"American", "British"}
+    assert all(kokoro_voice.is_voice(v["name"]) for v in voices) and "af_heart" in {v["name"] for v in voices}
