@@ -244,20 +244,21 @@ def test_pillar_bias_moves_the_mix_within_its_cap(channel, monkeypatch):
     data = da_insights.fetch(channel.settings, youtube=FakeYouTube(STATS), analytics=FakeAnalytics(ROWS), at=NOW)
     assert da_insights.pillar_bias(data, cap=0.05) == {"history": 0.05, "mystery": -0.05}
     targets = da_insights.biased_targets({"history": 0.15, "mystery": -0.09})
-    assert targets == {"mystery": 0.292, "history": 0.519, "outrage": 0.189} and sum(targets.values()) == pytest.approx(1.0)
-    assert da_insights.biased_targets({"outrage": -0.5})["outrage"] == pytest.approx(0.05 / 0.85, abs=0.001)  # never under 5%
-    assert da_insights.biased_targets({})["mystery"] == 0.4
+    assert targets == {"mystery": 0.481, "history": 0.425, "outrage": 0.094} and sum(targets.values()) == pytest.approx(1.0)
+    assert da_insights.biased_targets({"outrage": -0.5})["outrage"] == pytest.approx(0.05 / 0.95, abs=0.001)  # never under 5%
+    assert da_insights.biased_targets({})["mystery"] == 0.6
     monkeypatch.setenv("DA_PILLAR_BIAS", "0")
     assert da_insights.pillar_bias(data) == {} and da_produce.mix_targets() is None
     monkeypatch.setenv("DA_PILLAR_BIAS", "0.1")
-    assert da_produce.mix_targets() == da_insights.biased_targets({"history": 0.1, "mystery": -0.09}) == {"mystery": 0.307, "history": 0.495, "outrage": 0.198}
+    assert da_produce.mix_targets() == da_insights.biased_targets({"history": 0.1, "mystery": -0.09}) == {"mystery": 0.505, "history": 0.396, "outrage": 0.099}
 
     # the bank follows the biased shares: with 3 history, 2 mystery, 1 outrage made, plain targets want mystery next
     for i, pillar in enumerate(("mystery", "history", "outrage"), 20):
         repository.save_story(f"new{i}", "gemini", f"New {pillar}", "text " * 50, "", 90, pillar=pillar, db_path=channel.db)
     assert repository.next_pillar(channel.db) == "mystery"
-    assert repository.next_pillar(channel.db, da_produce.mix_targets()) == "history"
-    assert repository.get_next_story(channel.db, da_produce.mix_targets())["title"] == "New history"
+    shifted = {"mystery": 0.3, "history": 0.6, "outrage": 0.1}
+    assert repository.next_pillar(channel.db, shifted) == "history"
+    assert repository.get_next_story(channel.db, shifted)["title"] == "New history"
 
 
 def test_prompts_end_with_the_lessons_once_there_are_enough_videos(channel, monkeypatch):

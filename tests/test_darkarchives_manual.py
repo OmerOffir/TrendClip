@@ -19,14 +19,16 @@ def _draft(**change) -> dict:
     draft = {
         "usable": True, "reject_reason": "", "title": "The Ship That Sailed Alone",
         "hook_text": "A ship sailed on for days with no one aboard.",
-        "thumbnail_text": "no one aboard", "hook_image_prompt": "cinematic photo of an empty ship's deck, close-up",
+        "thumbnail_text": "a ship sailed with no one aboard", "hook_image_prompt": "cinematic photo of an empty ship's deck, close-up",
         "scenes": [
             {"narration": "In December 1872 sailors found the Mary Celeste drifting near the Azores.",
              "visual_keywords": ["foggy sea", "old ship"], "image_prompt": "cinematic photo of a drifting ship", "overlay_text": "December 1872"},
             {"narration": "Food and water were still aboard. Only the lifeboat was missing.",
              "visual_keywords": ["ship galley", "rope"], "image_prompt": "cinematic photo of a ship galley", "overlay_text": "LIFEBOAT GONE"},
-            {"narration": "The crew of ten was never seen again. What made them leave a sound ship?",
+            {"narration": "The crew of ten was never seen again.",
              "visual_keywords": ["empty sea", "storm"], "image_prompt": "cinematic photo of an empty sea", "overlay_text": "TEN MEN GONE"},
+            {"narration": "So what made them leave a sound ship?",
+             "visual_keywords": ["lifeboat", "fog"], "image_prompt": "cinematic photo of an empty lifeboat in fog", "overlay_text": "WHY LEAVE?"},
         ],
     }
     draft.update(change)
@@ -55,14 +57,14 @@ def test_write_check_facts_then_ready(bank):
 
     with pytest.raises(da_manual.ManualError, match="no JSON"):
         da_manual.answer("story-1", "Sure! Here is the script.")
-    short = _draft(scenes=_draft()["scenes"][:2])
+    short = _draft(scenes=_draft()["scenes"][:3])
     s = da_manual.answer("story-1", "```json\n" + json.dumps(short) + "\n```")
     assert s["step"] == "fix" and any("words" in p for p in s["problems"]) and "Your script breaks the rules" in s["prompt"]
     with pytest.raises(da_manual.ManualError, match="passes the rules"):
         da_manual.facts("story-1", '{"unsupported": []}')
 
     s = da_manual.answer("story-1", json.dumps(_draft()))
-    assert s["step"] == "facts" and s["preview"]["words"] >= script_gen.MIN_WORDS and len(s["preview"]["scenes"]) == 3
+    assert s["step"] == "facts" and s["preview"]["words"] >= script_gen.MIN_WORDS and len(s["preview"]["scenes"]) == 4
     assert "fact-check" in s["prompt"] and STORY[:60] in s["prompt"] and '"unsupported"' in s["prompt"]
 
     s = da_manual.facts("story-1", '{"unsupported": ["crew of ten - the source says ten, fine; the date is wrong"]}')
@@ -74,7 +76,7 @@ def test_write_check_facts_then_ready(bank):
     s = da_manual.facts("story-1", '{"unsupported": []}')
     assert s["step"] == "ready" and da_manual.story_of("story-1") == 1
     saved = script_gen.Script.model_validate_json(script_gen.script_path(1).read_text())
-    assert saved.thumbnail_text == "NO ONE ABOARD" and saved.hook_image_prompt.startswith("cinematic") and saved.scenes[0].overlay_text == "DECEMBER 1872"
+    assert saved.thumbnail_text == "A SHIP SAILED WITH NO ONE ABOARD" and saved.hook_image_prompt.startswith("cinematic") and saved.scenes[0].overlay_text == "DECEMBER 1872"
     assert repository.get_story(1)["status"] == "SCRIPT_READY" and "by hand" in repository.get_story(1)["note"]
 
     da_manual.mark_made("story-1", {"date": "2026-11-02", "slot": "14:30"})

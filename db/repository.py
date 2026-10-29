@@ -15,7 +15,7 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).resolve().parent / "content_bank.db"
 STATUSES = ("NEW", "PROCESSING", "SCRIPT_READY", "USED", "REJECTED")
-PILLARS = {"mystery": 0.4, "history": 0.4, "outrage": 0.2}  # target share of the videos
+PILLARS = {"mystery": 0.6, "history": 0.3, "outrage": 0.1}  # target share of the videos (mysteries first since 2026-10-29)
 PILLAR_LABELS = {"mystery": "Unresolved mysteries & cold cases", "history": "Creepy history & obscure anomalies",
                  "outrage": "Disturbing true events & outrage cases"}
 PRODUCED = ("SCRIPT_READY", "USED")  # stories that count towards the mix

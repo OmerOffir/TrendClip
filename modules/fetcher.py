@@ -504,8 +504,8 @@ different REAL, well-documented cases:
 For each case:
 - title: the name the case is known by (as on Wikipedia), e.g. "Dyatlov Pass incident".
 - pillar: mystery (unresolved mysteries, disappearances, unexplained phenomena, cold cases), history
-  (forgotten events, strange psychological occurrences, disturbing medical or scientific experiments)
-  or outrage (true crime, severe malpractice, bizarre documented events that provoke a strong reaction).
+  (forgotten events, strange events and psychological occurrences, historical anomalies)
+  or outrage (true crime, bizarre documented events that provoke a strong reaction).
 - story: 250-450 words of plain, factual text in chronological order: who, where, when (dates), what
   happened, what investigators found, the theories, and what is still unexplained. Only documented
   facts; write "reportedly" where sources disagree. Never invent names, quotes or details.
@@ -518,8 +518,9 @@ and day, any year) falls within the next {window} days: for those, begin the sto
 Prefer FAMOUS cases, the ones people already know by name and search for (Dyatlov Pass incident,
 Mary Celeste, Flight 19, Roanoke Colony, D. B. Cooper), told through their most unsettling detail:
 a known name stops the scroll, an unknown one does not. Every case must have its own English
-Wikipedia article under the title you give. Never: fiction or creepypastas (unless it is
-an internet urban legend, framed as one), gore without a story, recent political controversies or
+Wikipedia article under the title you give. Favour mysteries, strange events and unsolved cases.
+Never: child abuse, medical experiments on people (YouTube pushes these less), fiction or creepypastas
+(unless it is an internet urban legend, framed as one), gore without a story, recent political controversies or
 ongoing news (open trials, cases from the last two years). Do NOT use any of these cases:
 {avoid}"""
 

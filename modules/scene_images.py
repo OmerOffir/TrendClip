@@ -269,13 +269,16 @@ def make_pictures(prompts: list[str], out_dir: Path, backend: str | None = None,
 # --------------------------------------------------------------------------- the grade
 
 
-def grade(img, saturation: float = 0.78, contrast: float = 1.06, brightness: float = 0.96, cold: float = 0.05,
-          vignette: float = 0.55):
-    """The Dark Outliers look on a still: less colour, a little more contrast, a cold tint and a vignette.
-    Done once per picture here (Pillow) instead of on every frame in ffmpeg, which is far slower."""
-    from PIL import Image, ImageEnhance
+def grade(img, saturation: float = 0.85, contrast: float = 1.14, brightness: float = 1.06, cold: float = 0.04,
+          vignette: float = 0.38):
+    """The Dark Outliers look on a still: dark but not a blur. The levels are stretched first (the darkest and
+    brightest 1% become black and white, so a murky picture gets its bright focal point back), then less colour,
+    more contrast, a cold tint and a light vignette. Done once per picture here (Pillow) instead of on every
+    frame in ffmpeg, which is far slower."""
+    from PIL import Image, ImageEnhance, ImageOps
 
-    img = ImageEnhance.Color(img.convert("RGB")).enhance(saturation)
+    img = ImageOps.autocontrast(img.convert("RGB"), cutoff=1)
+    img = ImageEnhance.Color(img).enhance(saturation)
     img = ImageEnhance.Contrast(img).enhance(contrast)
     img = ImageEnhance.Brightness(img).enhance(brightness)
     r, g, b = img.split()

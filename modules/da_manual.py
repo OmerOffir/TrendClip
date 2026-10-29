@@ -40,14 +40,14 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
   "reject_reason": "",
   "title": "The Ship That Sailed With No One Aboard",
   "hook_text": "A ship sailed perfectly for days with no one aboard.",
-  "thumbnail_text": "NO ONE ABOARD",
-  "hook_image_prompt": "cinematic dark moody photo of an empty 19th-century sailing ship on a grey sea, close-up of its deserted deck, 35mm, film grain, photorealistic",
+  "thumbnail_text": "A SHIP SAILED FOR DAYS WITH NO ONE ABOARD",
+  "hook_image_prompt": "cinematic dark moody photo of an empty 19th-century sailing ship on a grey sea, close-up of its deserted deck lit by one lantern, 35mm, film grain, photorealistic",
   "scenes": [
-    {"narration": "One or two short sentences.", "visual_keywords": ["foggy sea", "old ship"],
-     "image_prompt": "cinematic dark moody photo of ..., 35mm, film grain, photorealistic", "overlay_text": "DECEMBER 1872"}
+    {"narration": "One short sentence.", "visual_keywords": ["foggy sea", "old ship"],
+     "image_prompt": "cinematic dark moody photo of ..., the subject lit by a single warm light, 35mm, film grain, photorealistic", "overlay_text": "DECEMBER 1872"}
   ]
 }
-3 to 4 scenes. When the source can't be told (see the rules above): {"usable": false, "reject_reason": "why"}."""
+4 to 6 scenes, one sentence each. When the source can't be told (see the rules above): {"usable": false, "reject_reason": "why"}."""
 
 FACTS_PROMPT = """You fact-check a script for Dark Outliers, a YouTube Shorts channel about true dark history and
 unsolved mysteries. Every statement must be supported by the SOURCE below: the SOURCE is all the writer had.

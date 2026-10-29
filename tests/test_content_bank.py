@@ -153,17 +153,17 @@ def test_pillar_mix_picks_the_pillar_furthest_below_its_share(tmp_path):
     repository.init_db(db)
     for i, (pillar, score) in enumerate([("mystery", 90), ("mystery", 80), ("history", 50), ("outrage", 40)]):
         repository.save_story(f"reddit_{i}", "reddit/x", f"S{i}", "t", "", score, pillar=pillar, db_path=db)
-    assert repository.get_next_story(db)["title"] == "S0"  # nothing made yet: mystery (40%, listed first)
+    assert repository.get_next_story(db)["title"] == "S0"  # nothing made yet: mystery (60%)
     repository.set_status(1, "SCRIPT_READY", db_path=db)
     assert repository.next_pillar(db) == "history" and repository.get_next_story(db)["title"] == "S2"
     repository.set_status(3, "USED", db_path=db)
-    # 1 mystery + 1 history made: of 3 videos outrage should have 0.6, the others 1.2 (0.2 short each)
-    assert repository.get_next_story(db)["title"] == "S3"
-    repository.set_status(4, "USED", db_path=db)
-    assert repository.get_next_story(db)["title"] == "S1"  # history is due too, but has nothing NEW left
+    # 1 mystery + 1 history made: of 3 videos mystery should have 1.8 (0.8 short), outrage 0.3, history 0.9
+    assert repository.get_next_story(db)["title"] == "S1"
+    repository.set_status(2, "USED", db_path=db)
+    assert repository.get_next_story(db)["title"] == "S3"  # mystery is due too, but has nothing NEW left
     mix = repository.pillar_mix(db)
-    assert mix["mystery"] == {"target": 0.4, "produced": 1, "new": 1} and mix["outrage"] == {
-        "target": 0.2, "produced": 1, "new": 0}
+    assert mix["mystery"] == {"target": 0.6, "produced": 2, "new": 0} and mix["outrage"] == {
+        "target": 0.1, "produced": 0, "new": 1}
     with pytest.raises(ValueError):
         repository.save_story("x", "x", "x", "x", pillar="comedy", db_path=db)
 
@@ -197,8 +197,8 @@ def test_old_bank_is_migrated_and_rechecked(tmp_path):
 
 
 def test_gemini_pillar_split():
-    assert fetcher.pillar_split(5) == {"mystery": 2, "history": 2, "outrage": 1}
-    assert fetcher.pillar_split(3) == {"mystery": 1, "history": 1, "outrage": 1}
+    assert fetcher.pillar_split(5) == {"mystery": 3, "history": 2, "outrage": 0}
+    assert fetcher.pillar_split(10) == {"mystery": 6, "history": 3, "outrage": 1}
     assert sum(fetcher.pillar_split(7).values()) == 7
 
 
@@ -275,11 +275,11 @@ def _draft(n_words=125, usable=True):
             n -= 10
         return " ".join(out)
 
-    per = max(1, (n_words - 5) // 8)
+    per = max(1, (n_words - 5) // 5)
     scenes = [sg.SceneDraft(narration=say(per), visual_keywords=["dark forest", "old car"],
-                            image_prompt="Cinematic dark photo", overlay_text="no trace") for _ in range(8)]
-    return sg.ScriptDraft(usable=usable, title="The Vanishing", hook_text=say(n_words - per * 8), scenes=scenes,
-                          thumbnail_text="no  trace left")
+                            image_prompt="Cinematic dark photo", overlay_text="no trace") for _ in range(5)]
+    return sg.ScriptDraft(usable=usable, title="The Vanishing", hook_text=say(n_words - per * 5), scenes=scenes,
+                          thumbnail_text="they left  no trace behind")
 
 
 def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
@@ -301,9 +301,9 @@ def test_script_gen_writes_json_and_marks_script_ready(tmp_path, monkeypatch):
     data = json.loads((tmp_path / "scripts" / "story_1.json").read_text())
     assert list(data) == ["story_id", "title", "hook_text", "estimated_duration_seconds", "total_word_count", "scenes", "thumbnail_text", "hook_image_prompt", "ranking"]
     assert data["story_id"] == 1 and data["total_word_count"] == 55 and data["estimated_duration_seconds"] == 24
-    assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 9))
+    assert [s["scene_id"] for s in data["scenes"]] == list(range(1, 6))
     assert list(data["scenes"][0]) == ["scene_id", "narration", "visual_keywords", "image_prompt", "overlay_text"]
-    assert data["scenes"][0]["overlay_text"] == "NO TRACE" and data["thumbnail_text"] == "NO TRACE LEFT"
+    assert data["scenes"][0]["overlay_text"] == "NO TRACE" and data["thumbnail_text"] == "THEY LEFT NO TRACE BEHIND"
     assert repository.get_next_story(db) is None  # no NEW stories left
 
 
@@ -380,3 +380,20 @@ def test_anniversary_stories_come_first_while_their_date_is_near(monkeypatch):
     assert [(s["title"], s["score"], s["url"]) for s in stories] == [
         ("Flight 19", 92, "https://en.wikipedia.org/wiki/Flight_19"), ("Mary Celeste", 100, ""),
         ("Other", 70, "https://en.wikipedia.org/wiki/Other")]
+
+
+def test_script_rules_hook_headline_title_and_gore():
+    from modules import script_gen as sg
+
+    draft = _draft(48)
+    assert sg.check(draft) == []
+    draft.hook_text = "In 1959, nine hikers died on a mountain."
+    draft.thumbnail_text = "NO TRACE"
+    draft.title = "The Dyatlov Pass: Unsolved Horror"
+    draft.hook_image_prompt = "close-up of a torso with fractures"
+    draft.scenes[1].image_prompt = "a frozen body in the snow"
+    problems = " | ".join(sg.check(draft))
+    assert "opens with the background" in problems and "thumbnail_text has 2 words" in problems
+    assert 'the title says "Unsolved"' in problems and "gore in the picture of hook_image_prompt, scene 2" in problems
+    draft.scenes = draft.scenes[:3]
+    assert "3 scenes, it must be 4-6" in " | ".join(sg.check(draft))

@@ -142,7 +142,7 @@ def _rules(today: datetime | None = None) -> str:
                         "Turn EACH STORY below into one Short of 20-28 seconds, from ONLY its own SOURCE (its content pillar "
                         "is named with it). The same rules apply to every one.")
     head = head.replace("If the SOURCE starts with", "If a SOURCE starts with")
-    return head.format(min_words=script_gen.MIN_WORDS, max_words=script_gen.MAX_WORDS,
+    return head.format(min_words=script_gen.MIN_WORDS, max_words=script_gen.MAX_WORDS, hook_words=script_gen.HOOK_WORDS,
                        today=(today or datetime.now()).date().isoformat()).rstrip()
 
 

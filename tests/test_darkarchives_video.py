@@ -203,8 +203,9 @@ def test_make_video_end_to_end(tmp_path, monkeypatch):
     assert json.loads((tmp_path / "out" / "story_1.json").read_text())["title"] == "The Ship Nobody Steered"
     ass = (tmp_path / "out" / "story_1.ass").read_text()
     assert ",EndCard," not in ass and ",Title," in ass and "BEAT 3" in ass
-    assert "0:00:00.00,0:00:00.80,Cover,,0,0,0,,{\\pos(540,960)\\fad(0,160)}A SHIP SAILED\\NFOR" in ass
-    assert "{\\fad(0,300)}THE SHIP NOBODY\\NSTEERED" in ass and info["cover_text"] == "A SHIP SAILED FOR"
+    # an older script (no headline): the title in the box, no fragment under it
+    assert ",Cover," not in ass and info["cover_text"] == ""
+    assert "{\\fad(0,300)}THE SHIP NOBODY\\NSTEERED" in ass
     assert repository.get_story(1, db)["status"] == "USED" and "story_1.mp4" in repository.get_story(1, db)["note"]
     assert any("Drawing picture 4 of 4" in m for m in messages) and messages[-1] == "Done"
     assert video_gen.existing_video_ids(tmp_path / "out") == [1]
@@ -448,3 +449,37 @@ def test_kokoro_words_and_sentences(tmp_path, monkeypatch):
     assert (tmp_path / "v.mp3").read_bytes() == b"MP3" and json.loads((tmp_path / "v.words.json").read_text())[-1]["word"] == "here."
     kv.unload()
     assert kv._pipeline is None
+
+
+def test_headline_box_and_close_up_cuts():
+    script = _script()
+    assert video_gen.headline(script) == "The Ship Nobody Steered"  # an older script: its title
+    script.thumbnail_text = "NO ONE"
+    assert video_gen.headline(script) == "The Ship Nobody Steered"  # a 2-4 word fragment: still the title
+    script.thumbnail_text = "a ship sailed with no one aboard"
+    assert video_gen.headline(script) == "A SHIP SAILED WITH NO ONE ABOARD"
+
+    assert video_gen.shot_cuts(2.5) == [] and video_gen.shot_cuts(4.5) == [2.25]
+    assert video_gen.shot_cuts(6.2) == [3.1] and video_gen.shot_cuts(7.5) == [2.5, 5.0]
+    assert video_gen.shot_cuts(20.0) == [6.667, 13.333]  # at most 3 shots
+    assert video_gen.shot_cuts(9.0, every=0) == []
+    f = video_gen.shots_filter("p1", "v1", [2.3], (1080, 1920))
+    assert f.startswith("[p1]split=2[v1s0][v1s1];[v1s0]trim=start=0.000:end=2.300,setpts=PTS-STARTPTS[v1c0]")
+    assert "trim=start=2.300,setpts=PTS-STARTPTS,crop=iw*0.7:ih*0.7:(iw-ow)/2:(ih-oh)*0.4,scale=1080:1920" in f
+    assert f.endswith("[v1c0][v1c1]concat=n=2:v=1:a=0,fps=30,settb=1/30,format=yuv420p[v1]")
+
+
+def test_a_long_beat_renders_with_its_close_up_cuts(tmp_path):
+    from PIL import Image
+
+    pics = []
+    for i, colour in enumerate(("red", "blue", "green")):
+        pics.append(tmp_path / f"p{i}.jpg")
+        Image.new("RGB", (90, 160), colour).save(pics[-1])
+    clip = tmp_path / "clip.mp4"  # a depth-camera clip stands in for the middle beat
+    subprocess.run([ffmpeg_with_libass(), "-y", "-loglevel", "error", "-loop", "1", "-i", str(pics[1]), "-t", "6",
+                    "-r", "12", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    beats = [video_gen.Beat(0, "hook", "x", "", "p", 0.0, 1.5), video_gen.Beat(1, "scene 1", "x", "", "p", 1.5, 6.5),
+             video_gen.Beat(2, "scene 2", "x", "", "p", 6.5, 11.0)]  # a still, cut too
+    out = video_gen.build_background([pics[0], clip, pics[2]], beats, tmp_path / "bg.mp4", size=(90, 160), fps=12, cut=2.0)
+    assert out.is_file() and 11.0 <= media_duration(out) <= 12.5

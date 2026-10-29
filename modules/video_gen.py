@@ -16,8 +16,10 @@ The beats are the hook and every scene. Flow:
                 ffmpeg: 0.6 s dissolves between beats (grain with DA_GRAIN=1) -> pictures/background.mp4;
   5. assembly   trendclip.video_assembler: frame 0 is the thumbnail (YouTube takes it for a video uploaded
                 through the API), so the title card is at full size there with the thumbnail headline
-                (Gemini's thumbnail_text, DA_COVER) over the middle for a second; karaoke captions (3 words, amber highlight), the scene's
-                overlay text flashing in above them, the title card for 3 s, dramatic music from
+                (a ranking's theme, DA_COVER) over the middle for a second; karaoke captions (3 words, size 108, amber
+                highlight), the scene's overlay text flashing in above them, the headline box for 3 s (the whole
+                hook, Gemini's thumbnail_text; the title for rankings), hard cuts to close-ups of the picture
+                every DA_CUT_EVERY seconds within a beat, dramatic music from
                 music/dramatic under the voice. The Short ends on the story's last line: no spoken "Follow
                 for more", SUBSCRIBE button or banner (they held up the last 5 s of a 29 s Short, and a
                 Short that ends on the story loops); DA_CTA_LINE / DA_CTA_STICKER / DA_END_CARD=auto bring them back.
@@ -51,6 +53,9 @@ DISSOLVE = 0.6  # seconds of cross-fade between beats
 ZOOM = 0.12  # push in / pull out by 12% over a beat
 OVERSIZE = 1.3  # the picture is scaled up this much before the zoom window moves over it (less jitter)
 MIN_BEAT = 1.0
+CUT_EVERY = 2.8  # seconds: a longer beat cuts between the wide picture and close-ups of it (DA_CUT_EVERY, 0 = off)
+MAX_SHOTS = 3
+CLOSE_UPS = ((0.70, 0.40), (0.82, 0.30))  # (share of the frame kept, where the crop sits from the top) for shots 2, 3
 DEFAULT_ENGINE = "kokoro"  # DA_TTS_ENGINE: kokoro (narration voice with word timestamps) or edge (the gameplay channel's)
 DEFAULT_RATE = "+10%"  # the edge engine: F5 (the Linux voice) is slow at its "normal"; 105 words should take about 46 s
 TAIL = 1.2  # seconds after the last word (the assembler's default 2 s drags for a Short)
@@ -129,6 +134,15 @@ def cover_text(script: script_gen.Script, max_words: int = 4) -> str:
     return " ".join(words).upper()
 
 
+def headline(script: script_gen.Script) -> str:
+    """The box at the top of the first 3 s: the whole hook (thumbnail_text, 4+ words since 2026-10-29); the
+    title for older scripts, whose thumbnail_text is a 2-4 word fragment, and for rankings."""
+    text = " ".join(script.thumbnail_text.split())
+    if script.ranking or len(text.split()) < 4:
+        return script.title
+    return text.upper()
+
+
 def off(value: str) -> bool:
     return value.strip().lower() in ("", "none", "off", "0", "false")
 
@@ -177,6 +191,41 @@ def kenburns_filter(index: int, beat_seconds: float, w: int, h: int, fps: int = 
             f"zoompan=z='{z}':x='{x}':y='ih/2-(ih/zoom/2)':d=1:s={w}x{h}:fps={fps},setsar=1,format=yuv420p[v{index}]")
 
 
+def cut_every() -> float:
+    try:
+        return max(0.0, float(setting("DA_CUT_EVERY", str(CUT_EVERY))))
+    except ValueError:
+        return CUT_EVERY
+
+
+def shot_cuts(duration: float, every: float = CUT_EVERY, max_shots: int = MAX_SHOTS) -> list[float]:
+    """Where a beat of `duration` seconds cuts to its next shot (seconds from the beat's start): one shot per
+    `every` seconds, at most `max_shots`, evenly spaced; [] for a short beat or `every` 0."""
+    if every <= 0:
+        return []
+    n = min(max_shots, int(duration // every) + (1 if duration % every > every / 2 else 0))
+    return [round(duration * k / n, 3) for k in range(1, n)] if n > 1 else []
+
+
+def shots_filter(label: str, out: str, cuts: list[float], size: tuple[int, int], fps: int = FPS) -> str:
+    """Hard cuts within one clip: the wide picture, then close-ups of it (CLOSE_UPS), so the image changes every few
+    seconds without new pictures. `cuts`: seconds from the clip's start."""
+    w, h = size
+    n = len(cuts) + 1
+    parts = [f"[{label}]split={n}" + "".join(f"[{out}s{k}]" for k in range(n))]
+    edges = [0.0, *cuts, None]
+    for k in range(n):
+        trim = f"trim=start={edges[k]:.3f}" + (f":end={edges[k + 1]:.3f}" if edges[k + 1] is not None else "")
+        crop = ""
+        if k:
+            keep, top = CLOSE_UPS[(k - 1) % len(CLOSE_UPS)]
+            crop = f",crop=iw*{keep}:ih*{keep}:(iw-ow)/2:(ih-oh)*{top},scale={w}:{h},setsar=1"
+        parts.append(f"[{out}s{k}]{trim},setpts=PTS-STARTPTS{crop}[{out}c{k}]")
+    # concat hands out its own timebase; xfade needs every input on the frame rate's
+    parts.append("".join(f"[{out}c{k}]" for k in range(n)) + f"concat=n={n}:v=1:a=0,fps={fps},settb=1/{fps},format=yuv420p[{out}]")
+    return ";".join(parts)
+
+
 # The colour grade and vignette are baked into the stills (scene_images.grade). Moving film grain is
 # opt-in (DA_GRAIN=1): x264 cannot compress it, and a 70 s Short came out at 950 MB with it.
 GRAIN = "noise=alls=6:allf=t,"
@@ -184,12 +233,14 @@ GRAIN = "noise=alls=6:allf=t,"
 
 def build_background(pictures: list[Path], beats: list[Beat], output: Path, size: tuple[int, int] = scene_images.SIZE,
                      fps: int = FPS, dissolve: float = DISSOLVE, progress: ProgressFn = lambda f, m: None,
-                     crf: int = 18, preset: str = "veryfast", zoom: float | list[float] = ZOOM) -> Path:
+                     crf: int = 18, preset: str = "veryfast", zoom: float | list[float] = ZOOM,
+                     cut: float | None = None) -> Path:
     """The moving background: every picture for its beat, dissolves centred on the beat changes
     (clip i runs its beat plus the dissolve; the first one plus half), with film grain. It is an
     intermediate the assembler encodes again, so a fast x264 preset is enough. `zoom`: how far each
     picture pushes in or pulls out, one value or one per beat. A picture may also be a short .mp4 (the
-    depth camera's clips): it plays as it is, so it must be at least as long as its beat plus the dissolve."""
+    depth camera's clips): it plays as it is, so it must be at least as long as its beat plus the dissolve.
+    `cut`: a beat longer than this cuts to close-ups of its picture (shot_cuts; DA_CUT_EVERY when None)."""
     from trendclip.video_assembler import ffmpeg_with_libass
 
     if len(pictures) != len(beats) or not beats:
@@ -204,14 +255,18 @@ def build_background(pictures: list[Path], beats: list[Beat], output: Path, size
         extra = dissolve / 2 if i == 0 else dissolve
         if i == n - 1:
             extra += 1.0  # a little spare at the end; the assembler cuts at the voice
+        cuts = [round((0 if i == 0 else dissolve / 2) + c, 3) for c in shot_cuts(beat.duration, cut_every() if cut is None else cut)]
+        label = f"p{i}" if cuts else f"v{i}"
         if pic.suffix.lower() == ".mp4":
             cmd += ["-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
             filters.append(f"[{i}:v]scale={w}:{h}:force_original_aspect_ratio=increase,crop={w}:{h},fps={fps},setsar=1,"
                            f"tpad=stop_mode=clone:stop_duration={beat.duration + extra:.3f},trim=duration={beat.duration + extra:.3f},"
-                           f"format=yuv420p[v{i}]")
-            continue
-        cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
-        filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps, zoom=zooms[i]))
+                           f"format=yuv420p[{label}]")
+        else:
+            cmd += ["-loop", "1", "-framerate", str(fps), "-t", f"{beat.duration + extra:.3f}", "-i", str(pic.resolve())]
+            filters.append(kenburns_filter(i, beat.duration + extra, w, h, fps, zoom=zooms[i]).replace(f"[v{i}]", f"[{label}]"))
+        if cuts:
+            filters.append(shots_filter(label, f"v{i}", cuts, size, fps))
     current = "v0"
     for i in range(1, n):
         offset = beats[i - 1].end - dissolve / 2
@@ -445,12 +500,14 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
     flashes = [] if ranking else [
         TimedFlash(b.overlay_text, round(b.start + 0.25, 3), round(min(b.start + 3.4, b.end - 0.15), 3), "", 0.3)
         for b in beats if b.overlay_text and b.duration > 1.0]
-    title_card = script.title if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
+    title_card = headline(script) if setting("DA_TITLE_CARD", "1") not in ("0", "false", "off") else ""
     end_card = setting("DA_END_CARD", "none")  # "·" breaks the line; "auto" for the handle's banner
     end_card = "" if off(end_card) else default_end_card() if end_card.lower() == "auto" else end_card
     overlays, stickers_used = cta_sticker(settings, words, flashes, bool(title_card), bool(end_card))
-    cover = setting("DA_COVER", "auto")  # the headline on frame 0 (the thumbnail): auto, your words, or none
-    cover = "" if off(cover) else cover_text(script) if cover.lower() == "auto" else cover.upper()
+    # Words over the middle of frame 0: auto = a ranking's theme (a story's whole hook is in the headline box
+    # above, so a fragment under it only repeats it), your words, or none.
+    cover = setting("DA_COVER", "auto")
+    cover = "" if off(cover) else (cover_text(script) if ranking else "") if cover.lower() == "auto" else cover.upper()
     highlight = setting("DA_HIGHLIGHT", "orange")
     layout: dict = {}
     if ranking:  # the title stays up until the end card, the list fills in down the left, the cover sits low
@@ -465,7 +522,7 @@ def make_video(story_id: int, progress: ProgressFn = lambda f, m: None, images: 
         progress=lambda f, m: progress(0.75 + 0.24 * (f or 0), m),
         music=music_mod.track_path(settings, track) if track else None,
         music_volume=float(setting("DA_MUSIC_VOLUME", "0.16")), music_fade_in=0.0,
-        highlight=highlight, max_words=3, font_size=92, outline=7, margin_v=600,
+        highlight=highlight, max_words=3, font_size=int(setting("DA_CAPTION_SIZE", "108")), outline=8, margin_v=600,
         end_card=end_card, overlays=overlays, flashes=flashes, flash_scale=1.0,
         title_pop=False, cover_text=cover, cover_seconds=0.8,  # frame 0 is the thumbnail: everything at full strength
         tail_seconds=TAIL,

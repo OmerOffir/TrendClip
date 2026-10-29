@@ -31,13 +31,26 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "assets" / "generated_scripts"
 MIN_WORDS, MAX_WORDS = 48, 60  # the owner wants the channel under 30 s (2026-10-27): about 22-27 s with the voice
 MAX_SENTENCE_WORDS = 12  # short, rhythmic sentences for text-to-speech
+HOOK_WORDS = 12  # the hook is spoken in under 2-3 s: the shock first, no background
+MIN_SCENES, MAX_SCENES = 4, 6  # one sentence each, so the picture changes every few seconds
+HEADLINE_WORDS = (4, 9)  # thumbnail_text, the headline box on frame 0: the whole hook, not a fragment
+# A title of mood words instead of the story ("Unsolved Horror", "The Dark Secret Beneath ...").
+VAGUE_TITLE = re.compile(r"\b(dark secrets?|secrets?|mystery of|the truth about|horror|chilling|terrifying|creepy|disturbing|"
+                         r"unsolved|unexplained|eerie|sinister)\b", re.I)
+# A picture YouTube and viewers flinch from: the image prompts must show what was left behind, not the dead.
+GORE = re.compile(r"\b(corpses?|dead bod(y|ies)|bod(y|ies)|torsos?|wounds?|wounded|injur(y|ies|ed)|blood(y|ied)?|bones?|"
+                  r"skeletons?|skeletal|skulls?|fractures?|gore|gory|organs?|severed|mutilated|x-ray)\b", re.I)
+# A hook that opens with the background instead of the shock: a year, a date, "Years ago", "On November 5".
+BACKGROUND_OPENING = re.compile(r"^\W*(in|on|back in|during|by)?\s*(\d{3,4}\b|(the\s+)?(year|years|decades|centuries)\b|"
+                                r"\w+\s+(hundred|years|decades|centuries)\b.*\bago\b|"
+                                r"(january|february|march|april|may|june|july|august|september|october|november|december)\b)", re.I)
 WORDS_PER_SECOND = 2.3  # the channel's narrator (F5-TTS at +10%): 105 words ~ 46 s
 ATTEMPTS = 3
 SOURCE_CHARS = 12000  # long Wikipedia articles are cut to this before going to Gemini
 
 
 class SceneDraft(BaseModel):
-    narration: str = Field(description="1-2 short spoken sentences, 8-12 words each.")
+    narration: str = Field(description="One short spoken sentence, 8-12 words.")
     visual_keywords: list[str] = Field(description="2-3 concrete stock-footage search terms for Pexels.")
     image_prompt: str = Field(description="A descriptive prompt for an AI image generator.")
     overlay_text: str = Field(description="2-5 words of on-screen text in CAPITALS.")
@@ -48,7 +61,7 @@ class ScriptDraft(BaseModel):
     reject_reason: str = Field("", description="Why it is unusable (empty when usable).")
     title: str = ""
     hook_text: str = ""
-    thumbnail_text: str = Field("", description="2-4 words in CAPITALS for the first frame, the thumbnail.")
+    thumbnail_text: str = Field("", description="The headline at the top of the first frame: the whole hook in 4-8 words.")
     hook_image_prompt: str = Field("", description="The picture under the hook: the subject itself, close up.")
     scenes: list[SceneDraft] = Field(default_factory=list)
 
@@ -76,7 +89,7 @@ class Script(BaseModel):
     estimated_duration_seconds: int
     total_word_count: int
     scenes: list[Scene]
-    thumbnail_text: str = ""  # the headline on frame 0 (scripts from before it existed: made from the hook)
+    thumbnail_text: str = ""  # the headline box on frame 0 (since 2026-10-29 the whole hook in 4-8 words; before, 2-4)
     hook_image_prompt: str = ""  # the picture on frame 0 (scripts from before it existed: scene 1's, close up)
     ranking: list[RankEntry] = []  # a ranking video: the scenes count down from the last place to rank 1
 
@@ -92,20 +105,22 @@ TONE: documentary-style, atmospheric, suspenseful, authoritative and eerie. A ca
 the files, never a hype voice. No slang, no "guys", no exclamation marks.
 
 Turn the SOURCE below into one Short of 20-28 seconds. Content pillar: {pillar}.
-If the SOURCE starts with "Anniversary:", the video goes out around that date: open with how many years ago
-this week it happened ("Eighty years ago this week, ...") and keep the date in the first scene.
+If the SOURCE starts with "Anniversary:", the video goes out around that date: say how many years ago this
+week it happened in scene 1 ("It happened eighty years ago this week."), never in the hook.
 
 STRUCTURE (high retention):
-- hook_text (0-3 s): ONE high-suspense statement or paradox, at most 12 words, that stops the scroll
-  ("The ship was found sailing perfectly. Its crew was never seen again." is two sentences: too long;
-  "A ship sailed perfectly for days with no one aboard." is right). Not a question like "Have you
-  ever...", no spoiler of the ending. It is spoken first.
+- hook_text (0-2 s): the single most SHOCKING fact of the story, at most {hook_words} words, spoken first.
+  Start with the shock, not the background: no date, year, place or "In 1872..." / "Years ago..." in it
+  ("A ship sailed for days with no one aboard." / "He poisoned his own son for the insurance money.").
+  Not a question like "Have you ever...", no spoiler of the ending.
+- The background (date, place, who) comes AFTER the hook, in scene 1.
 - SENTENCES: short and rhythmic for text-to-speech: 8-12 words each, never more than 12. One new
-  concrete fact per sentence: dates, places, numbers, what was found.
-- scenes: 3 to 4 scenes in story order, each narration 1-2 sentences.
-  The first scenes escalate the tension: every scene more unsettling than the one before.
-- The LAST scene is the conclusion: an open-ended question, an eerie twist, or a provoking
-  thought that makes viewers argue in the comments (e.g. "So what really happened on that mountain?").
+  concrete fact per sentence: dates, places, numbers, what was found. Cut every sentence that doesn't
+  move the story forward.
+- scenes: 4 to 6 scenes in story order, each narration ONE sentence (each scene is a new picture, so the
+  picture changes every 2-3 seconds). Every scene more unsettling than the one before.
+- The LAST scene ends on a twist or an open question that makes people rewatch or argue in the comments
+  ("...and he was never caught." / "So who really sent that letter?").
 
 LENGTH: hook_text + every narration together = {min_words} to {max_words} words. Aim for 55: the
 whole Short is under 30 seconds, so only the facts that make the story unbelievable, and the twist.
@@ -119,21 +134,28 @@ EACH SCENE ALSO HAS:
 - visual_keywords: 2-3 generic, concrete stock-footage searches that exist on Pexels
   ("foggy forest at night", "old police car", "empty highway"). No names of people or cases.
 - image_prompt: a vivid prompt for an AI image generator: subject, setting, era, lighting, mood,
-  camera ("cinematic dark moody photo of ..., 35mm, film grain, photorealistic"). Never a real
-  person's face or likeness; show places, objects, silhouettes.
+  camera ("cinematic dark moody photo of ..., 35mm, film grain, photorealistic"). Dark mood, but ONE
+  bright focal point the eye goes to: the subject lit by a warm light, a lit face in silhouette, a glowing
+  object, a red detail ("..., the subject lit by a single warm lamp, the rest in shadow"). Never a dark
+  blur. Never a real person's face or likeness; show places, objects, silhouettes. Never gore: no bodies,
+  corpses, wounds, injuries, bones, blood or skulls; show what was left behind instead (the slashed tent,
+  the empty boots, the letter, the locked door).
 - overlay_text: 2-5 words in CAPITALS that sum up the beat ("NO WRECKAGE FOUND", "MARCH 3, 1994").
 
-title: a curiosity-gap YouTube title, at most 60 characters, no clickbait lies.
+title: a curiosity title that makes people NEED the answer, at most 60 characters: who + the shocking
+act or the impossible detail ("The Father Who Poisoned Halloween Candy", "The Ship That Sailed With No
+One Aboard"). Never vague words like "Dark Secret", "Mystery Of", "The Truth About". No clickbait lies.
 
-thumbnail_text: 2-4 words in CAPITALS over the first frame, which is the thumbnail people see before
-they press play: the single strongest curiosity gap of the story, concrete, no spoiler ("5 PLANES.
-NO WRECKAGE", "SHE WAS EMBALMED ALIVE?"). Not the title again.
+thumbnail_text: the HEADLINE in a box at the top of the first frame, the first thing people read: the
+whole hook as one complete statement in 4-8 words, understandable on its own ("HE POISONED HIS OWN SON
+FOR MONEY", "FIVE BOMBERS VANISHED IN CLEAR SKIES"). Never a caption fragment ("FIVE GIANT TUBES",
+"36 BARRELS UNDERGROUND"), never the title again.
 
 hook_image_prompt: the picture under the hook and the thumbnail, the first thing a scrolling viewer
 sees. It shows the exact thing the hook names, close up and filling the frame: the ghost ship with
 empty decks, the slashed tent in the snow, five bombers over a dark sea, a courtroom full of
-accused. Never a scene-setter (a desk, a lamp, an old book, files, an archive, an empty room) and
-never a real person's face; same style as the scene prompts.
+accused. Never a scene-setter (a desk, a lamp, an old book, files, an archive, an empty room), never
+gore or a body, never a real person's face; same style as the scene prompts.
 
 Set usable=false (with reject_reason, nothing else) if the SOURCE is any of these (today is {today}):
 - not a real dark story you can tell: an announcement, a podcast or show promo, a request for help, a
@@ -142,7 +164,8 @@ Set usable=false (with reject_reason, nothing else) if the SOURCE is any of thes
 - purely fictional (a creepypasta, a made-up story), unless it is an internet urban legend and the
   source frames it as one;
 - a recent political controversy or an ongoing, active news event (an open trial, a fresh arrest, a
-  case from the last two years still developing).
+  case from the last two years still developing);
+- a story centred on child abuse (YouTube pushes these less).
 
 SOURCE ({source_name}) — {title}:
 {text}"""
@@ -184,8 +207,28 @@ def check(draft: ScriptDraft) -> list[str]:
                         + " | ".join(f'"{s}"' for s in long[:4]))
     if not draft.hook_text.strip() or not draft.title.strip():
         problems.append("missing hook or title")
-    if len(draft.scenes) < 3:
-        problems.append("fewer than 3 scenes")
+    hook = words(draft.hook_text)
+    if hook > HOOK_WORDS:
+        problems.append(f"the hook has {hook} words, at most {HOOK_WORDS}: only the shock")
+    if BACKGROUND_OPENING.match(draft.hook_text.strip()):
+        problems.append("the hook opens with the background (a date, a year, 'years ago'): start with the shocking fact, "
+                        "the date goes in scene 1")
+    gory = [f"scene {i}" for i, sc in enumerate(draft.scenes, 1) if GORE.search(sc.image_prompt)]
+    if GORE.search(draft.hook_image_prompt):
+        gory.insert(0, "hook_image_prompt")
+    if gory:
+        problems.append(f"gore in the picture of {', '.join(gory)} (a body, wound, bone, blood or skull): show what was "
+                        f"left behind instead (the slashed tent, the empty boots, the letter)")
+    vague = VAGUE_TITLE.search(draft.title)
+    if vague:
+        problems.append(f'the title says "{vague.group(0)}": name who did what, or the impossible detail, so people need '
+                        f'the answer ("The Father Who Poisoned Halloween Candy")')
+    headline = words(draft.thumbnail_text)
+    if not HEADLINE_WORDS[0] <= headline <= HEADLINE_WORDS[1]:
+        problems.append(f"thumbnail_text has {headline} words: it is the headline, the whole hook in "
+                        f"{HEADLINE_WORDS[0]}-{HEADLINE_WORDS[1] - 1} words")
+    if not MIN_SCENES <= len(draft.scenes) <= MAX_SCENES:
+        problems.append(f"{len(draft.scenes)} scenes, it must be {MIN_SCENES}-{MAX_SCENES} (one sentence each)")
     for i, s in enumerate(draft.scenes, 1):
         if not s.narration.strip() or not s.image_prompt.strip() or not s.overlay_text.strip():
             problems.append(f"scene {i} is incomplete")
@@ -200,7 +243,7 @@ def finalize(story_id: int, draft: ScriptDraft) -> Script:
         story_id=story_id,
         title=draft.title.strip()[:100],
         hook_text=draft.hook_text.strip(),
-        thumbnail_text=" ".join(draft.thumbnail_text.split()).upper()[:40],
+        thumbnail_text=" ".join(draft.thumbnail_text.split()).upper()[:70],
         hook_image_prompt=draft.hook_image_prompt.strip(),
         estimated_duration_seconds=round(n / WORDS_PER_SECOND),
         total_word_count=n,
@@ -247,7 +290,7 @@ def build_prompt(story: dict, today: dt.date | None = None, brief: str | None = 
     pillar = story.get("pillar")
     text = PROMPT.format(
         min_words=MIN_WORDS, max_words=MAX_WORDS, source_name=story["source_name"], title=story["title"],
-        text=story["raw_text"][:SOURCE_CHARS], today=(today or dt.date.today()).isoformat(),
+        text=story["raw_text"][:SOURCE_CHARS], today=(today or dt.date.today()).isoformat(), hook_words=HOOK_WORDS,
         pillar=repository.PILLAR_LABELS.get(pillar, "dark history") if pillar else "dark history")
     if brief is None:
         from modules import da_insights
