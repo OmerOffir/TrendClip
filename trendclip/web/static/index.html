@@ -65,6 +65,7 @@
         <button type="button" role="tab" data-bw-view="plan">Plan <span class="nav-count todo" id="bwNavPlan" hidden title="Videos waiting for Approve"></span></button>
         <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
         <button type="button" role="tab" data-bw-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
+        <button type="button" role="tab" data-bw-view="week" title="Write the coming week's scripts with any LLM at once and send them to Linux">📅 Write a week</button>
       </nav>
     </div>
   </header>
@@ -143,6 +144,27 @@
         <button type="button" class="btn-secondary" id="bwWOpen" hidden>Continue</button>
       </div>
       <div class="bw-w" id="bwWSession"></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewBwWeek" data-workspace-panel="borderlinewhy" data-bw-panel="week" hidden>
+    <div id="bwKError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write a week</h2>
+          <span class="hint">No Gemini needed. The code reads the sources of the next topics; you paste ONE prompt into any LLM (the Gemini app,
+            ChatGPT, Claude) and its answer back here; every script gets the rules check and a fact check (best in a second LLM). The ready
+            scripts go to Linux, which makes one video per slot from them, oldest first.</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <label class="hint" for="bwKCount">Topics</label>
+        <input type="number" id="bwKCount" min="1" max="14" value="7" style="width:4.5em">
+        <button type="button" class="btn-primary" id="bwKStart">📚 Read the sources of the next topics</button>
+        <span class="hint" id="bwKJob"></span>
+      </div>
+      <div class="bw-w" id="bwKSession"></div>
     </section>
   </main>
 
@@ -1092,6 +1114,7 @@
   <script src="/static/find.js"></script>
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
+  <script src="/static/bwweek.js"></script>
   <script src="/static/gamermanual.js"></script>
   <script src="/static/darkmanual.js"></script>
   <script src="/static/darkarchives.js"></script>

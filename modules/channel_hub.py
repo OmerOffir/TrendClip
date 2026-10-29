@@ -272,6 +272,58 @@ class BorderlineWhy:
 
         return bw_channel.plan_view(settings)
 
+    def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+        """Scripts written for later (modules.bw_week) into the queue the daily job drains oldest first, one per
+        slot. A script whose topic this hub already used or has queued is skipped. {"queued": [{"name",
+        "week_topic", "title"}], "skipped": [{"week_topic", "title", "why"}], "slots": the free times they fill}."""
+        from modules import bw_channel, bw_topics, bw_week
+
+        scripts = bundle.get("scripts") or []
+        if not isinstance(scripts, list) or not scripts:
+            raise HubError("No scripts in the bundle")
+        now = _now(settings, now)
+        root = bw_channel.out_root()
+        used = set(bw_topics.load(root).used)
+        queued_articles = set()
+        for path in bw_channel.queued_scripts():
+            try:
+                queued_articles.add(json.loads(path.read_text(encoding="utf-8")).get("article", ""))
+            except (OSError, ValueError):
+                pass
+        folder = bw_channel.queue_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        queued, skipped = [], []
+        for n, script in enumerate(scripts, 1):
+            title, article = str(script.get("title", "")), str(script.get("article", ""))
+            label = {"week_topic": script.get("week_topic"), "title": title}
+            if not script.get("narration") or not script.get("scenes"):
+                skipped.append({**label, "why": "no narration or scenes"})
+                continue
+            if article and (article in used or article in queued_articles):
+                skipped.append({**label, "why": f"the hub already made or queued \"{article}\""})
+                continue
+            name = f"{stamp}-{n:02d}-{bw_week.slug(title or article)}.json"
+            (folder / name).write_text(json.dumps({**script, "received_at": now.isoformat(timespec="minutes")}, indent=2,
+                                                  ensure_ascii=False) + "\n", encoding="utf-8")
+            if article:
+                queued_articles.add(article)
+                try:
+                    bw_topics.mark(root, article, used=True)
+                except Exception as err:  # noqa: BLE001 - the list is a convenience
+                    logger.info("Borderline Why topic %s not marked on the hub: %s", article, err)
+            queued.append({**label, "name": name})
+        free = self.free(settings, now)
+        result = {"queued": queued, "skipped": skipped, "slots": free[:len(queued)], "in_queue": len(bw_channel.queued_scripts())}
+        if queued:
+            days = ", ".join(f"{s['date']} {s['slot']}" for s in result["slots"]) or "the next free slots"
+            try:
+                bw_channel.announce_text(f"📝 {len(queued)} Borderline Why script(s) for later arrived from the dashboard: "
+                                         f"{'; '.join(q['title'] for q in queued)[:600]}. They fill {days}, oldest first.", settings)
+            except Exception:  # noqa: BLE001 - Discord is a courtesy here
+                logger.exception("Borderline Why: could not announce the queued scripts")
+        return result
+
     # ---- sending side
     def sendable(self, settings) -> list[dict[str, Any]]:
         """This machine's videos that can go to Linux: not on YouTube or Linux, not stopped, passed their check."""
@@ -353,6 +405,11 @@ async def handle(settings, words: list[str], message: Any, discord_channel: Any)
         if op in ("cplan", "cview"):
             plan = await asyncio.to_thread(ch.plan if op == "cplan" else ch.view, settings)
             return hub._reply("week", nonce, {}), ("plan.json", json.dumps(plan, ensure_ascii=False).encode("utf-8"))
+        if op == "cqueue":
+            if not message.attachments or not hasattr(ch, "queue"):
+                raise HubError(f"{ch.label} doesn't take scripts for later" if not hasattr(ch, "queue") else "No scripts attached")
+            scripts = json.loads(await message.attachments[0].read())
+            return hub._reply("done", nonce, await asyncio.to_thread(ch.queue, settings, scripts)), None
         if len(words) != 7 or not message.attachments:
             raise HubError("The send message is incomplete")
         day, slot, ids = Day.fromisoformat(words[4]), words[5], words[6].split(",")
@@ -452,6 +509,23 @@ def send(settings, name: str, ref: int | str, day: Day, slot: str) -> dict[str, 
 
 def planned(settings, name: str) -> list[dict[str, Any]]:
     return [{**p, "date": p["date"].isoformat()} for p in channel(name).planned(settings)]
+
+
+def queue_scripts(settings, name: str, bundle: dict[str, Any]) -> dict[str, Any]:
+    """Scripts written for later into the channel's queue: on the hub itself straight away, from the sending
+    machine through Discord (op cqueue). The hub's answer (see BorderlineWhy.queue)."""
+    ch = channel(name)
+    if not hasattr(ch, "queue"):
+        raise HubError(f"{ch.label} doesn't take scripts for later", 400)
+    if not hub.is_sender(settings):
+        return ch.queue(settings, bundle)
+    op, reply = hub.send_parts(settings, b"", f"{hub.PREFIX} cqueue {{nonce}} {name}",
+                               ("scripts.json", json.dumps(bundle, ensure_ascii=False).encode("utf-8")))
+    if op != "done":
+        raise HubError(reply.get("message") or "The hub refused the scripts", 409)
+    forget_view(name)
+    logger.info("Sent %d %s script(s) for later to the hub: %d queued", len(bundle.get("scripts") or []), name, len(reply.get("queued", [])))
+    return reply
 
 
 def send_plan(settings, name: str) -> list[dict[str, Any]]:

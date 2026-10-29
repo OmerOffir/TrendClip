@@ -17,6 +17,7 @@ nonce (modules/channel_hub.py does their side):
     tc-hub cplan <nonce> <channel>                               -> tc-hub week <nonce> {} + plan.json
     tc-hub cview <nonce> <channel>     (the Plan tab's own data)  -> tc-hub week <nonce> {} + plan.json
     tc-hub csend <nonce> <channel> <date> <slot> <part ids>  + bundle.json -> tc-hub done|fail <nonce> {...}
+    tc-hub cqueue <nonce> <channel>  + scripts.json              -> tc-hub done|fail <nonce> {"queued": [...], ...}
 
 And the Upcoming tab (every channel's week, modules/upcoming.py):
     tc-hub uplan <nonce>                                         -> tc-hub week <nonce> {} + upcoming.json
@@ -43,8 +44,8 @@ from .models import utcnow
 logger = logging.getLogger(__name__)
 
 PREFIX = "tc-hub"
-REQUESTS = ("ask", "send", "plan", "uplan", "cask", "cplan", "cview", "csend")
-CHANNEL_REQUESTS = ("cask", "cplan", "cview", "csend")
+REQUESTS = ("ask", "send", "plan", "uplan", "cask", "cplan", "cview", "csend", "cqueue")
+CHANNEL_REQUESTS = ("cask", "cplan", "cview", "csend", "cqueue")
 REPLIES = ("free", "week", "done", "fail")  # never a request word, or the hub would answer itself
 FREE_DAYS = 7
 PART_BYTES = 8 * 1024 * 1024

@@ -14,13 +14,13 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from modules import bw_channel, bw_script, bw_topics
-from trendclip import assistant, publish
+from trendclip import assistant, hub, publish
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/borderlinewhy")
 _lock = threading.Lock()
-_jobs: dict[str, dict[str, Any]] = {"make": {"running": False}, "upload": {"running": False}}
+_jobs: dict[str, dict[str, Any]] = {"make": {"running": False}, "upload": {"running": False}, "week": {"running": False}}
 
 
 def _settings():
@@ -275,6 +275,86 @@ def manual_make(sid: str, req: MakeRequest | None = None) -> dict[str, Any]:
 @router.get("/make-job")
 def make_job() -> dict[str, Any]:
     return _job("make")
+
+
+# ---- Write a week: any LLM writes the coming week's scripts at once; they go to the hub's queue (modules/bw_week.py)
+
+
+class WeekStart(BaseModel):
+    count: int = Field(7, ge=1, le=14)
+
+
+class WeekText(BaseModel):
+    text: str = Field(min_length=2, max_length=2_000_000)
+
+
+def _week(fn, *args):
+    from modules import bw_week
+
+    try:
+        return fn(*args)
+    except bw_week.WeekError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except bw_script.TryLater as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except bw_script.ScriptError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+
+
+@router.get("/week")
+def week_view() -> dict[str, Any]:
+    """The week session (None before the first start) and the research job."""
+    from modules import bw_week
+
+    view = _week(bw_week.view) if bw_week.exists() else None
+    return {"week": view, "job": _job("week"), "sender": hub.is_sender(_settings())}
+
+
+@router.post("/week")
+def week_start(req: WeekStart | None = None) -> dict[str, Any]:
+    """Read the sources of the next topics (a minute or two, on a thread): a new session replaces the old."""
+    from modules import bw_week
+
+    count = req.count if req else bw_week.DEFAULT_COUNT
+
+    def run(progress):
+        bw_week.start(count, lambda m: progress(None, m))
+        return {"count": count}
+
+    return _start("week", run)
+
+
+@router.post("/week/answer")
+def week_answer(req: WeekText) -> dict[str, Any]:
+    from modules import bw_week
+
+    return _week(bw_week.answer, req.text)
+
+
+@router.post("/week/facts")
+def week_facts(req: WeekText) -> dict[str, Any]:
+    from modules import bw_week
+
+    return _week(bw_week.facts, req.text)
+
+
+@router.post("/week/drop/{i}")
+def week_drop(i: int) -> dict[str, Any]:
+    from modules import bw_week
+
+    return _week(bw_week.drop, i)
+
+
+@router.post("/week/send")
+def week_send() -> dict[str, Any]:
+    """The ready scripts to the Linux hub's queue (or this machine's own queue when this is the hub)."""
+    from modules import bw_week
+    from trendclip.hub import HubError
+
+    try:
+        return _week(bw_week.send, _settings())
+    except HubError as err:
+        raise HTTPException(status_code=err.status or 502, detail=str(err)) from err
 
 
 @router.get("/topics")
