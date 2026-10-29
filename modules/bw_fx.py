@@ -26,7 +26,7 @@ from typing import Any
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
-from modules import bw_geo
+from modules import bw_geo, bw_render
 from modules.bw_render import (CY, FIXED, H, MAP_BOTTOM, MAP_TOP, MOVE, W, Cam, Element, Renderer, Scene, blend_view, curve,
                                ease, flat, font, ramp, text, wrap)
 
@@ -55,8 +55,13 @@ ICONS = dict(
     bomb="1f4a3", chart_up="1f4c8", chart_down="1f4c9", globe="1f30d", key="1f511", lock="1f512", scissors="2702",
 )
 # where icons and poles stand when a script names no place for them (x, y on the 1080x1920 frame)
-ICON_SLOTS = {"map": ((540, 640), (250, 760), (830, 760), (540, 1170)), "card": ((540, 1230), (260, 1230), (820, 1230))}
-POLE_SLOTS = {"map": ((150, 1270), (420, 1270), (690, 1270)), "card": ((200, 1340), (640, 1340), (420, 1340))}
+SLOTS = {  # per layout (modules.bw_render.LAYOUTS)
+    "portrait": dict(icon={"map": ((540, 640), (250, 760), (830, 760), (540, 1170)), "card": ((540, 1230), (260, 1230), (820, 1230))},
+                     pole={"map": ((150, 1270), (420, 1270), (690, 1270)), "card": ((200, 1340), (640, 1340), (420, 1340))}),
+    "landscape": dict(icon={"map": ((1500, 360), (420, 360), (1500, 700), (420, 700)), "card": ((560, 780), (1360, 780), (960, 780))},
+                      pole={"map": ((170, 830), (1660, 830), (430, 830)), "card": ((230, 840), (1600, 840), (430, 840))}),
+}
+ICON_SLOTS, POLE_SLOTS = SLOTS["portrait"]["icon"], SLOTS["portrait"]["pole"]
 # a run of map scenes on the same place cuts between these zooms, the place sitting off center by these fractions
 # of the width, so the picture changes at every scene
 ZOOMS = (1.0, 0.45, 0.8, 0.3, 0.65)
@@ -169,8 +174,9 @@ def satellite() -> Satellite:
 class GlobeCam:
     """An orthographic globe of radius r (pixels) centered on (lon, lat), drawn at (cx, cy); the same xy/pt as Cam."""
 
-    def __init__(self, lon: float, lat: float, r: float, cx: float = W / 2, cy: float = CY):
-        self.lon, self.lat, self.r, self.cx, self.cy = lon, lat, r, cx, cy
+    def __init__(self, lon: float, lat: float, r: float, cx: float | None = None, cy: float | None = None):
+        self.lon, self.lat, self.r = lon, lat, r
+        self.cx, self.cy = W / 2 if cx is None else cx, CY if cy is None else cy
         self.ppd = r * math.pi / 180
         self.k = 1.0
 
@@ -908,7 +914,7 @@ class FxRenderer(Renderer):
         disc.paste(flag, (10, 10), mask)
         px = max(4, int(size * s))
         disc = disc.resize((px, px), Image.BILINEAR)
-        cy = y - r - 80 + 6 * math.sin(2.2 * t)
+        cy = max(r + 30, y - r - 80) + 6 * math.sin(2.2 * t)  # below the top edge when the place is high up
         d = ImageDraw.Draw(ov)
         d.line([x, cy + px / 2 - 4, x, y - 10], fill=(255, 255, 255, 230), width=6)
         d.ellipse([x - 12, y - 12, x + 12, y + 12], fill=(255, 255, 255, 255), outline=(0, 0, 0, 160), width=3)
@@ -1097,7 +1103,7 @@ class FxRenderer(Renderer):
         x0, y0 = (W - w) * (0.5 + 0.35 * (u - 0.5)), (H - h) / 2
         img = self.paper.crop((int(x0), int(y0), int(x0 + w), int(y0 + h))).resize((W, H), Image.BILINEAR)
         r = rose().rotate(7 * t, resample=Image.BICUBIC)
-        img.alpha_composite(r, (int(W / 2 - r.width / 2), int(1000 - r.height / 2)))
+        img.alpha_composite(r, (int(W / 2 - r.width / 2), int(CY + 100 - r.height / 2)))
         d = ImageDraw.Draw(img)
         for x, y, speed, size in self.dust:
             px = x * W + 18 * math.sin(0.8 * t + 9 * y)
@@ -1141,7 +1147,7 @@ class FxRenderer(Renderer):
         img = self.card_paper(i, t)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         ink, red = FIXED["ink"], FIXED["red"]
-        y = 720
+        y = bw_render.CARD_Y
         if scene.kicker:
             layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
             text(layer, (W / 2, y), scene.kicker.upper(), 56, fill=ink, serif=True, stroke=0, max_width=W - 120)
@@ -1180,7 +1186,7 @@ class FxRenderer(Renderer):
             elif el.kind == "pole":
                 self.pole(ov, el, self.anchor(None, el), t)
             elif el.kind == "sketch":
-                cx, cy = el.opts.get("x", W / 2), el.opts.get("y", 1080)
+                cx, cy = el.opts.get("x", W / 2), el.opts.get("y", CY + 180)
                 pts = self.egg(cx, cy, el.opts.get("rx", 300), el.opts.get("ry", 220))
                 u = (t - el.at) / el.opts.get("dur", 1.6)
                 self.hand_line(ov, pts, u, FIXED["ink"], width=11)
@@ -1196,6 +1202,33 @@ class FxRenderer(Renderer):
 
     # -- scenes --
 
+    def scene_frame(self, i: int, t: float) -> Image.Image:
+        img = super().scene_frame(i, t)
+        chapter = self.spec.scenes[i].opts.get("chapter")
+        if isinstance(chapter, dict) and chapter.get("title"):
+            self.banner(img, int(chapter.get("n") or 0), str(chapter["title"]), t - self.spec.scenes[i].start)
+        return img
+
+    def banner(self, img: Image.Image, n: int, title: str, age: float, stay: float = 3.2) -> None:
+        """A long video's chapter banner: it slides in from the left over the lower third, then out again."""
+        if not 0 <= age < stay:
+            return
+        u = backout(age / 0.5) if age < stay - 0.4 else 1 - ease((age - stay + 0.4) / 0.4)
+        f_small, f_big = font(40), font(84)
+        top = f"CHAPTER {n}" if n else "CHAPTER"
+        width = int(max(f_small.getlength(top), f_big.getlength(title.upper())) + 120)
+        height = 190
+        band = Image.new("RGBA", (width, height), (0, 0, 0, 0))
+        d = ImageDraw.Draw(band)
+        d.rounded_rectangle([0, 0, width - 1, height - 1], radius=18, fill=(12, 16, 26, 215))
+        d.rectangle([0, 0, 14, height - 1], fill=FIXED["gold"] + (255,))
+        d.text((50, 52), top, font=f_small, fill=FIXED["gold"] + (255,), anchor="lm")
+        d.text((50, 125), title.upper(), font=f_big, fill=(255, 255, 255, 255), anchor="lm")
+        x = int(-width + (width + 70) * u)
+        y = int(bw_render.CAPTION_Y - 120 - height)
+        if x + width > 0:  # off the left edge: paste only the part on screen
+            img.alpha_composite(band.crop((max(0, -x), 0, width, height)), (max(0, x), y))
+
     def map_frame(self, i: int, t: float) -> Image.Image:
         img = self.fx_map_frame(i, t)
         scenes = self.spec.scenes
@@ -1203,3 +1236,14 @@ class FxRenderer(Renderer):
             prev = self.fx_map_frame(i - 1, t)  # the globe keeps growing while the flat map fades in
             img = Image.blend(prev, img, ramp(t, scenes[i].start, 0.4))
         return img
+
+
+def _use_layout() -> None:
+    """modules.bw_render.use_layout: copy the new frame size and positions, and drop pictures made for the old one."""
+    global W, H, CY, MAP_TOP, MAP_BOTTOM, ICON_SLOTS, POLE_SLOTS, _space, _clouds
+    W, H, CY, MAP_TOP, MAP_BOTTOM = bw_render.W, bw_render.H, bw_render.CY, bw_render.MAP_TOP, bw_render.MAP_BOTTOM
+    ICON_SLOTS, POLE_SLOTS = SLOTS[bw_render.LAYOUT]["icon"], SLOTS[bw_render.LAYOUT]["pole"]
+    _space = _clouds = None
+
+
+bw_render.LAYOUT_HOOKS.append(_use_layout)

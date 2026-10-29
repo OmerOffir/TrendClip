@@ -340,6 +340,42 @@ class Check(BaseModel):
     unsupported: list[str] = Field(default_factory=list, description="Statements in the narration the sources do not support.")
 
 
+# The scene rules a Short and a long video's chapter share (modules.bw_long)
+SCENE_RULES = """THE SCENES ({min_scenes}-{max_scenes})
+Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
+must be the whole narration.
+- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (1-5 per scene; something new
+  should appear in every scene so the screen is never still):
+  highlight (fill a country, state/province or lake, draw a river, or ring a small place), label (a name on the map),
+  pin (a marker with a short text), ring (a pulsing circle round a small place), line (a dashed line from place to
+  "to"), arrow (a movement from place to "to"), parallel / meridian (a line of latitude / longitude: "value"),
+  stamp (a big rubber stamp word like REJECTED, SOLD, SWAPPED, at most {stamp_count}),
+  icon (a 3D picture that pops in: "icon" from the list below; with a place it stands on that place, else the
+  layout places it), pole (a waving flag on a pole: "flag"; good for who claimed or owned something, and on cards),
+  route (a path drawn place by place through "points", e.g. a road, a voyage, an army's march; "icon" can ride
+  along it, like car, ship, canoe, horse, train).
+- Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
+  flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
+  flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name: today's
+  ("Flag of France.svg", "Flag of the United States.svg", "Flag of the United Kingdom.svg") or, for a scene set in
+  the past, the flag of that time ("Flag of Great Britain (1707–1800).svg", "Flag of the United States (1777–1795).svg",
+  "Flag of the Russian Empire.svg"). Never put a modern country's flag on a story from before it existed.
+- Icons ({icons}): use {icon_count} where they make a sentence easier to picture (money for a sale, a
+  ship for a voyage, a cross for a mistake). Never decoration only.
+- Name places exactly as a map or Wikipedia would: countries ("Spain", "United States of America"), states and
+  provinces ("Minnesota", "Manitoba"), lakes ("Lake of the Woods"), rivers ("Mississippi River"), cities ("Paris"),
+  or a small place's Wikipedia title ("Llívia", "Northwest Angle"). Never coordinates, never regions like "Europe"
+  or "the Midwest", never historical states that are not on today's map.
+- color: "a", "b", "c" for the sides of a story (the same country keeps the same letter all video), "gold" for the
+  place the video is about, "red" for a mistake or a "no".
+- card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
+  they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
+- cue: a word from that scene's narration, so the element appears as it is said.
+- Vary the scenes: not every scene needs a headline; mix wide and close views. Don't keep the same focus for more
+  than two scenes in a row: pull out to the countries or the region around a small place, then go back in.
+
+"""
+
 PROMPT = """You write a YouTube Short for Borderline Why: surprising geography and history questions answered with
 animated maps. Today's question: "{question}"
 
@@ -357,40 +393,7 @@ THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
   details, cite it for a fact that matters or leave it out. Keep uncertainty where the sources are uncertain ("about", "historians think").
 - Numbers as digits (1783, 49th, 123).
 
-THE SCENES ({min_scenes}-{max_scenes})
-Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
-must be the whole narration.
-- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (1-5 per scene; something new
-  should appear in every scene so the screen is never still):
-  highlight (fill a country, state/province or lake, draw a river, or ring a small place), label (a name on the map),
-  pin (a marker with a short text), ring (a pulsing circle round a small place), line (a dashed line from place to
-  "to"), arrow (a movement from place to "to"), parallel / meridian (a line of latitude / longitude: "value"),
-  stamp (a big rubber stamp word like REJECTED, SOLD, SWAPPED, at most one in the video),
-  icon (a 3D picture that pops in: "icon" from the list below; with a place it stands on that place, else the
-  layout places it), pole (a waving flag on a pole: "flag"; good for who claimed or owned something, and on cards),
-  route (a path drawn place by place through "points", e.g. a road, a voyage, an army's march; "icon" can ride
-  along it, like car, ship, canoe, horse, train).
-- Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
-  flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
-  flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name: today's
-  ("Flag of France.svg", "Flag of the United States.svg", "Flag of the United Kingdom.svg") or, for a scene set in
-  the past, the flag of that time ("Flag of Great Britain (1707–1800).svg", "Flag of the United States (1777–1795).svg",
-  "Flag of the Russian Empire.svg"). Never put a modern country's flag on a story from before it existed.
-- Icons ({icons}): use 6-10 in the video where they make a sentence easier to picture (money for a sale, a
-  ship for a voyage, a cross for a mistake). Never decoration only.
-- Name places exactly as a map or Wikipedia would: countries ("Spain", "United States of America"), states and
-  provinces ("Minnesota", "Manitoba"), lakes ("Lake of the Woods"), rivers ("Mississippi River"), cities ("Paris"),
-  or a small place's Wikipedia title ("Llívia", "Northwest Angle"). Never coordinates, never regions like "Europe"
-  or "the Midwest", never historical states that are not on today's map.
-- color: "a", "b", "c" for the sides of a story (the same country keeps the same letter all video), "gold" for the
-  place the video is about, "red" for a mistake or a "no".
-- card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
-  they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
-- cue: a word from that scene's narration, so the element appears as it is said.
-- Vary the scenes: not every scene needs a headline; mix wide and close views. Don't keep the same focus for more
-  than two scenes in a row: pull out to the countries or the region around a small place, then go back in.
-
-THE CLAIMS
+""" + SCENE_RULES + """THE CLAIMS
 List every fact the narration states (5-12 claims). For each, the id of the source that supports it and an EXACT
 quote copied from that source (no changes, no "..."). At least two different sources must back facts that matter
 to the answer. If no second source supports anything that matters, set usable to false.
@@ -526,27 +529,43 @@ def to_spec_dict(draft: Draft) -> dict[str, Any]:
     return {"title": draft.title.strip(), "cover_text": draft.cover_text.strip(), "scenes": scenes}
 
 
-def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
+@dataclass(frozen=True)
+class Limits:
+    """What check() holds a draft to: a Short's whole script, or one chapter of a long video (modules.bw_long)."""
+    min_words: int = MIN_WORDS
+    max_words: int = MAX_WORDS
+    min_scenes: int = MIN_SCENES
+    max_scenes: int = MAX_SCENES
+    max_cards: int = MAX_CARDS
+    first_map: bool = True  # the first scene is the thumbnail
+    min_claims: int = 4
+    min_cited: int = 2
+
+
+SHORT = Limits()
+
+
+def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHORT) -> list[str]:
     """Everything wrong with a draft (empty = good to record)."""
     problems: list[str] = []
     text = narration(draft)
     n = words(text)
-    if not MIN_WORDS <= n <= MAX_WORDS:
-        problems.append(f"the narration is {n} words (wanted {MIN_WORDS}-{MAX_WORDS})")
+    if not limits.min_words <= n <= limits.max_words:
+        problems.append(f"the narration is {n} words (wanted {limits.min_words}-{limits.max_words})")
     long = [s for s in sentences(text) if words(s) > MAX_SENTENCE_WORDS]
     if long:
         problems.append(f"{len(long)} sentence(s) over {MAX_SENTENCE_WORDS} words: " + " | ".join(s[:60] for s in long[:2]))
     low = text.lower()
     if bad := [b for b in BANNED if b in low]:
         problems.append("banned phrases: " + ", ".join(bad))
-    if not MIN_SCENES <= len(draft.scenes) <= MAX_SCENES:
-        problems.append(f"{len(draft.scenes)} scenes (wanted {MIN_SCENES}-{MAX_SCENES})")
+    if not limits.min_scenes <= len(draft.scenes) <= limits.max_scenes:
+        problems.append(f"{len(draft.scenes)} scenes (wanted {limits.min_scenes}-{limits.max_scenes})")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
     if any(k not in ("map", "card") for k in kinds):
         problems.append("a scene kind is not map or card")
-    if kinds.count("card") > MAX_CARDS:
-        problems.append(f"{kinds.count('card')} card scenes (at most {MAX_CARDS})")
-    if kinds and kinds[0] != "map":
+    if kinds.count("card") > limits.max_cards:
+        problems.append(f"{kinds.count('card')} card scenes (at most {limits.max_cards})")
+    if limits.first_map and kinds and kinds[0] != "map":
         problems.append("the first scene must be a map (it is the thumbnail)")
     stamps = 0
     for i, s in enumerate(draft.scenes, 1):
@@ -572,8 +591,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
     if missing := bw_render.resolve(spec, find):
         problems.append("places not on the map (use a country, state/province, lake, river, city or a small place's exact "
                         "Wikipedia title): " + ", ".join(missing[:8]))
-    if len(draft.claims) < 4:
-        problems.append(f"only {len(draft.claims)} claims listed (list every fact, 5-12)")
+    if len(draft.claims) < limits.min_claims:
+        problems.append(f"only {len(draft.claims)} claims listed (list every fact the narration states)")
     bad_quotes = []
     for c in draft.claims:
         source = res.source(c.source_id)
@@ -582,7 +601,7 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve) -> list[str]:
     if bad_quotes:
         problems.append("these quotes are not word for word in the source they name: " + "; ".join(bad_quotes[:5]))
     cited = {c.source_id for c in draft.claims if res.source(c.source_id)}
-    if len(res.sources) > 1 and len(cited) < 2:
+    if len(res.sources) > 1 and len(cited) < limits.min_cited:
         problems.append("only one source is cited; support some claims with another source")
     if not draft.title.strip() or len(draft.title) > 95:
         problems.append("the title is missing or over 95 characters")
@@ -602,7 +621,8 @@ def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
 def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
-    return PROMPT.format(question=res.topic.question, min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
+    return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video",
+                         min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
                          min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
                          today=today or dt.date.today().isoformat(), sources=sources_block(res))
 

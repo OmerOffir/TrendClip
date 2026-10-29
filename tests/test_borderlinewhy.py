@@ -844,3 +844,133 @@ def test_owner_icon_draws_wide_on_the_frame(monkeypatch, tmp_path):
         bw_fx.FxRenderer.icon(bw_fx.FxRenderer.__new__(bw_fx.FxRenderer), ov, el, (540, 900), t)
         box = ov.getbbox()
         assert box and (box[2] - box[0] > 300) == wide and box[2] - box[0] > box[3] - box[1]
+
+
+# --------------------------------------------------------------------------- long videos (any LLM)
+
+
+def _chapter_json(words: int = 210) -> str:
+    d = _draft(narration_words=words)
+    return json.dumps({"scenes": [s.model_dump() for s in d.scenes], "claims": [c.model_dump() for c in d.claims]})
+
+
+def _outline(n: int = 5) -> str:
+    return json.dumps({"usable": True, "title": "Why does Minnesota have a notch?", "cover_text": "Cut off by a bad map",
+                       "chapters": [{"title": f"Part {k}", "question": f"Question {k}?", "beats": ["a [1]", "b [2]"]} for k in range(1, n + 1)],
+                       "description": "A map error.", "hashtags": ["maps"]})
+
+
+@pytest.fixture
+def portrait_after():
+    yield
+    bw_render.use_layout("portrait")
+
+
+def test_long_video_goes_from_research_to_a_full_script(tmp_path, world, monkeypatch):
+    from modules import bw_long
+
+    monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: _research())
+    monkeypatch.setattr(bw_script, "wiki_text", lambda title: ("Lake of the Woods", SOURCE_1 * 20))
+    s = bw_long.start("Why does Minnesota have a notch?", "Northwest Angle", ["Lake of the Woods"], out_dir=tmp_path)
+    assert s["step"] == "research" and s["purpose"] == "research" and len(s["sources"]) == 3
+    assert "fact - link" in s["prompt"]
+
+    read = {"https://www.nps.gov/angle": bw_script.Source(0, "https://www.nps.gov/angle", "NPS", SOURCE_2 * 10)}
+    monkeypatch.setattr(bw_long, "_read", lambda url: read.get(url))
+    with pytest.raises(bw_long.LongError, match="no links"):
+        bw_long.add_research(s["id"], "Some facts without links.", tmp_path)
+    s = bw_long.add_research(s["id"], "The Angle is cut off - https://www.nps.gov/angle\nAnd - https://reddit.com/r/x\n"
+                                      "Also - https://example.com/dead.", tmp_path)
+    assert s["step"] == "outline" and s["research"] == {"links": 2, "read": 1} and s["sources"][-1]["id"] == 4
+
+    s = bw_long.answer_outline(s["id"], _outline(2), tmp_path)
+    assert s["step"] == "outline" and "2 chapters" in s["problems"][0] and "fix them" in s["prompt"]
+    s = bw_long.answer_outline(s["id"], _outline(5), tmp_path)
+    assert s["step"] == "chapter" and s["current"] == 0 and len(s["chapters"]) == 5
+    assert "YOUR CHAPTER: 1. Part 1" in s["prompt"] and "hook" in s["prompt"] and "THE STORY SO FAR" not in s["prompt"]
+
+    s = bw_long.answer_chapter(s["id"], 0, _chapter_json(40), tmp_path, find=_find(world))
+    assert s["chapters"][0]["step"] == "fix" and "Your chapter has problems" in s["prompt"]
+    for i in range(5):
+        s = bw_long.answer_chapter(s["id"], i, _chapter_json(), tmp_path, find=_find(world))
+        assert s["purpose"] == "facts" and s["chapters"][i]["step"] == "facts"
+        if i == 1:
+            s = bw_long.answer_facts(s["id"], i, '{"unsupported": ["1784 - the sources say 1783"]}', tmp_path)
+            assert s["chapters"][i]["step"] == "facts_fix" and "1784" in s["prompt"]
+            s = bw_long.answer_chapter(s["id"], i, _chapter_json(), tmp_path, find=_find(world))
+        s = bw_long.answer_facts(s["id"], i, '{"unsupported": []}', tmp_path)
+        if i < 4:
+            assert s["current"] == i + 1 and "THE STORY SO FAR" in s["prompt"]
+    assert s["step"] == "ready" and s["minutes"] > 4
+
+    script = bw_long.full_script(s["id"], tmp_path)
+    marks = [(k, sc["chapter"]["n"]) for k, sc in enumerate(script["scenes"]) if "chapter" in sc]
+    assert marks == [(0, 1), (5, 2), (10, 3), (15, 4), (20, 5)] and script["layout"] == "landscape"
+    s = bw_long.reopen(s["id"], 2, tmp_path)
+    assert s["step"] == "chapter" and s["current"] == 2
+    with pytest.raises(bw_long.LongError):
+        bw_long.full_script(s["id"], tmp_path)
+    assert [x["id"] for x in bw_long.sessions(tmp_path)] == [s["id"]]
+
+
+def test_long_video_links_chapters_and_description():
+    from modules import bw_long
+
+    assert bw_long.links("a https://www.gov.uk/x). b https://youtube.com/watch?v=1 c https://www.gov.uk/x d <https://museum.org/y>") == [
+        "https://www.gov.uk/x", "https://museum.org/y"]
+    assert bw_long.stamp(65) == "1:05" and bw_long.stamp(3725) == "1:02:05"
+    scenes = [bw_render.Scene("map", "a", start=0.4, opts={"chapter": {"n": 1, "title": "Hook"}}), bw_render.Scene("map", "b", start=40),
+              bw_render.Scene("card", "c", start=95.5, opts={"chapter": {"n": 2, "title": "The treaty"}}),
+              bw_render.Scene("map", "d", start=200, opts={"chapter": {"n": 3, "title": "Today"}})]
+    times = bw_long.chapter_times(bw_render.Spec(scenes, []))
+    assert times == [(0.0, "Hook"), (95.5, "The treaty"), (200, "Today")]
+    text = bw_long.description({"question": "Why?", "description": "Because.", "sources": [{"title": "A", "url": "https://a"}]}, times)
+    assert "Chapters:\n0:00 Hook\n1:35 The treaty\n3:20 Today\n\nSources:" in text
+
+
+def test_long_video_draws_landscape_with_banners_and_a_thumbnail(world, fx_offline, tmp_path, portrait_after):
+    from PIL import Image
+
+    from modules import bw_long
+
+    data = _fx_dict()
+    data["scenes"][0]["chapter"] = {"n": 1, "title": "The notch"}
+    data["scenes"][1]["chapter"] = {"n": 2, "title": "The treaty"}
+    spec = bw_long.spec_for(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert (bw_render.W, bw_render.H) == (1920, 1080) and fx_offline.ICON_SLOTS == fx_offline.SLOTS["landscape"]["icon"]
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    card = spec.scenes[1]
+    with_banner = np.asarray(r.frame(card.start + 1.0))
+    assert with_banner.shape == (1080, 1920, 3)
+    y = bw_render.CAPTION_Y - 120 - 100
+    assert with_banner[y, 200].mean() < 60  # the dark banner over the paper
+    out = bw_long.thumbnail(spec, tmp_path / "thumb.jpg")
+    assert Image.open(out).size == (1280, 720)
+    bw_render.use_layout("portrait")
+    assert (bw_render.W, bw_render.H, fx_offline.W) == (1080, 1920, 1080)
+
+
+def test_long_video_make_runs_in_its_own_process(tmp_path, world, monkeypatch):
+    from modules import bw_long
+
+    started = []
+
+    class Proc:
+        pid = 999_999_999
+
+    monkeypatch.setattr(bw_long.subprocess, "Popen", lambda cmd, **kw: started.append(cmd) or Proc())
+    monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: _research())
+    s = bw_long.start("Why?", "Northwest Angle", out_dir=tmp_path)
+    with pytest.raises(bw_long.LongError, match="Not every chapter"):
+        bw_long.start_make(s["id"], tmp_path)
+    s = bw_long.skip_research(s["id"], tmp_path)
+    s = bw_long.answer_outline(s["id"], _outline(5), tmp_path)
+    for i in range(5):
+        bw_long.answer_chapter(s["id"], i, _chapter_json(), tmp_path, find=_find(world))
+        s = bw_long.answer_facts(s["id"], i, '{"unsupported": []}', tmp_path)
+    bw_long.start_make(s["id"], tmp_path)
+    assert started[0][1:5] == ["-m", "modules.bw_long", "make", s["id"]]
+    # that pid is no process: the tab says it stopped
+    j = bw_long.job(s["id"], tmp_path)
+    assert j["running"] is False and "stopped" in j["error"]

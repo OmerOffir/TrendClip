@@ -1,10 +1,11 @@
 """Borderline Why tab: the channel's YouTube login (the shared callback saves its token in
 channels/borderlinewhy/), its status, its videos with Approve / Don't post / Upload, "make the next video
-now", and the topic list (with questions added by hand). The bot runs the same day by itself (/bw)."""
+now", the topic list (with questions added by hand), and the long videos (modules.bw_long). The bot runs the same day by itself (/bw)."""
 
 from __future__ import annotations
 
 import logging
+import re
 import threading
 from datetime import date
 from typing import Any
@@ -20,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/borderlinewhy")
 _lock = threading.Lock()
-_jobs: dict[str, dict[str, Any]] = {"make": {"running": False}, "upload": {"running": False}, "week": {"running": False}}
+_jobs: dict[str, dict[str, Any]] = {"make": {"running": False}, "upload": {"running": False}, "week": {"running": False},
+                                   "long_upload": {"running": False}}
 
 
 def _settings():
@@ -435,3 +437,141 @@ def youtube_connect(request: Request) -> dict[str, Any]:
 def youtube_logout() -> dict[str, Any]:
     bw_channel.logout()
     return {"connected": False}
+
+
+# --------------------------------------------------------------------------- long videos (modules.bw_long)
+
+
+class LongStart(BaseModel):
+    question: str = Field("", max_length=200)
+    article: str = Field(min_length=2, max_length=200)
+    more: list[str] = Field(default_factory=list, max_length=8)
+
+
+class LongUpload(BaseModel):
+    privacy: str = Field("private", pattern="^(private|unlisted|public)$")
+
+
+LONG_FILES = re.compile(r"^(preview_\d{1,2}\.jpg|thumbnail\.jpg|video\.mp4)$")
+
+
+def _long(fn, *args):
+    from modules import bw_long
+
+    try:
+        return fn(*args)
+    except bw_long.LongError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except bw_script.TryLater as err:
+        raise HTTPException(status_code=503, detail=str(err)) from err
+    except bw_script.ScriptError as err:
+        raise HTTPException(status_code=422, detail=str(err)) from err
+
+
+@router.get("/long")
+def long_list() -> dict[str, Any]:
+    from modules import bw_long
+
+    root = bw_channel.out_root()
+    return {"sessions": bw_long.sessions(), "topics": [t.model_dump() for t in bw_topics.remaining(root)[:15]]}
+
+
+@router.post("/long")
+def long_start(req: LongStart) -> dict[str, Any]:
+    """Read the article, the more articles named and their cited pages (a minute or two); give the research prompt."""
+    from modules import bw_long
+
+    return _long(bw_long.start, req.question, req.article, req.more)
+
+
+@router.get("/long/{sid}")
+def long_view(sid: str) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.view, sid)
+
+
+@router.post("/long/{sid}/research")
+def long_research(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.add_research, sid, req.text)
+
+
+@router.post("/long/{sid}/skip-research")
+def long_skip_research(sid: str) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.skip_research, sid)
+
+
+@router.post("/long/{sid}/outline")
+def long_outline(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.answer_outline, sid, req.text)
+
+
+@router.post("/long/{sid}/chapter/{n}")
+def long_chapter(sid: str, n: int, req: ManualText) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.answer_chapter, sid, n - 1, req.text)
+
+
+@router.post("/long/{sid}/facts/{n}")
+def long_facts(sid: str, n: int, req: ManualText) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.answer_facts, sid, n - 1, req.text)
+
+
+@router.post("/long/{sid}/reopen/{n}")
+def long_reopen(sid: str, n: int) -> dict[str, Any]:
+    from modules import bw_long
+
+    return _long(bw_long.reopen, sid, n - 1)
+
+
+@router.post("/long/{sid}/preview/{n}")
+def long_preview(sid: str, n: int) -> dict[str, Any]:
+    """Draw chapter n's storyboard (half a minute or so, in its own process)."""
+    from modules import bw_long
+
+    _long(bw_long.run_preview, sid, n - 1)
+    return _long(bw_long.view, sid)
+
+
+@router.get("/long/{sid}/file/{name}")
+def long_file(sid: str, name: str) -> FileResponse:
+    from modules import bw_long
+
+    if not LONG_FILES.match(name):
+        raise HTTPException(status_code=404, detail="No such file")
+    path = _long(bw_long.folder, sid) / name
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="No such file")
+    return FileResponse(path, media_type="video/mp4" if name.endswith(".mp4") else "image/jpeg",
+                        headers={"Cache-Control": "no-store"})
+
+
+@router.post("/long/{sid}/make")
+def long_make(sid: str) -> dict[str, Any]:
+    """Start the make (about an hour, in its own process); /long/{sid} shows its progress."""
+    from modules import bw_long
+
+    _long(bw_long.start_make, sid)
+    return _long(bw_long.view, sid)
+
+
+@router.post("/long/{sid}/upload")
+def long_upload(sid: str, req: LongUpload) -> dict[str, Any]:
+    from modules import bw_long
+
+    _long(bw_long.folder, sid)
+    return _start("long_upload", lambda progress: bw_long.upload(sid, req.privacy, progress)["url"], key=sid)
+
+
+@router.get("/long-upload-job")
+def long_upload_job() -> dict[str, Any]:
+    return _job("long_upload")

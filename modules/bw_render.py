@@ -1,4 +1,4 @@
-"""Borderline Why renderer: a 1080x1920 video drawn frame by frame from a list of scenes (PIL), piped to ffmpeg.
+"""Borderline Why renderer: a 1080x1920 Short (or a 1920x1080 long video, see use_layout) drawn frame by frame from a list of scenes (PIL), piped to ffmpeg.
 
 A scene is either a map (the camera fits the places it names, then highlights, labels, pins, arrows, lines and
 parallels appear on their cue words) or a card (an old-paper title card for a date, a treaty, a name). Every
@@ -29,6 +29,33 @@ W, H, FPS = 1080, 1920, 30
 MAP_TOP, MAP_BOTTOM = 470, 1330  # the camera fits places between the headline and the captions
 CY = (MAP_TOP + MAP_BOTTOM) // 2
 CAPTION_Y = 1420
+CAPTION_SIZE, CAPTION_WORDS = 92, 3
+HEAD_Y = 250  # the headline's middle
+CARD_Y = 720  # a card's kicker; the title and subtitle follow under it
+
+# The frame's size and where things sit on it. Shorts are portrait; long videos are landscape, rendered in a process
+# of their own (modules.bw_long) that switches once with use_layout before drawing anything.
+LAYOUTS: dict[str, dict[str, Any]] = {
+    "portrait": dict(W=1080, H=1920, MAP_TOP=470, MAP_BOTTOM=1330, CAPTION_Y=1420, CAPTION_SIZE=92, CAPTION_WORDS=3,
+                     HEAD_Y=250, CARD_Y=720),
+    "landscape": dict(W=1920, H=1080, MAP_TOP=170, MAP_BOTTOM=860, CAPTION_Y=975, CAPTION_SIZE=72, CAPTION_WORDS=5,
+                      HEAD_Y=92, CARD_Y=300),
+}
+LAYOUT = "portrait"
+LAYOUT_HOOKS: list[Callable[[], None]] = []  # modules that copied these values (modules.bw_fx) refresh them here
+
+
+def use_layout(name: str) -> None:
+    """Switch the frame's size and positions for every later frame of this process."""
+    global LAYOUT, CY
+    g = globals()
+    for k, v in LAYOUTS[name].items():
+        g[k] = v
+    CY = (MAP_TOP + MAP_BOTTOM) // 2
+    LAYOUT = name
+    _layers.clear()
+    for hook in LAYOUT_HOOKS:
+        hook()
 MOVE = 0.9  # seconds the camera takes from one scene's view to the next
 FADE = 0.4
 TAIL = 1.2  # seconds after the last word
@@ -323,7 +350,7 @@ def headline(ov: Image.Image, s: str, a: float, color=(245, 245, 240), size: int
             break
         size -= 6
     lines = wrap(s, size, W - 120)[:3]
-    y = 250 - (len(lines) - 1) * size * 0.5
+    y = HEAD_Y - (len(lines) - 1) * size * 0.5
     for line in lines:
         text(ov, (W / 2, y), line, size, fill=color, a=a, stroke=8)
         y += size * 1.05
@@ -433,7 +460,7 @@ class Renderer:
             cur.append(i)
             nxt = words[i + 1] if i + 1 < len(words) else None
             gap = (nxt.start - w.end) if nxt else 9
-            if len(cur) >= 3 or gap > 0.3 or nxt is None or w.text.rstrip().endswith((".", "?", "!")):
+            if len(cur) >= CAPTION_WORDS or gap > 0.3 or nxt is None or w.text.rstrip().endswith((".", "?", "!")):
                 groups.append(cur)
                 cur = []
         self.groups = groups
@@ -622,7 +649,7 @@ class Renderer:
         img = self.paper.copy()
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         ink, red = FIXED["ink"], FIXED["red"]
-        y = 720
+        y = CARD_Y
         if scene.kicker:
             text(ov, (W / 2, y), scene.kicker.upper(), 56, fill=ink, a=ramp(t, scene.start + 0.2), serif=True, stroke=0, max_width=W - 120)
             y += 120
@@ -663,9 +690,9 @@ class Renderer:
                 group = g
         if not group:
             return
-        size = 92
+        size = CAPTION_SIZE
         parts = [words[i].text.upper() for i in group]
-        while size > 56 and sum(font(size).getlength(p + " ") for p in parts) > W - 80:
+        while size > CAPTION_SIZE * 0.6 and sum(font(size).getlength(p + " ") for p in parts) > W - 80:
             size -= 6
         f = font(size)
         widths = [f.getlength(p + " ") for p in parts]

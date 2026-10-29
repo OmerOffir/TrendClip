@@ -68,6 +68,7 @@
         <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
         <button type="button" role="tab" data-bw-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
         <button type="button" role="tab" data-bw-view="week" title="Write the coming week's scripts with any LLM at once and send them to Linux">📅 Write a week</button>
+        <button type="button" role="tab" data-bw-view="long" title="An 8-15 minute landscape video in chapters, written with any LLM">🎬 Long video</button>
       </nav>
     </div>
   </header>
@@ -146,6 +147,31 @@
         <button type="button" class="btn-secondary" id="bwWOpen" hidden>Continue</button>
       </div>
       <div class="bw-w" id="bwWSession"></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewBwLong" data-workspace-panel="borderlinewhy" data-bw-panel="long" hidden>
+    <div id="bwLError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Long video</h2>
+          <span class="hint">An 8-15 minute landscape video in chapters, no Gemini needed. The code reads Wikipedia and the pages it cites,
+            and every link your LLM's research gives; you paste each prompt into any LLM and its answer back here: the outline, then one
+            chapter at a time. Every chapter gets the rules check (each quote word for word in a source) and a fact check.</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <input id="bwLArticle" list="bwLTopics" placeholder="Wikipedia article, e.g. Pheasant Island" aria-label="Wikipedia article">
+        <datalist id="bwLTopics"></datalist>
+        <input id="bwLQuestion" placeholder="The question (optional)" aria-label="Question">
+        <input id="bwLMore" placeholder="More articles, comma separated (optional)" aria-label="More Wikipedia articles">
+        <button type="button" class="btn-primary" id="bwLStart">📚 Read the sources</button>
+        <span class="spacer"></span>
+        <select id="bwLSessions" aria-label="Continue a long video" hidden></select>
+        <button type="button" class="btn-secondary" id="bwLOpen" hidden>Continue</button>
+      </div>
+      <div class="bw-w" id="bwLSession"></div>
     </section>
   </main>
 
@@ -1194,6 +1220,7 @@
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
   <script src="/static/bwweek.js"></script>
+  <script src="/static/bwlong.js"></script>
   <script src="/static/gamermanual.js"></script>
   <script src="/static/gamerweek.js"></script>
   <script src="/static/darkmanual.js"></script>
