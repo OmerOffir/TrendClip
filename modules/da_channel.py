@@ -87,6 +87,16 @@ def announce_video(story_id: int, info: dict, settings=None, out_dir: Path | Non
         return None
 
 
+def announce_text(text: str, settings=None) -> str | None:
+    """A plain message in the Dark Outliers channel. Never raises."""
+    try:
+        rest = _rest(settings)
+        return rest.post(text) if rest is not None else None
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Discord post failed: %s", err)
+        return None
+
+
 def announce_upload(story_id: int, info: dict, record: dict, settings=None) -> str | None:
     """Post the YouTube link in the Dark Outliers channel once a video is uploaded. Never raises."""
     try:

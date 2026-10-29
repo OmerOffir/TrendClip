@@ -56,6 +56,7 @@
         <button type="button" role="tab" data-da-view="videos">Videos <span class="nav-count" id="daNavVideos" hidden></span></button>
         <button type="button" role="tab" data-da-view="plan">Plan <span class="nav-count todo" id="daNavPlan" hidden title="Planned videos not yet on YouTube"></span></button>
         <button type="button" role="tab" data-da-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
+        <button type="button" role="tab" data-da-view="week" title="One prompt for the coming week's scripts in any LLM; Linux makes the videos from them">📅 Write a week</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="borderlinewhy" hidden>
@@ -290,6 +291,29 @@
         <button type="button" class="btn-secondary" id="daWOpen" hidden>Continue</button>
       </div>
       <div class="bw-w" id="daWSession"></div>
+    </section>
+  </main>
+
+  <main class="container da-view" id="viewDarkWeek" data-workspace-panel="darkarchives" data-da-panel="week" hidden>
+    <div id="daKError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write a week</h2>
+          <span class="hint">No Gemini needed. The code picks the best stories of the bank and the groups for the rankings; you paste ONE prompt
+            into any LLM (the Gemini app, ChatGPT, Claude) and its answer back here; every script gets the rules check and the stories a fact
+            check (best in a second LLM). The ready scripts go to Linux, whose production run uses them before asking Gemini, oldest first.</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <label class="hint" for="daKCount">Stories</label>
+        <input type="number" id="daKCount" min="0" max="21" value="10" style="width:4.5em">
+        <label class="hint" for="daKRankings">Rankings</label>
+        <input type="number" id="daKRankings" min="0" max="7" value="3" style="width:4.5em">
+        <button type="button" class="btn-primary" id="daKStart">📚 Pick the next stories</button>
+        <span class="hint" id="daKInfo"></span>
+      </div>
+      <div class="bw-w" id="daKSession"></div>
     </section>
   </main>
 
@@ -1117,6 +1141,7 @@
   <script src="/static/bwweek.js"></script>
   <script src="/static/gamermanual.js"></script>
   <script src="/static/darkmanual.js"></script>
+  <script src="/static/daweek.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/upcoming.js"></script>

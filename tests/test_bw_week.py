@@ -130,5 +130,8 @@ def test_queue_scripts_goes_straight_to_the_queue_on_the_hub_itself(settings, mo
     monkeypatch.setattr(channel_hub.BorderlineWhy, "queue", lambda self, s, bundle, now=None: seen.update(bundle) or {"queued": []})
     channel_hub.queue_scripts(settings, "borderlinewhy", {"scripts": [1]})
     assert seen == {"scripts": [1]}
-    with pytest.raises(channel_hub.HubError, match="doesn't take scripts"):
-        channel_hub.queue_scripts(settings, "darkarchives", {"scripts": [1]})
+    monkeypatch.setattr(channel_hub.DarkOutliers, "queue", lambda self, s, bundle, now=None: seen.update(bundle) or {"queued": []})
+    channel_hub.queue_scripts(settings, "darkarchives", {"stories": [2]})
+    assert seen == {"scripts": [1], "stories": [2]}
+    with pytest.raises(channel_hub.HubError, match="Unknown channel"):
+        channel_hub.queue_scripts(settings, "sidequestlogic", {"scripts": [1]})

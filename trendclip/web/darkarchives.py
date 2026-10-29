@@ -601,3 +601,78 @@ def manual_make(sid: str, req: ManualMake | None = None) -> dict[str, Any]:
         _video_job.update(running=True, story_id=story_id, started_at=time.time(), progress=0.0, message="Starting")
     threading.Thread(target=_make_manual, args=(sid, story_id, day, slot), name="darkarchives-manual-video", daemon=True).start()
     return video_status()
+
+
+# --------------------------------------------------------------------------- Write a week (modules/da_week.py)
+
+
+class WeekStart(BaseModel):
+    count: int = Field(10, ge=0, le=21)
+    rankings: int | None = Field(None, ge=0, le=7)
+
+
+class WeekText(BaseModel):
+    text: str = Field(min_length=2, max_length=2_000_000)
+
+
+def _week(fn, *args, **kwargs):
+    from modules import da_week
+
+    try:
+        return fn(*args, **kwargs)
+    except da_week.WeekError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/week")
+def week_view() -> dict[str, Any]:
+    """The week session (None before the first start), the default number of rankings, whether this machine sends."""
+    from modules import da_week
+    from trendclip import hub
+
+    view = _week(da_week.view) if da_week.exists() else None
+    new = len([s for s in repository.all_stories("NEW") if not s["source_id"].startswith("ranking_")])
+    return {"week": view, "sender": hub.is_sender(_settings_for_targets()), "new": new,
+            "default_rankings": da_week.default_rankings(da_week.DEFAULT_COUNT), "waiting": da_produce.waiting()}
+
+
+@router.post("/week")
+def week_start(req: WeekStart | None = None) -> dict[str, Any]:
+    """Pick the next stories and ranking pools from the bank (no Gemini) and open the session."""
+    from modules import da_week
+
+    req = req or WeekStart()
+    return _week(da_week.start, req.count, req.rankings)
+
+
+@router.post("/week/answer")
+def week_answer(req: WeekText) -> dict[str, Any]:
+    from modules import da_week
+
+    return _week(da_week.answer, req.text)
+
+
+@router.post("/week/facts")
+def week_facts(req: WeekText) -> dict[str, Any]:
+    from modules import da_week
+
+    return _week(da_week.facts, req.text)
+
+
+@router.post("/week/drop/{kind}/{i}")
+def week_drop(kind: Literal["story", "ranking"], i: int) -> dict[str, Any]:
+    from modules import da_week
+
+    return _week(da_week.drop, kind, i)
+
+
+@router.post("/week/send")
+def week_send() -> dict[str, Any]:
+    """The ready scripts to the hub (through Discord from the sending machine; straight into the bank on the hub)."""
+    from modules import da_week
+    from trendclip.hub import HubError
+
+    try:
+        return _week(da_week.send, _settings_for_targets())
+    except HubError as err:
+        raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err

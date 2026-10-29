@@ -127,6 +127,85 @@ class DarkOutliers:
                                   components=da_channel.video_buttons(story_id, item.id))
         return {"date": day.isoformat(), "slot": slot, "title": info.get("title", ""), "ref": story_id}
 
+    def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+        """Scripts written for later (modules.da_week) into this hub's bank: each story is saved here (or found by
+        source_id) with its script, SCRIPT_READY and the note "written for later", so the production run takes it
+        before asking Gemini; a ranking becomes a ranking story of its own, its candidates USED. A story the hub
+        already made or scripted is skipped. {"queued": [{"kind", "week_i", "title", "hub_id"}], "skipped":
+        [{"kind", "week_i", "title", "why"}], "waiting": {"stories": n, "rankings": n}}."""
+        from pydantic import ValidationError
+
+        from db import repository
+        from modules import da_channel, da_plan, da_produce, da_ranking, script_gen
+
+        stories, rankings = bundle.get("stories") or [], bundle.get("rankings") or []
+        if not isinstance(stories, list) or not isinstance(rankings, list) or not (stories or rankings):
+            raise HubError("No scripts in the bundle")
+        repository.init_db()
+        queued, skipped = [], []
+
+        def place(story: dict[str, Any]) -> dict[str, Any]:
+            """The hub's own record of the sender's story (saved when the hub never fetched it)."""
+            found = repository.find_source(story["source_id"])
+            if found is None:
+                repository.save_story(story["source_id"], story.get("source_name") or "", story.get("title") or "",
+                                      story.get("raw_text") or "", story.get("url") or "", story.get("score") or 0,
+                                      pillar=story.get("pillar") if story.get("pillar") in repository.PILLARS else None)
+                found = repository.find_source(story["source_id"])
+            return found
+
+        for item in stories:
+            story = item.get("story") or {}
+            label = {"kind": "story", "week_i": item.get("week_i"), "title": story.get("title", "")}
+            if not story.get("source_id") or not item.get("draft"):
+                skipped.append({**label, "why": "no story or no draft"})
+                continue
+            try:
+                draft = script_gen.ScriptDraft.model_validate(item["draft"])
+            except ValidationError:
+                skipped.append({**label, "why": "the draft is not a script"})
+                continue
+            found = place(story)
+            if found["status"] == "USED" or da_plan.video_info(found["id"]) is not None:
+                skipped.append({**label, "why": f"the hub already made \"{found['title']}\" (story {found['id']})"})
+                continue
+            if found["status"] in ("SCRIPT_READY", "PROCESSING"):
+                skipped.append({**label, "why": f"the hub already has a script for \"{found['title']}\" (story {found['id']})"})
+                continue
+            script_gen.save(script_gen.finalize(found["id"], draft), note=f"{da_produce.WEEK_NOTE} (dashboard)")
+            queued.append({**label, "hub_id": found["id"]})
+        for item in rankings:
+            draft_data = item.get("draft") or {}
+            label = {"kind": "ranking", "week_i": item.get("week_k"), "title": draft_data.get("title", "")}
+            try:
+                draft = da_ranking.RankingDraft.model_validate(draft_data)
+            except ValidationError:
+                skipped.append({**label, "why": "the draft is not a ranking"})
+                continue
+            pool = {s["id"]: s for s in item.get("pool") or [] if s.get("id") is not None and s.get("source_id")}
+            if any(e.story_id not in pool for e in draft.entries) or not draft.entries:
+                skipped.append({**label, "why": "its entries point outside its candidates"})
+                continue
+            rows = {e.story_id: place(pool[e.story_id]) for e in draft.entries}
+            told = [r for r in rows.values() if r["status"] in ("USED", "SCRIPT_READY", "PROCESSING")]
+            if told:
+                skipped.append({**label, "why": f"the hub already told or scripted \"{told[0]['title']}\" (story {told[0]['id']})"})
+                continue
+            remapped = draft.model_copy(update={"entries": [
+                e.model_copy(update={"story_id": rows[e.story_id]["id"]}) for e in draft.entries]})
+            result = da_ranking.store(remapped, {r["id"]: r for r in rows.values()}, note=f"{da_produce.WEEK_NOTE} (dashboard)")
+            queued.append({**label, "hub_id": result["story"]["id"]})
+        result = {"queued": queued, "skipped": skipped, "waiting": da_produce.waiting()}
+        if queued:
+            try:
+                da_channel.announce_text(
+                    f"📝 {len(queued)} Dark Outliers script(s) for later arrived from the dashboard: "
+                    f"{'; '.join(q['title'] for q in queued)[:600]}. The production run uses them before asking Gemini, "
+                    f"oldest first ({result['waiting']['stories']} stories and {result['waiting']['rankings']} rankings wait now).", settings)
+            except Exception:  # noqa: BLE001 - Discord is a courtesy here
+                logger.exception("Dark Outliers: could not announce the scripts for later")
+        return result
+
     def view(self, settings) -> dict[str, Any]:
         """The hub's Plan tab, without its own video list (the sending machine shows its own)."""
         from modules import da_plan
@@ -513,7 +592,7 @@ def planned(settings, name: str) -> list[dict[str, Any]]:
 
 def queue_scripts(settings, name: str, bundle: dict[str, Any]) -> dict[str, Any]:
     """Scripts written for later into the channel's queue: on the hub itself straight away, from the sending
-    machine through Discord (op cqueue). The hub's answer (see BorderlineWhy.queue)."""
+    machine through Discord (op cqueue). The hub's answer (see BorderlineWhy.queue / DarkOutliers.queue)."""
     ch = channel(name)
     if not hasattr(ch, "queue"):
         raise HubError(f"{ch.label} doesn't take scripts for later", 400)
@@ -524,7 +603,7 @@ def queue_scripts(settings, name: str, bundle: dict[str, Any]) -> dict[str, Any]
     if op != "done":
         raise HubError(reply.get("message") or "The hub refused the scripts", 409)
     forget_view(name)
-    logger.info("Sent %d %s script(s) for later to the hub: %d queued", len(bundle.get("scripts") or []), name, len(reply.get("queued", [])))
+    logger.info("Sent %s script(s) for later to the hub: %d queued", name, len(reply.get("queued", [])))
     return reply
 
 

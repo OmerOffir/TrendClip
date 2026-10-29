@@ -16,6 +16,8 @@ Once a day (DA_AUTO_PRODUCE_TIME, default 09:30, by the Discord bot; DA_AUTO_PRO
      - the slot (modules.da_plan): it goes out by itself at its time (da_plan / the bot).
   Every DA_RANKING_EVERY-th video (default 4) is a ranking instead: Gemini ranks the 5 best stories of
   the bank and counts them down (modules.da_ranking; /da rank and the dashboard make one on demand).
+  A script written for later (the dashboard's "Write a week", modules.da_week: SCRIPT_READY in the bank with
+  the note "written for later") is used before Gemini is asked, oldest first; so are such rankings.
   The bot shows each video in the Dark Outliers Discord channel with a "Don't post this" button.
   The channel learns from its own numbers (modules.da_insights): the mix leans towards a pillar whose
   videos get more views (DA_PILLAR_BIAS caps it) and the script prompt ends with what worked.
@@ -37,6 +39,7 @@ logger = logging.getLogger(__name__)
 
 PRODUCE_LEAD = timedelta(hours=3)  # today's slots at least this far away are filled too
 MAX_STORY_TRIES = 4  # stories scripted / made for one slot before giving up on it
+WEEK_NOTE = "written for later"  # the bank note of a script the dashboard's "Write a week" sent (channel_hub)
 DEFAULT_TIME = "09:30"
 ProgressFn = Callable[[float | None, str], None]
 
@@ -124,11 +127,48 @@ def mix_targets() -> dict[str, float] | None:
         return None
 
 
+def prewritten(db_path=None, scripts_dir: Path | None = None, out_dir: Path | None = None, ranking: bool = False,
+               skip: set[int] | None = None) -> dict | None:
+    """The oldest story whose script was written for later (the dashboard's "Write a week", kept by the hub as
+    SCRIPT_READY with WEEK_NOTE) and has no video yet, in script_gen.process's shape; None when there is none.
+    `ranking`: a ranking written for later instead of a single story."""
+    for story in sorted(repository.all_stories("SCRIPT_READY", db_path), key=lambda s: s["id"]):
+        if story["id"] in (skip or ()) or not str(story.get("note") or "").startswith(WEEK_NOTE):
+            continue
+        if story["source_id"].startswith("ranking_") != ranking:
+            continue
+        path = script_gen.script_path(story["id"], scripts_dir)
+        if not path.is_file() or video_gen.info_path(story["id"], out_dir).is_file():
+            continue
+        try:
+            script = script_gen.Script.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        return {"story": story, "script": script, "path": path, "status": "SCRIPT_READY", "reason": ""}
+    return None
+
+
+def waiting(db_path=None, scripts_dir: Path | None = None, out_dir: Path | None = None) -> dict[str, int]:
+    """How many scripts written for later wait for their video: {"stories": n, "rankings": n}."""
+    out = {"stories": 0, "rankings": 0}
+    seen: set[int] = set()
+    for kind, ranking in (("stories", False), ("rankings", True)):
+        while (found := prewritten(db_path, scripts_dir, out_dir, ranking, seen)) is not None:
+            seen.add(found["story"]["id"])
+            out[kind] += 1
+    return out
+
+
 def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None,
-                skip: set[int] | None = None, tries: int = MAX_STORY_TRIES) -> dict:
+                skip: set[int] | None = None, tries: int = MAX_STORY_TRIES, out_dir: Path | None = None) -> dict:
     """Script the best NEW story; a story Gemini rejects is marked REJECTED and the next one is tried.
+    A script written for later (prewritten) comes first and costs no Gemini call.
     Returns script_gen.process's result (status SCRIPT_READY)."""
     skip = set(skip or ())
+    ready = prewritten(db_path, scripts_dir, out_dir, skip=skip)
+    if ready is not None:
+        progress(None, f"Using the script written for later: {ready['story']['title'][:60]}")
+        return ready
     targets = mix_targets()
     for _ in range(tries):
         story = repository.get_next_story(db_path, targets)
@@ -148,10 +188,15 @@ def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_
     raise ProduceError(f"{tries} stories in a row were rejected")
 
 
-def ranking_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None) -> dict:
-    """A ranking script (modules.da_ranking) in next_script's shape."""
+def ranking_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None,
+                   out_dir: Path | None = None) -> dict:
+    """A ranking script (modules.da_ranking) in next_script's shape; one written for later comes first."""
     from modules import da_ranking
 
+    ready = prewritten(db_path, scripts_dir, out_dir, ranking=True)
+    if ready is not None:
+        progress(None, f"Using the ranking written for later: {ready['story']['title'][:60]}")
+        return ready
     progress(None, f"Ranking the {da_ranking.count()} best stories of the bank")
     return da_ranking.process(db_path=db_path, out_dir=scripts_dir)
 
@@ -189,15 +234,15 @@ def produce_one(settings, day: Day, slot: str, progress: ProgressFn = lambda f, 
         if want_ranking:
             want_ranking = False  # one try: its stories are USED now, the next attempt tells one story
             try:
-                scripted = ranking_script(progress, db_path, scripts_dir)
+                scripted = ranking_script(progress, db_path, scripts_dir, out_dir)
             except Exception as err:  # noqa: BLE001 - the ranking is a bonus, never the end of the slot
                 logger.warning("No ranking this time: %s", err)
                 progress(None, f"No ranking this time ({str(err)[:80]}); telling one story instead")
                 if ranking:
                     raise ProduceError(f"The ranking failed: {err}") from err
-                scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt)
+                scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt, out_dir=out_dir)
         else:
-            scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt)
+            scripted = next_script(progress, db_path, scripts_dir, skip={t["story_id"] for t in tried}, tries=tries - attempt, out_dir=out_dir)
         story_id = scripted["story"]["id"]
         progress(0.0, f"Making the video: {scripted['script'].title[:60]}")
         info = make(story_id, progress, out_dir=out_dir, scripts_dir=scripts_dir, db_path=db_path, settings=settings,

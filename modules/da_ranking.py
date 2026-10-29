@@ -247,6 +247,32 @@ def to_script(story_id: int, draft: RankingDraft, stories: dict[int, dict]) -> s
                                       title=stories[e.story_id]["title"]) for e in sorted(draft.entries, key=lambda e: e.rank)])
 
 
+def store(draft: RankingDraft, by_id: dict[int, dict], db_path=None, out_dir: Path | None = None, note: str = "") -> dict:
+    """Keep a checked ranking: a new bank story (source "ranking") with its script, SCRIPT_READY; the ranked
+    stories become USED. `by_id`: the candidate stories by id (the ids the draft's entries use).
+    {"story", "script", "path", "status": "SCRIPT_READY", "reason": ""} like script_gen.process."""
+    pillar = Counter(by_id[e.story_id].get("pillar") or "mystery" for e in draft.entries).most_common(1)[0][0]
+    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    raw = "\n".join(f"{e.rank}. {e.label} (story {e.story_id}: {by_id[e.story_id]['title']})"
+                    for e in sorted(draft.entries, key=lambda e: e.rank))
+    for n in range(1, 10):  # two rankings in one second (the hub taking a week's) get their own ids
+        source_id = f"ranking_{stamp}" + (f"_{n}" if n > 1 else "")
+        if repository.save_story(source_id, "ranking", draft.title.strip(), raw, "", 0, pillar=pillar, db_path=db_path):
+            break
+    else:
+        raise RankingError("A ranking with this timestamp already exists; try again")
+    story = repository.find_source(source_id, db_path)
+    script = to_script(story["id"], draft, by_id)
+    path = script_gen.script_path(story["id"], out_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(script.model_dump(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    repository.set_status(story["id"], "SCRIPT_READY", db_path, note=note)
+    for e in draft.entries:
+        repository.set_status(e.story_id, "USED", db_path, note=f"ranking {story['id']} (#{e.rank})")
+    story = repository.get_story(story["id"], db_path)
+    return {"story": story, "script": script, "path": path, "status": "SCRIPT_READY", "reason": ""}
+
+
 def process(client=None, db_path=None, out_dir: Path | None = None, n: int | None = None) -> dict:
     """A ranking script from the bank: {"story", "script", "path", "status": "SCRIPT_READY", "reason": ""}
     like script_gen.process. The ranking is a new bank story (source "ranking"), its stories become USED."""
@@ -254,24 +280,7 @@ def process(client=None, db_path=None, out_dir: Path | None = None, n: int | Non
     n = n or count()
     pool = candidates(db_path)
     draft = write_ranking(pool, client, n)
-    by_id = {s["id"]: s for s in pool}
-    pillar = Counter(by_id[e.story_id].get("pillar") or "mystery" for e in draft.entries).most_common(1)[0][0]
-    stamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    raw = "\n".join(f"{e.rank}. {e.label} (story {e.story_id}: {by_id[e.story_id]['title']})"
-                    for e in sorted(draft.entries, key=lambda e: e.rank))
-    source_id = f"ranking_{stamp}"
-    if not repository.save_story(source_id, "ranking", draft.title.strip(), raw, "", 0, pillar=pillar, db_path=db_path):
-        raise RankingError("A ranking with this timestamp already exists; try again")
-    story = next(s for s in repository.all_stories(None, db_path) if s["source_id"] == source_id)
-    script = to_script(story["id"], draft, by_id)
-    path = script_gen.script_path(story["id"], out_dir)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(script.model_dump(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    repository.set_status(story["id"], "SCRIPT_READY", db_path, note="")
-    for e in draft.entries:
-        repository.set_status(e.story_id, "USED", db_path, note=f"ranking {story['id']} (#{e.rank})")
-    story = repository.get_story(story["id"], db_path)
-    return {"story": story, "script": script, "path": path, "status": "SCRIPT_READY", "reason": ""}
+    return store(draft, {s["id"]: s for s in pool}, db_path, out_dir)
 
 
 def due(out_dir: Path | None = None) -> bool:
