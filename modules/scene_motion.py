@@ -1,14 +1,15 @@
-"""The depth camera: every still becomes a short clip the camera moves through.
+"""The camera: every still becomes a short clip the camera moves through.
 
-A depth model (Depth Anything V2, small: 25M parameters, under a second per picture on the GPU) says how
-far every pixel is; the camera then pushes in or pulls out and drifts sideways, and the near pixels move
-more than the far ones (parallax), so a flat picture reads as a scene with depth. Over it: fog that
-drifts and hangs in the far parts of the picture, and a little dust floating up through the light.
-Each clip is rendered with torch (the GPU when there is one) and written by ffmpeg; modules.video_gen
-plays the clips instead of its zoom-and-pan over the stills.
+The camera pushes in and drifts sideways over the picture, whole: no part of it moves against another
+(the owner's choice, 2026-10-29: the parallax that pushed near pixels more than far ones warped the
+pictures, so it is off; DA_PARALLAX turns it back on). A depth model (Depth Anything V2, small: 25M
+parameters, under a second per picture on the GPU) still says how far every pixel is, for the fog that
+drifts and hangs in the far parts of the picture; a little dust floats up through the light. Each clip is
+rendered with torch (the GPU when there is one) and written by ffmpeg; modules.video_gen plays the clips
+instead of its zoom-and-pan over the stills.
 
-Settings (.env): DA_MOTION=depth (default) or off; DA_PARALLAX=0.05 (how far the near pixels move, as a
-share of the width); DA_FOG=0.12 (0 = none); DA_DUST=1 (0 = none).
+Settings (.env): DA_MOTION=depth (default) or off; DA_PARALLAX=0 (how far the near pixels move against
+the far ones, as a share of the width; 0.05 was the old look); DA_FOG=0.12 (0 = none); DA_DUST=1 (0 = none).
 """
 
 from __future__ import annotations
@@ -23,9 +24,9 @@ logger = logging.getLogger(__name__)
 
 DEPTH_MODEL = "depth-anything/Depth-Anything-V2-Small-hf"
 DEPTH_SIZE = 518  # the model's input; the map is scaled up to the picture
-PARALLAX = 0.05
+PARALLAX = 0.0  # the picture moves whole; 0.05 pushed the near pixels more than the far ones (off since 2026-10-29)
 FOG = 0.12
-ZOOM = (1.14, 1.26)  # the camera's window: never below 1.14 so the drift and the parallax never show an edge
+ZOOM = (1.14, 1.26)  # the camera's window: never below 1.14 so the drift (and any parallax) never shows an edge
 PAN = 0.035  # sideways drift over a clip (share of the width): a slow dolly, right on one clip, left on the next
 BATCH = 8  # frames rendered at once
 DUST_COUNT = 45

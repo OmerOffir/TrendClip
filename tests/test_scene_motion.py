@@ -24,6 +24,20 @@ def test_camera_pushes_in_and_drifts_each_way():
     assert 1 - 1 / scene_motion.ZOOM[0] >= 2 * scene_motion.PAN + scene_motion.PARALLAX
 
 
+def test_camera_moves_the_picture_whole_by_default():
+    """The owner's choice (2026-10-29): zoom and drift only, no parallax pushing near pixels against far ones."""
+    assert scene_motion.PARALLAX == 0
+    for move in scene_motion.camera(0, 31, parallax=scene_motion.PARALLAX):
+        assert move[3] == 0 and move[4] == 0
+    image = torch.zeros(3, 256, 144)
+    image[0, :, 72:] = 1.0
+    depth = torch.linspace(1, 0, 256)[:, None].expand(256, 144)
+    frames = scene_motion.warp(image, depth, [(1.08, 0.0, 0.0, 0.0, 0.0)])
+    near_edge = int((frames[0, 0, 250] > 0.5).float().argmax())
+    far_edge = int((frames[0, 0, 5] > 0.5).float().argmax())
+    assert near_edge == far_edge  # the same picture at every depth
+
+
 def test_normalize_depth_ignores_stray_pixels():
     depth = torch.linspace(0, 1, 10000).reshape(100, 100)
     depth[0, 0], depth[99, 99] = -50.0, 50.0
