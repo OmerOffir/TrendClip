@@ -68,6 +68,7 @@
         <button type="button" role="tab" data-bw-view="topics">Topics <span class="nav-count" id="bwNavTopics" hidden title="Topics left"></span></button>
         <button type="button" role="tab" data-bw-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
         <button type="button" role="tab" data-bw-view="week" title="Write the coming week's scripts with any LLM at once and send them to Linux">📅 Write a week</button>
+        <button type="button" role="tab" data-bw-view="anim" title="Short 2D clips generated once on the GPU, reused by the videos">🎞️ Animations</button>
       </nav>
     </div>
   </header>
@@ -149,6 +150,21 @@
     </section>
   </main>
 
+  <main class="container da-view" id="viewBwAnim" data-workspace-panel="borderlinewhy" data-bw-panel="anim" hidden>
+    <div id="bwAError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Animations</h2>
+          <span class="hint">Short 2D clips made once on the Linux GPU (no Gemini, no quota) and kept by tag, so a scene about a war, a treaty
+            or a trade route can show one. The pilot makes one clip per tag with each of two models; pick the one that looks like the channel.</span>
+        </div>
+        <button type="button" class="btn-ghost" id="bwARefresh">↻ Refresh</button>
+      </div>
+      <div id="bwAPilot" class="hint"></div>
+      <div id="bwAGrid" class="bw-a-grid"></div>
+    </section>
+  </main>
   <main class="container da-view" id="viewBwWeek" data-workspace-panel="borderlinewhy" data-bw-panel="week" hidden>
     <div id="bwKError" class="banner banner-error" hidden></div>
     <section class="card">
@@ -1161,6 +1177,7 @@
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
   <script src="/static/bwweek.js"></script>
+  <script src="/static/bwanim.js"></script>
   <script src="/static/gamermanual.js"></script>
   <script src="/static/gamerweek.js"></script>
   <script src="/static/darkmanual.js"></script>

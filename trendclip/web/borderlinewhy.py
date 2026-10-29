@@ -13,7 +13,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from modules import bw_channel, bw_script, bw_topics
+from modules import bw_anim, bw_channel, bw_script, bw_topics
 from trendclip import assistant, hub, publish
 
 logger = logging.getLogger(__name__)
@@ -409,3 +409,20 @@ def youtube_connect(request: Request) -> dict[str, Any]:
 def youtube_logout() -> dict[str, Any]:
     bw_channel.logout()
     return {"connected": False}
+
+
+# --------------------------------------------------------------------------- animations (modules.bw_anim)
+
+@router.get("/anim")
+def anim() -> dict[str, Any]:
+    """The animation clips of the pilot set with their sidecars, the pilot's progress, the tags and the models."""
+    return {"clips": bw_anim.clips(), "pilot": bw_anim.pilot_status(), "tags": list(bw_anim.TAGS),
+            "models": {k: v["label"] for k, v in bw_anim.MODELS.items()}, "style": bw_anim.STYLE}
+
+
+@router.get("/anim/{clip}.mp4", include_in_schema=False)
+def anim_file(clip: str) -> FileResponse:
+    path = bw_anim.clip_path(bw_anim.PILOT, clip)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No such clip")
+    return FileResponse(path, media_type="video/mp4")
