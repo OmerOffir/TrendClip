@@ -786,7 +786,7 @@
 
   // Shared with create.js (Create tab).
   const views = { trends: $("viewTrends"), create: $("viewCreate"), upload: $("viewUpload"), plan: $("viewPlan"),
-    insights: $("viewInsights"), write: $("viewWrite") };
+    insights: $("viewInsights"), write: $("viewWrite"), week: $("viewGamerWeek") };
 
   const nav = $("nav");
 

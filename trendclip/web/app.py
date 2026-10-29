@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (__version__, analytics, assistant, gamer_manual, hub, instagram, music, planner, publish, quiz,
+from .. import (__version__, analytics, assistant, gamer_manual, gamer_queue, gamer_week, hub, instagram, music, planner, publish, quiz,
                 script_writer, shorts, stickers, video_downloader, voiceover)
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
@@ -1180,3 +1180,65 @@ def index() -> HTMLResponse:
 
         html = html.replace(f"/static/{asset}", f"/static/{asset}?v={version}")
     return HTMLResponse(html)
+
+
+# ---- Gamer IQ "Write a week": any LLM writes the coming week's questions; they go to the hub's queue (trendclip/gamer_week.py)
+
+
+class GamerWeekStart(BaseModel):
+    games: str = Field(min_length=1, max_length=400)
+
+
+class GamerWeekText(BaseModel):
+    text: str = Field(min_length=2, max_length=2_000_000)
+
+
+def _gamer_week(fn, *args):
+    try:
+        return fn(_base_settings(), *args)
+    except gamer_week.WeekError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@app.get("/api/gamer/week")
+def gamer_week_view() -> dict[str, Any]:
+    """The week session (None before the first start), the games with gameplay, the daily game, the queue here."""
+    settings = _base_settings()
+    try:
+        counts = video_downloader.get_library(settings).counts()
+    except Exception:  # noqa: BLE001 - no library: the game is typed
+        counts = {}
+    games = sorted((g for g, n in counts.items() if n), key=lambda g: (g != "Minecraft", -counts[g], g))
+    view = _gamer_week(gamer_week.view) if gamer_week.exists(settings) else None
+    return {"week": view, "sender": hub.is_sender(settings), "games": games or ["Minecraft"],
+            "daily_game": settings.auto_pick_daily_game.strip(), "level": quiz.gamer_level(settings),
+            "in_queue": gamer_queue.games(settings)}
+
+
+@app.post("/api/gamer/week")
+def gamer_week_start(req: GamerWeekStart) -> dict[str, Any]:
+    return _gamer_week(gamer_week.start, req.games)
+
+
+@app.post("/api/gamer/week/answer")
+def gamer_week_answer(req: GamerWeekText) -> dict[str, Any]:
+    return _gamer_week(gamer_week.answer, req.text)
+
+
+@app.post("/api/gamer/week/facts")
+def gamer_week_facts(req: GamerWeekText) -> dict[str, Any]:
+    return _gamer_week(gamer_week.facts, req.text)
+
+
+@app.post("/api/gamer/week/drop/{i}")
+def gamer_week_drop(i: int) -> dict[str, Any]:
+    return _gamer_week(gamer_week.drop, i)
+
+
+@app.post("/api/gamer/week/send")
+def gamer_week_send() -> dict[str, Any]:
+    """The ready questions to the hub's queue (through Discord from the sending machine; straight in on the hub)."""
+    try:
+        return _gamer_week(gamer_week.send)
+    except hub.HubError as err:
+        raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err

@@ -458,7 +458,35 @@ class BorderlineWhy:
         return sorted(out, key=lambda r: (r["date"], r["slot"]))
 
 
-CHANNELS = {c.name: c for c in (DarkOutliers(), BorderlineWhy())}
+class GamerIQ:
+    """SideQuestLogic's part of the hub: only the queue of Gamer IQ questions written for later (its videos go to
+    the hub the gameplay channel's own way, trendclip/hub.py)."""
+
+    name = "sidequestlogic"
+    label = "SideQuestLogic"
+
+    def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+        """Checked questions (trendclip.gamer_week) into this hub's queue (trendclip.gamer_queue): the production
+        run makes the next levels from them before asking Gemini. The queue's answer: {"queued", "skipped",
+        "in_queue": {game: n}}."""
+        from trendclip import gamer_queue
+
+        questions = bundle.get("questions") or []
+        if not isinstance(questions, list) or not questions:
+            raise HubError("No questions in the bundle")
+        result = gamer_queue.put(settings, questions)
+        if result["queued"]:
+            waiting = ", ".join(f"{g}: {n}" for g, n in result["in_queue"].items())
+            try:
+                hub.Rest(settings).post(f"📝 {len(result['queued'])} Gamer IQ question(s) for later arrived from the dashboard: "
+                                        f"{'; '.join(q['question'] for q in result['queued'])[:600]}. The production run asks them "
+                                        f"as the next levels before asking Gemini (waiting now: {waiting}).")
+            except Exception:  # noqa: BLE001 - Discord is a courtesy here
+                logger.exception("SideQuestLogic: could not announce the questions for later")
+        return result
+
+
+CHANNELS = {c.name: c for c in (DarkOutliers(), BorderlineWhy(), GamerIQ())}
 
 
 def channel(name: str):

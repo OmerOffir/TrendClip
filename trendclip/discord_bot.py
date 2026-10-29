@@ -19,7 +19,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import (analytics, assistant, channel_stats, hub, ig_replies, instagram, leaderboard, leaderboard_card, planner, publish,
+from . import (gamer_queue, analytics, assistant, channel_stats, hub, ig_replies, instagram, leaderboard, leaderboard_card, planner, publish,
                script_writer, shorts, video_downloader)
 from .config import ConfigError, Settings, get_settings
 
@@ -1204,6 +1204,8 @@ class TrendClipBot(discord.Client):
             pool = [must]
         elif avoid:
             pool = [g for g in pool if g != avoid] or pool
+        if not must and "gamer" in settings.auto_pick_kinds:  # questions written for later: their games first
+            pool = await asyncio.to_thread(gamer_queue.prefer, settings, pool)
         pick = await asyncio.to_thread(plan_pick, settings, pool, None, day)
         kind, game = pick.mode, pick.game or random.choice(EMERGENCY_GAMES)
         noun = NOUNS.get(kind, "story")

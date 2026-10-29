@@ -1218,8 +1218,13 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
                  rng: random.Random) -> ShortScript:
     """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
     level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
-    from . import script_writer as sw
+    from . import gamer_queue, script_writer as sw
 
+    queued = gamer_queue.take(settings, game)  # written for later (the dashboard's "Write a week"): no Gemini
+    if queued is not None:
+        result, shape = queued
+        progress(None, f"Using a {game} question written for later")
+        return gamer_script(settings, game, result, shape=shape, model="week", format=format, rng=rng)
     client, model = sw._gemini(settings, client)
     shape = pick_gamer_shape(settings, rng)
     asked = gamer_asked(settings)

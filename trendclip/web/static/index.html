@@ -47,6 +47,7 @@
         <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
         <button type="button" role="tab" data-view="insights">Insights</button>
         <button type="button" role="tab" data-view="write" title="Write a Gamer IQ question with any LLM">✍️ Write it myself</button>
+        <button type="button" role="tab" data-view="week" title="One prompt for the coming week's Gamer IQ questions in any LLM; Linux makes the levels from them">📅 Write a week</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="darkarchives" hidden>
@@ -848,6 +849,27 @@
     </section>
   </main>
 
+  <main class="container view" id="viewGamerWeek" hidden>
+    <div id="gkError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Write a week of Gamer IQ</h2>
+          <span class="hint">No Gemini needed. Say which games and how many levels each; you paste ONE prompt into any LLM (the Gemini app,
+            ChatGPT, Claude) and its answer back here, then one fact-check prompt (best in a second LLM with web search). The questions
+            that pass go to Linux, whose production run asks them as the next levels, oldest first, before asking Gemini.</span>
+        </div>
+      </div>
+      <div class="bw-w-start">
+        <label class="hint" for="gkGames">Games and how many</label>
+        <input type="text" id="gkGames" value="Minecraft 7" placeholder="Minecraft 7, GTA V / Online 3" style="flex:1 1 260px">
+        <button type="button" class="btn-primary" id="gkStart">🎮 Get the prompt</button>
+        <span class="hint" id="gkInfo"></span>
+      </div>
+      <div class="bw-w" id="gkSession"></div>
+    </section>
+  </main>
+
   <main class="container view" id="viewInsights" hidden>
     <div id="inError" class="banner banner-error" hidden></div>
     <div id="inNotes"></div>
@@ -1140,6 +1162,7 @@
   <script src="/static/bwmanual.js"></script>
   <script src="/static/bwweek.js"></script>
   <script src="/static/gamermanual.js"></script>
+  <script src="/static/gamerweek.js"></script>
   <script src="/static/darkmanual.js"></script>
   <script src="/static/daweek.js"></script>
   <script src="/static/darkarchives.js"></script>

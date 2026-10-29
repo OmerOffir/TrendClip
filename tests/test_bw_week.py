@@ -134,4 +134,4 @@ def test_queue_scripts_goes_straight_to_the_queue_on_the_hub_itself(settings, mo
     channel_hub.queue_scripts(settings, "darkarchives", {"stories": [2]})
     assert seen == {"scripts": [1], "stories": [2]}
     with pytest.raises(channel_hub.HubError, match="Unknown channel"):
-        channel_hub.queue_scripts(settings, "sidequestlogic", {"scripts": [1]})
+        channel_hub.queue_scripts(settings, "mapchannel", {"scripts": [1]})
