@@ -144,7 +144,7 @@ def _animatediff(prompt: str, seed: int, cfg: dict[str, Any], progress: Callable
                                                variant="fp16", safety_checker=None)
     pipe.scheduler = DDIMScheduler.from_pretrained(cfg["base"], subfolder="scheduler", clip_sample=False,
                                                    timestep_spacing="linspace", beta_schedule="linear", steps_offset=1)
-    pipe.enable_vae_slicing()
+    pipe.vae.enable_slicing()
     pipe.enable_model_cpu_offload()
     progress("generating")
     out = pipe(prompt=prompt, negative_prompt=NEGATIVE, num_frames=cfg["frames"], width=cfg["width"], height=cfg["height"],
