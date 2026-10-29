@@ -1,5 +1,6 @@
 // "New topics/stories from your own LLM" (Dark Outliers Stories, Borderline Why Topics): the channel's Gemini
-// prompt to copy into any LLM, and its pasted answer added to the list (modules/fetcher.py, modules/bw_topics.py).
+// prompt to copy into any LLM, and its pasted answer added to the list (modules/fetcher.py, modules/bw_topics.py):
+// the hub's own list, through Discord, when this dashboard runs on the sending machine (channel_hub.add_topics).
 (() => {
   const { api, esc } = window.TrendClip;
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -36,12 +37,13 @@
       const text = el("answer").value;
       if (!text.trim()) return;
       btn.disabled = true;
-      status.textContent = "Checking Wikipedia…";
+      status.textContent = "Checking Wikipedia (through Discord on Linux when this isn't the hub)…";
       try {
         const { body } = await post(url, { text });
+        const where = body.where === "linux" ? " on Linux" : "";
         status.innerHTML = body.added.length
-          ? `✅ Added ${body.added.length}${body.skipped ? ` · ${body.skipped} skipped (already there or no Wikipedia article)` : ""}: ${body.added.map(esc).join(" · ")}`
-          : `Nothing new: all ${body.skipped} were already there or have no Wikipedia article`;
+          ? `✅ Added ${body.added.length}${where}${body.skipped ? ` · ${body.skipped} skipped (already there or no Wikipedia article)` : ""}: ${body.added.map(esc).join(" · ")}`
+          : `Nothing new${where}: all ${body.skipped} were already there or have no Wikipedia article`;
         if (body.added.length) el("answer").value = "";
         const refresh = document.getElementById(card.dataset.refresh);
         refresh?.dispatchEvent(new Event(refresh.tagName === "SELECT" ? "change" : "click"));

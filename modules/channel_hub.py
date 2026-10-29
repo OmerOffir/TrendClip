@@ -127,6 +127,15 @@ class DarkOutliers:
                                   components=da_channel.video_buttons(story_id, item.id))
         return {"date": day.isoformat(), "slot": slot, "title": info.get("title", ""), "ref": story_id}
 
+    def add_topics(self, settings, text: str) -> dict[str, Any]:
+        """An LLM's pasted cases (the dashboard's "New stories from your own LLM") into this hub's bank."""
+        from modules import fetcher
+
+        try:
+            return fetcher.llm_add(text)
+        except fetcher.LLMTopicsError as err:
+            raise HubError(str(err), 400) from err
+
     def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
         """Scripts written for later (modules.da_week) into this hub's bank: each story is saved here (or found by
         source_id) with its script, SCRIPT_READY and the note "written for later", so the production run takes it
@@ -351,6 +360,15 @@ class BorderlineWhy:
 
         return bw_channel.plan_view(settings)
 
+    def add_topics(self, settings, text: str) -> dict[str, Any]:
+        """An LLM's pasted topics (the dashboard's "New topics from your own LLM") into this hub's topic list."""
+        from modules import bw_channel, bw_topics
+
+        try:
+            return bw_topics.llm_add(bw_channel.out_root(), text)
+        except bw_topics.LLMTopicsError as err:
+            raise HubError(str(err), 400) from err
+
     def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
         """Scripts written for later (modules.bw_week) into the queue the daily job drains oldest first, one per
         slot. A script whose topic this hub already used or has queued is skipped. {"queued": [{"name",
@@ -517,6 +535,11 @@ async def handle(settings, words: list[str], message: Any, discord_channel: Any)
                 raise HubError(f"{ch.label} doesn't take scripts for later" if not hasattr(ch, "queue") else "No scripts attached")
             scripts = json.loads(await message.attachments[0].read())
             return hub._reply("done", nonce, await asyncio.to_thread(ch.queue, settings, scripts)), None
+        if op == "ctopics":
+            if not message.attachments or not hasattr(ch, "add_topics"):
+                raise HubError(f"{ch.label} doesn't take topics" if not hasattr(ch, "add_topics") else "No answer attached")
+            text = json.loads(await message.attachments[0].read()).get("text", "")
+            return hub._reply("done", nonce, await asyncio.to_thread(ch.add_topics, settings, text)), None
         if len(words) != 7 or not message.attachments:
             raise HubError("The send message is incomplete")
         day, slot, ids = Day.fromisoformat(words[4]), words[5], words[6].split(",")
@@ -633,6 +656,25 @@ def queue_scripts(settings, name: str, bundle: dict[str, Any]) -> dict[str, Any]
     forget_view(name)
     logger.info("Sent %s script(s) for later to the hub: %d queued", name, len(reply.get("queued", [])))
     return reply
+
+
+def add_topics(settings, name: str, text: str, check=None) -> dict[str, Any]:
+    """An LLM's pasted stories or topics into the channel's list: on the hub itself straight away, from the
+    sending machine through Discord (op ctopics), checked here first (`check(text)` raises on a bad answer) so a
+    paste error needs no round trip. The answer, with "where": "here" or "linux"."""
+    ch = channel(name)
+    if not hasattr(ch, "add_topics"):
+        raise HubError(f"{ch.label} doesn't take topics", 400)
+    if not hub.is_sender(settings):
+        return {**ch.add_topics(settings, text), "where": "here"}
+    if check:
+        check(text)
+    op, reply = hub.send_parts(settings, b"", f"{hub.PREFIX} ctopics {{nonce}} {name}",
+                               ("topics.json", json.dumps({"text": text}, ensure_ascii=False).encode("utf-8")))
+    if op != "done":
+        raise HubError(reply.get("message") or "The hub refused the answer", 400)
+    logger.info("Sent %s topics to the hub: %d added", name, len(reply.get("added", [])))
+    return {**reply, "where": "linux"}
 
 
 def send_plan(settings, name: str) -> list[dict[str, Any]]:

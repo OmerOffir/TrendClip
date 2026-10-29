@@ -122,11 +122,18 @@ class LLMText(BaseModel):
 
 @router.post("/llm-topics")
 def llm_topics_add(req: LLMText) -> dict[str, Any]:
-    """The LLM's cases into the bank, scored like Gemini's by their Wikipedia page views."""
+    """The LLM's cases into the bank, scored like Gemini's by their Wikipedia page views (the hub's bank, through
+    Discord, on the sending machine)."""
+    from modules import channel_hub
+    from trendclip import llm_json
+    from trendclip.hub import HubError
+
     try:
-        return fetcher.llm_add(req.text)
-    except fetcher.LLMTopicsError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
+        return channel_hub.add_topics(_settings_for_targets(), "darkarchives", req.text,
+                                      lambda text: llm_json.parse(text, fetcher.GeminiCases, fetcher.LLMTopicsError))
+    except (fetcher.LLMTopicsError, HubError) as err:
+        status = getattr(err, "status", 400)
+        raise HTTPException(status_code=status if 400 <= status < 600 else 502, detail=str(err)) from err
 
 
 @router.get("/stories/{story_id}/script")

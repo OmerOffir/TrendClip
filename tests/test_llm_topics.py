@@ -86,5 +86,5 @@ def test_endpoints(bank, tmp_path, monkeypatch):
 
     assert "Propose 20" in client.get("/api/borderlinewhy/llm-topics").json()["prompt"]
     r = client.post("/api/borderlinewhy/llm-topics", json={"text": '{"topics": [{"question": "Why is Juneau cut off?", "article": "Juneau"}]}'})
-    assert r.json() == {"added": ["Why is Juneau cut off?"], "skipped": 0}
+    assert r.json() == {"added": ["Why is Juneau cut off?"], "skipped": 0, "where": "here"}
     assert client.post("/api/borderlinewhy/llm-topics", json={"text": "{}"}).status_code == 400

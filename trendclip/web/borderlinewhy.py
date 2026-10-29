@@ -392,11 +392,18 @@ class LLMText(BaseModel):
 
 @router.post("/llm-topics")
 def llm_topics_add(req: LLMText) -> dict[str, Any]:
-    """The LLM's topics, each kept when its Wikipedia article exists and is new (a few seconds per topic at most)."""
+    """The LLM's topics, each kept when its Wikipedia article exists and is new (a few seconds per topic at most); the
+    hub's list, through Discord, on the sending machine."""
+    from modules import channel_hub
+    from trendclip import llm_json
+    from trendclip.hub import HubError
+
     try:
-        return bw_topics.llm_add(bw_channel.out_root(), req.text)
-    except bw_topics.LLMTopicsError as err:
-        raise HTTPException(status_code=400, detail=str(err)) from err
+        return channel_hub.add_topics(_settings(), "borderlinewhy", req.text,
+                                      lambda text: llm_json.parse(text, bw_topics.Proposals, bw_topics.LLMTopicsError))
+    except (bw_topics.LLMTopicsError, HubError) as err:
+        status = getattr(err, "status", 400)
+        raise HTTPException(status_code=status if 400 <= status < 600 else 502, detail=str(err)) from err
 
 
 def _login(request: Request) -> str:

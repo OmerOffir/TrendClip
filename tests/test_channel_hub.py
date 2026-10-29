@@ -277,3 +277,29 @@ def test_the_plan_tab_falls_back_to_this_machine_when_linux_is_silent(mac, monke
     monkeypatch.setattr(channel_hub.CHANNELS["darkarchives"], "sendable", lambda settings: [])
     tab = channel_hub.plan_tab(mac, "darkarchives", lambda: {"items": ["mine"]})
     assert tab["source"] == "here" and tab["items"] == ["mine"] and "didn't answer" in tab["hub_error"]
+
+
+def test_stories_and_topics_from_your_own_llm_go_to_linux(linux, mac, discord, machines, monkeypatch):
+    from modules import bw_topics, fetcher
+
+    monkeypatch.setattr(fetcher, "wiki_fame", lambda titles, session=None: {})
+    monkeypatch.setattr("modules.bw_script.article_exists", lambda article: article)
+    cases = {"cases": [{"title": "Flight 19", "pillar": "mystery", "story": "Five bombers vanished. " * 20, "hook_score": 80}]}
+    reply = channel_hub.add_topics(mac, "darkarchives", json.dumps(cases))
+    assert reply == {"added": ["Flight 19"], "skipped": 0, "where": "linux"}
+    assert repository.all_stories() == []  # not in this machine's bank
+    machines.use("linux")
+    assert [s["source_id"] for s in repository.all_stories()] == ["llm_flight_19"]
+    machines.use("mac")
+
+    topics = {"topics": [{"question": "Why is Juneau cut off by road?", "article": "Juneau"}]}
+    assert channel_hub.add_topics(mac, "borderlinewhy", json.dumps(topics))["added"] == ["Why is Juneau cut off by road?"]
+    machines.use("linux")
+    assert bw_topics.load(bw_channel.out_root()).proposed[-1].article == "Juneau"
+    machines.use("mac")
+    with pytest.raises(hub.HubError, match="no topics"):  # the hub's refusal comes back
+        channel_hub.add_topics(mac, "borderlinewhy", '{"topics": []}')
+    with pytest.raises(bw_topics.LLMTopicsError, match="no JSON"):  # a bad paste never leaves this machine
+        channel_hub.add_topics(mac, "borderlinewhy", "hello", lambda t: __import__("trendclip.llm_json").llm_json.parse(t, bw_topics.Proposals, bw_topics.LLMTopicsError))
+    with pytest.raises(hub.HubError, match="doesn't take topics"):
+        channel_hub.add_topics(mac, "sidequestlogic", "{}")
