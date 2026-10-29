@@ -148,15 +148,22 @@ def prewritten(db_path=None, scripts_dir: Path | None = None, out_dir: Path | No
     return None
 
 
-def waiting(db_path=None, scripts_dir: Path | None = None, out_dir: Path | None = None) -> dict[str, int]:
-    """How many scripts written for later wait for their video: {"stories": n, "rankings": n}."""
-    out = {"stories": 0, "rankings": 0}
+def queued(db_path=None, scripts_dir: Path | None = None, out_dir: Path | None = None) -> list[dict]:
+    """The scripts written for later that wait for their video, in the order the run takes them (stories, then
+    rankings): [{"id", "title", "ranking": bool}]."""
+    out = []
     seen: set[int] = set()
-    for kind, ranking in (("stories", False), ("rankings", True)):
+    for ranking in (False, True):
         while (found := prewritten(db_path, scripts_dir, out_dir, ranking, seen)) is not None:
             seen.add(found["story"]["id"])
-            out[kind] += 1
+            out.append({"id": found["story"]["id"], "title": found["script"].title, "ranking": ranking})
     return out
+
+
+def waiting(db_path=None, scripts_dir: Path | None = None, out_dir: Path | None = None) -> dict[str, int]:
+    """How many scripts written for later wait for their video: {"stories": n, "rankings": n}."""
+    items = queued(db_path, scripts_dir, out_dir)
+    return {"stories": sum(1 for i in items if not i["ranking"]), "rankings": sum(1 for i in items if i["ranking"])}
 
 
 def next_script(progress: ProgressFn = lambda f, m: None, db_path=None, scripts_dir: Path | None = None,

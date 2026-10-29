@@ -91,3 +91,51 @@ def test_upcoming_on_the_sender_is_the_linux_week(monkeypatch):
     monkeypatch.setattr(upcoming, "view", lambda settings, now=None: {"days": [], "empty": 0, "twice": 0})
     body = client.get("/api/upcoming").json()
     assert body["source"] == "here" and "didn't answer" in body["hub_error"]
+
+
+def test_empty_slots_name_the_scripts_written_for_later(tmp_path, monkeypatch):
+    """Each channel's queue (Write a week) fills its empty slots in time order on the page, oldest script first."""
+    settings = get_settings()
+    monkeypatch.setattr(upcoming, "sidequest_rows", lambda settings, now, days: [
+        upcoming._row("sidequestlogic", days[0], "23:00"), upcoming._row("sidequestlogic", days[1], "14:30")])
+    monkeypatch.setattr(upcoming, "dark_rows", lambda now, days: [
+        upcoming._row("darkarchives", days[0], "14:30", title="Made", state="waits", ref=3), upcoming._row("darkarchives", days[0], "23:00"),
+        upcoming._row("darkarchives", days[1], "14:30"), upcoming._row("darkarchives", days[1], "23:00")])
+    monkeypatch.setattr(upcoming, "borderline_rows", lambda settings, now, days: [
+        upcoming._row("borderlinewhy", days[0], "23:00", state="empty", made_at="2026-10-28T15:00")])
+    monkeypatch.setattr(upcoming, "waiting", lambda settings: {
+        "sidequestlogic": {"items": [{"title": "Minecraft: How many?", "game": "Minecraft"}], "count": 1, "note": ""},
+        "darkarchives": {"items": [{"title": "The Ship", "ranking": False}, {"title": "The Tent", "ranking": False},
+                                   {"title": "ranking: 5 Cases", "ranking": True}], "count": 3, "note": ""},
+        "borderlinewhy": {"items": [], "count": 0, "note": ""}})
+    data = upcoming.view(settings, datetime(2026, 10, 28, 13, 0, tzinfo=settings.tz))
+    rows = {(r["channel"], r["day"], r["time"]): r for d in data["days"] for r in d["rows"]}
+    assert rows[("sidequestlogic", "2026-10-28", "23:00")]["waiting"] == "Minecraft: How many?"
+    assert rows[("sidequestlogic", "2026-10-29", "14:30")]["waiting"] == ""
+    assert rows[("darkarchives", "2026-10-28", "14:30")]["waiting"] == ""  # it has a video
+    assert rows[("darkarchives", "2026-10-28", "23:00")]["waiting"] == "The Ship"
+    assert rows[("darkarchives", "2026-10-29", "14:30")]["waiting"] == "The Tent"
+    assert rows[("darkarchives", "2026-10-29", "23:00")]["waiting"] == "ranking: 5 Cases"
+    assert rows[("borderlinewhy", "2026-10-28", "23:00")]["waiting"] == ""
+    assert data["covered"] == 4 and data["waiting"]["darkarchives"]["count"] == 3
+
+
+def test_waiting_reads_every_channels_queue(tmp_path, monkeypatch):
+    import json
+
+    from modules import bw_channel, da_produce
+    from trendclip import gamer_queue
+
+    settings = get_settings()
+    monkeypatch.setattr(bw_channel, "OUTPUT_DIR", tmp_path / "bw")
+    queue = bw_channel.queue_dir()
+    queue.mkdir(parents=True)
+    (queue / "20261029-01-a.json").write_text(json.dumps({"title": "Why is Kansas flat?"}))
+    monkeypatch.setattr(da_produce, "queued", lambda *a, **k: [{"id": 4, "title": "The Ship", "ranking": False}])
+    monkeypatch.setattr(gamer_queue, "entries", lambda s: [{"game": "Minecraft", "question": {"question": "How many?"}}])
+    w = upcoming.waiting(settings)
+    assert w["borderlinewhy"]["items"] == [{"title": "Why is Kansas flat?"}]
+    assert w["darkarchives"]["items"] == [{"title": "The Ship", "ranking": False}]
+    assert w["sidequestlogic"]["items"] == [{"title": "Minecraft: How many?", "game": "Minecraft"}] and w["sidequestlogic"]["note"] == ""
+    monkeypatch.setattr(da_produce, "queued", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("no bank")))
+    assert upcoming.waiting(settings)["darkarchives"] == {"items": [], "count": 0, "note": "no bank"}

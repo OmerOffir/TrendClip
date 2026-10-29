@@ -28,7 +28,8 @@
     const twice = data.twice ? ` · <b class="da-note" style="display:inline">${data.twice} slot${data.twice > 1 ? "s" : ""} hold a video that is planned twice</b>` : "";
     const source = data.source === "linux" ? '<span class="pill good up-source">🐧 Linux plan</span>'
       : data.hub_error ? '<span class="pill warn up-source">This machine only</span>' : "";
-    hint.innerHTML = `${source}${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.${geminiLine(data.gemini)}`;
+    const covered = data.covered ? ` · ${data.covered} of them ${data.covered === 1 ? "has" : "have"} a script written for later waiting` : "";
+    hint.innerHTML = `${source}${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${covered}${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.${geminiLine(data.gemini)}${waitingLine(data)}`;
     renderLocal(data);
     list.innerHTML = data.days.map((day) => `
       <div class="up-day${day.today ? " today" : ""}">
@@ -38,14 +39,39 @@
           const planIt = r.state === "empty" ? `<button type="button" class="btn-ghost" data-go="${r.channel}" title="Open this channel's Plan tab">Plan it →</button>` : "";
           const open = r.url ? `<a class="hint" href="${esc(r.url)}" target="_blank" rel="noopener">open ↗</a>` : "";
           const made = r.state === "empty" && r.made_at ? `<small>the bot makes it at ${esc(r.made_at.slice(11, 16))}</small>` : "";
-          return `<div class="up-row ${esc(r.state)}${r.twice ? " twice" : ""}">
+          const waiting = r.state === "empty" && r.waiting;
+          const pill = waiting ? '<span class="pill good">📝 script waiting, no Gemini needed</span>' : `<span class="pill ${cls}">${text}</span>`;
+          const what = r.title ? `🎬 ${esc(r.title)}` : waiting ? `📝 the bot makes it from: ${esc(r.waiting)}` : r.state === "empty" ? "— nothing planned —" : "";
+          return `<div class="up-row ${esc(r.state)}${r.twice ? " twice" : ""}${waiting ? " waiting" : ""}">
             <span class="time">${esc(r.time || "—")}</span>
             <span class="mark ${esc(r.channel)}" title="${esc(r.label)}">${{ sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW" }[r.channel] || "?"}</span>
-            <span class="title">${r.title ? `🎬 ${esc(r.title)}` : r.state === "empty" ? "— nothing planned —" : ""}${r.seconds ? `<small>${Math.round(r.seconds)} s</small>` : ""}${made}${r.twice ? ' <span class="pill warn">planned twice</span>' : ""}</span>
-            <span class="actions"><span class="pill ${cls}">${text}</span>${open}${planIt}</span>
+            <span class="title">${what}${r.seconds ? `<small>${Math.round(r.seconds)} s</small>` : ""}${made}${r.twice ? ' <span class="pill warn">planned twice</span>' : ""}</span>
+            <span class="actions">${pill}${open}${planIt}</span>
           </div>`;
         }).join("") : '<div class="empty">No slots</div>'}
       </div>`).join("");
+  }
+
+  // The scripts written for later (each channel's "Write a week"), waiting on the machine that makes the videos.
+  function waitingLine(data) {
+    const w = data.waiting || {};
+    const parts = Object.entries(w).filter(([, q]) => q.count || q.note).map(([channel, q]) => {
+      const label = { sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW" }[channel] || channel;
+      if (q.note) return `${label} ?`;
+      if (channel === "darkarchives") {
+        const rankings = q.items.filter((i) => i.ranking).length;
+        return `${label} ${q.count - rankings}${rankings ? ` + ${rankings} ranking${rankings > 1 ? "s" : ""}` : ""}`;
+      }
+      if (channel === "sidequestlogic") {
+        const games = {};
+        q.items.forEach((i) => { games[i.game] = (games[i.game] || 0) + 1; });
+        return `${label} ${Object.entries(games).map(([g, n]) => `${esc(g)} ×${n}`).join(", ")}`;
+      }
+      return `${label} ${q.count}`;
+    });
+    const where = data.source === "linux" ? "on Linux" : "here";
+    return parts.length ? ` <span class="pill good" title="Scripts from the Write a week tabs: each channel's run makes its videos from them, oldest first, before asking Gemini">📝 written for later ${where}: ${parts.join(" · ")}</span>`
+      : ` <span class="pill" title="Write a week of scripts in each channel's Write a week tab: the bot makes the videos from them without Gemini">📝 nothing written for later ${where}</span>`;
   }
 
   // Gemini's free tier today: calls used, what is left, until when Google closed every model.

@@ -100,9 +100,64 @@ def borderline_rows(settings, now: datetime, days: list[str]) -> list[dict[str, 
     return rows
 
 
+def waiting(settings) -> dict[str, dict[str, Any]]:
+    """The scripts written for later on this machine (the dashboard's "Write a week" tabs), per channel, in the
+    order each channel's run takes them: {"channel": {"items": [{"title", ...}], "count": n, "note": ""}}.
+    A channel that can't be read gets its error as the note."""
+    out: dict[str, dict[str, Any]] = {}
+
+    def borderline():
+        import json
+
+        from modules import bw_channel
+
+        items = []
+        for path in bw_channel.queued_scripts():
+            try:
+                items.append({"title": json.loads(path.read_text(encoding="utf-8")).get("title") or path.stem})
+            except (OSError, ValueError):
+                items.append({"title": path.stem})
+        return items
+
+    def dark():
+        from modules import da_produce
+
+        return [{"title": ("ranking: " if i["ranking"] else "") + i["title"], "ranking": i["ranking"]} for i in da_produce.queued()]
+
+    def sidequest():
+        from trendclip import gamer_queue
+
+        return [{"title": f"{e['game']}: {e['question'].get('question', '')}", "game": e["game"]} for e in gamer_queue.entries(settings)]
+
+    for name, source in (("sidequestlogic", sidequest), ("darkarchives", dark), ("borderlinewhy", borderline)):
+        try:
+            items = source()
+            out[name] = {"items": items, "count": len(items), "note": ""}
+        except Exception as err:  # noqa: BLE001 - a side note on the page, never the reason it fails
+            out[name] = {"items": [], "count": 0, "note": str(err)[:120]}
+    return out
+
+
+def _assign_waiting(rows: list[dict[str, Any]], queues: dict[str, dict[str, Any]]) -> int:
+    """Each empty slot, in time order, shows the script written for later its channel's run would take next
+    (Dark Outliers' rankings only when one is due, so they are listed after the stories; a SideQuestLogic
+    question goes to a slot of its game, so the order is a guess). The number of slots covered."""
+    covered = 0
+    for channel, queue in queues.items():
+        items = list(queue["items"])
+        for r in rows:
+            if not items:
+                break
+            if r["channel"] == channel and r["state"] == "empty":
+                r["waiting"] = items.pop(0)["title"]
+                covered += 1
+    return covered
+
+
 def view(settings, now: datetime | None = None) -> dict[str, Any]:
-    """{"now", "days": [{"day", "weekday", "today", "rows": [...]}], "empty": n, "twice": n}: the week's
-    slots of every channel in time order."""
+    """{"now", "days": [{"day", "weekday", "today", "rows": [...]}], "empty": n, "twice": n, "waiting": {...},
+    "covered": n}: the week's slots of every channel in time order, an empty slot naming the script written
+    for later that fills it."""
     now = (now or datetime.now(settings.tz)).astimezone(settings.tz)
     days = [(now.date() + timedelta(days=n)).isoformat() for n in range(DAYS)]
     rows: list[dict[str, Any]] = []
@@ -118,14 +173,17 @@ def view(settings, now: datetime | None = None) -> dict[str, Any]:
             seen[(r["channel"], r["ref"])] = seen.get((r["channel"], r["ref"]), 0) + 1
     for r in rows:
         r["twice"] = r["ref"] is not None and seen.get((r["channel"], r["ref"]), 0) > 1
+        r.setdefault("waiting", "")
     rows.sort(key=lambda r: (r["day"], r["time"], r["channel"]))
+    queues = waiting(settings)
+    covered = _assign_waiting(rows, queues)
     out_days = []
     for day in days:
         day_rows = [r for r in rows if r["day"] == day]
         out_days.append({"day": day, "weekday": Day.fromisoformat(day).strftime("%A"), "today": day == days[0], "rows": day_rows})
     return {"now": now.isoformat(timespec="minutes"), "days": out_days,
             "empty": sum(1 for r in rows if r["state"] == "empty"), "twice": sum(1 for r in rows if r["twice"]),
-            "channels": CHANNELS, "gemini": gemini_status(settings, now)}
+            "waiting": queues, "covered": covered, "channels": CHANNELS, "gemini": gemini_status(settings, now)}
 
 
 def gemini_status(settings, now: datetime) -> dict[str, Any] | None:

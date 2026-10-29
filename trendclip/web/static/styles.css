@@ -926,6 +926,7 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .up-row .mark.darkarchives { background: linear-gradient(135deg, #2b2d42, #6d1a2b); }
 .up-row .mark.borderlinewhy { background: linear-gradient(135deg, #1b5e20, #0f3d5e); }
 .up-row.empty .title { color: var(--muted); font-style: italic; }
+.up-row.empty.waiting .title { color: inherit; font-style: normal; }
 .up-row.passed { opacity: 0.55; }
 .up-row.twice { background: rgba(242, 163, 58, 0.12); }
 .up-row .title small { color: var(--muted); margin-left: 6px; }
