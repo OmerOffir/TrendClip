@@ -534,6 +534,7 @@ class TrendClipBot(discord.Client):
         at = assistant.now(self.settings)
         self.darkarchives_posts(at)
         self.borderlinewhy_jobs(at)
+        self.cleanup_job(at)
         if not self.settings.discord_channel_id:
             return
         # The time-critical work first (a slot's post, the emergency video), then the rest. After a restart the
@@ -751,6 +752,25 @@ class TrendClipBot(discord.Client):
         for job in posts:
             self.sent.add(job.post_key, at.date())
             self._spawn(self.borderlinewhy_post(job))
+
+    def cleanup_job(self, at: datetime) -> None:
+        """Once a day (the first minute the bot runs that day): the old videos nothing still needs leave the
+        disk (modules.cleanup, CLEANUP_KEEP_DAYS); what it freed goes to the log and, when anything went, to Discord."""
+        key = f"{at.astimezone(self.settings.tz).date().isoformat()} cleanup"
+        if key in self.sent.load():
+            return
+        self.sent.add(key, at.date())
+        self._spawn(self.cleanup_run())
+
+    async def cleanup_run(self) -> None:
+        from modules import cleanup
+
+        report = await asyncio.to_thread(cleanup.run, self.settings, None, True)
+        if not report.files or not self.settings.discord_channel_id:
+            return
+        channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
+            self.settings.discord_channel_id)
+        await channel.send(f"🧹 {report.summary()}.")
 
     def _spawn(self, work) -> None:
         task = asyncio.create_task(work)
