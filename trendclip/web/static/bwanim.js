@@ -40,7 +40,7 @@
 
   async function load() {
     try {
-      const data = await api("/api/borderlinewhy/anim");
+      const { body: data } = await api("/api/borderlinewhy/anim");
       error.hidden = true;
       render(data);
     } catch (err) {
