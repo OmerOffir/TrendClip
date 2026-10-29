@@ -367,9 +367,11 @@ class TrendClipBot(discord.Client):
     # ---- shared work ------------------------------------------------------------------
 
     async def run_job(self, channel: discord.abc.Messageable, title: str, fn: Callable[[assistant.ProgressFn], Any],
-                      lock: asyncio.Lock, attempts: int = 1, give_up: Callable[[], bool] = lambda: False) -> Any:
+                      lock: asyncio.Lock, attempts: int = 1, give_up: Callable[[], bool] = lambda: False,
+                      stop: Callable[[Exception], bool] = lambda err: False) -> Any:
         """Run `fn(progress)` on a thread, keeping one message up to date with its progress. A failure is
-        tried again from scratch, up to `attempts` times in all, unless `give_up()` says it is no longer needed."""
+        tried again from scratch, up to `attempts` times in all, unless `give_up()` says it is no longer needed
+        or `stop(err)` says another try now cannot help (Gemini's quota is used up for the day)."""
         msg = await channel.send(f"⏳ {title}: " + ("waiting for the current job" if lock.locked() else "starting"))
         state: dict[str, Any] = {"text": "Starting", "frac": None, "dirty": False}
 
@@ -396,7 +398,7 @@ class TrendClipBot(discord.Client):
                         break
                     except Exception as err:  # noqa: BLE001 - shown in the channel
                         logger.exception("%s failed (attempt %d/%d)", title, attempt, attempts)
-                        if attempt == attempts or await asyncio.to_thread(give_up):
+                        if attempt == attempts or stop(err) or await asyncio.to_thread(give_up):
                             await msg.edit(content=clip_text(f"❌ {title} failed: {err}"
                                                              + (f" ({attempt} attempts)" if attempt > 1 else "")))
                             raise JobFailed(str(err)) from err
@@ -779,25 +781,36 @@ class TrendClipBot(discord.Client):
                            "nothing made for %s", label)
             return
         late = lambda: assistant.now(settings) > job.post_at  # noqa: E731
+        out_of_quota = lambda err: getattr(err, "retry_at", None) is not None  # noqa: E731 - a second try now can't help
         try:
             info = await self.run_job(channel, f"🗺️ Borderline Why video for {label}", lambda p: bw_channel.make(settings, job, p),
-                                      self.render_lock, attempts=BW_ATTEMPTS, give_up=late)
+                                      self.render_lock, attempts=BW_ATTEMPTS, give_up=late, stop=out_of_quota)
         except JobFailed as failed:
             from modules import bw_script
 
+            cause = failed.__cause__
             try_again = view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Try again now", discord.ButtonStyle.success))
-            retry_at = assistant.now(settings) + timedelta(minutes=BW_RETRY_MINUTES)
-            if isinstance(failed.__cause__, bw_script.TryLater) and retry_at <= job.post_at - BW_RETRY_UNTIL:
+            now = assistant.now(settings)
+            quota_back = getattr(cause, "retry_at", None)
+            # Out of quota: wait for the time Google gave (plus a little), not every 30 minutes; one message.
+            retry_at = (quota_back.astimezone(settings.tz) + timedelta(minutes=3) if quota_back
+                        else now + timedelta(minutes=BW_RETRY_MINUTES))
+            if isinstance(cause, bw_script.TryLater) and retry_at <= job.post_at - BW_RETRY_UNTIL:
                 # Wikipedia down, Gemini busy or out of quota: not the topic's fault, so wait and try again by itself
-                await channel.send(f"⏳ Wikipedia or Gemini is not answering ({clip_text(str(failed), 200)}). "
-                                   f"I'll try the {label} video again at {retry_at:%H:%M} by myself. Or write the script with any other "
-                                   "LLM: dashboard → Borderline Why → ✍️ Write it myself.", view=try_again)
-                await asyncio.sleep((retry_at - assistant.now(settings)).total_seconds())
+                what = (f"Gemini's free quota is used up until {quota_back.astimezone(settings.tz):%H:%M}" if quota_back
+                        else f"Wikipedia or Gemini is not answering ({clip_text(str(failed), 200)})")
+                await channel.send(f"⏳ {what}. I'll try the {label} video again at {retry_at:%H:%M} by myself"
+                                   + (", carrying on from the draft I kept" if quota_back else "")
+                                   + ". Or write the script with any other LLM: dashboard → Borderline Why → ✍️ Write it myself.",
+                                   view=try_again)
+                await asyncio.sleep(max(0.0, (retry_at - assistant.now(settings)).total_seconds()))
                 if await asyncio.to_thread(bw_channel.load_info, job.key) is None:
                     await self.borderlinewhy_make(job)
                 return
-            hint = (" Gemini is out of quota: write the script with any other LLM on the dashboard → Borderline Why → "
-                    "✍️ Write it myself." if isinstance(failed.__cause__, bw_script.TryLater) else "")
+            hint = ((f" Gemini's free quota comes back at {quota_back.astimezone(settings.tz):%H:%M}, too late for this slot: "
+                     if quota_back else " Gemini is out of quota: ")
+                    + "write the script with any other LLM on the dashboard → Borderline Why → ✍️ Write it myself."
+                    if isinstance(cause, bw_script.TryLater) else "")
             await channel.send(f"🗺️ No Borderline Why video for {label}: nothing will be posted.{hint}", view=try_again)
             return
         await self.send_file_video(channel, bw_channel.video_path(info["key"]),

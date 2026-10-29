@@ -28,7 +28,7 @@
     const twice = data.twice ? ` · <b class="da-note" style="display:inline">${data.twice} slot${data.twice > 1 ? "s" : ""} hold a video that is planned twice</b>` : "";
     const source = data.source === "linux" ? '<span class="pill good up-source">🐧 Linux plan</span>'
       : data.hub_error ? '<span class="pill warn up-source">This machine only</span>' : "";
-    hint.innerHTML = `${source}${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.`;
+    hint.innerHTML = `${source}${data.empty} empty slot${data.empty === 1 ? "" : "s"} this week across the channels${twice}. Times are ${esc(data.now.slice(11, 16))} now, in the channels' time zone.${geminiLine(data.gemini)}`;
     renderLocal(data);
     list.innerHTML = data.days.map((day) => `
       <div class="up-day${day.today ? " today" : ""}">
@@ -46,6 +46,21 @@
           </div>`;
         }).join("") : '<div class="empty">No slots</div>'}
       </div>`).join("");
+  }
+
+  // Gemini's free tier today: calls used, what is left, until when Google closed every model.
+  function geminiLine(g) {
+    if (!g || g.error) return "";
+    const reset = g.reset_at ? g.reset_at.slice(11, 16) : "";
+    let state, cls;
+    if (g.all_closed && g.reopens_at) {
+      state = `every model closed until ${esc(g.reopens_at.slice(11, 16))}`; cls = "warn";
+    } else if (g.low) {
+      state = `low: ${g.left} left, kept for the videos (resets ${esc(reset)})`; cls = "warn";
+    } else {
+      state = `${g.left} left (resets ${esc(reset)})`; cls = "good";
+    }
+    return ` <span class="pill ${cls}" title="Google's free tier: about ${g.limit} requests a day across the models that work, counted from midnight in California">🔮 Gemini free tier: ${g.used} used today · ${state}</span>`;
   }
 
   // On the sending machine: what is planned here and not on Linux yet, with each channel's "Send plan to Linux".

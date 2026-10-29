@@ -701,6 +701,11 @@ def verify(settings: Settings, board: Board, client=None, batch: int = 80) -> in
             and not LINK.search(c.text)]
     if not todo or (client is None and not sw.gemini_api_key(settings)):
         return 0
+    from . import gemini_quota
+
+    if client is None and gemini_quota.low():
+        logger.info("Gemini's free budget is low today; %d comment(s) wait for their check", len(todo))
+        return 0
     from google.genai import errors, types
 
     client, model = sw._gemini(settings, client)

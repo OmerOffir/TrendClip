@@ -9,8 +9,10 @@ for what the checker flags), then the topic is dropped.
 from __future__ import annotations
 
 import html
+import json
 import logging
 import re
+from pathlib import Path
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
@@ -46,7 +48,10 @@ class ScriptError(RuntimeError):
 
 
 class TryLater(ScriptError):
-    """Not the topic's fault (Wikipedia or Gemini busy): the topic stays on the list."""
+    """Not the topic's fault (Wikipedia or Gemini busy): the topic stays on the list. `retry_at` (aware
+    datetime) is when Gemini's quota opens again, when that is what stopped it."""
+
+    retry_at = None
 
 
 # --------------------------------------------------------------------------- research
@@ -452,7 +457,10 @@ def _ask(client, model: str, prompt: str, schema: type[BaseModel], temperature: 
     try:
         response, _ = script_writer._generate_with_fallback(client, model, [prompt], config, lambda f, m: None, errors.APIError)
     except errors.APIError as err:
-        raise TryLater(str(script_writer._explain(err, model))) from err
+        explained = script_writer._explain(err, model)
+        later = TryLater(str(explained))
+        later.retry_at = getattr(explained, "retry_at", None)
+        raise later from err
     return response.parsed if isinstance(response.parsed, schema) else schema.model_validate_json(response.text)
 
 
@@ -621,19 +629,75 @@ def finish(draft: Draft, res: Research) -> dict[str, Any]:
     }
 
 
-def write(res: Research, client=None, today: str = "", progress=lambda m: None) -> dict[str, Any]:
+def draft_path(drafts_dir: Path | None, article: str) -> Path | None:
+    """Where a half-written script waits for Gemini's quota (drafts_dir/<article>.json), if drafts are kept."""
+    if drafts_dir is None:
+        return None
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", article).strip("_") or "topic"
+    return drafts_dir / f"{name[:80]}.json"
+
+
+def _save_draft(path: Path | None, draft: "Draft", fixes: dict[str, int]) -> None:
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"draft": draft.model_dump(), "fixes": fixes}, indent=1), encoding="utf-8")
+    except OSError as err:
+        logger.warning("Could not keep the draft at %s: %s", path, err)
+
+
+def _load_draft(path: Path | None) -> tuple["Draft", dict[str, int]] | None:
+    if path is None or not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return Draft.model_validate(data["draft"]), {"rules": int(data["fixes"].get("rules", 0)),
+                                                     "facts": int(data["fixes"].get("facts", 0))}
+    except (OSError, ValueError, KeyError, TypeError) as err:
+        logger.warning("The kept draft at %s is unreadable (%s); starting over", path, err)
+        return None
+
+
+def write(res: Research, client=None, today: str = "", progress=lambda m: None, drafts_dir: Path | None = None) -> dict[str, Any]:
     """The checked script for a researched topic (a dict: modules.bw_render.spec_from_dict reads it). Raises
-    ScriptError when Gemini rejects the topic or misses the rules ATTEMPTS times."""
+    ScriptError when Gemini rejects the topic or misses the rules ATTEMPTS times.
+
+    With `drafts_dir`, the draft is kept on disk after every Gemini answer, so when the quota runs out
+    halfway (TryLater) the next try carries on from the kept draft instead of spending the calls again;
+    the kept draft is removed once the script passes or the topic is dropped."""
     if len(res.sources) < 2:
         raise ScriptError(f"Only Wikipedia could be read for {res.article!r}: the channel wants two sources")
     client, model = gemini(client)
     prompt = write_prompt(res, today)
-    progress("Writing the script")
-    draft = _ask(client, model, prompt, Draft)
+    kept = draft_path(drafts_dir, res.article)
+    resumed = _load_draft(kept)
     # The rules (length, quotes, places) and the fact checker each get their own fixes, so a draft that needed
     # its rule fixes still gets a chance to correct what the checker flags.
     fixes = {"rules": 0, "facts": 0}
     limits = {"rules": ATTEMPTS - 1, "facts": CHECK_FIXES}
+    if resumed:
+        draft, fixes = resumed
+        progress("Carrying on with the draft kept from the last try")
+    else:
+        progress("Writing the script")
+        draft = _ask(client, model, prompt, Draft)
+        _save_draft(kept, draft, fixes)
+    try:
+        draft = _finish_draft(client, model, prompt, draft, fixes, limits, res, progress, kept)
+    except TryLater:
+        raise  # the kept draft stays for the next try
+    except ScriptError:
+        if kept is not None:
+            kept.unlink(missing_ok=True)
+        raise
+    if kept is not None:
+        kept.unlink(missing_ok=True)
+    return finish(draft, res)
+
+
+def _finish_draft(client, model: str, prompt: str, draft: "Draft", fixes: dict[str, int], limits: dict[str, int],
+                  res: Research, progress, kept: Path | None) -> "Draft":
     while True:
         if not draft.usable:
             raise ScriptError(f"Gemini: the sources can't support it ({draft.reject_reason.strip() or 'no reason given'})")
@@ -642,7 +706,7 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
             progress("Checking the narration against the sources")
             problems = verify(client, model, draft, res)
             if not problems:
-                break
+                return draft
             kind = "facts"
         logger.info("Borderline Why draft (%s fix %d): %s", kind, fixes[kind], " | ".join(problems))
         if fixes[kind] >= limits[kind]:
@@ -656,7 +720,7 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None) 
             progress(f"Fixing the script ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
             fix = fix_prompt(problems, draft)
         draft = _ask(client, model, prompt + "\n\n" + fix, Draft)
-    return finish(draft, res)
+        _save_draft(kept, draft, fixes)
 
 
 def description(script: dict[str, Any], handle: str = "") -> str:

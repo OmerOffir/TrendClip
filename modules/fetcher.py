@@ -691,6 +691,11 @@ def run(sources=SOURCES, reddit: int = 25, wikipedia: int = 10, gemini: int = 5,
             elif name == "wikipedia":
                 stories = fetch_wikipedia(wikipedia, skip=repository.known_ids("wikipedia_", db_path))
             elif name == "gemini":
+                from trendclip import gemini_quota
+
+                if gemini_quota.low():
+                    report[name] = {"skipped": "Gemini's free budget is low today; the videos come first"}
+                    continue
                 stories = fetch_gemini(gemini, avoid=repository.known_titles(db_path))
             elif name == "rss":
                 stories = fetch_rss(rss, skip=repository.known_ids("rss_", db_path))

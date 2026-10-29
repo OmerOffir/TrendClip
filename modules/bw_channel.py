@@ -319,7 +319,8 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
         tried.add(topic.article)
         progress(f"Topic: {topic.question}")
         try:
-            script = write(research(topic, progress), client, progress=progress)
+            kwargs = {"drafts_dir": root / "drafts"} if write is bw_script.write else {}
+            script = write(research(topic, progress), client, progress=progress, **kwargs)
         except bw_script.TryLater:
             raise
         except bw_script.ScriptError as err:

@@ -226,6 +226,11 @@ def ensure(out_dir: Path, client=None) -> int:
     left = len(remaining(out_dir))
     if left >= REFILL_AT:
         return left
+    from trendclip import gemini_quota
+
+    if left and gemini_quota.low():
+        logger.info("Borderline Why: %d topic(s) left and Gemini's free budget is low; new topics another day", left)
+        return left
     try:
         propose(out_dir, client)
     except Exception as err:  # noqa: BLE001

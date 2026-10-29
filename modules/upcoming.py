@@ -125,7 +125,17 @@ def view(settings, now: datetime | None = None) -> dict[str, Any]:
         out_days.append({"day": day, "weekday": Day.fromisoformat(day).strftime("%A"), "today": day == days[0], "rows": day_rows})
     return {"now": now.isoformat(timespec="minutes"), "days": out_days,
             "empty": sum(1 for r in rows if r["state"] == "empty"), "twice": sum(1 for r in rows if r["twice"]),
-            "channels": CHANNELS}
+            "channels": CHANNELS, "gemini": gemini_status(settings, now)}
+
+
+def gemini_status(settings, now: datetime) -> dict[str, Any] | None:
+    """Today's use of Gemini's free tier (trendclip.gemini_quota.status), None when it can't be read."""
+    try:
+        from trendclip import gemini_quota
+
+        return gemini_quota.status(tz=settings.tz, now=now)
+    except Exception as err:  # noqa: BLE001 - a side note on the page, never the reason it fails
+        return {"error": str(err)[:120]}
 
 
 def local_unsent(settings) -> list[dict[str, Any]]:

@@ -9,6 +9,7 @@ import re
 import subprocess
 import tempfile
 import time
+from datetime import timedelta
 from pathlib import Path
 from typing import Callable, Literal
 
@@ -367,7 +368,7 @@ def _explain(err: Exception, model: str) -> ScriptError:
     if code in (401, 403) or "API key" in text or "API_KEY" in text:
         return ScriptError("Gemini rejected the API key: check GEMINI_API_KEY in .env")
     if code == 429:
-        return QuotaError("Gemini quota reached (free tier limit); wait a minute or try tomorrow")
+        return quota_error(model)
     if code in RETRYABLE_CODES:
         return ScriptError("Gemini is overloaded right now (all models busy); try again in a minute")
     if code == 404:
@@ -375,28 +376,95 @@ def _explain(err: Exception, model: str) -> ScriptError:
     return ScriptError(f"Gemini error{f' {code}' if code else ''}: {text[:300]}")
 
 
+def model_chain(model: str | None = None) -> list[str]:
+    """The models tried in order: GEMINI_MODEL (or `model`) then FALLBACK_MODELS."""
+    if model is None:
+        from .config import DEFAULT_GEMINI_MODEL
+
+        model = (dotenv_values(PROJECT_ROOT / ".env").get("GEMINI_MODEL") or os.getenv("GEMINI_MODEL") or DEFAULT_GEMINI_MODEL).strip()
+    return [model] + [m for m in FALLBACK_MODELS if m != model]
+
+
+def quota_error(model: str, retry_at=None) -> "QuotaError":
+    """The QuotaError for "every model is closed": says until when, and carries `retry_at` for the bot."""
+    from . import gemini_quota
+
+    now = gemini_quota._now()
+    retry_at = retry_at or gemini_quota.ledger().reopens_at(model_chain(model), now)
+    if retry_at <= now + timedelta(minutes=2):  # a per-minute limit, or a model that failed for another reason
+        retry_at = now + timedelta(minutes=10)
+        err = QuotaError("Gemini quota: rate limited right now; the bot tries again in 10 minutes")
+    else:
+        local = retry_at.astimezone()
+        err = QuotaError(f"Gemini's free quota is used up until {local:%H:%M} ({local:%a}); the bot tries again then")
+    err.retry_at = retry_at
+    return err
+
+
 def _generate_with_fallback(client, model: str, contents: list, config, progress: ProgressFn, api_error: type):
     """Retry overloaded models (500/503) with backoff, then fall back to other Flash models.
-    Returns (response, model actually used)."""
-    models = [model] + [m for m in FALLBACK_MODELS if m != model]
+    Returns (response, model actually used).
+
+    The free tier's daily budget (trendclip.gemini_quota) is watched on the way: a model Google has closed
+    with a 429 is skipped until the time it gave, and when every model is closed no request is made at all.
+    The caller then gets the same 429 it would have got from Google (an `api_error`, so its own handling
+    runs), which _explain turns into a QuotaError that says when to try again."""
+    from . import gemini_quota
+
+    ledger = gemini_quota.ledger()
+    chain = model_chain(model)
+    models = ledger.open_models(chain)
+    if not models:
+        when = ledger.reopens_at(chain)
+        logger.info("Gemini: every model is closed until %s; not asking", when.astimezone().strftime("%H:%M"))
+        raise _closed_error(api_error, when)
+    skipped = [m for m in chain if m not in models]
+    if skipped:
+        logger.info("Gemini: skipping %s (closed by an earlier 429)", ", ".join(skipped))
     last: Exception | None = None
     for name in models:
         for attempt, delay in enumerate(RETRY_DELAYS):
             busy = f" (busy, retry {attempt})" if attempt else ""
             progress(None, f"Gemini ({name}) is writing the script{busy}")
             try:
-                return client.models.generate_content(model=name, contents=contents, config=config), name
+                response = client.models.generate_content(model=name, contents=contents, config=config)
             except api_error as err:
                 last = err
                 code = getattr(err, "code", None)
                 if code in RETRYABLE_CODES and attempt + 1 < len(RETRY_DELAYS):
                     time.sleep(delay)
                     continue
-                if code in RETRYABLE_CODES or code in (404, 429):
+                if code == 429:
+                    until = ledger.record_closed(name, err)
+                    logger.warning("Gemini model %s is out of quota (429) until %s; trying the next one", name,
+                                   until.astimezone().strftime("%H:%M"))
+                    break
+                if code in RETRYABLE_CODES or code == 404:
                     logger.warning("Gemini model %s unavailable (%s); trying the next one", name, code)
                     break
                 raise
+            ledger.record_success(name)
+            return response, name
     raise last  # every model failed; the caller explains the last error
+
+
+def _closed_error(api_error: type, when) -> Exception:
+    """A 429 like Google's, raised without asking it, when the ledger says every model is closed."""
+    local = when.astimezone()
+    from . import gemini_quota
+
+    seconds = max(1, int((when - gemini_quota._now()).total_seconds()))
+    body = {"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                      "message": f"Gemini's free quota is used up until {local:%H:%M} (per day limit, known from an earlier "
+                                 f"answer; no request was made). Please retry in {seconds}s."}}
+    try:
+        from google.genai import errors
+
+        if issubclass(errors.ClientError, api_error):
+            return errors.ClientError(429, body)
+    except (ImportError, TypeError):
+        pass
+    return quota_error("", when)
 
 
 class Shortened(BaseModel):
