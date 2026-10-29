@@ -943,6 +943,9 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .bw-w-step { display: grid; gap: 6px; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
 .bw-w-step textarea { width: 100%; box-sizing: border-box; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
 .bw-w-step button { justify-self: start; }
+.llm-topics-row { justify-self: stretch; justify-content: flex-start; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.llm-topics-row input[type=number] { width: 4.5em; }
+.llm-topics-row .btn-primary { margin-left: 0; }
 .bw-w-make { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .bw-w-preview ol { margin: 8px 0 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; }
 .bw-w .da-note ul { margin: 4px 0; padding-left: 18px; }

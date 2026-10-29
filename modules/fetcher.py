@@ -575,10 +575,35 @@ def anniversary_soon(text: str, today: dt.date | None = None, window: int = ANNI
     return when is not None and (when - (today or dt.date.today())).days <= window
 
 
+def gemini_prompt(count: int, avoid: list[str] | None = None, today: dt.date | None = None) -> str:
+    mix = "\n".join(f"- {n} {p} ({repository.PILLAR_LABELS[p].lower()})" for p, n in pillar_split(count).items() if n)
+    return GEMINI_PROMPT.format(count=count, mix=mix, today=(today or dt.date.today()).isoformat(),
+                                anniversaries=max(1, count // 2), window=ANNIVERSARY_WINDOW,
+                                avoid="\n".join(f"- {t}" for t in (avoid or [])[:200]) or "- (none yet)")
+
+
+def case_stories(cases: list[GeminiCase], source: str = "gemini", today: dt.date | None = None, fame=None) -> list[Story]:
+    """Cases as stories, each scored by its Wikipedia article's page views (`fame`: wiki_fame, replaceable in
+    tests), which also becomes its source URL; an anniversary near today scores ANNIVERSARY_SCORE."""
+    today = today or dt.date.today()
+    cases = [c for c in cases if c.title.strip() and c.story.strip()]
+    known = (fame or wiki_fame)([c.title.strip() for c in cases]) if cases else {}
+    out = []
+    for c in cases:
+        page = known.get(c.title.strip())
+        score = max(min(c.hook_score, GEMINI_MAX_SCORE), wiki_score(page["views"])) if page else min(c.hook_score, GEMINI_MAX_SCORE)
+        out.append({
+            "source_id": f"{source}_{slug(c.title)}", "source_name": source, "title": c.title.strip(),
+            "raw_text": c.story.strip(), "url": page["url"] if page else "",
+            "score": ANNIVERSARY_SCORE if anniversary_soon(c.story, today) else score,
+            "pillar": c.pillar,
+        })
+    return out
+
+
 def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, today: dt.date | None = None,
                  fame=None) -> list[Story]:
-    """`count` cases from Gemini, each scored by its Wikipedia article's page views (`fame`: wiki_fame,
-    replaceable in tests), which also becomes its source URL; an anniversary near today scores ANNIVERSARY_SCORE."""
+    """`count` cases from Gemini (case_stories scores them)."""
     from google import genai
     from google.genai import errors, types
 
@@ -591,11 +616,8 @@ def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, to
         raise RuntimeError("GEMINI_API_KEY is missing in .env")
     client = client or genai.Client(api_key=api_key)
     model = script_writer.gemini_model(settings)
-    mix = "\n".join(f"- {n} {p} ({repository.PILLAR_LABELS[p].lower()})" for p, n in pillar_split(count).items() if n)
     today = today or dt.date.today()
-    prompt = GEMINI_PROMPT.format(count=count, mix=mix, today=today.isoformat(), anniversaries=max(1, count // 2),
-                                  window=ANNIVERSARY_WINDOW,
-                                  avoid="\n".join(f"- {t}" for t in (avoid or [])[:200]) or "- (none yet)")
+    prompt = gemini_prompt(count, avoid, today)
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=GeminiCases,
                                          temperature=0.9)
     try:
@@ -604,19 +626,38 @@ def fetch_gemini(count: int = 5, avoid: list[str] | None = None, client=None, to
     except errors.APIError as err:
         raise script_writer._explain(err, model) from err
     parsed = response.parsed if isinstance(response.parsed, GeminiCases) else GeminiCases.model_validate_json(response.text)
-    cases = [c for c in parsed.cases if c.title.strip() and c.story.strip()]
-    known = (fame or wiki_fame)([c.title.strip() for c in cases])
-    out = []
-    for c in cases:
-        page = known.get(c.title.strip())
-        score = max(min(c.hook_score, GEMINI_MAX_SCORE), wiki_score(page["views"])) if page else min(c.hook_score, GEMINI_MAX_SCORE)
-        out.append({
-            "source_id": f"gemini_{slug(c.title)}", "source_name": "gemini", "title": c.title.strip(),
-            "raw_text": c.story.strip(), "url": page["url"] if page else "",
-            "score": ANNIVERSARY_SCORE if anniversary_soon(c.story, today) else score,
-            "pillar": c.pillar,
-        })
-    return out
+    return case_stories(parsed.cases, "gemini", today, fame)
+
+
+# --------------------------------------------------------------------------- your own LLM (the dashboard)
+
+LLM_FORMAT = """ANSWER FORMAT
+Answer with ONLY one JSON object (no text before or after it, no code fence), shaped like this:
+{"cases": [{"title": "Dyatlov Pass incident", "pillar": "mystery", "story": "250-450 words ...", "hook_score": 85}]}"""
+
+
+class LLMTopicsError(ValueError):
+    pass
+
+
+def llm_prompt(count: int = 10, db_path=None, today: dt.date | None = None) -> str:
+    """Gemini's research prompt, for any LLM (the dashboard's "New stories from your LLM")."""
+    repository.init_db(db_path)
+    return gemini_prompt(count, repository.known_titles(db_path), today) + "\n\n" + LLM_FORMAT
+
+
+def llm_add(text: str, db_path=None, today: dt.date | None = None, fame=None) -> dict:
+    """The LLM's pasted cases into the bank, scored like Gemini's; a case already in the bank (by title) is skipped."""
+    from trendclip import llm_json
+
+    repository.init_db(db_path)
+    cases = llm_json.parse(text, GeminiCases, LLMTopicsError).cases
+    if not cases:
+        raise LLMTopicsError("The answer has no cases")
+    known = {t.strip().lower() for t in repository.known_titles(db_path, limit=100_000)}
+    fresh = [c for c in cases if c.title.strip().lower() not in known]
+    added = [s["title"] for s in case_stories(fresh, "llm", today, fame) if repository.save_story(**s, db_path=db_path)]
+    return {"added": added, "skipped": len(cases) - len(added)}
 
 
 # --------------------------------------------------------------------------- run

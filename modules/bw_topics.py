@@ -75,7 +75,7 @@ SEEDS: list[tuple[str, str]] = [
 class Topic(BaseModel):
     question: str
     article: str
-    source: str = "seed"  # seed | gemini | manual (added on the dashboard: goes first)
+    source: str = "seed"  # seed | gemini | llm (your own, pasted) | manual (added on the dashboard: goes first)
 
 
 class TopicState(BaseModel):
@@ -182,27 +182,19 @@ Do not repeat any of these articles: {used}
 """
 
 
-def propose(out_dir: Path, client=None, check=None) -> list[Topic]:
-    """Ask Gemini for 20 more topics; keep the ones whose Wikipedia article exists. `check(article)`: the
-    existence test (tests pass a fake)."""
-    from google.genai import errors, types
+def _taken(state: TopicState) -> list[str]:
+    return sorted({t.article for t in all_topics(state)} | set(state.used) | set(state.rejected))
 
+
+def keep(out_dir: Path, proposals: list[Proposal], source: str, check=None) -> list[Topic]:
+    """The proposals whose Wikipedia article exists and is new, added to the list. `check(article)`: the existence
+    test (tests pass a fake)."""
     from modules import bw_script
-    from trendclip import script_writer
 
-    client, model = bw_script.gemini(client)
-    state = load(out_dir)
-    used = sorted({t.article for t in all_topics(state)} | set(state.used) | set(state.rejected))
-    config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=Proposals, temperature=0.9)
-    try:
-        response, _ = script_writer._generate_with_fallback(client, model, [PROPOSE_PROMPT.format(used=", ".join(used))], config,
-                                                            lambda f, m: None, errors.APIError)
-    except errors.APIError as err:
-        raise bw_script.ScriptError(str(script_writer._explain(err, model))) from err
-    found = response.parsed if isinstance(response.parsed, Proposals) else Proposals.model_validate_json(response.text)
+    used = _taken(load(out_dir))
     check = check or bw_script.article_exists
     new = []
-    for p in found.topics:
+    for p in proposals:
         article = p.article.strip()
         if not article or article in used or not p.question.strip():
             continue
@@ -212,13 +204,59 @@ def propose(out_dir: Path, client=None, check=None) -> list[Topic]:
             logger.info("Topic %r not checked: %s", article, err)
             continue
         if title and title not in used:
-            new.append(Topic(question=p.question.strip(), article=title, source="gemini"))
+            new.append(Topic(question=p.question.strip(), article=title, source=source))
             used.append(title)
     with _lock:
         state = load(out_dir)
         state.proposed.extend(new)
         save(state, out_dir)
     return new
+
+
+def propose(out_dir: Path, client=None, check=None) -> list[Topic]:
+    """Ask Gemini for 20 more topics; keep the ones whose Wikipedia article exists."""
+    from google.genai import errors, types
+
+    from modules import bw_script
+    from trendclip import script_writer
+
+    client, model = bw_script.gemini(client)
+    used = _taken(load(out_dir))
+    config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=Proposals, temperature=0.9)
+    try:
+        response, _ = script_writer._generate_with_fallback(client, model, [PROPOSE_PROMPT.format(used=", ".join(used))], config,
+                                                            lambda f, m: None, errors.APIError)
+    except errors.APIError as err:
+        raise bw_script.ScriptError(str(script_writer._explain(err, model))) from err
+    found = response.parsed if isinstance(response.parsed, Proposals) else Proposals.model_validate_json(response.text)
+    return keep(out_dir, found.topics, "gemini", check)
+
+
+# --------------------------------------------------------------------------- your own LLM (the dashboard)
+
+LLM_FORMAT = """ANSWER FORMAT
+Answer with ONLY one JSON object (no text before or after it, no code fence), shaped like this:
+{"topics": [{"question": "Why does a Spanish town sit completely inside France?", "article": "Llívia"}]}"""
+
+
+class LLMTopicsError(ValueError):
+    pass
+
+
+def llm_prompt(out_dir: Path) -> str:
+    """Gemini's topic prompt, for any LLM (the dashboard's "New topics from your LLM")."""
+    return PROPOSE_PROMPT.format(used=", ".join(_taken(load(out_dir)))) + "\n" + LLM_FORMAT
+
+
+def llm_add(out_dir: Path, text: str, check=None) -> dict[str, Any]:
+    """The LLM's pasted topics, each kept when its Wikipedia article exists and is new."""
+    from trendclip import llm_json
+
+    found = llm_json.parse(text, Proposals, LLMTopicsError).topics
+    if not found:
+        raise LLMTopicsError("The answer has no topics")
+    new = keep(out_dir, found, "llm", check)
+    return {"added": [t.question for t in new], "skipped": len(found) - len(new)}
 
 
 def ensure(out_dir: Path, client=None) -> int:

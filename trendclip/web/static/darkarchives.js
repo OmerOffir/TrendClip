@@ -8,7 +8,7 @@
     fetchStatus: $("daFetchStatus"), rank: $("daRank"), navCount: $("daNavCount"), mix: $("daMix"),
     n: { reddit: $("daNReddit"), wikipedia: $("daNWiki"), gemini: $("daNGemini"), rss: $("daNRss") },
   };
-  const SOURCES = { reddit: "Reddit", wikipedia: "Wikipedia", gemini: "Gemini", rss: "RSS feeds" };
+  const SOURCES = { reddit: "Reddit", wikipedia: "Wikipedia", gemini: "Gemini", rss: "RSS feeds", llm: "Your LLM" };
   const PILLARS = { mystery: "🕵️ Mystery", history: "🏚️ Creepy history", outrage: "⚠️ Disturbing" };
   const pillarPill = (p) => (p ? `<span class="pill da-pillar-${p}">${PILLARS[p] || p}</span>` : "");
   const STATUSES = ["NEW", "PROCESSING", "SCRIPT_READY", "USED", "REJECTED"];

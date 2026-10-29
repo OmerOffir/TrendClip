@@ -380,6 +380,25 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
     return bw_topics.add(bw_channel.out_root(), req.question, title).model_dump()
 
 
+@router.get("/llm-topics")
+def llm_topics_prompt() -> dict[str, Any]:
+    """Gemini's topic prompt, to paste into any LLM ("New topics from your LLM")."""
+    return {"prompt": bw_topics.llm_prompt(bw_channel.out_root())}
+
+
+class LLMText(BaseModel):
+    text: str = Field(min_length=2, max_length=200_000)
+
+
+@router.post("/llm-topics")
+def llm_topics_add(req: LLMText) -> dict[str, Any]:
+    """The LLM's topics, each kept when its Wikipedia article exists and is new (a few seconds per topic at most)."""
+    try:
+        return bw_topics.llm_add(bw_channel.out_root(), req.text)
+    except bw_topics.LLMTopicsError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
 def _login(request: Request) -> str:
     from .app import _callback_url
 

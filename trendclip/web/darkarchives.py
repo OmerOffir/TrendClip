@@ -20,7 +20,7 @@ from trendclip import publish
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/darkarchives")
-Source = Literal["reddit", "wikipedia", "gemini", "rss"]
+Source = Literal["reddit", "wikipedia", "gemini", "rss", "llm"]
 Status = Literal["NEW", "PROCESSING", "SCRIPT_READY", "USED", "REJECTED"]
 Pillar = Literal["mystery", "history", "outrage"]
 
@@ -108,6 +108,25 @@ def start_fetch(req: FetchRequest) -> dict[str, Any]:
 def fetch_status() -> dict[str, Any]:
     with _lock:
         return dict(_job)
+
+
+@router.get("/llm-topics")
+def llm_topics_prompt(count: int = Query(10, ge=1, le=20)) -> dict[str, Any]:
+    """Gemini's research prompt, to paste into any LLM ("New stories from your LLM")."""
+    return {"prompt": fetcher.llm_prompt(count)}
+
+
+class LLMText(BaseModel):
+    text: str = Field(min_length=2, max_length=500_000)
+
+
+@router.post("/llm-topics")
+def llm_topics_add(req: LLMText) -> dict[str, Any]:
+    """The LLM's cases into the bank, scored like Gemini's by their Wikipedia page views."""
+    try:
+        return fetcher.llm_add(req.text)
+    except fetcher.LLMTopicsError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
 
 @router.get("/stories/{story_id}/script")

@@ -186,6 +186,22 @@
         <span class="hint" id="bwAddStatus"></span>
       </form>
     </section>
+    <section class="card llm-topics" data-llm-topics="/api/borderlinewhy/llm-topics" data-refresh="bwTopicsRefresh">
+      <div class="card-head">
+        <div>
+          <h2>New topics from your own LLM</h2>
+          <span class="hint">Gemini's own topic prompt, for when Gemini is out of quota. Each topic is kept when its English Wikipedia article exists and isn't in the list yet; they join the list after the seeds</span>
+        </div>
+      </div>
+      <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
+        <div class="llm-topics-row"><button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
+        <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
+      </div>
+      <div class="bw-w-step"><b>2 · Paste its answer</b>
+        <textarea class="bw-w-answer" data-l="answer" rows="4" placeholder="Paste the whole answer here (the JSON)"></textarea>
+        <div class="llm-topics-row"><button type="button" class="btn-primary" data-l="add">➕ Add them</button><span class="hint" data-l="status"></span></div>
+      </div>
+    </section>
     <section class="card">
       <div class="card-head">
         <div>
@@ -221,6 +237,22 @@
       </div>
     </section>
 
+    <section class="card llm-topics" data-llm-topics="/api/darkarchives/llm-topics" data-refresh="daStatus">
+      <div class="card-head">
+        <div>
+          <h2>New stories from your own LLM</h2>
+          <span class="hint">Gemini's own research prompt (famous cases, anniversaries near today, the cases already in the bank to avoid), for when Gemini is out of quota. The cases are scored by their Wikipedia page views, like Gemini's</span>
+        </div>
+      </div>
+      <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
+        <div class="llm-topics-row"><label class="hint">Cases <input type="number" data-l="count" min="1" max="20" value="10" /></label><button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
+        <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
+      </div>
+      <div class="bw-w-step"><b>2 · Paste its answer</b>
+        <textarea class="bw-w-answer" data-l="answer" rows="4" placeholder="Paste the whole answer here (the JSON)"></textarea>
+        <div class="llm-topics-row"><button type="button" class="btn-primary" data-l="add">➕ Add them</button><span class="hint" data-l="status"></span></div>
+      </div>
+    </section>
     <section class="card">
       <div class="card-head">
         <div>
@@ -240,6 +272,7 @@
             <option value="wikipedia">Wikipedia</option>
             <option value="gemini">Gemini</option>
             <option value="rss">RSS feeds</option>
+            <option value="llm">Your LLM</option>
           </select>
           <select id="daStatus">
             <option value="">All statuses</option>
@@ -1165,6 +1198,7 @@
   <script src="/static/gamerweek.js"></script>
   <script src="/static/darkmanual.js"></script>
   <script src="/static/daweek.js"></script>
+  <script src="/static/llmtopics.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/upcoming.js"></script>
