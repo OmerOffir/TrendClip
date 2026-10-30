@@ -707,11 +707,14 @@ def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
     f = bw_render.font(size)
     top = 60
     d = ImageDraw.Draw(ov)
+    right, bottom = W * 0.3, H * 0.3
     for n, line in enumerate(lines):
-        d.text((70, top + n * size * 1.04), line, font=f, fill=bw_render.FIXED["gold"] if n == 0 else (255, 255, 255),
+        at = (70, top + n * size * 1.04)
+        d.text(at, line, font=f, fill=bw_render.FIXED["gold"] if n == 0 else (255, 255, 255),
                stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
-    right = 70 + max((f.getlength(line) for line in lines), default=W * 0.3)
-    end = (min(right - 120, W * 0.5), top + len(lines) * size * 1.04 + 10)  # from under the text, at its right
+        box = d.textbbox(at, line, font=f, stroke_width=16, anchor="la")  # the font's real extent (they differ by machine)
+        right, bottom = (box[2], box[3]) if n == 0 else (max(right, box[2]), box[3])
+    end = (min(right - 120, W * 0.5), bottom + 30)  # from under the text, at its right
     tip = (spot[0] - rx * 0.9, spot[1] - ry * 0.25)
     if tip[0] - end[0] > 120 and tip[1] > end[1]:
         arrow = bw_render.curve(end, tip, bend=0.25)
