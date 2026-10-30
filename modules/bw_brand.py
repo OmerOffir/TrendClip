@@ -279,14 +279,21 @@ def draw_bubble(img: Image.Image, spec: bw_render.Spec, t: float) -> None:
     bw = int(max(f.getlength(" ".join(words[j] for j in r)) for r in rows) + 2 * pad_x)
     bh = int(len(rows) * lead + 2 * pad_y)
     tail = 54
-    _, feet = mascot_spot()
+    cx, feet = mascot_spot()
+    head = feet - size("mascot")
     portrait = bw_render.LAYOUT == "portrait"
-    tail_x = 120 if portrait else bw - 120  # the tail points down at the mascot's head
-    shape = Image.new("L", (bw + 24, bh + tail + 24), 0)
+    shape = Image.new("L", (bw + 24 + (0 if portrait else tail), bh + 24 + (tail if portrait else 0)), 0)
     ds = ImageDraw.Draw(shape)
     ds.rounded_rectangle([12, 12, 12 + bw, 12 + bh], radius=42, fill=255)
-    ds.polygon([(12 + tail_x - 30, 12 + bh - 4), (12 + tail_x + 30, 12 + bh - 4),
-                (12 + tail_x + (-26 if portrait else 26), 12 + bh + tail)], fill=255)
+    if portrait:  # above the mascot, the tail pointing down at its head
+        tip = (12 + 120 - 26, 12 + bh + tail)
+        ds.polygon([(12 + 90, 12 + bh - 4), (12 + 150, 12 + bh - 4), tip], fill=255)
+        at = (cx - 70, head - 6)
+    else:  # beside it, low in the caption band (the captions are off while it talks), so a board's writing stays clear
+        mid = 12 + bh / 2
+        tip = (12 + bw + tail, mid + 14)
+        ds.polygon([(12 + bw - 4, mid - 28), (12 + bw - 4, mid + 28), tip], fill=255)
+        at = (cx - 92, head + 95)
     layer = Image.new("RGBA", shape.size, (20, 22, 30, 0))
     layer.putalpha(shape.filter(ImageFilter.MaxFilter(11)))  # the ink outline
     layer.paste(Image.new("RGBA", shape.size, (255, 255, 255, 255)), (0, 0), shape)
@@ -301,15 +308,12 @@ def draw_bubble(img: Image.Image, spec: bw_render.Spec, t: float) -> None:
             fill = RED if now else INK if said else (170, 172, 180)
             d.text((x, y), w.text, font=f, fill=fill + (255,), anchor="lm")
             x += f.getlength(w.text + " ")
-    head = feet - size("mascot")
-    left = 40 if portrait else bw_render.W - 40 - layer.width
-    top = head - 18 - layer.height + 12
+    if portrait:  # keep the bubble on screen
+        at = (max(at[0], 40 + tip[0]), at[1])
     k = 0.55 + 0.45 * pop + 0.06 * math.sin(math.pi * min(1.0, (t - start) / 0.22))
     if abs(k - 1) > 0.01:
         layer = layer.resize((max(1, int(layer.width * k)), max(1, int(layer.height * k))), Image.BILINEAR)
-    ax = left + 12 + tail_x  # grow from the tail
-    ay = top + layer.height / k
-    x, y = int(ax - (12 + tail_x) * k), int(ay - layer.height)
+    x, y = int(at[0] - tip[0] * k), int(at[1] - tip[1] * k)  # it grows from the tail's tip
     if fade < 1:
         layer.putalpha(layer.getchannel("A").point(lambda v: int(v * fade)))
     paste(img, shadow(layer, 10, 0.35), x - 20 + 6, y - 20 + 10)
@@ -399,7 +403,7 @@ class Board:
             if portrait:
                 box = (330, top + 170, W - 110, bw_render.CAPTION_Y - 110 - len(lines) * (line_size + 26))  # right of the mascot
             else:
-                box = (140, top + 140, W / 2 + 60 if lines else W - 140, bw_render.CAPTION_Y - 90)
+                box = (140, top + 140, W / 2 + 60 if lines else W - 420, bw_render.CAPTION_Y - 90)  # clear of the mascot's corner
             self._draw(feats, box, bool(o.get("circle", True)))
         if portrait or not feats:
             y0 = (box[3] + 70) if feats else top + 250
