@@ -134,7 +134,7 @@ def _rules() -> str:
     return rules.format(min_words=bw_script.MIN_WORDS, max_words=bw_script.MAX_WORDS, max_sentence=bw_script.MAX_SENTENCE_WORDS,
                         min_scenes=bw_script.MIN_SCENES, max_scenes=bw_script.MAX_SCENES, max_cards=bw_script.MAX_CARDS,
                         icons=", ".join(bw_script.bw_fx.ICONS), icon_count="6-10 in the video", stamp_count="one in the video",
-                        today=datetime.now().date().isoformat()).rstrip()
+                        mascot_lines=bw_script.MASCOT_LINES, today=datetime.now().date().isoformat()).rstrip()
 
 
 def _topic_block(entry: dict[str, Any]) -> str:

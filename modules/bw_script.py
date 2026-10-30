@@ -36,6 +36,7 @@ MIN_WORDS, MAX_WORDS = 110, 170  # about 45-70 s with the narrator
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 3
+MASCOT_LINES = "2-3 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
 ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
 CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
 SKIP_DOMAINS = ("wikipedia.org", "wikimedia.org", "wikidata.org", "books.google", "google.com", "archive.org/details",
@@ -309,7 +310,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card")
+    kind: str = Field(description="map | card | board")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -317,6 +318,10 @@ class SceneDraft(BaseModel):
     title: str = Field("", description="card: 1-5 words, often a year or a name.")
     subtitle: str = Field("", description="card: one short line under the title.")
     elements: list[ElementDraft] = Field(default_factory=list)
+    board_write: list[str] = Field(default_factory=list, description="board: a 2-5 word title, then up to 3 short lines the hand writes.")
+    board_draw: list[str] = Field(default_factory=list, description="board: 0-2 places whose outline the hand sketches; the last is circled.")
+    ask: str = Field("", description="The mascot's short question, said just before this scene (optional).")
+    react: str = Field("", description="The mascot's short reaction, said just after this scene (optional).")
 
 
 class ClaimDraft(BaseModel):
@@ -373,6 +378,19 @@ must be the whole narration.
   place the video is about, "red" for a mistake or a "no".
 - card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
   they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
+- board scenes (1-2, at most 2) are the channel's whiteboard: a hand writes in red and black marker. Use them for the
+  "why" moment: the deal, the rule, the mistake, the trade. "board_write": a title of 2-5 words, then 0-3 short lines
+  (2-6 words each) that sum up what the narration says ("The 1890 deal", "Britain gets Zanzibar", "Germany gets
+  Heligoland"). "board_draw" (optional): 1-2 places whose real outline the hand sketches, a country or state first,
+  then a small place inside it that gets circled (["Namibia", "Caprivi Strip"]). No focus, no elements. Never the
+  first scene.
+- The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
+  Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
+  narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
+  it?", "Ruined? How?"); put asks where a viewer would wonder, never on the first scene. "react" is a one-line
+  reaction just after a scene, best after the last one ("So Germany traded Zanzibar... for a waterfall?").
+  3-12 words, casual and curious, no new facts, no greeting, no "subscribe". Its lines are not part of the narration:
+  the narration must read as a whole without them.
 - cue: a word from that scene's narration, so the element appears as it is said.
 - Vary the scenes: not every scene needs a headline; mix wide and close views. Don't keep the same focus for more
   than two scenes in a row: pull out to the countries or the region around a small place, then go back in.
@@ -528,7 +546,10 @@ def to_spec_dict(draft: Draft) -> dict[str, Any]:
             if el["kind"] not in ("parallel", "meridian"):
                 el["value"] = None
             els.append(el)
-        scenes.append({**s.model_dump(exclude={"elements"}), "kind": s.kind.strip().lower(), "elements": els})
+        scene = {**s.model_dump(exclude={"elements", "board_write", "board_draw"}), "kind": s.kind.strip().lower(), "elements": els}
+        if scene["kind"] == "board":
+            scene["board"] = {"write": [w.strip() for w in s.board_write if w.strip()], "draw": [n for n in s.board_draw if n.strip()][:2]}
+        scenes.append(scene)
     return {"title": draft.title.strip(), "cover_text": draft.cover_text.strip(), "scenes": scenes}
 
 
@@ -541,6 +562,8 @@ class Limits:
     max_scenes: int = MAX_SCENES
     max_cards: int = MAX_CARDS
     first_map: bool = True  # the first scene is the thumbnail
+    max_boards: int = 2
+    max_lines: int = 4  # the mascot's asks and reacts
     min_claims: int = 4
     min_cited: int = 2
 
@@ -564,8 +587,24 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
     if not limits.min_scenes <= len(draft.scenes) <= limits.max_scenes:
         problems.append(f"{len(draft.scenes)} scenes (wanted {limits.min_scenes}-{limits.max_scenes})")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card") for k in kinds):
-        problems.append("a scene kind is not map or card")
+    if any(k not in ("map", "card", "board") for k in kinds):
+        problems.append("a scene kind is not map, card or board")
+    if kinds.count("board") > limits.max_boards:
+        problems.append(f"{kinds.count('board')} board scenes (at most {limits.max_boards})")
+    if kinds and kinds[0] == "board":
+        problems.append("the first scene can't be a board")
+    lines = [(i, k, getattr(s, k).strip()) for i, s in enumerate(draft.scenes, 1) for k in ("ask", "react") if getattr(s, k).strip()]
+    if len(lines) > limits.max_lines:
+        problems.append(f"the mascot has {len(lines)} lines (at most {limits.max_lines})")
+    for i, k, line in lines:
+        if not 2 <= words(line) <= 12:
+            problems.append(f"scene {i}: the mascot's {k} is {words(line)} words (wanted 3-12)")
+        if k == "ask" and not line.endswith("?"):
+            problems.append(f"scene {i}: the mascot's ask must be a question")
+        if k == "ask" and i == 1:
+            problems.append("the first scene can't have an ask (the narrator opens the video)")
+        if bad := [b for b in BANNED if b in line.lower()]:
+            problems.append(f"scene {i}: banned phrases in the mascot's {k}: " + ", ".join(bad))
     if kinds.count("card") > limits.max_cards:
         problems.append(f"{kinds.count('card')} card scenes (at most {limits.max_cards})")
     if limits.first_map and kinds and kinds[0] != "map":
@@ -576,6 +615,13 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
             problems.append(f"card scene {i} has no title")
         if s.kind.strip().lower() == "map" and not s.focus and not s.elements:
             problems.append(f"map scene {i} names no place")
+        if s.kind.strip().lower() == "board":
+            if not [w for w in s.board_write if w.strip()]:
+                problems.append(f"board scene {i} has no board_write")
+            elif len(s.board_write) > 4 or any(words(w) > 7 for w in s.board_write):
+                problems.append(f"board scene {i}: board_write is at most 4 short lines (7 words each)")
+            if far := [n for n in s.board_draw[:2] if not find(n)]:
+                problems.append(f"board scene {i}: places not on the map: " + ", ".join(far))
         for e in s.elements:
             if e.kind not in bw_render.ELEMENT_KINDS:
                 problems.append(f"scene {i}: unknown element kind {e.kind!r}")
@@ -624,7 +670,7 @@ def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
 def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
-    return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video",
+    return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video", mascot_lines=MASCOT_LINES,
                          min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
                          min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
                          today=today or dt.date.today().isoformat(), sources=sources_block(res))

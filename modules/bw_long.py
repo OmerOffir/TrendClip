@@ -149,7 +149,8 @@ from that source (no changes, no "...").
 ANSWER FORMAT
 {{"scenes": [{{"kind": "map", "narration": "...", "focus": ["..."], "headline": "", "elements": [
     {{"kind": "highlight", "place": "...", "color": "a", "cue": "..."}}]}},
-  {{"kind": "card", "narration": "...", "kicker": "...", "title": "...", "subtitle": "...", "elements": []}}],
+  {{"kind": "card", "narration": "...", "kicker": "...", "title": "...", "subtitle": "...", "elements": []}},
+  {{"kind": "board", "narration": "...", "ask": "...?", "board_write": ["...", "..."], "board_draw": ["..."]}}],
  "claims": [{{"claim": "...", "source_id": 1, "quote": "..."}}]}}
 Element fields: kind, place, to, value, text, color, cue, flag, icon, points (leave out what an element doesn't use).""" + JSON_TAIL + """
 
@@ -460,7 +461,7 @@ def chapter_prompt(res: Research, outline: dict[str, Any], chapters: list[dict[s
         beats="; ".join(plan["beats"]), opening=opening, min_words=CHAPTER.min_words, max_words=CHAPTER.max_words,
         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=CHAPTER.min_scenes, max_scenes=CHAPTER.max_scenes,
         max_cards=CHAPTER.max_cards, icons=", ".join(bw_fx.icon_names()), icon_count="3-6 in this chapter",
-        stamp_count="one in the whole video", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
+        stamp_count="one in the whole video", mascot_lines="1-3 asks in this chapter (a react only after the last chapter's last scene)", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
 
 
 def prompt(state: dict[str, Any], res: Research) -> tuple[str, str]:
@@ -592,9 +593,10 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
 
     try:
         script = full_script(sid, out_dir)
+        script.setdefault("brand", bw_channel.brand_on())
         _save(f, "script.json", script)
         progress(0.02, "Recording the narration")
-        words = bw_channel.record_voice(script["narration"], f / "voice.mp3", lambda m: progress(None, m))
+        words = bw_channel.record_script(script, f / "voice.mp3", lambda m: progress(None, m))
         spec = spec_for(script, words)
         progress(0.08, "Placing the maps")
         if missing := bw_render.prepare(spec):
@@ -682,7 +684,7 @@ def preview(sid: str, i: int, out_dir: Path | None = None) -> Path:
     script["scenes"][0]["chapter"] = {"n": i + 1, "title": state["outline"]["chapters"][i]["title"]}
     if i:  # only the video's first scene opens on the globe
         script["scenes"][0]["globe"] = False
-    script.update(look="satellite", seed=7, cover_text="" if i else state["outline"]["cover_text"])
+    script.update(look="satellite", seed=7, cover_text="" if i else state["outline"]["cover_text"], brand=bw_channel.brand_on())
     t, words = 0.0, []
     for w in " ".join(s["narration"] for s in script["scenes"]).split():
         words.append(bw_render.Word(w, t, t + 0.3))

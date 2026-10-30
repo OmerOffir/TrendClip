@@ -129,6 +129,7 @@ class Word:
     text: str
     start: float
     end: float
+    who: str = ""  # "" the narrator; "panda" the mascot's lines (modules.bw_brand)
 
 
 @dataclass
@@ -139,10 +140,18 @@ class Spec:
     theme: str = "atlas"
     seed: int = 0
     look: str = "flat"  # flat | satellite (modules.bw_fx)
+    brand: bool = False  # the mascot and the marker hand (modules.bw_brand); needs the satellite look
+    lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
 
     @property
     def duration(self) -> float:
-        return (self.words[-1].end if self.words else 0.0) + TAIL
+        ends = [self.words[-1].end] if self.words else []
+        ends += [line[-1].end for line in self.lines if line]
+        return max(ends, default=0.0) + TAIL
+
+    def line_at(self, t: float, before: float = 0.05, after: float = 0.35) -> list[Word] | None:
+        """The mascot's line being said at `t` (with a moment after it, while its bubble is still up)."""
+        return next((line for line in self.lines if line[0].start - before <= t < line[-1].end + after), None)
 
 
 # --------------------------------------------------------------------------- resolving places and timing
@@ -681,6 +690,8 @@ class Renderer:
         return img
 
     def captions(self, img: Image.Image, t: float) -> None:
+        if self.spec.line_at(t):
+            return  # the mascot is talking: its words are in its bubble
         words = self.spec.words
         group = None
         for k, g in enumerate(self.groups):
@@ -721,8 +732,12 @@ class Renderer:
         img = self.scene_frame(i, t)
         if i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
             img = Image.blend(self.scene_frame(i - 1, t), img, ramp(t, scene.start, FADE))
+        self.overlay(img, t)
         self.captions(img, t)
         return img.convert("RGB")
+
+    def overlay(self, img: Image.Image, t: float) -> None:
+        """What stays on screen across scenes, under the captions (the satellite look's mascot)."""
 
 
 # --------------------------------------------------------------------------- the video
@@ -807,4 +822,11 @@ def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
                             opts={k: v for k, v in s.items() if k not in scene_keys and v not in (None, "", [])}))
     seed = int(data.get("seed") or 0)
     theme = data.get("theme") or random.Random(seed).choice(sorted(THEMES))
-    return Spec(scenes, words, cover=data.get("cover_text", ""), theme=theme, seed=seed, look=data.get("look") or "flat")
+    lines: list[list[Word]] = []
+    for k, w in enumerate(words):  # the mascot's words, one list per line it says
+        if w.who:
+            if k == 0 or words[k - 1].who != w.who:
+                lines.append([])
+            lines[-1].append(w)
+    return Spec(scenes, [w for w in words if not w.who], cover=data.get("cover_text", ""), theme=theme, seed=seed,
+                look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines)

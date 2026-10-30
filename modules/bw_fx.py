@@ -62,6 +62,7 @@ SLOTS = {  # per layout (modules.bw_render.LAYOUTS)
                       pole={"map": ((170, 830), (1660, 830), (430, 830)), "card": ((230, 840), (1600, 840), (430, 840))}),
 }
 ICON_SLOTS, POLE_SLOTS = SLOTS["portrait"]["icon"], SLOTS["portrait"]["pole"]
+BRAND_POLES = ((400, 1270), (640, 1270), (860, 1270))
 # A portrait card's free poles and icons stand in one row on the empty paper above the kicker (CARD_Y 720): icons
 # centered on icon_y, pole feet on pole_y, at most `step` apart. The card slots above put them on the subtitle
 # (the 2026-10-30 treaty card: two flags and a handshake over "Germany swaps Zanzibar with Britain"). A landscape
@@ -288,6 +289,10 @@ ALIASES = {"king": "king_waving", "queen": "queen_curtsying", "soldier": "soldie
            "mapmaker": "mapmaker_drawing", "family": "family_house"}
 
 
+# the mascot and the marker hand (modules.bw_brand): the channel's own pictures, never a script's icons
+BRAND_FILES = frozenset({"explorer_thinking_smooth", "explorer_discovery", "cartoon_hand_gentle_sway"})
+
+
 def _key(name: str) -> str:
     return name.strip().lower().replace(" ", "_").replace("-", "_")
 
@@ -300,7 +305,7 @@ def custom_icons() -> dict[str, Path]:
         return {}
     out: dict[str, Path] = {}
     for path in files:
-        if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith("."):
+        if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith(".") and path.stem not in BRAND_FILES:
             out.setdefault(_key(path.stem), path)
     for short, name in ALIASES.items():
         if name in out:
@@ -675,7 +680,7 @@ def dress(spec) -> list[str]:
             if el.kind == "icon" and free and in_row:
                 row.append(el)
             elif el.kind == "icon" and free:
-                slots = ICON_SLOTS[scene.kind]
+                slots = ICON_SLOTS.get(scene.kind, ICON_SLOTS["card"])
                 el.opts["x"], el.opts["y"] = slots[icons % len(slots)]
                 icons += 1
             elif el.kind == "icon" and el.feature is not None and "dy" not in el.opts:
@@ -683,7 +688,9 @@ def dress(spec) -> list[str]:
             if el.kind == "pole" and free and in_row:
                 row.append(el)
             elif el.kind == "pole" and free:
-                slots = POLE_SLOTS[scene.kind]
+                slots = POLE_SLOTS.get(scene.kind, POLE_SLOTS["card"])
+                if spec.brand and bw_render.LAYOUT == "portrait" and scene.kind == "map":
+                    slots = BRAND_POLES  # the mascot stands where the first pole would
                 el.opts["x"], el.opts["y"] = slots[poles % len(slots)]
                 poles += 1
             keep.append(el)
@@ -759,6 +766,12 @@ class FxRenderer(Renderer):
         self._badges: dict[tuple[str, int], Image.Image] = {}
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
+        self.boards = {i: bw_brand.Board(s) for i, s in enumerate(spec.scenes) if s.kind == "board"}
+        self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
+        self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)
+                     if spec.brand and s.kind == "map" and not s.opts.get("globe")}
+        self._pen_time: dict[int, tuple[float, float]] = {}
+        self._hand: tuple[float, float] | None = None
 
     # -- cameras --
 
@@ -941,12 +954,84 @@ class FxRenderer(Renderer):
             img.alpha_composite(lines)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
+        self._hand = None
         if not globe:
             self.attention(ov, cam, i, t)
+        pen = None if globe else self.pens.get(i)
         for el in scene.elements:
-            self.element(ov, d, cam, el, t, scene)
+            if el is pen:
+                self.pen_line(ov, d, cam, i, el, t)
+            else:
+                self.element(ov, d, cam, el, t, scene)
+        if self._hand is not None:
+            bw_brand.draw_hand(ov, self._hand, t)
         img.alpha_composite(ov)
         return img
+
+    # -- the marker hand (modules.bw_brand) --
+
+    def pen_points(self, cam, el: Element) -> tuple[np.ndarray, tuple[int, int, int]]:
+        """The screen line the hand draws for an element, and its marker colour."""
+        if el.kind == "highlight":
+            step = cam.step()
+            parts = [p for p in (cam.xy(p.at(step)[0]) for p in el.feature.parts) if len(p) > 1]
+            if not parts:
+                return np.zeros((0, 2)), bw_brand.RED
+            big = max(parts, key=len)
+            return (big, bw_brand.RIVER) if el.feature.is_line else (np.vstack([big, big[:1]]), bw_brand.RED)
+        if el.kind in ("arrow", "line"):
+            p0, p1 = cam.pt(*el.feature.label_point()), cam.pt(*el.feature_to.label_point())
+            pts = curve(p0, p1) if el.kind == "arrow" else [(p0[0] + (p1[0] - p0[0]) * k / 20, p0[1] + (p1[1] - p0[1]) * k / 20)
+                                                             for k in range(21)]
+            return np.array(pts, dtype=float), bw_brand.RED
+        x0, y0, x1, y1 = el.feature.bbox()  # a sketch: the hand-drawn egg over the place
+        (ax, ay), (bx, by) = cam.pt(x0, y1), cam.pt(x1, y0)
+        pts = self.egg((ax + bx) / 2, (ay + by) / 2, (bx - ax) * 0.42, (by - ay) * 0.42, corner=el.opts.get("corner", True))
+        return np.array(pts, dtype=float), FIXED["white"]
+
+    def pen_time(self, i: int, at: float, line) -> tuple[float, float]:
+        """When the hand starts a scene's line and how long it takes: by the line's length on screen, within the scene."""
+        if i not in self._pen_time:
+            scene = self.spec.scenes[i]
+            dur = min(2.0, max(0.8, bw_brand.length(line(self.camera(i, at))) / 1100))
+            self._pen_time[i] = (at, min(dur, max(0.6, scene.end - 0.4 - at)))
+        return self._pen_time[i]
+
+    def pen_line(self, ov: Image.Image, d, cam, i: int, el: Element, t: float) -> None:
+        """The scene's main line drawn in marker by the hand, then its label."""
+        scene = self.spec.scenes[i]
+        pts, rgb = self.pen_points(cam, el)
+        if len(pts) < 2:
+            self.element(ov, d, cam, el, t, scene)
+            return
+        at, dur = self.pen_time(i, el.at, lambda c: self.pen_points(c, el)[0])
+        u = (t - at) / dur
+        head = tuple(pts[0])
+        if u > 0:
+            drawn, head = bw_brand.prefix(pts, u)
+            bw_brand.marker(ov, drawn, rgb)
+        if u >= 1:
+            if el.kind == "highlight":  # the smaller parts (islands, river arms) appear once the main one is drawn
+                step = cam.step()
+                rest = [q for q in (cam.xy(p.at(step)[0]) for p in el.feature.parts) if len(q) > 1]
+                rest.pop(max(range(len(rest)), key=lambda k: len(rest[k])))
+                for q in rest:
+                    bw_brand.marker(ov, q if el.feature.is_line else np.vstack([q, q[:1]]), rgb, 10)
+            elif el.kind == "arrow":
+                bw_brand.chevron(ov, pts, rgb)
+        a = ramp(t, at + (0 if el.kind == "highlight" else dur))
+        if el.text and a > 0:
+            if el.kind == "highlight":
+                text(ov, cam.pt(*el.feature.label_point()), el.text.upper(), 54, a=a, max_width=W - 80)
+            elif el.kind == "sketch":
+                x0, _, _, y1 = el.feature.bbox()
+                ax, ay = cam.pt(x0, y1)
+                ImageDraw.Draw(ov).text((ax + 10, ay - 30), el.text, font=hand_font(64), fill=(255, 255, 255, int(255 * a)),
+                                        stroke_width=5, stroke_fill=(0, 0, 0, int(255 * a)), anchor="ls")
+            else:
+                mx, my = pts[len(pts) // 2]
+                text(ov, (mx, my - 50), el.text.upper(), 46, fill=rgb, a=a, max_width=W - 80)
+        self._hand = bw_brand.hand_at(t, at, at + dur, head, tuple(pts[0]), max(0.15, min(0.35, at - scene.start))) or self._hand
 
     def tiny(self, cam, feat: bw_geo.Feature) -> bool:
         if not feat.parts:
@@ -965,7 +1050,7 @@ class FxRenderer(Renderer):
         if self.tiny(cam, main):
             self.target(ov, cam.pt(*main.label_point()), t, at, "" if scene.headline else main.name)
         elif not any(el.kind == "highlight" for el in scene.elements):
-            self.trace(ov, cam, main, t, at)
+            self.trace(ov, cam, main, t, at, i)
 
     def target(self, ov: Image.Image, xy: tuple[float, float], t: float, at: float, name: str = "") -> None:
         """Ripples, a ring and a bouncing arrow on a place."""
@@ -989,8 +1074,13 @@ class FxRenderer(Renderer):
         if name:
             text(ov, (x, y + 78), name.upper(), 44, a=ramp(t, at + 0.3), max_width=W - 80)
 
-    def trace(self, ov: Image.Image, cam, feat: bw_geo.Feature, t: float, at: float) -> None:
-        """The place's border drawn in gold, then a spark that keeps running round it."""
+    def trace(self, ov: Image.Image, cam, feat: bw_geo.Feature, t: float, at: float, i: int | None = None) -> None:
+        """The place's border drawn in gold, then a spark that keeps running round it (in marker by the hand when
+        the video wears the brand)."""
+        if self.spec.brand and i is not None:
+            el = Element(kind="highlight", at=at, feature=feat)
+            self.pen_line(ov, ImageDraw.Draw(ov), cam, i, el, t)
+            return
         u = (t - at) / 1.4
         if u <= 0:
             return
@@ -1327,7 +1417,7 @@ class FxRenderer(Renderer):
     # -- scenes --
 
     def scene_frame(self, i: int, t: float) -> Image.Image:
-        img = super().scene_frame(i, t)
+        img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         chapter = self.spec.scenes[i].opts.get("chapter")
         if isinstance(chapter, dict) and chapter.get("title"):
             self.banner(img, int(chapter.get("n") or 0), str(chapter["title"]), t - self.spec.scenes[i].start)
@@ -1353,6 +1443,11 @@ class FxRenderer(Renderer):
         if x + width > 0:  # off the left edge: paste only the part on screen
             img.alpha_composite(band.crop((max(0, -x), 0, width, height)), (max(0, x), y))
 
+    def overlay(self, img: Image.Image, t: float) -> None:
+        if self.moods:
+            bw_brand.draw_mascot(img, self.spec, self.moods, self.scene_at, t)
+            bw_brand.draw_bubble(img, self.spec, t)
+
     def map_frame(self, i: int, t: float) -> Image.Image:
         img = self.fx_map_frame(i, t)
         scenes = self.spec.scenes
@@ -1372,3 +1467,5 @@ def _use_layout() -> None:
 
 
 bw_render.LAYOUT_HOOKS.append(_use_layout)
+
+from modules import bw_brand  # noqa: E402 - it draws with this module's helpers

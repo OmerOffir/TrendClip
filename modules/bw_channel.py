@@ -43,6 +43,8 @@ POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bo
 MIN_SECONDS, MAX_SECONDS = 30.0, 90.0
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
 DEFAULT_VOICE = "am_michael"
+PANDA_VOICE = "af_bella"  # the mascot (BW_PANDA_VOICE), pitched up by BW_PANDA_PITCH
+VOICE_RATE = 24000
 
 
 class ChannelError(RuntimeError):
@@ -335,23 +337,81 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
 # --------------------------------------------------------------------------- voice, music, render
 
 
-def record_voice(text: str, out: Path, progress=lambda m: None) -> list[bw_render.Word]:
-    """Kokoro (the hub's GPU voice) when it is installed, else the Edge voice."""
+def brand_on() -> bool:
+    """The signature look (modules.bw_brand: the talking mascot, the marker hand, the whiteboard); BW_BRAND=off drops it."""
+    return setting("BW_BRAND", "on").lower() not in ("off", "0", "no", "false")
+
+
+def record_voice(text: str, out: Path, progress=lambda m: None, who: str = "", unload: bool = True) -> list[bw_render.Word]:
+    """Kokoro (the hub's GPU voice) when it is installed, else the Edge voice. `who`: "" the narrator, "panda" the
+    mascot (its own voice, made higher and quicker by record_script)."""
     from trendclip import kokoro_voice
 
     engine = setting("BW_TTS_ENGINE", "kokoro" if kokoro_voice.available() else "edge").lower()
     if engine == "kokoro":
-        voice = setting("BW_TTS_VOICE", DEFAULT_VOICE)
-        progress(f"Recording the narration (Kokoro {voice})")
+        voice = setting("BW_PANDA_VOICE", PANDA_VOICE) if who else setting("BW_TTS_VOICE", DEFAULT_VOICE)
+        progress(f"Recording the {'mascot' if who else 'narration'} (Kokoro {voice})")
         words = kokoro_voice.synthesize(text, out, voice, float(setting("BW_TTS_SPEED", "1.0")))
-        kokoro_voice.unload()
+        if unload:
+            kokoro_voice.unload()
     else:
         from trendclip import voiceover
 
-        voice = setting("BW_EDGE_VOICE", "en-US-AndrewNeural")
-        progress(f"Recording the narration ({voice})")
+        voice = setting("BW_PANDA_EDGE_VOICE", "en-US-AnaNeural") if who else setting("BW_EDGE_VOICE", "en-US-AndrewNeural")
+        progress(f"Recording the {'mascot' if who else 'narration'} ({voice})")
         words = voiceover.synthesize(text, out, voice, setting("BW_TTS_RATE", "+8%"))
-    return [bw_render.Word(w.text, float(w.start), float(w.end)) for w in words]
+    return [bw_render.Word(w.text, float(w.start), float(w.end), who) for w in words]
+
+
+def _pcm(path: Path, filters: str = "") -> bytes:
+    """An audio file as mono 16-bit samples at VOICE_RATE, through ffmpeg `filters` when given."""
+    import subprocess
+
+    cmd = ["ffmpeg", "-loglevel", "error", "-i", str(path), *(["-af", filters] if filters else []),
+           "-f", "s16le", "-ac", "1", "-ar", str(VOICE_RATE), "-"]
+    return subprocess.run(cmd, capture_output=True, check=True).stdout
+
+
+def record_script(script: dict, out: Path, progress=lambda m: None) -> list[bw_render.Word]:
+    """The narration, with the mascot's lines (a scene's ask / react, modules.bw_brand) in its own voice between the
+    narrator's parts: one MP3 and its timed words, the mascot's marked who="panda"."""
+    import subprocess
+
+    from modules import bw_brand
+
+    parts = bw_brand.dialogue(script)
+    if all(not who for who, _ in parts):
+        return record_voice(script["narration"], out, progress)
+    pitch = float(setting("BW_PANDA_PITCH", "1.22"))
+    speed = float(setting("BW_PANDA_SPEED", "1.08"))
+    gap = b"\0\0" * int(VOICE_RATE * bw_brand.PANDA_GAP)
+    pcm = bytearray()
+    words: list[bw_render.Word] = []
+    try:
+        for k, (who, text) in enumerate(parts):
+            tmp = out.with_name(f"{out.stem}.part{k}.mp3")
+            got = record_voice(text, tmp, progress, who=who, unload=False)
+            # the mascot's voice: pitched up by `pitch` (which also quickens it by `pitch`), then retimed to `speed`
+            raw = _pcm(tmp, f"asetrate={VOICE_RATE * pitch:.0f},aresample={VOICE_RATE},atempo={speed / pitch:.4f}" if who else "")
+            if who and pcm:
+                pcm += gap
+            scale = 1 / speed if who else 1.0
+            offset = len(pcm) / 2 / VOICE_RATE
+            words += [bw_render.Word(w.text, round(offset + w.start * scale, 3), round(offset + w.end * scale, 3), who) for w in got]
+            pcm += raw
+            if who:
+                pcm += gap
+            tmp.unlink(missing_ok=True)
+            tmp.with_suffix(".words.json").unlink(missing_ok=True)
+    finally:
+        from trendclip import kokoro_voice
+
+        kokoro_voice.unload()
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "s16le", "-ac", "1", "-ar", str(VOICE_RATE), "-i", "-",
+                    "-c:a", "libmp3lame", "-b:a", "160k", str(out)], input=bytes(pcm), check=True)
+    out.with_suffix(".words.json").write_text(json.dumps(
+        [{"word": w.text, "start": w.start, "end": w.end, **({"who": w.who} if w.who else {})} for w in words], indent=1), encoding="utf-8")
+    return words
 
 
 def pick_music(settings, progress=lambda m: None):
@@ -395,9 +455,13 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
         origin = script.pop("origin", "given")
     script.setdefault("seed", random.randrange(1, 10_000))
     script.setdefault("look", setting("BW_LOOK", "satellite"))
+    script.setdefault("brand", brand_on())
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.1, "Recording the narration")
-    words = (voice or record_voice)(script["narration"], work / "voice.mp3", lambda m: progress(0.1, m))
+    if voice:
+        words = voice(script["narration"], work / "voice.mp3", lambda m: progress(0.1, m))
+    else:
+        words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m))
     spec = bw_render.spec_from_dict(script, words)
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):

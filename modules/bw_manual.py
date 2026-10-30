@@ -44,12 +44,17 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
        {"kind": "icon", "icon": "money_bag", "cue": "paid"}]},
     {"kind": "card", "narration": "Next sentence.", "kicker": "Treaty of Paris", "title": "1783",
      "subtitle": "one short line", "elements": [
-       {"kind": "pole", "flag": "Flag of Great Britain (1707–1800).svg", "cue": "British"}]}
+       {"kind": "pole", "flag": "Flag of the United Kingdom.svg", "cue": "British"}]},
+    {"kind": "board", "narration": "A sentence that answers the mascot.", "ask": "Wait, so how did they get it?",
+     "board_write": ["The 1783 deal", "Britain keeps Canada"], "board_draw": ["Minnesota", "Northwest Angle"]},
+    {"kind": "map", "narration": "The last sentence.", "focus": ["Northwest Angle"], "react": "So it's American... but you drive through Canada?",
+     "elements": [{"kind": "highlight", "place": "Northwest Angle", "color": "gold", "cue": "Angle"}]}
   ],
   "claims": [{"claim": "One fact the narration states.", "source_id": 1, "quote": "the exact words copied from source 1"}],
   "description": "2-3 sentences for the YouTube description.",
   "hashtags": ["geography", "borders", "history"]
 }
+Scene kinds: map | card | board. Board fields: board_write, board_draw. The mascot: ask, react (any scene).
 Element fields: kind (highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole |
 route), place, to (line / arrow: where it ends), value (parallel / meridian: the degrees), text (a short label),
 color (a | b | c | gold | red | white), cue, flag, icon, points. Leave out the fields an element doesn't use."""

@@ -191,6 +191,30 @@ def test_check_catches_quotes_length_places_and_hype(world):
     assert any("words (wanted" in p for p in bw_script.check(short, _research(), _find(world)))
 
 
+def test_check_takes_boards_and_the_mascot_lines(world):
+    draft = _draft()
+    draft.scenes[1] = bw_script.SceneDraft(kind="board", narration="In 1783 a treaty used an old map.", ask="Wait, how did that happen?",
+                                           board_write=["The 1783 map", "A lake shaped like an egg"], board_draw=["Minnesota"])
+    draft.scenes[4].react = "So a bad map made the notch?"
+    assert bw_script.check(draft, _research(), _find(world)) == []
+    script = bw_script.to_spec_dict(draft)
+    assert script["scenes"][1]["board"] == {"write": ["The 1783 map", "A lake shaped like an egg"], "draw": ["Minnesota"]}
+    assert script["scenes"][1]["ask"] == "Wait, how did that happen?" and "board_write" not in script["scenes"][1]
+
+
+def test_check_catches_bad_boards_and_mascot_lines(world):
+    draft = _draft()
+    draft.scenes[0].ask = "Why?"
+    draft.scenes[1] = bw_script.SceneDraft(kind="board", narration="In 1783 a treaty used an old map.", ask="This is not a question",
+                                           board_draw=["Atlantis"])
+    draft.scenes[2].react = "Subscribe for more maps like this one, friends!"
+    problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "first scene can't have an ask" in problems
+    assert "must be a question" in problems
+    assert "no board_write" in problems and "Atlantis" in problems
+    assert "banned phrases in the mascot's react" in problems
+
+
 def test_quote_found_ignores_case_and_punctuation_but_not_changes():
     source = bw_script.Source(1, "u", "t", "The Angle covers about 123 square miles, and Britain offered to buy it.")
     assert bw_script.quote_found("the angle covers about 123 square miles and Britain offered", source)
