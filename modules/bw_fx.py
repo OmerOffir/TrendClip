@@ -62,7 +62,9 @@ SLOTS = {  # per layout (modules.bw_render.LAYOUTS)
                       pole={"map": ((170, 830), (1660, 830), (430, 830)), "card": ((230, 840), (1600, 840), (430, 840))}),
 }
 ICON_SLOTS, POLE_SLOTS = SLOTS["portrait"]["icon"], SLOTS["portrait"]["pole"]
-BRAND_POLES = ((400, 1270), (640, 1270), (860, 1270))
+# with the mascot on (modules.bw_brand) it stands bottom left, where the first pole would: the poles move along
+BRAND_POLES = {"portrait": {"map": ((400, 1270), (640, 1270), (860, 1270))},
+               "landscape": {"map": ((1660, 830), (430, 830), (1400, 830)), "card": ((1600, 840), (430, 840), (1360, 840))}}
 # A portrait card's free poles and icons stand in one row on the empty paper above the kicker (CARD_Y 720): icons
 # centered on icon_y, pole feet on pole_y, at most `step` apart. The card slots above put them on the subtitle
 # (the 2026-10-30 treaty card: two flags and a handshake over "Germany swaps Zanzibar with Britain"). A landscape
@@ -689,8 +691,8 @@ def dress(spec) -> list[str]:
                 row.append(el)
             elif el.kind == "pole" and free:
                 slots = POLE_SLOTS.get(scene.kind, POLE_SLOTS["card"])
-                if spec.brand and bw_render.LAYOUT == "portrait" and scene.kind == "map":
-                    slots = BRAND_POLES  # the mascot stands where the first pole would
+                if spec.brand:
+                    slots = BRAND_POLES[bw_render.LAYOUT].get(scene.kind, slots)
                 el.opts["x"], el.opts["y"] = slots[poles % len(slots)]
                 poles += 1
             keep.append(el)
@@ -771,6 +773,8 @@ class FxRenderer(Renderer):
         self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)
                      if spec.brand and s.kind == "map" and not s.opts.get("globe")}
         self._pen_time: dict[int, tuple[float, float]] = {}
+        self.ends: dict[int, Any] = {}  # the outro's end card, built on its first frame
+        self.photos: dict[int, Any] = {}  # photo scenes (modules.bw_photos), built on their first frame
         self._hand: tuple[float, float] | None = None
 
     # -- cameras --
@@ -1417,7 +1421,18 @@ class FxRenderer(Renderer):
     # -- scenes --
 
     def scene_frame(self, i: int, t: float) -> Image.Image:
-        img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
+        scene = self.spec.scenes[i]
+        if scene.kind == "end":
+            if i not in self.ends:
+                prev = max(0, i - 1)
+                self.ends[i] = bw_brand.EndCard(scene, self.scene_frame(prev, self.spec.scenes[prev].end - 0.05))
+            return self.ends[i].frame(t)
+        if scene.kind == "photo" and scene.opts.get("_photo"):
+            if i not in self.photos:
+                self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]))
+            img = self.photos[i].frame(t)
+        else:
+            img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         chapter = self.spec.scenes[i].opts.get("chapter")
         if isinstance(chapter, dict) and chapter.get("title"):
             self.banner(img, int(chapter.get("n") or 0), str(chapter["title"]), t - self.spec.scenes[i].start)
@@ -1468,4 +1483,4 @@ def _use_layout() -> None:
 
 bw_render.LAYOUT_HOOKS.append(_use_layout)
 
-from modules import bw_brand  # noqa: E402 - it draws with this module's helpers
+from modules import bw_brand, bw_photos  # noqa: E402 - it draws with this module's helpers

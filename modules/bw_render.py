@@ -142,12 +142,13 @@ class Spec:
     look: str = "flat"  # flat | satellite (modules.bw_fx)
     brand: bool = False  # the mascot and the marker hand (modules.bw_brand); needs the satellite look
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
+    hold: float = 0.0  # extra seconds at the end (the outro's end card, modules.bw_brand)
 
     @property
     def duration(self) -> float:
         ends = [self.words[-1].end] if self.words else []
         ends += [line[-1].end for line in self.lines if line]
-        return max(ends, default=0.0) + TAIL
+        return max(ends, default=0.0) + TAIL + self.hold
 
     def line_at(self, t: float, before: float = 0.05, after: float = 0.35) -> list[Word] | None:
         """The mascot's line being said at `t` (with a moment after it, while its bubble is still up)."""
@@ -230,6 +231,10 @@ def align(spec: Spec) -> None:
         first.setdefault(scene_i, total * k / n_script)
     starts = [first.get(i, 0.0) for i in range(len(spec.scenes))]
     starts[0] = 0.0
+    for i, scene in enumerate(spec.scenes):
+        if scene.kind == "end" and spec.words:  # the outro: with the mascot's last line (its subscribe line)
+            last = spec.lines[-1][0].start - 0.2 if spec.lines else 0.0
+            starts[i] = max(spec.words[-1].end + 0.3, last)
     for i in range(1, len(starts)):
         starts[i] = max(starts[i], starts[i - 1] + 0.5)
     for i, scene in enumerate(spec.scenes):
@@ -696,7 +701,7 @@ class Renderer:
         group = None
         for k, g in enumerate(self.groups):
             start = words[g[0]].start
-            stop = words[self.groups[k + 1][0]].start if k + 1 < len(self.groups) else self.spec.duration
+            stop = words[self.groups[k + 1][0]].start if k + 1 < len(self.groups) else words[g[-1]].end + 0.8
             if start <= t < stop:
                 group = g
         if not group:
@@ -743,8 +748,26 @@ class Renderer:
 # --------------------------------------------------------------------------- the video
 
 
+def fetch_photos(spec: Spec, find=None) -> None:
+    """Each photo scene's picture (modules.bw_photos) in opts["_photo"]; a scene whose picture can't be found becomes
+    a map of its focus, or a card with its caption."""
+    if find is None:
+        from modules.bw_photos import find
+    for scene in spec.scenes:
+        if scene.kind != "photo" or scene.opts.get("_photo"):
+            continue
+        photo = find(str(scene.opts.get("photo") or scene.opts.get("caption") or ""))
+        if photo is not None:
+            scene.opts["_photo"] = photo
+        elif scene.focus:
+            scene.kind = "map"
+        else:
+            scene.kind, scene.title = "card", scene.title or str(scene.opts.get("caption") or scene.opts.get("photo") or "")
+
+
 def prepare(spec: Spec) -> list[str]:
-    """Resolve the places, time the scenes and pick the cameras; the missing places (empty = ready)."""
+    """Fetch the photos, resolve the places, time the scenes and pick the cameras; the missing places (empty = ready)."""
+    fetch_photos(spec)
     missing = resolve(spec)
     align(spec)
     plan_views(spec)
@@ -795,7 +818,7 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     if music is not None and music.is_file():
         cmd += ["-stream_loop", "-1", "-i", str(music), "-filter_complex",
                 f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - 1.5):.2f}:d=1.5[m];"
-                "[1:a][m]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
+                "[1:a]apad[v];[v][m]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
     else:
         cmd += ["-map", "0:v", "-map", "1:a"]
     cmd += ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{spec.duration:.2f}", "-movflags", "+faststart", str(out)]
@@ -823,10 +846,11 @@ def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
     seed = int(data.get("seed") or 0)
     theme = data.get("theme") or random.Random(seed).choice(sorted(THEMES))
     lines: list[list[Word]] = []
-    for k, w in enumerate(words):  # the mascot's words, one list per line it says
+    for k, w in enumerate(words):  # the mascot's words, one list per line it says (two lines in a row have a pause)
         if w.who:
-            if k == 0 or words[k - 1].who != w.who:
+            if k == 0 or words[k - 1].who != w.who or w.start - words[k - 1].end > 0.45:
                 lines.append([])
             lines[-1].append(w)
     return Spec(scenes, [w for w in words if not w.who], cover=data.get("cover_text", ""), theme=theme, seed=seed,
-                look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines)
+                look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines,
+                hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0))

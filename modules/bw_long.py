@@ -35,13 +35,14 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, ValidationError
 
-from modules import bw_channel, bw_fx, bw_render, bw_script, bw_topics
+from modules import bw_brand, bw_channel, bw_fx, bw_render, bw_script, bw_topics
 from modules.bw_script import ClaimDraft, Draft, Limits, Research, SceneDraft, ScriptError, Source
 
 logger = logging.getLogger(__name__)
 
 CHAPTERS = (5, 8)
-CHAPTER = Limits(min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1)
+CHAPTER = Limits(min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1,
+                 max_photos=5)
 TOTAL_WORDS = (1100, 2400)  # about 8-16 minutes with the narrator
 WORDS_PER_SECOND = 2.6  # the preview's guess of the voice's pace
 MORE_ARTICLES = 4  # more Wikipedia articles read at the start
@@ -150,7 +151,8 @@ ANSWER FORMAT
 {{"scenes": [{{"kind": "map", "narration": "...", "focus": ["..."], "headline": "", "elements": [
     {{"kind": "highlight", "place": "...", "color": "a", "cue": "..."}}]}},
   {{"kind": "card", "narration": "...", "kicker": "...", "title": "...", "subtitle": "...", "elements": []}},
-  {{"kind": "board", "narration": "...", "ask": "...?", "board_write": ["...", "..."], "board_draw": ["..."]}}],
+  {{"kind": "board", "narration": "...", "ask": "...?", "board_write": ["...", "..."], "board_draw": ["..."]}},
+  {{"kind": "photo", "narration": "...", "photo": "Benjamin Franklin", "caption": "Benjamin Franklin"}}],
  "claims": [{{"claim": "...", "source_id": 1, "quote": "..."}}]}}
 Element fields: kind, place, to, value, text, color, cue, flag, icon, points (leave out what an element doesn't use).""" + JSON_TAIL + """
 
@@ -451,8 +453,9 @@ def chapter_prompt(res: Research, outline: dict[str, Any], chapters: list[dict[s
     first, last = i == 0, i == len(outline["chapters"]) - 1
     opening = ("This is the video's hook: start straight away with the most surprising fact or the question itself, then "
                "say why it is stranger than it looks; end on the promise of the story." if first else
-               "This is the last chapter: give the clear, full answer, then what the place is like today; end on one "
-               "memorable last line." if last else
+               "This is the last chapter: give the clear, full answer, then what the place is like today; the last "
+               "scene is a closing line that ties the whole story back to the video's question in a few memorable words "
+               "(\"And that's how one bad map left a piece of Minnesota stuck in Canada.\"), never a new fact." if last else
                "Open on this chapter's own question; tell its step of the story in time order; end on what makes the "
                "viewer want the next chapter.")
     return CHAPTER_PROMPT.format(
@@ -461,7 +464,8 @@ def chapter_prompt(res: Research, outline: dict[str, Any], chapters: list[dict[s
         beats="; ".join(plan["beats"]), opening=opening, min_words=CHAPTER.min_words, max_words=CHAPTER.max_words,
         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=CHAPTER.min_scenes, max_scenes=CHAPTER.max_scenes,
         max_cards=CHAPTER.max_cards, icons=", ".join(bw_fx.icon_names()), icon_count="3-6 in this chapter",
-        stamp_count="one in the whole video", mascot_lines="1-3 asks in this chapter (a react only after the last chapter's last scene)", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
+        stamp_count="one in the whole video", mascot_lines="1-3 asks in this chapter (a react only after the last chapter's last scene)",
+        photo_count="2-4 in this chapter", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
 
 
 def prompt(state: dict[str, Any], res: Research) -> tuple[str, str]:
@@ -594,6 +598,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
     try:
         script = full_script(sid, out_dir)
         script.setdefault("brand", bw_channel.brand_on())
+        script = bw_brand.add_outro(script, long=True)
         _save(f, "script.json", script)
         progress(0.02, "Recording the narration")
         words = bw_channel.record_script(script, f / "voice.mp3", lambda m: progress(None, m))
@@ -617,7 +622,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
         thumbnail(spec, f / "thumbnail.jpg")
         times = chapter_times(spec)
         info = {"id": sid, "title": script["title"], "question": script.get("question", ""), "article": script.get("article", ""),
-                "description": description(script, times), "chapters": [[round(t, 2), title] for t, title in times],
+                "description": bw_channel.with_credits(description(script, times), spec), "chapters": [[round(t, 2), title] for t, title in times],
                 "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:8],
                 "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
                 "words": bw_script.words(script["narration"]), "music": {"title": track.title} if track else None,

@@ -365,7 +365,7 @@ def test_make_records_the_video(settings, tmp_path, world):
     assert rendered and rendered[0].scenes[0].view is not None
     saved = bw_channel.load_info(job.key, tmp_path)
     assert saved["title"] == SCRIPT["title"] and saved["check"] == []
-    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0)
+    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 + 1.2)  # + the outro's end card
     assert (tmp_path / job.key / "script.json").is_file()
     assert bw_channel.videos(tmp_path)[0]["key"] == job.key
     assert "Northwest Angle" in bw_topics.load(tmp_path).used  # the script's topic is never made again
@@ -1101,3 +1101,13 @@ def test_a_cards_flags_and_icons_stand_in_a_row_above_its_text(world, fx_offline
     fx_offline.FxRenderer(spec)
     one = next(e for e in spec.scenes[1].elements if e.kind == "icon")
     assert (one.opts["x"], one.opts["y"], one.opts["size"]) == (bw_render.W // 2, 500, 250)
+
+
+def test_check_finds_the_photos(world):
+    draft = _draft()
+    draft.scenes[1] = bw_script.SceneDraft(kind="photo", narration="In 1783 a treaty used an old map.", photo="Mitchell Map",
+                                           caption="The Mitchell Map")
+    ok = bw_script.check(draft, _research(), _find(world), photo_find=lambda q: object())
+    assert ok == []
+    bad = " | ".join(bw_script.check(draft, _research(), _find(world), photo_find=lambda q: None))
+    assert "no picture found for 'Mitchell Map'" in bad

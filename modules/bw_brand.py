@@ -1,13 +1,15 @@
 """Borderline Why's signature look, drawn on top of modules.bw_fx when a script asks for it (brand: true):
 
 - the mascot: the owner's red-panda explorer (stickers/borderlinewhy/explorer_*.gif) stands in a corner of every
-  frame, bottom left on a Short (YouTube's buttons cover the right) and bottom right on a long video; it searches the
+  frame, bottom left (it looks to the right, into the picture; on a Short YouTube's buttons cover the right too); it searches the
   map at the start, thinks while the story asks, lights up with its pen when the answer comes and cheers the answer to
   its own question (scene option mascot: searching | thinking | discovery | celebration);
 - the mascot talks: a scene's "ask" is a short line it says in its own voice before the scene (the narrator's
   narration then answers it) and "react" one it says after; its words fill a speech bubble instead of the captions;
 - the marker hand: the owner's hand GIF draws each map scene's main line (a highlighted border or river, an arrow, a
   treaty line, a sketch, or the traced place) in marker, its pen on the line's tip, then leaves;
+- the outro: an "end" scene added after the story (add_outro): the mascot asks the viewer to subscribe in its own
+  voice while the hand clicks a Subscribe button on an end card (held longer on a long video, for YouTube's end screen);
 - the whiteboard: a scene of kind "board" where the hand writes a title and a few lines and sketches places' real
   outlines, circling the last one (scene option board: {write: [...], draw: [...], circle: true, underline: true}).
 
@@ -197,7 +199,9 @@ def moods(scenes: list[Scene]) -> list[str]:
     for i, s in enumerate(scenes):
         mood = s.opts.get("mascot")
         if mood not in MASCOT or mood == "speaking":
-            if i == 0:
+            if s.kind == "end":
+                mood = "celebration"
+            elif i == 0:
                 mood = "searching"
             elif i == last_ask:  # the answer to its last question: the payoff
                 mood = "celebration"
@@ -207,6 +211,25 @@ def moods(scenes: list[Scene]) -> list[str]:
                 mood = "discovery"
         out.append(mood)
     return out
+
+
+OUTROS = (  # the mascot's last line, picked by the script's seed
+    "Subscribe, and I'll find you another weird border!",
+    "Hit subscribe for more borders that make no sense!",
+    "Subscribe! There are way more weird borders out there.",
+    "Subscribe, and let's find the next strange border together!",
+)
+END_HOLD = {"short": 1.2, "long": 9.0}  # seconds the end card stays after the line (a long video's end screen needs 5-20 s)
+
+
+def add_outro(script: dict, long: bool = False) -> dict:
+    """The script with its outro scene (once; only with the brand on)."""
+    scenes = script.get("scenes") or []
+    if not script.get("brand") or any(sc.get("kind") == "end" for sc in scenes):
+        return script
+    line = OUTROS[int(script.get("seed") or 0) % len(OUTROS)]
+    end = {"kind": "end", "narration": "", "react": line, "hold": END_HOLD["long" if long else "short"]}
+    return {**script, "scenes": [*scenes, end]}
 
 
 def dialogue(script: dict) -> list[tuple[str, str]]:
@@ -246,7 +269,7 @@ def mascot_mood(spec: bw_render.Spec, mood_of: list[str], i: int, t: float) -> t
 def mascot_spot() -> tuple[float, float]:
     """Where the mascot stands: its centre x and its feet."""
     portrait = bw_render.LAYOUT == "portrait"
-    return (165 if portrait else bw_render.W - 175), bw_render.CAPTION_Y - (70 if portrait else 62)
+    return (165 if portrait else 175), bw_render.CAPTION_Y - (70 if portrait else 62)
 
 
 def wrap(words: list[str], f, width: float) -> list[list[int]]:
@@ -290,16 +313,18 @@ def draw_bubble(img: Image.Image, spec: bw_render.Spec, t: float) -> None:
         ds.polygon([(12 + 90, 12 + bh - 4), (12 + 150, 12 + bh - 4), tip], fill=255)
         at = (cx - 70, head - 6)
     else:  # beside it, low in the caption band (the captions are off while it talks), so a board's writing stays clear
-        mid = 12 + bh / 2
-        tip = (12 + bw + tail, mid + 14)
-        ds.polygon([(12 + bw - 4, mid - 28), (12 + bw - 4, mid + 28), tip], fill=255)
-        at = (cx - 92, head + 95)
+        mid = 12 + bh / 2  # the box sits right of the tail, which points left at the mascot
+        ds.rectangle([0, 0, shape.width, shape.height], fill=0)
+        ds.rounded_rectangle([12 + tail, 12, 12 + tail + bw, 12 + bh], radius=42, fill=255)
+        tip = (12, mid + 14)
+        ds.polygon([(12 + tail + 4, mid - 28), (12 + tail + 4, mid + 28), tip], fill=255)
+        at = (cx + 92, head + 95)
     layer = Image.new("RGBA", shape.size, (20, 22, 30, 0))
     layer.putalpha(shape.filter(ImageFilter.MaxFilter(11)))  # the ink outline
     layer.paste(Image.new("RGBA", shape.size, (255, 255, 255, 255)), (0, 0), shape)
     d = ImageDraw.Draw(layer)
     for r, row in enumerate(rows):
-        x = 12 + pad_x
+        x = 12 + pad_x + (0 if portrait else tail)
         y = 12 + pad_y + r * lead + lead // 2
         for j in row:
             w = line[j]
@@ -338,6 +363,92 @@ def draw_mascot(img: Image.Image, spec: bw_render.Spec, mood_of: list[str], scen
     ImageDraw.Draw(sh).ellipse([20, 20, sh.width - 21, 53], fill=(0, 0, 0, int(120 * (1 - 0.4 * hop))))
     img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(7)), (int(cx - sh.width / 2), int(feet - 38)))
     img.alpha_composite(im, (x, y))
+
+
+# --------------------------------------------------------------------------- the end card
+
+
+class EndCard:
+    """The outro: the last picture blurred and dimmed, the channel's name, and a Subscribe button the marker hand
+    clicks (it turns into Subscribed with a ringing bell). A long video keeps the right half free for YouTube's end
+    screen."""
+
+    def __init__(self, scene: Scene, background: Image.Image, name: str = "BORDERLINE WHY", handle: str = "@BorderlineWhy"):
+        self.scene, self.name, self.handle = scene, name, handle
+        bg = background.convert("RGB").filter(ImageFilter.GaussianBlur(18))
+        self.bg = Image.blend(bg, Image.new("RGB", bg.size, (8, 10, 16)), 0.55).convert("RGBA")
+        portrait = bw_render.LAYOUT == "portrait"
+        W, H = bw_render.W, bw_render.H
+        self.cx = W / 2 if portrait else W * 0.3
+        self.logo_y = H * 0.16 if portrait else H * 0.2  # high: the mascot's bubble rises from the bottom left
+        self.button = (self.cx, H * 0.31 if portrait else H * 0.42)
+
+    def frame(self, t: float) -> Image.Image:
+        img = self.bg.copy()
+        age = t - self.scene.start
+        portrait = bw_render.LAYOUT == "portrait"
+        d = ImageDraw.Draw(img)
+        u = bw_fx.backout(age / 0.5)
+        if u > 0:
+            px = 150 if portrait else 128
+            while bw_render.font(px).getlength(self.name) > (bw_render.W - 100 if portrait else bw_render.W * 0.55) and px > 60:
+                px -= 6
+            f = bw_render.font(px)
+            y = self.logo_y - 60 * (1 - u)
+            d.text((self.cx, y), self.name, font=f, fill=(255, 255, 255, int(255 * min(1, u))), stroke_width=10,
+                   stroke_fill=(0, 0, 0), anchor="mm")
+            h = bw_fx.hand_font(70 if portrait else 60)
+            d.text((self.cx, y + (115 if portrait else 100)), self.handle, font=h, fill=(255, 214, 80, int(255 * min(1, u))), anchor="mm")
+        press, done = 1.75, 1.85
+        pop = bw_fx.backout((age - 0.5) / 0.45)
+        if pop > 0:
+            subscribed = age >= done
+            squash = 0.93 if press <= age < done + 0.08 else 1.0
+            self.draw_button(img, pop * squash, subscribed, age - done)
+        bx, by = self.button
+        tip_at = (bx - 40, by + 18)
+        enter, leave = 1.05, 2.35
+        start = (bw_render.W * 0.92, bw_render.H + 60)
+        if enter <= age < leave + 0.5:
+            if age < press:
+                v = ease((age - enter) / (press - enter))
+                tip = (start[0] + (tip_at[0] - start[0]) * v, start[1] + (tip_at[1] - start[1]) * v)
+            elif age < leave:
+                tip = (tip_at[0], tip_at[1] + (10 if age < done + 0.1 else 0))
+            else:
+                v = ease((age - leave) / 0.5)
+                tip = (tip_at[0] + (start[0] - tip_at[0]) * v, tip_at[1] + (start[1] - tip_at[1]) * v)
+            draw_hand(img, tip, t)
+        return img
+
+    def draw_button(self, img: Image.Image, k: float, subscribed: bool, since: float) -> None:
+        portrait = bw_render.LAYOUT == "portrait"
+        f = bw_render.font(76 if portrait else 64)
+        text = "SUBSCRIBED" if subscribed else "SUBSCRIBE"
+        bell = 90 if subscribed else 0
+        w, h = int(f.getlength(text) + 110 + bell), 150 if portrait else 128
+        layer = Image.new("RGBA", (w + 40, h + 40), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        fill = (62, 62, 66, 255) if subscribed else (214, 22, 30, 255)
+        d.rounded_rectangle([20, 20, 20 + w, 20 + h], radius=h // 2, fill=fill)
+        d.text((20 + 55 + (w - 110 - bell) / 2, 20 + h / 2), text, font=f, fill=(255, 255, 255, 255), anchor="mm")
+        if subscribed:  # a bell that rings for a moment
+            bx, by, r = 20 + w - 80, 20 + h / 2, h * 0.24
+            swing = 18 * math.sin(since * 22) * max(0.0, 1 - since / 0.9)
+            bl = Image.new("RGBA", (int(r * 3), int(r * 3)), (0, 0, 0, 0))
+            bd = ImageDraw.Draw(bl)
+            c = r * 1.5
+            bd.pieslice([c - r, c - r * 1.15, c + r, c + r * 0.85], 180, 360, fill=(255, 255, 255, 255))
+            bd.rectangle([c - r, c - r * 0.15, c + r, c + r * 0.55], fill=(255, 255, 255, 255))
+            bd.rectangle([c - r * 1.25, c + r * 0.5, c + r * 1.25, c + r * 0.7], fill=(255, 255, 255, 255))
+            bd.ellipse([c - r * 0.25, c + r * 0.7, c + r * 0.25, c + r * 1.1], fill=(255, 255, 255, 255))
+            bl = bl.rotate(swing, resample=Image.BICUBIC, center=(c, c - r))
+            layer.alpha_composite(bl, (int(bx - c), int(by - c)))
+        if abs(k - 1) > 0.01:
+            layer = layer.resize((max(1, int(layer.width * k)), max(1, int(layer.height * k))), Image.BILINEAR)
+        x, y = int(self.button[0] - layer.width / 2), int(self.button[1] - layer.height / 2)
+        paste(img, shadow(layer, 12, 0.5), x - 24 + 8, y - 24 + 12)
+        paste(img, layer, x, y)
 
 
 # --------------------------------------------------------------------------- the whiteboard
@@ -403,7 +514,7 @@ class Board:
             if portrait:
                 box = (330, top + 170, W - 110, bw_render.CAPTION_Y - 110 - len(lines) * (line_size + 26))  # right of the mascot
             else:
-                box = (140, top + 140, W / 2 + 60 if lines else W - 420, bw_render.CAPTION_Y - 90)  # clear of the mascot's corner
+                box = (420, top + 140, W / 2 + 60 if lines else W - 140, bw_render.CAPTION_Y - 90)  # clear of the mascot's corner
             self._draw(feats, box, bool(o.get("circle", True)))
         if portrait or not feats:
             y0 = (box[3] + 70) if feats else top + 250

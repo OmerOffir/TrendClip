@@ -50,3 +50,46 @@ def test_wrap_keeps_rows_inside_the_width():
     rows = bw_brand.wrap(words, f, 300)
     assert sum(rows, []) == list(range(len(words)))
     assert all(f.getlength(" ".join(words[j] for j in r)) <= 300 or len(r) == 1 for r in rows)
+
+
+def test_add_outro_once_and_only_with_the_brand():
+    s = {**script(), "seed": 1}
+    out = bw_brand.add_outro(s, long=True)
+    assert out["scenes"][-1]["kind"] == "end" and out["scenes"][-1]["react"] == bw_brand.OUTROS[1]
+    assert out["scenes"][-1]["hold"] == bw_brand.END_HOLD["long"]
+    assert bw_brand.add_outro(out) is out
+    assert bw_brand.add_outro({**s, "brand": False})["scenes"] == s["scenes"]
+    assert bw_brand.dialogue(out)[-1] == ("panda", bw_brand.OUTROS[1])
+
+
+def test_the_end_card_starts_with_the_subscribe_line_and_holds():
+    s = bw_brand.add_outro(script(react="Wow!"))
+    words = [Word("One.", 0, 0.5), Word("Two.", 0.7, 1.1), Word("Three.", 1.3, 1.8), Word("Wow!", 2.1, 2.5, "panda"),
+             Word("Subscribe!", 3.1, 3.6, "panda")]
+    spec = bw_render.spec_from_dict(s, words)
+    assert len(spec.lines) == 2  # the reaction and the subscribe line are two bubbles
+    bw_render.align(spec)
+    assert spec.scenes[-1].start == pytest.approx(2.9)
+    assert spec.duration == pytest.approx(3.6 + bw_render.TAIL + bw_brand.END_HOLD["short"])
+
+
+def test_a_photo_scene_without_a_picture_falls_back():
+    s = {"scenes": [{"narration": "a", "kind": "photo", "photo": "Nobody", "focus": ["Minnesota"]},
+                    {"narration": "b", "kind": "photo", "photo": "Nobody", "caption": "A man"},
+                    {"narration": "c", "kind": "photo", "photo": "Somebody"}]}
+    spec = bw_render.spec_from_dict(s, [])
+    bw_render.fetch_photos(spec, find=lambda q: "pic" if q == "Somebody" else None)
+    assert [sc.kind for sc in spec.scenes] == ["map", "card", "photo"]
+    assert spec.scenes[1].title == "A man" and spec.scenes[2].opts["_photo"] == "pic"
+
+
+def test_photo_credits():
+    from pathlib import Path
+
+    from modules import bw_photos
+
+    p = bw_photos.Photo(Path("x.jpg"), "File:Walleye (Sander vitreus).jpg", "https://commons.wikimedia.org/wiki/File:W.jpg",
+                        "Some One", "CC BY-SA 4.0")
+    text = bw_photos.credits([p, p])
+    assert text.count("Walleye (Sander vitreus) by Some One (CC BY-SA 4.0)") == 1 and text.startswith("Pictures:")
+    assert bw_photos.credits([]) == ""

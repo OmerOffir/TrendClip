@@ -337,6 +337,14 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
 # --------------------------------------------------------------------------- voice, music, render
 
 
+def with_credits(description: str, spec: bw_render.Spec) -> str:
+    """The description with the credits of the Wikimedia pictures the video shows (modules.bw_photos)."""
+    from modules import bw_photos
+
+    credits = bw_photos.credits([s.opts["_photo"] for s in spec.scenes if s.kind == "photo" and s.opts.get("_photo")])
+    return f"{description}\n\n{credits}" if credits else description
+
+
 def brand_on() -> bool:
     """The signature look (modules.bw_brand: the talking mascot, the marker hand, the whiteboard); BW_BRAND=off drops it."""
     return setting("BW_BRAND", "on").lower() not in ("off", "0", "no", "false")
@@ -456,6 +464,9 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     script.setdefault("seed", random.randrange(1, 10_000))
     script.setdefault("look", setting("BW_LOOK", "satellite"))
     script.setdefault("brand", brand_on())
+    from modules import bw_brand
+
+    script = bw_brand.add_outro(script)
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.1, "Recording the narration")
     if voice:
@@ -476,7 +487,7 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
                                  float(setting("BW_MUSIC_VOLUME", "0.10")), lambda f, m: progress(0.2 + 0.75 * (f or 0), m))
     info = {
         "key": job.key, "title": script["title"], "question": script.get("question", ""), "article": script.get("article", ""),
-        "origin": origin, "description": bw_script.description(script, handle()),
+        "origin": origin, "description": with_credits(bw_script.description(script, handle()), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:6],
         "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
         "words": bw_script.words(script["narration"]), "theme": spec.theme, "music": {"title": track.title} if track else None,

@@ -36,6 +36,7 @@ MIN_WORDS, MAX_WORDS = 110, 170  # about 45-70 s with the narrator
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 3
+PHOTO_COUNT = "2-3 in the video, at most 4"
 MASCOT_LINES = "2-3 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
 ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
 CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
@@ -310,7 +311,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card | board")
+    kind: str = Field(description="map | card | board | photo")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -320,6 +321,8 @@ class SceneDraft(BaseModel):
     elements: list[ElementDraft] = Field(default_factory=list)
     board_write: list[str] = Field(default_factory=list, description="board: a 2-5 word title, then up to 3 short lines the hand writes.")
     board_draw: list[str] = Field(default_factory=list, description="board: 0-2 places whose outline the hand sketches; the last is circled.")
+    photo: str = Field("", description="photo: the English Wikipedia article whose main picture to show.")
+    caption: str = Field("", description="photo: 1-5 words written under the picture.")
     ask: str = Field("", description="The mascot's short question, said just before this scene (optional).")
     react: str = Field("", description="The mascot's short reaction, said just after this scene (optional).")
 
@@ -384,6 +387,11 @@ must be the whole narration.
   Heligoland"). "board_draw" (optional): 1-2 places whose real outline the hand sketches, a country or state first,
   then a small place inside it that gets circled (["Namibia", "Caprivi Strip"]). No focus, no elements. Never the
   first scene.
+- photo scenes ({photo_count}) show a real picture: "photo" is the exact title of the English Wikipedia article
+  whose main picture shows what the narration names: a person ("Benjamin Franklin"), a landmark or place
+  ("Victoria Falls", "Angle Inlet"), an old map or object ("Mitchell Map"), an animal ("Walleye"). "caption": 1-5
+  words written under it; "headline" optional; "focus" optional (a map of it is shown if the picture can't be found).
+  People hold on to a face or a real place: use photos for the people, landmarks and objects the story names.
 - The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
@@ -407,7 +415,8 @@ THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
 - Start straight away with the specific question or the surprising fact. No greeting, no "Did you know", no "You won't
   believe", no "Let's dive in".
 - Build curiosity: what makes the situation odd, why the obvious answer is wrong; then a clear, satisfying answer
-  near the end. No filler, no forced suspense, no exaggeration, no call to action, no "subscribe" or "follow".
+  near the end. The last sentence closes the story: it ties back to the opening question in a few memorable words
+  ("And that's how one bad map left a piece of Minnesota stuck in Canada."), never a new fact. No filler, no forced suspense, no exaggeration, no call to action, no "subscribe" or "follow".
 - Simple, natural, spoken English. Short connected sentences (at most {max_sentence} words). Every sentence adds
   information that helps answer the question. Never add a side fact (an older history, a famous name, a trivia
   detail) just because a source mentions it or to cite another source; if the only other source covers side
@@ -564,6 +573,7 @@ class Limits:
     first_map: bool = True  # the first scene is the thumbnail
     max_boards: int = 2
     max_lines: int = 4  # the mascot's asks and reacts
+    max_photos: int = 4
     min_claims: int = 4
     min_cited: int = 2
 
@@ -571,7 +581,13 @@ class Limits:
 SHORT = Limits()
 
 
-def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHORT) -> list[str]:
+def _find_photo(query: str):
+    from modules import bw_photos
+
+    return bw_photos.find(query)
+
+
+def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHORT, photo_find=_find_photo) -> list[str]:
     """Everything wrong with a draft (empty = good to record)."""
     problems: list[str] = []
     text = narration(draft)
@@ -587,8 +603,10 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
     if not limits.min_scenes <= len(draft.scenes) <= limits.max_scenes:
         problems.append(f"{len(draft.scenes)} scenes (wanted {limits.min_scenes}-{limits.max_scenes})")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card", "board") for k in kinds):
-        problems.append("a scene kind is not map, card or board")
+    if any(k not in ("map", "card", "board", "photo") for k in kinds):
+        problems.append("a scene kind is not map, card, board or photo")
+    if kinds.count("photo") > limits.max_photos:
+        problems.append(f"{kinds.count('photo')} photo scenes (at most {limits.max_photos})")
     if kinds.count("board") > limits.max_boards:
         problems.append(f"{kinds.count('board')} board scenes (at most {limits.max_boards})")
     if kinds and kinds[0] == "board":
@@ -615,6 +633,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
             problems.append(f"card scene {i} has no title")
         if s.kind.strip().lower() == "map" and not s.focus and not s.elements:
             problems.append(f"map scene {i} names no place")
+        if s.kind.strip().lower() == "photo" and photo_find is not None:
+            if not s.photo.strip():
+                problems.append(f"photo scene {i} names no Wikipedia article")
+            elif photo_find(s.photo) is None:
+                problems.append(f"photo scene {i}: no picture found for {s.photo!r} (use the exact title of an English "
+                                "Wikipedia article that has a photo or painting)")
         if s.kind.strip().lower() == "board":
             if not [w for w in s.board_write if w.strip()]:
                 problems.append(f"board scene {i} has no board_write")
@@ -671,6 +695,7 @@ def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
     return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video", mascot_lines=MASCOT_LINES,
+                         photo_count=PHOTO_COUNT,
                          min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
                          min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
                          today=today or dt.date.today().isoformat(), sources=sources_block(res))

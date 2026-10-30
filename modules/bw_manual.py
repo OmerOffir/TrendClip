@@ -47,6 +47,7 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
        {"kind": "pole", "flag": "Flag of the United Kingdom.svg", "cue": "British"}]},
     {"kind": "board", "narration": "A sentence that answers the mascot.", "ask": "Wait, so how did they get it?",
      "board_write": ["The 1783 deal", "Britain keeps Canada"], "board_draw": ["Minnesota", "Northwest Angle"]},
+    {"kind": "photo", "narration": "A sentence about a person or a place.", "photo": "Benjamin Franklin", "caption": "Benjamin Franklin"},
     {"kind": "map", "narration": "The last sentence.", "focus": ["Northwest Angle"], "react": "So it's American... but you drive through Canada?",
      "elements": [{"kind": "highlight", "place": "Northwest Angle", "color": "gold", "cue": "Angle"}]}
   ],
@@ -54,7 +55,7 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
   "description": "2-3 sentences for the YouTube description.",
   "hashtags": ["geography", "borders", "history"]
 }
-Scene kinds: map | card | board. Board fields: board_write, board_draw. The mascot: ask, react (any scene).
+Scene kinds: map | card | board | photo. Board fields: board_write, board_draw. Photo fields: photo (a Wikipedia article), caption. The mascot: ask, react (any scene).
 Element fields: kind (highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole |
 route), place, to (line / arrow: where it ends), value (parallel / meridian: the degrees), text (a short label),
 color (a | b | c | gold | red | white), cue, flag, icon, points. Leave out the fields an element doesn't use."""
