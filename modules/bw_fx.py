@@ -531,11 +531,53 @@ def flag_name(name: str) -> str:
     return name
 
 
+# Period flags of countries that still exist, and the flag viewers know them by. On 2026-10-30 the Namibia video
+# flew the black-white-red German Empire flag next to the word "Germany", and the owner read it as the wrong flag:
+# the flag follows the name the narration uses, so "Germany" in 1890 gets today's Germany. States that no longer
+# exist and are named as such (Ottoman Empire, Soviet Union, Prussia, Austria-Hungary) keep their own flag.
+MODERN_FLAGS = {
+    "german empire": "Germany", "german reich": "Germany", "weimar republic": "Germany", "nazi germany": "Germany",
+    "west germany": "Germany", "russian empire": "Russia", "tsardom of russia": "Russia", "british empire": "United Kingdom",
+    "great britain": "United Kingdom", "kingdom of great britain": "United Kingdom", "england": "England",
+    "kingdom of france": "France", "french empire": "France", "first french empire": "France", "second french empire": "France",
+    "french republic": "France", "spanish empire": "Spain", "kingdom of spain": "Spain", "portuguese empire": "Portugal",
+    "kingdom of portugal": "Portugal", "kingdom of italy": "Italy", "empire of japan": "Japan", "japanese empire": "Japan",
+    "qing dynasty": "China", "republic of china (1912–1949)": "China", "kingdom of the netherlands": "Netherlands",
+    "dutch republic": "Netherlands", "kingdom of denmark": "Denmark", "swedish empire": "Sweden", "kingdom of sweden": "Sweden",
+    "kingdom of belgium": "Belgium", "mexican empire": "Mexico", "first mexican empire": "Mexico", "second mexican empire": "Mexico",
+    "empire of brazil": "Brazil", "kingdom of greece": "Greece", "persian empire": "Iran", "qajar iran": "Iran",
+    "ethiopian empire": "Ethiopia", "kingdom of egypt": "Egypt", "kingdom of romania": "Romania", "kingdom of bulgaria": "Bulgaria",
+    "kingdom of serbia": "Serbia", "kingdom of hungary": "Hungary", "kingdom of norway": "Norway", "republic of texas": "Texas",
+}
+
+
+def modern_flag(name: str) -> str:
+    """The flag viewers know for the country the narration names: "Flag of the German Empire.svg" and
+    "Flag of Great Britain (1707–1800).svg" become today's Germany and United Kingdom, "Flag of the United States
+    (1777–1795).svg" today's United States. A flag that is not a period variant of a living country is returned as it is."""
+    full = flag_name(name)
+    if not full:
+        return full
+    stem = re.sub(r"\.(svg|png)$", "", full[len("Flag of "):], flags=re.I).strip()
+    bare = re.sub(r"^the\s+", "", stem, flags=re.I)
+    years = re.search(r"^(.*?)\s*\(\s*[^()]*\d{3,4}[^()]*\)\s*$", bare)  # "United States (1777–1795)"
+    base = years.group(1).strip() if years else bare
+    modern = MODERN_FLAGS.get(base.lower())
+    if modern is None and years is None:
+        return full
+    country = modern or base
+    article = "the " if country.lower().startswith(("united ", "netherlands", "philippines", "bahamas", "gambia", "czech ")) else ""
+    return f"Flag of {article}{country}.svg"
+
+
 def usable_flag(name: str) -> str:
-    """The Commons file that exists for a script's flag ("Flag of the United States.svg" or "United States"), or ""."""
-    tries = [flag_name(name)]
+    """The Commons file that exists for a script's flag ("Flag of the United States.svg" or "United States"), or "".
+    Period flags of today's countries are shown as today's flag (modern_flag)."""
+    tries = [modern_flag(name)]
     if tries[0] and not tries[0].lower().startswith("flag of the "):
         tries.append("Flag of the " + tries[0][8:])
+    if flag_name(name) not in tries:  # a dated flag Commons only has under its dates ("Flag of Prussia (1892–1918).svg")
+        tries.append(flag_name(name))
     for t in tries:
         try:
             flag_image(t)

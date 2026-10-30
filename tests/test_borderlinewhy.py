@@ -1014,3 +1014,33 @@ def test_a_landscape_camera_never_runs_off_the_world_picture(portrait_after):
     (x0, y0), (x1, y1) = cam.lonlat(0, bw_render.H), cam.lonlat(bw_render.W, 0)
     assert -180 <= x0 and x1 <= 180 and -88 <= y0 and y1 <= 88
     assert bw_fx.inside_world(-94.8, 49.3, 400.0) == (-94.8, 49.3, 400.0)  # a close view is left alone
+
+
+def test_flags_follow_the_name_the_narration_uses(monkeypatch):
+    """A period flag of a country that still exists is shown as today's flag (the German Empire's stripes next to
+    "Germany" read as the wrong flag); vanished states named as such keep their own, and a dated flag Commons
+    only has under its dates is still found."""
+    from modules import bw_fx
+
+    assert bw_fx.modern_flag("Flag of the German Empire.svg") == "Flag of Germany.svg"
+    assert bw_fx.modern_flag("German Empire") == "Flag of Germany.svg"
+    assert bw_fx.modern_flag("Flag of Great Britain (1707–1800).svg") == "Flag of the United Kingdom.svg"
+    assert bw_fx.modern_flag("Flag of the United States (1777–1795).svg") == "Flag of the United States.svg"
+    assert bw_fx.modern_flag("Flag of the Russian Empire.svg") == "Flag of Russia.svg"
+    assert bw_fx.modern_flag("Flag of the Netherlands (1795–1806).svg") == "Flag of the Netherlands.svg"
+    for own in ("Flag of the Ottoman Empire.svg", "Flag of the Soviet Union.svg", "Flag of Canada.svg", ""):
+        assert bw_fx.modern_flag(own) == own
+    have = {"Flag of Germany.svg", "Flag of Prussia (1892–1918).svg"}
+
+    def flag(name):
+        if name not in have:
+            raise FileNotFoundError(name)
+        from PIL import Image
+
+        return Image.new("RGB", (4, 2))
+
+    monkeypatch.setattr(bw_fx, "flag_image", flag)
+    assert bw_fx.usable_flag("Flag of the German Empire.svg") == "Flag of Germany.svg"
+    assert bw_fx.usable_flag("Flag of Prussia (1892–1918).svg") == "Flag of Prussia (1892–1918).svg"
+    assert bw_fx.usable_flag("Flag of Atlantis.svg") == ""
+    assert "Flag of Germany.svg" in bw_script.SCENE_RULES and "flag of that time" not in bw_script.SCENE_RULES

@@ -356,10 +356,13 @@ must be the whole narration.
   along it, like car, ship, canoe, horse, train).
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
   flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
-  flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name: today's
-  ("Flag of France.svg", "Flag of the United States.svg", "Flag of the United Kingdom.svg") or, for a scene set in
-  the past, the flag of that time ("Flag of Great Britain (1707–1800).svg", "Flag of the United States (1777–1795).svg",
-  "Flag of the Russian Empire.svg"). Never put a modern country's flag on a story from before it existed.
+  flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name of
+  the flag viewers know for the name the narration uses: "Flag of France.svg", "Flag of the United States.svg",
+  "Flag of the United Kingdom.svg", "Flag of Germany.svg". Today's flag even in a scene set in the past: when the
+  narration says "Germany in 1890" or "Britain in 1780", fly today's Germany and today's United Kingdom, never a
+  period flag of a country that still exists (no "Flag of the German Empire.svg", no "(1707–1800)" versions).
+  Only a state that no longer exists and is named as such in the narration gets its own flag ("Flag of the
+  Ottoman Empire.svg", "Flag of the Soviet Union.svg", "Flag of Prussia (1892–1918).svg").
 - Icons ({icons}): use {icon_count} where they make a sentence easier to picture (money for a sale, a
   ship for a voyage, a cross for a mistake). Never decoration only.
 - Name places exactly as a map or Wikipedia would: countries ("Spain", "United States of America"), states and
