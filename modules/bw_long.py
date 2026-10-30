@@ -680,6 +680,8 @@ def preview(sid: str, i: int, out_dir: Path | None = None) -> Path:
         raise LongError("This chapter has no draft yet")
     script = bw_script.to_spec_dict(as_draft(Chapter.model_validate(c["draft"]), state["outline"]["chapters"][i]["title"]))
     script["scenes"][0]["chapter"] = {"n": i + 1, "title": state["outline"]["chapters"][i]["title"]}
+    if i:  # only the video's first scene opens on the globe
+        script["scenes"][0]["globe"] = False
     script.update(look="satellite", seed=7, cover_text="" if i else state["outline"]["cover_text"])
     t, words = 0.0, []
     for w in " ".join(s["narration"] for s in script["scenes"]).split():

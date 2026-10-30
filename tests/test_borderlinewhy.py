@@ -1003,3 +1003,14 @@ def test_owner_icons_have_short_names(tmp_path, monkeypatch):
     assert bw_fx.icon_code("horse") == "horse"  # the owner's horse, not the Noto one
     extra = [n for n in bw_fx.icon_names() if n not in bw_fx.ICONS]
     assert extra == ["settlers", "king"]  # the short name only, in the prompt's list
+
+
+def test_a_landscape_camera_never_runs_off_the_world_picture(portrait_after):
+    from modules import bw_fx
+
+    bw_render.use_layout("landscape")
+    lon, lat, ppd = bw_fx.inside_world(-100.0, 50.0, 3.0)  # zoomed out on North America
+    cam = bw_render.Cam(lon, lat, ppd)
+    (x0, y0), (x1, y1) = cam.lonlat(0, bw_render.H), cam.lonlat(bw_render.W, 0)
+    assert -180 <= x0 and x1 <= 180 and -88 <= y0 and y1 <= 88
+    assert bw_fx.inside_world(-94.8, 49.3, 400.0) == (-94.8, 49.3, 400.0)  # a close view is left alone

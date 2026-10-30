@@ -593,11 +593,23 @@ def dress(spec) -> list[str]:
             keep.append(el)
         scene.elements = keep
     first = spec.scenes[0] if spec.scenes else None
-    if first is not None and first.kind == "map" and first.view and not any(s.opts.get("globe") for s in spec.scenes):
+    if first is not None and first.kind == "map" and first.view and not any("globe" in s.opts for s in spec.scenes):
         first.opts["globe"] = True
         lon, lat, ppd = first.view
         first.view = (lon, lat, min(ppd, GLOBE_MAX_PPD))
     return dropped
+
+
+def inside_world(lon: float, lat: float, ppd: float) -> tuple[float, float, float]:
+    """A flat camera that stays on the world picture: zoomed in enough that the frame spans at most 150 degrees of
+    longitude (a landscape frame zoomed out on a continent would run past the 180th meridian into black), and moved
+    so the frame's edges stay inside it."""
+    k = max(0.2, math.cos(math.radians(lat)))
+    ppd = max(ppd, (W / 2) / (75 * k), H / 170)
+    half = (W / 2) / (ppd * k)
+    lon = min(max(lon, -180 + half), 180 - half)
+    lat = min(max(lat, -88 + (H - CY) / ppd), 88 - CY / ppd)
+    return lon, lat, ppd
 
 
 def vary_views(scenes: list[Scene]) -> list[tuple[float, float, float] | None]:
@@ -661,7 +673,7 @@ class FxRenderer(Renderer):
         zoom, dx = {"push": (1 + 0.16 * u, 0.0), "pull": (1.16 - 0.16 * u, 0.0),
                     "pan": (1.08, -0.07 + 0.14 * u), "pan_back": (1.08, 0.07 - 0.14 * u)}[motion]
         p = ppd * zoom
-        return lon + dx * W / (p * max(0.2, math.cos(math.radians(lat)))), lat, p
+        return inside_world(lon + dx * W / (p * max(0.2, math.cos(math.radians(lat)))), lat, p)
 
     def camera(self, i: int, t: float) -> Cam:
         scenes = self.spec.scenes
