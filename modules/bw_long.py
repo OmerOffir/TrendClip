@@ -73,6 +73,8 @@ class Outline(BaseModel):
     reject_reason: str = ""
     title: str = ""
     cover_text: str = ""
+    thumb_text: str = ""  # the thumbnail's question in huge letters (2-4 words)
+    thumb_icon: str = ""  # an icon beside the thumbnail's circled place (optional)
     chapters: list[ChapterPlan] = Field(default_factory=list)
     description: str = ""
     hashtags: list[str] = Field(default_factory=list)
@@ -110,12 +112,15 @@ THE STORY
   own small question and ends on what makes the viewer want the next chapter. The last chapter gives the full
   answer and what the place is like today.
 - Never pad: every chapter must have real facts from the sources. Fewer, fuller chapters beat thin ones.
-- title: the YouTube title, the question in under 70 characters. cover_text: 2-5 words for the thumbnail (not the title).
+- title: the YouTube title, the question in under 70 characters. cover_text: 2-5 words for the video's first frame.
+- thumb_text: 2-4 words in huge letters on the thumbnail, a short question or shock that makes people click and is
+  true to the story ("CAN'T DRIVE HERE?", "WHO OWNS THIS?", "A BORDER BY MISTAKE?"); not the title, not the cover_text.
+  thumb_icon (optional): one icon from this list that says the story at a glance, shown beside the place: {icons}.
 - Each chapter: title (2-5 words), question, and beats (3-6 points it covers, each ending with its source ids, e.g. [1][3]).
 - description: 2-3 sentences for YouTube. hashtags: 3-5 without #.
 
 ANSWER FORMAT
-{{"usable": true, "reject_reason": "", "title": "Why ... ?", "cover_text": "...",
+{{"usable": true, "reject_reason": "", "title": "Why ... ?", "cover_text": "...", "thumb_text": "...?", "thumb_icon": "",
   "chapters": [{{"title": "...", "question": "...", "beats": ["... [1]", "... [2][4]"]}}],
   "description": "...", "hashtags": ["geography", "borders", "history"]}}""" + JSON_TAIL + """
 
@@ -362,6 +367,10 @@ def check_outline(o: Outline) -> list[str]:
         problems.append("the title is missing or over 95 characters")
     if not o.cover_text.strip():
         problems.append("there is no cover_text")
+    if len(o.thumb_text.split()) > 5:
+        problems.append("thumb_text is over 5 words (2-4 huge words read at a glance)")
+    if o.thumb_icon.strip() and not bw_fx.icon_code(o.thumb_icon):
+        problems.append(f"unknown thumb_icon {o.thumb_icon!r} (use a name from the icon list or leave it empty)")
     for i, c in enumerate(o.chapters, 1):
         if not c.title.strip() or len(c.title) > 40:
             problems.append(f"chapter {i}'s title is missing or over 40 characters")
@@ -474,7 +483,7 @@ def prompt(state: dict[str, Any], res: Research) -> tuple[str, str]:
     if step == "research":
         return "research", RESEARCH_PROMPT.format(question=res.topic.question, article=res.article)
     if step in ("outline", "rejected"):
-        p = OUTLINE_PROMPT.format(minutes="8-12", question=res.topic.question, min_ch=CHAPTERS[0], max_ch=CHAPTERS[1],
+        p = OUTLINE_PROMPT.format(minutes="8-12", question=res.topic.question, min_ch=CHAPTERS[0], max_ch=CHAPTERS[1], icons=", ".join(bw_fx.icon_names()),
                                   today=datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
         if state.get("problems") and step == "outline":
             p += f"\n\nYour last outline had problems, fix them: {'; '.join(state['problems'])}"
@@ -515,7 +524,8 @@ def full_script(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
     for n, (plan, ch) in enumerate(zip(outline.chapters, chapters), 1):
         script["scenes"][k]["chapter"] = {"n": n, "title": plan.title}
         k += len(ch.scenes)
-    script.update(layout="landscape", look="satellite", origin="long", seed=zlib.crc32(sid.encode()) % 9000 + 1)
+    script.update(layout="landscape", look="satellite", origin="long", seed=zlib.crc32(sid.encode()) % 9000 + 1,
+                  thumb_text=outline.thumb_text.strip(), thumb_icon=outline.thumb_icon.strip())
     return script
 
 
@@ -619,7 +629,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
         bw_render.render(spec, f / "voice.mp3", f / "video.mp4", music_path, float(bw_channel.setting("BW_MUSIC_VOLUME", "0.10")),
                          lambda fr, m: progress(0.1 + 0.85 * (fr or 0), m))
         progress(0.96, "Drawing the thumbnail")
-        thumbnail(spec, f / "thumbnail.jpg")
+        thumbnail(spec, f / "thumbnail.jpg", script.get("thumb_text", ""), script.get("thumb_icon", ""))
         times = chapter_times(spec)
         info = {"id": sid, "title": script["title"], "question": script.get("question", ""), "article": script.get("article", ""),
                 "description": bw_channel.with_credits(description(script, times), spec), "chapters": [[round(t, 2), title] for t, title in times],
@@ -651,15 +661,53 @@ def subject(spec: bw_render.Spec) -> str:
     return ""
 
 
-def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
-    """1280x720, made to be clicked: the subject place close up and glowing gold, a red marker circle round it and an
-    arrow to it from the cover text in big letters, and the mascot (with the brand on) shading its eyes at it."""
+SHORT_NAMES = {"United States of America": "USA", "United Kingdom": "UK", "United Arab Emirates": "UAE",
+               "Democratic Republic of the Congo": "DR Congo", "Central African Republic": "CAR"}
+
+
+def short_name(name: str) -> str:
+    return SHORT_NAMES.get(name, name)
+
+
+def label_spots(masks: list[Image.Image], avoid: list[tuple[float, float, float, float]], step: int = 40) -> list[tuple[float, float] | None]:
+    """Where to write each side's name: the point inside its shape on screen farthest from the frame's edges, from the
+    boxes to keep clear (the text, the mascot, the circle) and from the labels already placed."""
+    W, H = bw_render.W, bw_render.H
+    placed: list[tuple[float, float]] = []
+    out: list[tuple[float, float] | None] = []
+    for mask in masks:
+        best, best_score = None, 140.0  # at least this far from everything, or no label
+        for y in range(step, H - step, step):
+            for x in range(step, W - step, step):
+                if not mask.getpixel((x, y)):
+                    continue
+                score = min(x - 40, W - 40 - x, y - 40, H - 40 - y)
+                for x0, y0, x1, y1 in avoid:
+                    dx, dy = max(x0 - x, 0, x - x1), max(y0 - y, 0, y - y1)
+                    score = min(score, math.hypot(dx, dy))
+                for px, py in placed:
+                    score = min(score, math.hypot(px - x, py - y) * 0.5)
+                if score > best_score:
+                    best, best_score = (x, y), score
+        out.append(best)
+        if best:
+            placed.append(best)
+    return out
+
+
+def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -> Path:
+    """1280x720, made to be clicked: a short question in huge letters across the top (`text`, else the cover text),
+    the subject place close up and glowing gold among the story's sides, each side named, a red marker circle round
+    the place with an arrow to it (and the owner's `icon` beside it), and the mascot as a sticker shading its eyes at it."""
+    import numpy as np
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
     W, H = bw_render.W, bw_render.H
     place = subject(spec)
     feat = bw_render.bw_geo.resolve(place) if place else None
-    spot = (W * 0.7, H * 0.62)  # where the place sits: under the text's right end, in the mascot's line of sight
+    spot = (W * 0.66, H * 0.62)  # where the place sits: under the text, in the mascot's line of sight
+    side_list: list[tuple[str, str]] = []
+    cam = None
     if feat is not None:
         x0, y0, x1, y1 = feat.bbox()
         sides: dict[str, str] = {}  # the story's sides round the place, in the video's colors (a pocket of one inside the other shows)
@@ -670,7 +718,8 @@ def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
                     bx0, by0, bx1, by1 = f.bbox()
                     if bx0 - 3 < x1 and bx1 + 3 > x0 and by0 - 3 < y1 and by1 + 3 > y0:
                         sides.setdefault(el.place, el.color)
-        els = [bw_render.Element("highlight", place=n, color=c, cue="x") for n, c in list(sides.items())[:3]]
+        side_list = list(sides.items())[:3]
+        els = [bw_render.Element("highlight", place=n, color=c, cue="x") for n, c in side_list]
         one = bw_render.Spec([bw_render.Scene("map", "x", focus=[place], opts={"globe": False},
                                               elements=els + [bw_render.Element("highlight", place=place, color="gold", cue="x")])],
                              [bw_render.Word("x", 0.0, 4.0)], theme=spec.theme, seed=spec.seed, look="satellite")
@@ -683,43 +732,87 @@ def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
         ppd = max(2.5, min(H / 2.5, W * 0.2 / max(1e-4, (x1 - x0) * k), H * 0.3 / max(1e-4, y1 - y0)))
         r.views[0] = (lon - (spot[0] - W / 2) / (ppd * k), lat - (bw_render.CY - spot[1]) / ppd, ppd)
         img = r.scene_frame(0, 3.8).convert("RGB")
+        cam = r.camera(0, 3.8)
         rx = max(90.0, (x1 - x0) * k * ppd / 2 + 60)
         ry = max(70.0, (y1 - y0) * ppd / 2 + 50)
     else:
         img = bw_fx.FxRenderer(spec).scene_frame(0, 1.0).convert("RGB")
         rx, ry = 160.0, 120.0
     img = ImageEnhance.Contrast(ImageEnhance.Color(img).enhance(1.35)).enhance(1.12).convert("RGBA")
-    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))  # dark behind the text and round the edges
+    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))  # dark behind the text at the top, and a little round the edges
     d = ImageDraw.Draw(shade)
-    for x in range(0, W, 8):
-        d.rectangle([x, 0, x + 8, H], fill=(0, 0, 0, int(170 * max(0.0, 1 - x / (W * 0.55)))))
+    for y in range(0, H, 6):
+        d.rectangle([0, y, W, y + 6], fill=(0, 0, 0, int(190 * max(0.0, 1 - y / (H * 0.42)))))
     img.alpha_composite(shade)
     ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    # the text: one huge line across the top when it fits (a short question reads at a glance), else two lines
+    words = (text or spec.cover or spec.scenes[0].headline or "").upper().split()
+    size, one_line = 240, True
+    while size > 150 and bw_render.font(size).getlength(" ".join(words)) > W - 120:
+        size -= 10
+    if bw_render.font(size).getlength(" ".join(words)) > W - 120:
+        one_line, size = False, 200
+        while size > 100 and len(bw_render.wrap(" ".join(words), size, int(W * 0.62))) > 2:
+            size -= 10
+    f = bw_render.font(size)
+    gold, white = bw_render.FIXED["gold"], (255, 255, 255)
+    if one_line:
+        x = (W - f.getlength(" ".join(words))) / 2
+        for n, w in enumerate(words):  # the first word gold, the rest white
+            d.text((x, 40), w, font=f, fill=gold if n == 0 else white, stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
+            x += f.getlength(w + " ")
+        box = d.textbbox(((W - f.getlength(" ".join(words))) / 2, 40), " ".join(words), font=f, stroke_width=16, anchor="la")
+        right, bottom = min(box[2], spot[0] - rx - 200), box[3]
+    else:
+        right, bottom = W * 0.3, H * 0.3
+        for n, line in enumerate(bw_render.wrap(" ".join(words), size, int(W * 0.62))[:2]):
+            at = (70, 50 + n * size * 1.04)
+            d.text(at, line, font=f, fill=gold if n == 0 else white, stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
+            box = d.textbbox(at, line, font=f, stroke_width=16, anchor="la")  # the font's real extent (they differ by machine)
+            right, bottom = (box[2], box[3]) if n == 0 else (max(right, box[2]), box[3])
     loop = bw_fx.FxRenderer.egg(spot[0], spot[1], rx, ry, seed=3)
     bw_brand.marker(ov, loop, bw_brand.RED, 22)
-    words = (spec.cover or spec.scenes[0].headline or "").upper()
-    size = 200
-    lines = bw_render.wrap(words, size, int(W * 0.6))
-    while size > 100 and len(lines) > 2:  # two big lines read at a glance; the mascot stands under them
-        size -= 10
-        lines = bw_render.wrap(words, size, int(W * 0.6))
-    lines = lines[:3]
-    f = bw_render.font(size)
-    top = 60
-    d = ImageDraw.Draw(ov)
-    right, bottom = W * 0.3, H * 0.3
-    for n, line in enumerate(lines):
-        at = (70, top + n * size * 1.04)
-        d.text(at, line, font=f, fill=bw_render.FIXED["gold"] if n == 0 else (255, 255, 255),
-               stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
-        box = d.textbbox(at, line, font=f, stroke_width=16, anchor="la")  # the font's real extent (they differ by machine)
-        right, bottom = (box[2], box[3]) if n == 0 else (max(right, box[2]), box[3])
-    end = (min(right - 120, W * 0.5), bottom + 30)  # from under the text, at its right
+    end = (min(right - 120, W * 0.5), bottom + 30)  # from under the text
     tip = (spot[0] - rx * 0.9, spot[1] - ry * 0.25)
+    arrow: list[tuple[float, float]] = []
     if tip[0] - end[0] > 120 and tip[1] > end[1]:
         arrow = bw_render.curve(end, tip, bend=0.25)
         bw_brand.marker(ov, arrow, bw_brand.RED, 26)
         bw_brand.chevron(ov, arrow, bw_brand.RED, 26)
+    keep_clear = [(0, 0, W, bottom + 20), (0, H * 0.5, W * 0.3, H), (spot[0] - rx - 60, spot[1] - ry - 60, spot[0] + rx + 60, spot[1] + ry + 130)]
+    keep_clear += [(x - 40, y - 40, x + 40, y + 40) for x, y in arrow[::4]]
+    code = bw_fx.icon_code(icon) if icon else ""
+    if code:  # the owner's icon beside the circle, as a sticker
+        pic = (bw_brand.frame_at(code, 230, 1.2)[0] if code in bw_fx.custom_icons()  # an owner GIF: a frame from its middle
+               else bw_fx.icon_image(code, 230))
+        ix, iy = int(spot[0] + rx + 40), int(spot[1] - pic.height / 2 + 30)
+        bw_brand.paste(ov, bw_brand.shadow(pic, 10, 0.5), ix - 20 + 6, iy - 20 + 10)
+        bw_brand.paste(ov, pic, ix, iy)
+        keep_clear.append((ix - 30, iy - 30, ix + pic.width + 30, iy + pic.height + 30))
+    if place:  # the place's own name under its circle
+        fl = bw_render.font(64)
+        d.text((spot[0], spot[1] + ry + 30), place.upper(), font=fl, fill=gold, stroke_width=8, stroke_fill=(0, 0, 0), anchor="mt")
+    if cam is not None and side_list:  # every side named inside its own shape
+        masks = []
+        for name, _ in side_list:
+            m = Image.new("L", (W, H), 0)
+            md = ImageDraw.Draw(m)
+            for part in bw_render.bw_geo.resolve(name).parts:
+                for n, ring in enumerate(part.rings):
+                    pts = [tuple(xy) for xy in cam.xy(np.asarray(ring))]
+                    if len(pts) > 2:
+                        md.polygon(pts, fill=0 if n else 255)
+            masks.append(m)
+        big, small = bw_render.font(92), bw_render.font(52)
+        for (name, _), at in zip(side_list, label_spots(masks, keep_clear)):
+            if at is None:
+                continue
+            g = bw_render.bw_geo.resolve(name)
+            d.text(at, short_name(name).upper(), font=big, fill=white, stroke_width=8, stroke_fill=(0, 0, 0), anchor="mm")
+            if g.kind == "region" and g.country:
+                d.text((at[0], at[1] + 62), short_name(g.country).upper(), font=small, fill=gold, stroke_width=6,
+                       stroke_fill=(0, 0, 0), anchor="mm")
     img.alpha_composite(ov)
     if spec.brand:  # the mascot as a sticker: white outline, shadow, shading its eyes toward the place
         panda, _ = bw_brand.frame_at(bw_brand.MASCOT["searching"], int(H * 0.46), 1.3)
