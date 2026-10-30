@@ -692,21 +692,28 @@ class Renderer:
             return
         size = CAPTION_SIZE
         parts = [words[i].text.upper() for i in group]
-        while size > CAPTION_SIZE * 0.6 and sum(font(size).getlength(p + " ") for p in parts) > W - 80:
+        gap = lambda f: f.getlength(" ") + 18  # the space plus both words' 9 px outlines
+        while size > CAPTION_SIZE * 0.6 and sum(font(size).getlength(p) + gap(font(size)) for p in parts) > W - 80:
             size -= 6
         f = font(size)
-        widths = [f.getlength(p + " ") for p in parts]
-        x = W / 2 - sum(widths) / 2 + f.getlength(" ") / 2
+        widths = [f.getlength(p) + gap(f) for p in parts]
+        x = W / 2 - sum(widths) / 2 + gap(f) / 2
         d = ImageDraw.Draw(img)
+        popped = None
         for i, p, width in zip(group, parts, widths):
             age = t - words[i].start
             fill = (255, 220, 60) if age >= 0 else (255, 255, 255)
-            if 0 <= age < POP:  # the word being said pops up a size, then settles
-                big = font(int(size * (1 + 0.22 * (1 - age / POP))) // 2 * 2)
-                d.text((x + f.getlength(p) / 2, CAPTION_Y), p, font=big, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0), anchor="mm")
+            if 0 <= age < POP:  # the word being said pops up a size, then settles; drawn last, on top
+                popped = (x, p, fill, age)
             else:
                 d.text((x, CAPTION_Y), p, font=f, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0), anchor="lm")
             x += width
+        if popped:
+            x, p, fill, age = popped
+            length = f.getlength(p)
+            grow = min(0.22, 0.8 * gap(f) / max(length, 1))  # a long word grows less, so it never reaches its neighbours
+            big = font(int(size * (1 + grow * (1 - age / POP))) // 2 * 2)
+            d.text((x + length / 2, CAPTION_Y), p, font=big, fill=fill, stroke_width=9, stroke_fill=(0, 0, 0), anchor="mm")
 
     def frame(self, t: float) -> Image.Image:
         i = self.scene_at(t)

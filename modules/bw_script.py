@@ -159,7 +159,7 @@ class _Text(HTMLParser):
         if tag in self.SKIP:
             self.skip += 1
         elif tag == "title":
-            self._in_title = True
+            self._in_title = not self.title  # only the page's first <title>; SVG logos carry their own
         elif tag in ("p", "br", "li", "h1", "h2", "h3", "div", "tr"):
             self.parts.append("\n")
 
