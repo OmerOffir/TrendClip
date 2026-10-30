@@ -73,8 +73,8 @@ def status() -> dict[str, Any]:
             "queued": [p.name for p in bw_channel.queued_scripts()], "make": _job("make"), "upload": _job("upload")}
 
 
-def _texts(info: dict) -> dict[str, Any]:
-    req = bw_channel.upload_request(info)
+def _texts(info: dict, number: int | None = None) -> dict[str, Any]:
+    req = bw_channel.upload_request(info, number=number)
     return {"title": publish._yt_title(req.title, True), "description": req.description, "tags": publish._tags(req.tags)}
 
 
@@ -97,7 +97,7 @@ def videos() -> dict[str, Any]:
     numbers = bw_channel.expected_numbers(found)
     for info in found:
         out.append({**info, "title": bw_channel.display_title(info, number=numbers.get(info["key"])),
-                    "state": _state(info), "youtube": _texts(info)})
+                    "state": _state(info), "youtube": _texts(info, numbers.get(info["key"]))})
     return {"videos": out, "privacy": bw_channel.upload_privacy(), "require_approval": bw_channel.require_approval()}
 
 
