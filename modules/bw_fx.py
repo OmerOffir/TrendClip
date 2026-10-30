@@ -277,7 +277,9 @@ ALIASES = {"king": "king_waving", "queen": "queen_curtsying", "soldier": "soldie
            "army": "blue_and_red_soldiers_marching", "explorer": "explorer_scanning", "diplomats": "diplomats_handshake",
            "handshake": "diplomats_handshake", "judge": "judge_gavel", "court": "judge_gavel", "crowd": "crowd_waving",
            "newspaper": "newspaper_unfolding", "vote": "vote_ballot_cast", "horse": "horse_trotting", "castle": "castle_flags_and_gate",
-           "town": "town_life"}
+           "town": "town_life", "surveyor": "surveyor_measuring_line", "border_guard": "border_guard_barrier",
+           "customs": "border_guard_barrier", "fisherman": "fisherman_fishing", "letter": "letter_opening",
+           "mapmaker": "mapmaker_drawing", "family": "family_house"}
 
 
 def _key(name: str) -> str:
