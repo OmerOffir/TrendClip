@@ -881,7 +881,7 @@ def test_long_video_goes_from_research_to_a_full_script(tmp_path, world, monkeyp
         bw_long.add_research(s["id"], "Some facts without links.", tmp_path)
     s = bw_long.add_research(s["id"], "The Angle is cut off - https://www.nps.gov/angle\nAnd - https://reddit.com/r/x\n"
                                       "Also - https://example.com/dead.", tmp_path)
-    assert s["step"] == "outline" and s["research"] == {"links": 2, "read": 1} and s["sources"][-1]["id"] == 4
+    assert s["step"] == "outline" and s["research"] == {"links": 2, "read": 1, "wikipedia": 0} and s["sources"][-1]["id"] == 4
 
     s = bw_long.answer_outline(s["id"], _outline(2), tmp_path)
     assert s["step"] == "outline" and "2 chapters" in s["problems"][0] and "fix them" in s["prompt"]
@@ -974,3 +974,20 @@ def test_long_video_make_runs_in_its_own_process(tmp_path, world, monkeypatch):
     # that pid is no process: the tab says it stopped
     j = bw_long.job(s["id"], tmp_path)
     assert j["running"] is False and "stopped" in j["error"]
+
+
+def test_long_video_research_with_only_wikipedia_markdown_links_adds_the_articles(tmp_path, monkeypatch):
+    from modules import bw_long
+
+    monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: _research())
+    read = []
+    monkeypatch.setattr(bw_script, "wiki_text", lambda title: (read.append(title) or title, SOURCE_1 * 20))
+    s = bw_long.start("Why?", "Northwest Angle", out_dir=tmp_path)
+    answer = ("* The Angle is cut off. - [https://en.wikipedia.org/wiki/Northwest_Angle](https://en.wikipedia.org/wiki/Northwest_Angle)\n"
+              "* 1783. - [https://en.wikipedia.org/wiki/Treaty_of_Paris_(1783](https://en.wikipedia.org/wiki/Treaty_of_Paris_(1783))\n"
+              "* Border. - [https://en.wikipedia.org/wiki/Canada%E2%80%93United_States_border](https://en.wikipedia.org/wiki/Canada%E2%80%93United_States_border)")
+    s = bw_long.add_research(s["id"], answer, tmp_path)
+    assert s["step"] == "outline" and s["research"] == {"links": 0, "read": 0, "wikipedia": 2}
+    assert read == ["Treaty of Paris (1783)", "Canada–United States border"]
+    assert [x["title"] for x in s["sources"][-2:]] == ["Treaty of Paris (1783) - Wikipedia", "Canada–United States border - Wikipedia"]
+    assert "Not Wikipedia" in bw_long.RESEARCH_PROMPT

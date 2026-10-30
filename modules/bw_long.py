@@ -89,8 +89,9 @@ RESEARCH_PROMPT = """Research this question for a 10-minute YouTube documentary 
 (Wikipedia's article: {article}).
 
 Find the whole story: how the situation began, the people and decisions behind it, the turning points with their
-dates, what it is like today, and the surprising details most people don't know. Prefer official, government,
-academic, museum, archive and news pages; never YouTube, Reddit, Quora, forums or AI-written pages.
+dates, what it is like today, and the surprising details most people don't know. Search the web widely: official,
+government, academic, museum, archive, historical society and news pages. Not Wikipedia (it is read already), never
+YouTube, Reddit, Quora, forums or AI-written pages. Use at least 8 different websites.
 
 Answer with 25-50 facts, one per line, each followed by the full link (https://...) of a page that states it:
 fact - link
@@ -253,12 +254,48 @@ def start(question: str, article: str, more: list[str] | None = None, progress=l
     return view(f.name, out_dir)
 
 
+def _all_links(text: str) -> list[str]:
+    """Every link in the text, Markdown ones ([https://a](https://a)) too, with a title's brackets kept whole
+    (https://en.wikipedia.org/wiki/Treaty_of_Paris_(1783)) and the punctuation after it dropped."""
+    found = []
+    for raw in re.findall(r"https?://[^\s<>\"']+", text or ""):
+        for u in re.split(r"\]\(", raw):
+            u = u.strip("[]").rstrip(".,;:!?>}]*")
+            while u.endswith(")") and u.count("(") < u.count(")"):
+                u = u[:-1].rstrip(".,;:!?>}]*")
+            if u.startswith("http") and u.count("(") == u.count(")"):
+                found.append(u)
+    return list(dict.fromkeys(found))
+
+
 def links(text: str) -> list[str]:
-    """The links in a research answer, in order, without the ones the channel never uses as sources."""
-    found = [u.rstrip(".,;:)]}>'\"") for u in re.findall(r"https?://[^\s<>()\"'\]]+", text or "")]
+    """The pages of a research answer to read, in order: not Wikipedia (see wiki_titles) nor sites never used as sources."""
     skip = tuple(d for d in bw_script.SKIP_DOMAINS if d != "pdf") + ("reddit.com", "quora.com", "tiktok.com", "chatgpt.com",
                                                                      "gemini.google", "perplexity.ai")
-    return list(dict.fromkeys(u for u in found if not any(d in u.lower() for d in skip)))
+    return [u for u in _all_links(text) if not any(d in u.lower() for d in skip)]
+
+
+def wiki_titles(text: str) -> list[str]:
+    """The English Wikipedia articles a research answer links to."""
+    from urllib.parse import unquote
+
+    out = []
+    for u in _all_links(text):
+        m = re.match(r"https?://en\.(?:m\.)?wikipedia\.org/wiki/([^#?]+)", u)
+        if m and ":" not in unquote(m.group(1)):
+            out.append(unquote(m.group(1)).replace("_", " "))
+    return list(dict.fromkeys(out))
+
+
+def _wiki(title: str) -> Source | None:
+    try:
+        real, text = bw_script.wiki_text(title)
+    except Exception as err:  # noqa: BLE001 - a missing article doesn't stop the video
+        logger.info("Article %s skipped: %s", title, err)
+        return None
+    if len(text) < bw_script.MIN_SOURCE_CHARS:
+        return None
+    return Source(0, f"https://en.wikipedia.org/wiki/{real.replace(' ', '_')}", f"{real} - Wikipedia", text)
 
 
 def _read(url: str) -> Source | None:
@@ -280,17 +317,24 @@ def add_research(sid: str, text: str, out_dir: Path | None = None) -> dict[str, 
     f = folder(sid, out_dir)
     res = _research(f)
     known = {s.url for s in res.sources}
+    have = {s.title.removesuffix(" - Wikipedia").lower() for s in res.sources if s.is_wikipedia} | {res.article.lower()}
     urls = [u for u in links(text) if u not in known][:PACK_PAGES]
-    if not urls:
+    titles = [t for t in wiki_titles(text) if t.lower() not in have][:MORE_ARTICLES]
+    if not urls and not titles and not wiki_titles(text):
         raise LongError("There are no links in the answer: ask the LLM to put the link of a page after every fact")
     with ThreadPoolExecutor(6) as pool:
         pages = [p for p in pool.map(_read, urls) if p is not None]
-    for p in pages:
+        articles = list(pool.map(_wiki, titles))
+    added = 0
+    for p in pages + [a for a in articles if a is not None]:
+        if p.is_wikipedia and p.title.removesuffix(" - Wikipedia").lower() in have:
+            continue  # a redirect to an article read already
         p.id = len(res.sources) + 1
         res.sources.append(p)
+        added += p.is_wikipedia
     _save_research(f, res)
     state = _load(f, "state.json")
-    state.update(step="outline", research={"links": len(urls), "read": len(pages)})
+    state.update(step="outline", research={"links": len(urls), "read": len(pages), "wikipedia": added})
     _save(f, "state.json", state)
     return view(sid, out_dir)
 

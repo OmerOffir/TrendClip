@@ -71,7 +71,11 @@
         '<button type="button" class="btn-ghost" data-l="skip">Skip: Wikipedia is enough</button>');
     }
     if (s.step === "outline" || s.step === "rejected") {
-      if (s.research) body += `<div class="hint">🔗 ${s.research.read} of the ${s.research.links} links could be read and became sources.</div>`;
+      if (s.research) {
+        const wiki = s.research.wikipedia ? ` and ${s.research.wikipedia} more Wikipedia article${s.research.wikipedia === 1 ? "" : "s"}` : "";
+        const few = s.research.read < 3 ? " Few outside pages: Deep Research (or a search-enabled LLM) usually finds more." : "";
+        body += `<div class="hint">🔗 ${s.research.read} of the ${s.research.links} outside links could be read${wiki}; all became sources.${few}</div>`;
+      }
       if (s.step === "rejected") body += note("The LLM said the sources can't carry a long video:", s.problems);
       else if (s.problems.length) body += note("The outline missed:", s.problems);
       body += promptBlock(s, "Copy this outline prompt into your LLM");
