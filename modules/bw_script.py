@@ -36,7 +36,8 @@ MIN_WORDS, MAX_WORDS = 110, 170  # about 45-70 s with the narrator
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 3
-PHOTO_COUNT = "2-3 in the video, at most 4"
+PHOTO_COUNT = "3-4 in the video, at most 5"
+BOARD_COUNT = "1-2 in the video"
 MASCOT_LINES = "2-3 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
 ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
 CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
@@ -381,7 +382,7 @@ must be the whole narration.
   place the video is about, "red" for a mistake or a "no".
 - card scenes (at most {max_cards}) are old-paper title cards for a year, a treaty or a person: kicker, title, subtitle;
   they can hold up to 2 icons and 2 poles (e.g. the two sides of a treaty).
-- board scenes (1-2, at most 2) are the channel's whiteboard: a hand writes in red and black marker. Use them for the
+- board scenes ({board_count}) are the channel's whiteboard: a hand writes in red and black marker. Use them for the
   "why" moment: the deal, the rule, the mistake, the trade. "board_write": a title of 2-5 words, then 0-3 short lines
   (2-6 words each) that sum up what the narration says ("The 1890 deal", "Britain gets Zanzibar", "Germany gets
   Heligoland"). "board_draw" (optional): 1-2 places whose real outline the hand sketches, a country or state first,
@@ -391,7 +392,8 @@ must be the whole narration.
   whose main picture shows what the narration names: a person ("Benjamin Franklin"), a landmark or place
   ("Victoria Falls", "Angle Inlet"), an old map or object ("Mitchell Map"), an animal ("Walleye"). "caption": 1-5
   words written under it; "headline" optional; "focus" optional (a map of it is shown if the picture can't be found).
-  People hold on to a face or a real place: use photos for the people, landmarks and objects the story names.
+  People hold on to a face or a real place: use photos for the people, landmarks and objects the story names, and
+  keep the pictures changing: never more than 3 map scenes in a row without a photo, board or card between them.
 - The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
@@ -573,7 +575,7 @@ class Limits:
     first_map: bool = True  # the first scene is the thumbnail
     max_boards: int = 2
     max_lines: int = 4  # the mascot's asks and reacts
-    max_photos: int = 4
+    max_photos: int = 5
     min_claims: int = 4
     min_cited: int = 2
 
@@ -695,7 +697,7 @@ def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
     return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video", mascot_lines=MASCOT_LINES,
-                         photo_count=PHOTO_COUNT,
+                         photo_count=PHOTO_COUNT, board_count=BOARD_COUNT,
                          min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
                          min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
                          today=today or dt.date.today().isoformat(), sources=sources_block(res))

@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 CHAPTERS = (5, 8)
 CHAPTER = Limits(min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1,
-                 max_photos=5)
+                 max_photos=6, max_boards=3)
 TOTAL_WORDS = (1100, 2400)  # about 8-16 minutes with the narrator
 WORDS_PER_SECOND = 2.6  # the preview's guess of the voice's pace
 MORE_ARTICLES = 4  # more Wikipedia articles read at the start
@@ -465,7 +465,7 @@ def chapter_prompt(res: Research, outline: dict[str, Any], chapters: list[dict[s
         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=CHAPTER.min_scenes, max_scenes=CHAPTER.max_scenes,
         max_cards=CHAPTER.max_cards, icons=", ".join(bw_fx.icon_names()), icon_count="3-6 in this chapter",
         stamp_count="one in the whole video", mascot_lines="1-3 asks in this chapter (a react only after the last chapter's last scene)",
-        photo_count="2-4 in this chapter", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
+        photo_count="3-5 in this chapter", board_count="2-3 in this chapter", today=today or datetime.now().date().isoformat(), sources=bw_script.sources_block(res))
 
 
 def prompt(state: dict[str, Any], res: Research) -> tuple[str, str]:
@@ -639,37 +639,97 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
         raise
 
 
-def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
-    """1280x720: the first map scene with a place on it, darkened on the left under the cover text in big letters."""
-    from PIL import Image, ImageDraw
+def subject(spec: bw_render.Spec) -> str:
+    """The place the video is about: its first gold highlight (the prompt's color for it), else the first map's focus."""
+    for sc in spec.scenes:
+        for el in sc.elements:
+            if el.kind == "highlight" and el.color == "gold" and el.place and bw_render.bw_geo.resolve(el.place):
+                return el.place
+    for sc in spec.scenes:
+        if sc.kind == "map" and sc.focus and not sc.opts.get("globe"):
+            return sc.focus[0]
+    return ""
 
-    r = bw_fx.FxRenderer(spec)
-    maps = [i for i, s in enumerate(spec.scenes) if s.kind == "map" and not s.opts.get("globe")]
-    i = maps[0] if maps else 0
-    s = spec.scenes[i]
-    if r.views[i] is not None:  # the place on the right half, clear of the text
-        lon, lat, ppd = r.views[i]
-        r.views[i] = (lon - 0.22 * bw_render.W / (ppd * max(0.2, math.cos(math.radians(lat)))), lat, ppd)
-    img = r.scene_frame(i, min(s.end - 0.05, s.start + 2.5)).convert("RGBA")
-    w, h = img.size
-    shade = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+def thumbnail(spec: bw_render.Spec, out: Path) -> Path:
+    """1280x720, made to be clicked: the subject place close up and glowing gold, a red marker circle round it and an
+    arrow to it from the cover text in big letters, and the mascot (with the brand on) shading its eyes at it."""
+    from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
+
+    W, H = bw_render.W, bw_render.H
+    place = subject(spec)
+    feat = bw_render.bw_geo.resolve(place) if place else None
+    spot = (W * 0.7, H * 0.62)  # where the place sits: under the text's right end, in the mascot's line of sight
+    if feat is not None:
+        x0, y0, x1, y1 = feat.bbox()
+        sides: dict[str, str] = {}  # the story's sides round the place, in the video's colors (a pocket of one inside the other shows)
+        for sc in spec.scenes:
+            for el in sc.elements:
+                f = el.feature
+                if el.kind == "highlight" and el.color in ("a", "b", "c") and f is not None and f.parts and el.place != place:
+                    bx0, by0, bx1, by1 = f.bbox()
+                    if bx0 - 3 < x1 and bx1 + 3 > x0 and by0 - 3 < y1 and by1 + 3 > y0:
+                        sides.setdefault(el.place, el.color)
+        els = [bw_render.Element("highlight", place=n, color=c, cue="x") for n, c in list(sides.items())[:3]]
+        one = bw_render.Spec([bw_render.Scene("map", "x", focus=[place], opts={"globe": False},
+                                              elements=els + [bw_render.Element("highlight", place=place, color="gold", cue="x")])],
+                             [bw_render.Word("x", 0.0, 4.0)], theme=spec.theme, seed=spec.seed, look="satellite")
+        bw_render.prepare(one)
+        r = bw_fx.FxRenderer(one)
+        lon, lat = (x0 + x1) / 2, (y0 + y1) / 2
+        k = max(0.2, math.cos(math.radians(lat)))
+        # the place about a fifth of the width, but never closer than about 2.5 degrees of map top to bottom, so a
+        # small place (or one that is only a point) still shows the lakes and borders round it
+        ppd = max(2.5, min(H / 2.5, W * 0.2 / max(1e-4, (x1 - x0) * k), H * 0.3 / max(1e-4, y1 - y0)))
+        r.views[0] = (lon - (spot[0] - W / 2) / (ppd * k), lat - (bw_render.CY - spot[1]) / ppd, ppd)
+        img = r.scene_frame(0, 3.8).convert("RGB")
+        rx = max(90.0, (x1 - x0) * k * ppd / 2 + 60)
+        ry = max(70.0, (y1 - y0) * ppd / 2 + 50)
+    else:
+        img = bw_fx.FxRenderer(spec).scene_frame(0, 1.0).convert("RGB")
+        rx, ry = 160.0, 120.0
+    img = ImageEnhance.Contrast(ImageEnhance.Color(img).enhance(1.35)).enhance(1.12).convert("RGBA")
+    shade = Image.new("RGBA", (W, H), (0, 0, 0, 0))  # dark behind the text and round the edges
     d = ImageDraw.Draw(shade)
-    for x in range(0, w, 8):
-        a = int(190 * max(0.0, 1 - x / (w * 0.62)))
-        d.rectangle([x, 0, x + 8, h], fill=(0, 0, 0, a))
+    for x in range(0, W, 8):
+        d.rectangle([x, 0, x + 8, H], fill=(0, 0, 0, int(170 * max(0.0, 1 - x / (W * 0.55)))))
     img.alpha_composite(shade)
-    words = (spec.cover or "").upper()
-    size = 170
-    lines = bw_render.wrap(words, size, int(w * 0.55))
-    while size > 90 and len(lines) > 3:
-        size -= 12
-        lines = bw_render.wrap(words, size, int(w * 0.55))
-    y = h / 2 - (len(lines) - 1) * size * 0.55
-    d = ImageDraw.Draw(img)
-    for k, line in enumerate(lines[:3]):
-        d.text((70, y + k * size * 1.1), line, font=bw_render.font(size), fill=bw_render.FIXED["gold"] if k == 0 else (255, 255, 255),
-               stroke_width=12, stroke_fill=(0, 0, 0), anchor="lm")
-    img.convert("RGB").resize((1280, 720)).save(out, quality=92)
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    loop = bw_fx.FxRenderer.egg(spot[0], spot[1], rx, ry, seed=3)
+    bw_brand.marker(ov, loop, bw_brand.RED, 22)
+    words = (spec.cover or spec.scenes[0].headline or "").upper()
+    size = 200
+    lines = bw_render.wrap(words, size, int(W * 0.6))
+    while size > 100 and len(lines) > 2:  # two big lines read at a glance; the mascot stands under them
+        size -= 10
+        lines = bw_render.wrap(words, size, int(W * 0.6))
+    lines = lines[:3]
+    f = bw_render.font(size)
+    top = 60
+    d = ImageDraw.Draw(ov)
+    for n, line in enumerate(lines):
+        d.text((70, top + n * size * 1.04), line, font=f, fill=bw_render.FIXED["gold"] if n == 0 else (255, 255, 255),
+               stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
+    right = 70 + max((f.getlength(line) for line in lines), default=W * 0.3)
+    end = (min(right - 120, W * 0.5), top + len(lines) * size * 1.04 + 10)  # from under the text, at its right
+    tip = (spot[0] - rx * 0.9, spot[1] - ry * 0.25)
+    if tip[0] - end[0] > 120 and tip[1] > end[1]:
+        arrow = bw_render.curve(end, tip, bend=0.25)
+        bw_brand.marker(ov, arrow, bw_brand.RED, 26)
+        bw_brand.chevron(ov, arrow, bw_brand.RED, 26)
+    img.alpha_composite(ov)
+    if spec.brand:  # the mascot as a sticker: white outline, shadow, shading its eyes toward the place
+        panda, _ = bw_brand.frame_at(bw_brand.MASCOT["searching"], int(H * 0.46), 1.3)
+        pad = 24
+        big = Image.new("RGBA", (panda.width + 2 * pad, panda.height + 2 * pad), (0, 0, 0, 0))
+        big.alpha_composite(panda, (pad, pad))
+        edge = Image.new("RGBA", big.size, (255, 255, 255, 0))
+        edge.putalpha(big.getchannel("A").filter(ImageFilter.MaxFilter(19)))
+        edge.alpha_composite(big)
+        x, y = 40, H - edge.height + 30
+        bw_brand.paste(img, bw_brand.shadow(edge, 14, 0.6), x - 28 + 10, y - 28 + 14)
+        bw_brand.paste(img, edge, x, y)
+    img.convert("RGB").resize((1280, 720), Image.LANCZOS).save(out, quality=92)
     return out
 
 

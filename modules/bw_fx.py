@@ -1453,7 +1453,8 @@ class FxRenderer(Renderer):
         d.rectangle([0, 0, 14, height - 1], fill=FIXED["gold"] + (255,))
         d.text((50, 52), top, font=f_small, fill=FIXED["gold"] + (255,), anchor="lm")
         d.text((50, 125), title.upper(), font=f_big, fill=(255, 255, 255, 255), anchor="lm")
-        x = int(-width + (width + 70) * u)
+        left = 330 if self.moods else 70  # right of the mascot (it stands bottom left, in front of the banner)
+        x = int(-width + (width + left) * u)
         y = int(bw_render.CAPTION_Y - 120 - height)
         if x + width > 0:  # off the left edge: paste only the part on screen
             img.alpha_composite(band.crop((max(0, -x), 0, width, height)), (max(0, x), y))
