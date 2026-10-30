@@ -1640,7 +1640,7 @@ async def act_bw_upload_confirm(bot: TrendClipBot, interaction: discord.Interact
     if not bw_channel.connected():
         return await reply(interaction, "The Borderline Why YouTube channel is not connected: `/bw connect`.", ephemeral=True)
     privacy = bw_channel.upload_privacy()
-    await reply(interaction, f"Upload **{info['title']}** to Borderline Why now, as **{privacy}**?",
+    await reply(interaction, f"Upload **{bw_channel.youtube_title(info)}** to Borderline Why now, as **{privacy}**?",
                 view=view_of(button("bwupgo", key, f"Yes, upload as {privacy}", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
                 ephemeral=True)
 
@@ -1656,7 +1656,21 @@ async def act_bw_upload(bot: TrendClipBot, interaction: discord.Interaction, key
         record = await asyncio.to_thread(bw_channel.upload, key, settings=bot.settings)
     except Exception as err:  # noqa: BLE001
         return await reply(interaction, f"❌ Upload failed: {err}")
-    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}")
+    info = bw_channel.load_info(key) or info  # numbered by the upload when it is a series episode
+    line = bw_channel.comment_line(record)
+    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}" + (f"\n{line}" if line else ""))
+
+
+async def act_bw_comment(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    """Borderline Why "Post the comment": the retry when the comment after the upload didn't go through."""
+    from modules import bw_channel
+
+    await interaction.response.defer(thinking=True)
+    try:
+        found = await asyncio.to_thread(bw_channel.comment_again, key)
+    except publish.PublishError as err:
+        return await reply(interaction, f"💬 The comment didn't go through: {err}")
+    await reply(interaction, bw_channel.comment_line({"comment": found}))
 
 
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
@@ -1665,7 +1679,7 @@ ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
     "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
     "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
-    "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload,
+    "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload, "bwcm": act_bw_comment,
 }
 
 
@@ -2301,7 +2315,7 @@ bw_group = app_commands.Group(name="bw", description="Borderline Why: map Shorts
 
 @bw_group.command(name="status", description="Borderline Why: YouTube login, the next video, the topics left")
 async def bw_status_cmd(interaction: discord.Interaction) -> None:
-    from modules import bw_channel, bw_topics
+    from modules import bw_channel, bw_series, bw_topics
 
     settings = _bot(interaction).settings
     await interaction.response.defer(thinking=True)
@@ -2318,6 +2332,7 @@ async def bw_status_cmd(interaction: discord.Interaction) -> None:
         f"🕒 Next: {day_label(settings, nxt.day) + ' ' + nxt.slot + ' (made at ' + nxt.start.strftime('%H:%M') + ')' if nxt else 'none'}",
         (f"🎬 Last: {last['title']} ({last['key']}, {last.get('duration_seconds', 0):.0f} s) · "
          + (f"▶️ {up.get('url')}" if up else "approved" if last.get("approved") else "waiting for Approve")) if last else "🎬 No video yet",
+        " · ".join(f"📺 {s['series']}: {s['episodes']} out, next #{s['next']}" for s in bw_series.summary(bw_channel.out_root())),
         f"🧭 Topics: {topics['left']} left, {topics['used']} used, {topics['rejected']} dropped · {queued} hand-checked script(s) queued"
         + (f" · next: {topics['next']}" if topics["next"] else ""),
         f"🏭 Automation: making {'on' if bw_channel.auto_make() else 'off'} · posting {'on' if bw_channel.auto_post() else 'off'} · "

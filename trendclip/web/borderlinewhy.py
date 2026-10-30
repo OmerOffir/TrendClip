@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
-from modules import bw_channel, bw_script, bw_topics
+from modules import bw_channel, bw_script, bw_series, bw_topics
 from trendclip import assistant, hub, publish
 
 logger = logging.getLogger(__name__)
@@ -69,6 +69,7 @@ def status() -> dict[str, Any]:
             "lead_hours": bw_channel.lead_hours(), "auto_make": bw_channel.auto_make(), "auto_post": bw_channel.auto_post(),
             "require_approval": bw_channel.require_approval(), "privacy": bw_channel.upload_privacy(), "timezone": settings.timezone,
             "next_job": nxt.view() if nxt else None, "topics": bw_topics.summary(bw_channel.out_root()),
+            "series": bw_series.summary(bw_channel.out_root()),
             "queued": [p.name for p in bw_channel.queued_scripts()], "make": _job("make"), "upload": _job("upload")}
 
 
@@ -92,8 +93,11 @@ def _state(info: dict) -> str:
 @router.get("/videos")
 def videos() -> dict[str, Any]:
     out = []
-    for info in bw_channel.videos():
-        out.append({**info, "state": _state(info), "youtube": _texts(info)})
+    found = bw_channel.videos()
+    numbers = bw_channel.expected_numbers(found)
+    for info in found:
+        out.append({**info, "title": bw_channel.display_title(info, number=numbers.get(info["key"])),
+                    "state": _state(info), "youtube": _texts(info)})
     return {"videos": out, "privacy": bw_channel.upload_privacy(), "require_approval": bw_channel.require_approval()}
 
 

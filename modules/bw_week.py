@@ -26,7 +26,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from modules import bw_channel, bw_manual, bw_script, bw_topics
+from modules import bw_channel, bw_manual, bw_script, bw_series, bw_topics
 from modules.bw_script import Draft, Research, ScriptError, Source
 from trendclip import llm_json
 
@@ -96,8 +96,10 @@ def start(count: int = DEFAULT_COUNT, progress=lambda m: None, out_dir: Path | N
     topics_dir = bw_channel.out_root(out_dir)
     entries: list[dict[str, Any]] = []
     tried: set[str] = set()
+    made = bw_channel.recent_series(out_dir)
     while len(entries) < count:
-        topic = bw_topics.next_topic(topics_dir, tried)
+        chosen = [bw_topics.Topic(**e["topic"]).episode_of for e in reversed(entries)]
+        topic = bw_topics.next_topic(topics_dir, tried, prefer=bw_series.due(chosen + made))
         if topic is None:
             break
         tried.add(topic.article)
@@ -139,7 +141,10 @@ def _rules() -> str:
 
 def _topic_block(entry: dict[str, Any]) -> str:
     res = _research(entry)
-    lines = [f'=== TOPIC {entry["i"]}: "{res.topic.question}" ===', "SOURCES", bw_script.sources_block(res)]
+    lines = [f'=== TOPIC {entry["i"]}: "{res.topic.question}" ===']
+    if note := bw_script.series_note(res.topic):
+        lines.append(note)
+    lines += ["SOURCES", bw_script.sources_block(res)]
     draft = _draft(entry)
     if entry["step"] == "fix" and draft is not None:
         lines += ["", bw_script.fix_prompt(entry.get("problems") or [], draft).rstrip()]
@@ -306,7 +311,7 @@ def _preview(entry: dict[str, Any]) -> dict[str, Any] | None:
     if draft is None:
         return None
     text = bw_script.narration(draft)
-    return {"title": draft.title, "cover_text": draft.cover_text, "words": bw_script.words(text), "scenes": len(draft.scenes),
+    return {"title": draft.title, "series": _research(entry).topic.episode_of, "cover_text": draft.cover_text, "words": bw_script.words(text), "scenes": len(draft.scenes),
             "claims": len(draft.claims), "narration": text}
 
 

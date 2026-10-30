@@ -24,7 +24,7 @@ from datetime import date as Day, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from modules import bw_render, bw_script, bw_topics, channel_common
+from modules import bw_render, bw_script, bw_series, bw_topics, channel_common
 from modules.scene_images import setting
 from trendclip import assistant, publish
 from trendclip.config import PROJECT_ROOT
@@ -180,6 +180,7 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
     """The Plan view: every slot from `before` days back to `after` days ahead with its video and state; a
     video made for a time that is no longer a slot (BW_SLOTS changed) is listed under its day too."""
     now = now.astimezone(settings.tz)
+    numbers = expected_numbers(videos(out_dir, limit=60), out_dir)
     days = []
     for n in range(-before, after + 1):
         day = now.date() + timedelta(days=n)
@@ -188,7 +189,7 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
         for job in jobs_for(settings, day):
             info = load_info(job.key, out_dir)
             keys.add(job.key)
-            rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info)})
+            rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info, numbers, out_dir)})
         folder = out_root(out_dir)
         if folder.is_dir():
             for extra in sorted(folder.glob(f"{day.isoformat()}_[0-9][0-9][0-9][0-9]")):
@@ -197,16 +198,16 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
                 slot = f"{extra.name[11:13]}:{extra.name[13:15]}"
                 job = Job(day, slot, datetime.fromisoformat(info["job"]["post_at"]) - timedelta(hours=lead_hours())
                           if info.get("job") else now, datetime.fromisoformat(info["job"]["post_at"]) if info.get("job") else now)
-                rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info), "extra": True})
+                rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info, numbers, out_dir), "extra": True})
         rows.sort(key=lambda r: r["slot"])
         days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
     return days
 
 
-def _plan_video(info: dict | None) -> dict | None:
+def _plan_video(info: dict | None, numbers: dict[str, int] | None = None, out_dir: Path | None = None) -> dict | None:
     if info is None:
         return None
-    return {"key": info["key"], "title": info.get("title", ""), "duration_seconds": info.get("duration_seconds"),
+    return {"key": info["key"], "title": display_title(info, out_dir, (numbers or {}).get(info["key"])), "duration_seconds": info.get("duration_seconds"),
             "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"), "question": info.get("question", ""),
             "sent": (info.get("sent") or {}).get("hub"), "created_at": info.get("created_at", "")}
 
@@ -288,6 +289,11 @@ def videos(out_dir: Path | None = None, limit: int = 30) -> list[dict]:
 # --------------------------------------------------------------------------- the script
 
 
+def recent_series(out_dir: Path | None = None, limit: int = 10) -> list[str]:
+    """The series of the last Shorts made, newest first ("" for one outside any series)."""
+    return [series_of(v) for v in videos(out_dir, limit)]
+
+
 def queued_scripts(out_dir: Path | None = None) -> list[Path]:
     """Hand-checked scripts waiting in output/borderlinewhy/queue/ (oldest name first)."""
     folder = queue_dir(out_dir)
@@ -314,8 +320,9 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
     bw_topics.ensure(root, client)
     tried: set[str] = set()
     errors: list[str] = []
+    prefer = bw_series.due(recent_series(out_dir))
     for _ in range(TOPIC_TRIES):
-        topic = bw_topics.next_topic(root, tried)
+        topic = bw_topics.next_topic(root, tried, prefer=prefer)
         if topic is None:
             break
         tried.add(topic.article)
@@ -445,6 +452,13 @@ def check_video(info: dict) -> list[str]:
     return problems
 
 
+def script_series(script: dict) -> str:
+    """A script's series: what bw_script.finish wrote, else (an older queued script) judged from its topic."""
+    if "series" in script:
+        return bw_series.normalize(script["series"])
+    return bw_series.classify(script.get("question") or script.get("title", ""), script.get("article", ""))
+
+
 def handle() -> str:
     return channel_common.handle(DIR) or "@BorderlineWhy"
 
@@ -486,7 +500,7 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     (render or bw_render.render)(spec, work / "voice.mp3", work / "video.mp4", music_path,
                                  float(setting("BW_MUSIC_VOLUME", "0.10")), lambda f, m: progress(0.2 + 0.75 * (f or 0), m))
     info = {
-        "key": job.key, "title": script["title"], "question": script.get("question", ""), "article": script.get("article", ""),
+        "key": job.key, "title": bw_series.strip(script["title"]), "series": script_series(script), "question": script.get("question", ""), "article": script.get("article", ""),
         "origin": origin, "description": with_credits(bw_script.description(script, handle()), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:6],
         "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
@@ -509,26 +523,137 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
 # --------------------------------------------------------------------------- approve, veto, upload
 
 
-def upload_request(info: dict, privacy: str | None = None) -> publish.YouTubeUploadRequest:
+def series_of(info: dict) -> str:
+    """A video's series (a video made before the series existed is judged from its topic)."""
+    return script_series(info)
+
+
+def episode(info: dict, out_dir: Path | None = None) -> dict | None:
+    """The video's place in its series: {"series", "number", "next"}; "next" is True while the number is only the
+    one it would get if it went out now (the number is given at the upload). None outside any series."""
+    if done := info.get("episode"):
+        return {**done, "next": False}
+    series = series_of(info)
+    if not series or (info.get("uploads") or {}).get("youtube"):
+        return None
+    held = bw_series.number_of(out_root(out_dir), series, info["key"])
+    return {"series": series, "number": held or bw_series.peek(out_root(out_dir), series), "next": True}
+
+
+def youtube_title(info: dict, out_dir: Path | None = None, number: int | None = None) -> str:
+    """The title on YouTube: "<question> | Weird Borders #7" for a series episode, else the title."""
+    if info.get("episode"):
+        return info["title"]  # numbered at its upload
+    ep = episode(info, out_dir)
+    if ep is None:
+        return info["title"]
+    return bw_series.titled(info.get("base_title") or info["title"], ep["series"], number or ep["number"])
+
+
+def expected_numbers(infos: list[dict], out_dir: Path | None = None) -> dict[str, int]:
+    """key -> the number each series video not yet on YouTube should get, in the order of their slots (a video
+    stopped or failing its check gets none): so the Plan shows #8, #9, #10 rather than #8 three times."""
+    root = out_root(out_dir)
+    pending = sorted((i for i in infos if series_of(i) and not i.get("episode") and not (i.get("uploads") or {}).get("youtube")
+                      and not is_vetoed(i) and not i.get("check")),
+                     key=lambda i: ((i.get("job") or {}).get("post_at", ""), i["key"]))
+    out: dict[str, int] = {}
+    after: dict[str, int] = {}
+    for info in pending:
+        series = series_of(info)
+        held = bw_series.number_of(root, series, info["key"])
+        if held is None:
+            held = after.get(series) or bw_series.peek(root, series)
+        out[info["key"]] = held
+        after[series] = max(after.get(series, 0), held + 1)
+    return out
+
+
+def display_title(info: dict, out_dir: Path | None = None, number: int | None = None) -> str:
+    """The title for Discord and the dashboard: numbered once uploaded, "(Weird Borders #7 next)" before
+    (`number`: the expected one, from expected_numbers)."""
+    title = info.get("title", info.get("key", ""))
+    if info.get("episode") or (info.get("uploads") or {}).get("youtube") or not series_of(info):
+        return title
+    if number is None:
+        number = expected_numbers([info], out_dir).get(info["key"])
+    return f"{title} ({bw_series.label(series_of(info), number)} next)" if number else title
+
+
+def upload_request(info: dict, privacy: str | None = None, out_dir: Path | None = None, number: int | None = None) -> publish.YouTubeUploadRequest:
     return publish.YouTubeUploadRequest(
-        title=info["title"][: publish.YT_TITLE_MAX], description=(info.get("description") or "")[:5000],
+        title=youtube_title(info, out_dir, number)[: publish.YT_TITLE_MAX], description=(info.get("description") or "")[:5000],
         tags=[t for t in info.get("hashtags", []) if t], privacy=privacy or upload_privacy(), category_id=CATEGORY, as_short=True)
 
 
 def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, youtube=None, out_dir: Path | None = None,
            settings=None) -> dict[str, Any]:
+    """Upload the Short. A series episode takes its number now (bw_series: it never skips a number for a video that
+    didn't go out), then the channel posts the "what next" comment for the owner to pin."""
     info = load_info(key, out_dir)
     if info is None:
         raise publish.PublishError(f"No Borderline Why video {key}")
     if youtube is None and not connected():
         raise publish.PublishError("Connect the Borderline Why YouTube channel first (/bw connect)")
-    record = publish.upload_file(video_path(key, out_dir), upload_request(info, privacy), True, progress,
-                                 youtube or publish._youtube(TOKEN))
+    client = youtube or publish._youtube(TOKEN)
+    series = "" if info.get("episode") else series_of(info)
+    number = bw_series.reserve(out_root(out_dir), series, key) if series else None
+    try:
+        record = publish.upload_file(video_path(key, out_dir), upload_request(info, privacy, out_dir, number), True, progress, client)
+    except BaseException:
+        if number:
+            bw_series.release(out_root(out_dir), series, key)
+        raise
+    if number:
+        bw_series.confirm(out_root(out_dir), series, key, record.get("video_id", ""))
+        info.update(base_title=info["title"], title=bw_series.titled(info["title"], series, number),
+                    episode={"series": series, "number": number})
     info.setdefault("uploads", {})["youtube"] = record
     save_info(info, out_dir)
     progress(1.0, "Uploaded")
+    comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
     return record
+
+
+def can_comment() -> bool:
+    return publish.has_scope(publish.COMMENT_SCOPE, TOKEN)
+
+
+def comment(info: dict, youtube=None, out_dir: Path | None = None) -> dict | None:
+    """Post bw_series.COMMENT under the uploaded video (once). The result goes in the upload record ("comment", or
+    "comment_error" when it failed: the Discord message offers a retry). Never raises."""
+    record = (info.get("uploads") or {}).get("youtube") or {}
+    if not record.get("video_id") or record.get("comment"):
+        return record.get("comment")
+    error = ""
+    if record.get("privacy") == "private":
+        error = "comments only work once the video is public or unlisted"
+    elif youtube is None and not can_comment():
+        error = "reconnect the Borderline Why YouTube channel once to allow comments (/bw connect)"
+    else:
+        try:
+            record["comment"] = bw_series.post_comment(youtube or publish._youtube(TOKEN), record["video_id"], bw_series.comment_text())
+        except Exception as err:  # noqa: BLE001 - the video is up; only the comment failed
+            error = publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment") \
+                if err.__class__.__name__ == "HttpError" else str(err) or err.__class__.__name__
+    if error:
+        record["comment_error"] = error
+    else:
+        record.pop("comment_error", None)
+    save_info(info, out_dir)
+    return record.get("comment")
+
+
+def comment_again(key: str, out_dir: Path | None = None, youtube=None) -> dict:
+    """The retry from Discord: the comment record. Raises PublishError with the reason when it fails again."""
+    info = load_info(key, out_dir)
+    if info is None or not (info.get("uploads") or {}).get("youtube"):
+        raise publish.PublishError("That Borderline Why video is not on YouTube")
+    found = comment(info, youtube, out_dir)
+    if found is None:
+        raise publish.PublishError(info["uploads"]["youtube"].get("comment_error") or "the comment didn't go through")
+    return found
 
 
 def is_vetoed(info: dict) -> bool:
@@ -566,7 +691,8 @@ def approve(key: str, settings=None, out_dir: Path | None = None, now: datetime 
     record = None
     if post_at is not None and settings is not None and (now or assistant.now(settings)) >= post_at and auto_post():
         record = publish_if_allowed(key, out_dir=out_dir, youtube=youtube, settings=settings)
-    return {"title": info["title"], "record": record, "post_at": post_at}
+    title = (load_info(key, out_dir) or info)["title"] if record else info["title"]  # numbered by the upload
+    return {"title": title, "record": record, "post_at": post_at}
 
 
 def veto(key: str, out_dir: Path | None = None, youtube=None) -> dict[str, Any]:
@@ -606,7 +732,7 @@ def _rest(settings=None):
 
 def video_line(info: dict) -> str:
     sources = ", ".join(s.get("title", "")[:40] for s in info.get("sources", [])[:3])
-    return (f"🗺️ **{info.get('title', info.get('key', ''))}** · {info.get('duration_seconds', 0):.0f} s · {info.get('words', '?')} words"
+    return (f"🗺️ **{display_title(info)}** · {info.get('duration_seconds', 0):.0f} s · {info.get('words', '?')} words"
             + (f" · 🎵 {info['music']['title']}" if info.get("music") else "") + (f"\nSources: {sources}" if sources else ""))
 
 
@@ -647,12 +773,26 @@ def announce_video(info: dict, settings=None, out_dir: Path | None = None) -> st
         return None
 
 
+def comment_line(record: dict) -> str:
+    """The upload message's comment line: the pin reminder (the API can't pin), or why it didn't go through."""
+    if found := record.get("comment"):
+        return f"💬 Comment posted: “{found['text']}”. **Pin it** on YouTube (the comment's ⋮ → Pin); the API can't: <{found['url']}>"
+    if error := record.get("comment_error"):
+        return f"💬 The comment didn't go through: {error}"
+    return ""
+
+
 def announce_upload(info: dict, record: dict, settings=None) -> str | None:
     lb = channel_common.link_button
-    return announce_text(f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({record.get('privacy', '?')}): {record.get('url', '')}",
-                         settings, channel_common.rows(lb("▶️ Watch", record.get("url", "")) if record.get("url") else None,
-                                                       channel_common.button("bwveto", info["key"], "🚫 Make it private", "danger"),
-                                                       lb("🎬 YouTube Studio", record.get("studio_url", "")) if record.get("studio_url") else None))
+    b = channel_common.button
+    text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({record.get('privacy', '?')}): {record.get('url', '')}"
+    if line := comment_line(record):
+        text += "\n" + line
+    return announce_text(text, settings, channel_common.rows(
+        lb("▶️ Watch", record.get("url", "")) if record.get("url") else None,
+        b("bwcm", info["key"], "💬 Post the comment", "primary") if record.get("comment_error") else None,
+        b("bwveto", info["key"], "🚫 Make it private", "danger"),
+        lb("🎬 YouTube Studio", record.get("studio_url", "")) if record.get("studio_url") else None))
 
 
 # --------------------------------------------------------------------------- YouTube login

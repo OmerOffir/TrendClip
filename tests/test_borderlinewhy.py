@@ -525,7 +525,7 @@ def test_plan_days_states_and_extra_videos(settings, tmp_path, world, monkeypatc
     today = days[0]
     assert today["today"] and [r["slot"] for r in today["slots"]] == ["14:30", "19:00", "23:00"]
     by = {r["slot"]: r for r in today["slots"]}
-    assert by["14:30"]["state"] == "approved" and by["14:30"]["video"]["title"] == SCRIPT["title"]
+    assert by["14:30"]["state"] == "approved" and by["14:30"]["video"]["title"] == SCRIPT["title"] + " (Weird Borders #1 next)"
     assert by["19:00"]["state"] == "posted" and by["19:00"]["extra"]
     assert by["23:00"]["state"] == "due"  # made 8 h before: 15:00, so it is being made
     tomorrow = {r["slot"]: r["state"] for r in days[1]["slots"]}
@@ -1111,3 +1111,174 @@ def test_check_finds_the_photos(world):
     assert ok == []
     bad = " | ".join(bw_script.check(draft, _research(), _find(world), photo_find=lambda q: None))
     assert "no picture found for 'Mitchell Map'" in bad
+
+
+# --------------------------------------------------------------------------- the numbered series and the comment
+
+from modules import bw_series  # noqa: E402
+
+
+def test_series_of_a_topic():
+    assert bw_series.classify("Why is Gambia a thin strip inside Senegal?", "The Gambia") == "Weird Borders"  # a tagged seed
+    assert bw_series.classify("Why is Canberra the capital?", "Canberra") == ""
+    assert bw_series.classify("Why does a Dutch village sit inside Belgium?", "X") == "Weird Borders"  # added by hand: its words
+    assert bw_series.classify("Why is Canberra the capital?", "Canberra", tag="weird borders") == "Weird Borders"  # its own tag
+    assert bw_series.classify("Why is there an enclave here?", "Y", tag="") == ""  # said "none"
+    seeds = {t.article: t.episode_of for t in bw_topics.all_topics(bw_topics.TopicState())}
+    assert seeds["Northwest Angle"] == "Weird Borders" and seeds["Time in China"] == ""
+    assert set(bw_series.SEED_ARTICLES) <= set(seeds)  # no typo in the hand-tagged list
+
+
+def test_series_title_is_numbered_and_fits():
+    assert bw_series.titled("Why is Gambia inside Senegal?", "Weird Borders", 7) == "Why is Gambia inside Senegal? | Weird Borders #7"
+    assert bw_series.titled("Weird Borders #3: Why is Gambia inside Senegal?", "Weird Borders", 7).startswith("Why is Gambia")
+    long = bw_series.titled("Why " + "very " * 30 + "odd?", "Weird Borders", 12)
+    assert len(long) <= bw_series.TITLE_ROOM and long.endswith(" | Weird Borders #12")
+    assert bw_channel.publish._yt_title(long).endswith("| Weird Borders #12 #shorts")
+
+
+def test_series_counter_reserves_confirms_and_gives_back(tmp_path):
+    assert bw_series.peek(tmp_path, "Weird Borders") == 1
+    assert bw_series.reserve(tmp_path, "Weird Borders", "a") == 1
+    assert bw_series.reserve(tmp_path, "Weird Borders", "a") == 1  # a retry keeps its number
+    bw_series.confirm(tmp_path, "Weird Borders", "a", "vid")
+    assert bw_series.reserve(tmp_path, "Weird Borders", "b") == 2
+    bw_series.release(tmp_path, "Weird Borders", "b")  # its upload failed: #2 is free again
+    assert bw_series.peek(tmp_path, "Weird Borders") == 2
+    bw_series.release(tmp_path, "Weird Borders", "a")  # an uploaded episode keeps its number
+    assert bw_series.number_of(tmp_path, "Weird Borders", "a") == 1
+    data = bw_series.load(tmp_path)
+    data["Weird Borders"]["start"] = 10  # the owner continues an older count
+    bw_series._save(data, tmp_path)
+    assert bw_series.peek(tmp_path, "Weird Borders") == 11
+    assert bw_series.summary(tmp_path)[0] == {"series": "Weird Borders", "last": 1, "next": 11, "episodes": 1}
+
+
+class FakeComments(FakeYouTube):
+    def __init__(self, fail=False):
+        super().__init__()
+        self.comments, self.fail = [], fail
+
+    def commentThreads(self):
+        return self
+
+    def insert(self, part, body):
+        if self.fail:
+            raise RuntimeError("comments are off")
+        self.comments.append(body)
+        return self
+
+    def execute(self):
+        return {"id": "c1"} if self.comments else {}
+
+
+def _fake_upload(monkeypatch, uploads, fail=False):
+    def upload_file(path, req, as_short, progress, youtube):
+        if fail:
+            raise bw_channel.publish.PublishError("quota")
+        uploads.append(req)
+        return {"video_id": f"v{len(uploads)}", "url": f"https://youtu.be/v{len(uploads)}", "privacy": req.privacy}
+
+    monkeypatch.setattr(bw_channel.publish, "upload_file", upload_file)
+
+
+def test_series_episodes_are_numbered_at_the_upload(settings, tmp_path, world, monkeypatch):
+    first, _, _ = _make(settings, tmp_path, world, slot="14:30")
+    stopped, _, _ = _make(settings, tmp_path, world, slot="23:00")
+    later, _, _ = _make(settings, tmp_path, world, day=Day(2026, 11, 3))
+    assert bw_channel.load_info(first.key, tmp_path)["series"] == "Weird Borders"
+    numbers = bw_channel.expected_numbers(bw_channel.videos(tmp_path), tmp_path)
+    assert [numbers[k] for k in (first.key, stopped.key, later.key)] == [1, 2, 3]  # the Plan shows them in slot order
+    announced = []
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda info, record, settings=None: announced.append((info["title"], record)))
+
+    uploads = []
+    _fake_upload(monkeypatch, [], fail=True)
+    with pytest.raises(bw_channel.publish.PublishError):
+        bw_channel.upload(first.key, youtube=FakeComments(), out_dir=tmp_path)
+    assert bw_series.peek(tmp_path, "Weird Borders") == 1  # a failed upload uses no number
+
+    _fake_upload(monkeypatch, uploads)
+    yt = FakeComments()
+    bw_channel.upload(first.key, youtube=yt, out_dir=tmp_path)
+    assert uploads[0].title == SCRIPT["title"] + " | Weird Borders #1"
+    saved = bw_channel.load_info(first.key, tmp_path)
+    assert saved["title"] == uploads[0].title and saved["base_title"] == SCRIPT["title"]
+    assert saved["episode"] == {"series": "Weird Borders", "number": 1}
+    assert announced[-1][0] == uploads[0].title  # Discord shows the numbered title
+
+    bw_channel.veto(stopped.key, tmp_path)  # stopped before its upload: it takes no number
+    bw_channel.upload(later.key, youtube=yt, out_dir=tmp_path)
+    assert uploads[1].title.endswith("| Weird Borders #2")
+    assert bw_channel.display_title(bw_channel.load_info(later.key, tmp_path)) == uploads[1].title
+    assert bw_channel.upload_request(bw_channel.load_info(first.key, tmp_path)).title == uploads[0].title  # never numbered twice
+
+
+def test_the_comment_is_posted_after_the_upload(settings, tmp_path, world, monkeypatch):
+    job, _, _ = _make(settings, tmp_path, world)
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
+    _fake_upload(monkeypatch, [])
+    yt = FakeComments()
+    record = bw_channel.upload(job.key, youtube=yt, out_dir=tmp_path)
+    body = yt.comments[0]["snippet"]
+    assert body["videoId"] == "v1" and body["topLevelComment"]["snippet"]["textOriginal"] == "Which weird border should I cover next?"
+    saved = bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]
+    assert saved["comment"]["url"] == "https://www.youtube.com/watch?v=v1&lc=c1" and record["comment"] == saved["comment"]
+    line = bw_channel.comment_line(saved)
+    assert "Pin it" in line and "Which weird border should I cover next?" in line
+    assert bw_channel.comment(bw_channel.load_info(job.key, tmp_path), yt, tmp_path) == saved["comment"] and len(yt.comments) == 1  # once
+
+
+def test_a_failed_comment_is_reported_and_can_be_retried(settings, tmp_path, world, monkeypatch):
+    job, _, _ = _make(settings, tmp_path, world)
+    texts = []
+    monkeypatch.setattr(bw_channel, "announce_text", lambda text, settings=None, components=None: texts.append((text, components)))
+    _fake_upload(monkeypatch, [])
+    bw_channel.upload(job.key, youtube=FakeComments(fail=True), out_dir=tmp_path)
+    text, components = texts[-1]
+    assert "comment didn't go through: comments are off" in text
+    assert any(b.get("custom_id") == f"tc:bwcm:{job.key}" for row in components for b in row["components"])
+    found = bw_channel.comment_again(job.key, tmp_path, FakeComments())
+    assert found["text"] == "Which weird border should I cover next?"
+    assert "comment_error" not in bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]
+
+
+def test_a_private_upload_gets_no_comment_and_a_plain_video_no_number(settings, tmp_path, world, monkeypatch):
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
+    uploads = []
+    _fake_upload(monkeypatch, uploads)
+    job, _, _ = _make(settings, tmp_path, world)
+    info = bw_channel.load_info(job.key, tmp_path)
+    bw_channel.save_info({**info, "series": ""}, tmp_path)  # outside any series
+    yt = FakeComments()
+    bw_channel.upload(job.key, "private", youtube=yt, out_dir=tmp_path)
+    assert uploads[0].title == SCRIPT["title"] and yt.comments == []
+    assert "public or unlisted" in bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]["comment_error"]
+    assert bw_series.load(tmp_path) == {}
+
+
+def test_topic_picking_and_the_prompt_know_the_series(tmp_path, monkeypatch):
+    monkeypatch.delenv("BW_SERIES_EVERY", raising=False)
+    state = bw_topics.TopicState(used={a: "x" for q, a in bw_topics.SEEDS})
+    state.proposed = [bw_topics.Topic(question="Why is Ottawa the capital?", article="Ottawa", source="gemini", series=""),
+                      bw_topics.Topic(question="Why is Point X cut off?", article="Point X", source="gemini", series="Weird Borders")]
+    bw_topics.save(state, tmp_path)
+    assert bw_topics.next_topic(tmp_path).article == "Ottawa"
+    assert bw_series.due([""]) == "Weird Borders" and bw_series.due(["Weird Borders"]) == ""
+    assert bw_topics.next_topic(tmp_path, prefer="Weird Borders").article == "Point X"
+    bw_topics.add(tmp_path, "Why is Paris the capital?", "Paris")  # added by hand: it still goes first
+    assert bw_topics.next_topic(tmp_path, prefer="Weird Borders").article == "Paris"
+
+    episode = _research()
+    note = bw_script.write_prompt(episode)
+    assert 'next episode of the channel\'s numbered series "Weird Borders"' in note
+    plain = bw_script.Research(bw_topics.Topic(question="Why is Canberra the capital?", article="Canberra", series=""), "Canberra", episode.sources)
+    assert "numbered series" not in bw_script.write_prompt(plain)
+    assert bw_script.finish(_draft(), episode)["series"] == "Weird Borders"
+    assert "Weird Borders" in bw_topics.propose_prompt([]) and '"series": "Weird Borders"' in bw_topics.LLM_FORMAT
+
+
+def test_check_keeps_the_series_out_of_the_title(world):
+    draft = _draft()
+    draft.title = "Why does Minnesota have a notch? | Weird Borders #3"
+    assert any("series name" in p for p in bw_script.check(draft, _research(), _find(world)))

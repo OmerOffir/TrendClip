@@ -20,7 +20,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
-from modules import bw_fx, bw_geo, bw_render
+from modules import bw_fx, bw_geo, bw_render, bw_series
 from modules.bw_topics import Topic
 
 logger = logging.getLogger(__name__)
@@ -680,6 +680,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
         problems.append("only one source is cited; support some claims with another source")
     if not draft.title.strip() or len(draft.title) > 95:
         problems.append("the title is missing or over 95 characters")
+    elif bw_series.strip(draft.title) != draft.title.strip() or re.search(r"#\d", draft.title):
+        problems.append("leave the series name and episode number out of the title: the channel adds them at the upload")
     return problems
 
 
@@ -693,10 +695,22 @@ def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
     return [u.strip() for u in found.unsupported if u.strip()]
 
 
+def series_note(topic: Topic) -> str:
+    """The line that tells the writer this Short is the next episode of a numbered series ("" when it isn't)."""
+    series = topic.episode_of
+    if not series:
+        return ""
+    return (f'This Short is the next episode of the channel\'s numbered series "{series}" ({bw_series.SERIES[series]}). '
+            f"Viewers follow the series, so make the weirdness of the map the hook. Keep the title the plain question: "
+            f'never write "{series}" or an episode number in it (the channel adds "| {series} #N" at the upload).')
+
+
 def write_prompt(res: Research, today: str = "") -> str:
     import datetime as dt
 
-    return PROMPT.format(question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video", mascot_lines=MASCOT_LINES,
+    note = series_note(res.topic)
+    head = 'Today\'s question: "{question}"'
+    return PROMPT.replace(head, head + ("\n{series_note}" if note else "")).format(series_note=note, question=res.topic.question, icon_count="6-10 in the video", stamp_count="one in the video", mascot_lines=MASCOT_LINES,
                          photo_count=PHOTO_COUNT, board_count=BOARD_COUNT,
                          min_words=MIN_WORDS, max_words=MAX_WORDS, max_sentence=MAX_SENTENCE_WORDS,
                          min_scenes=MIN_SCENES, max_scenes=MAX_SCENES, max_cards=MAX_CARDS, icons=", ".join(bw_fx.icon_names()),
@@ -717,7 +731,7 @@ def finish(draft: Draft, res: Research) -> dict[str, Any]:
     used = sorted({c.source_id for c in draft.claims})
     return {
         **to_spec_dict(draft),
-        "question": res.topic.question, "article": res.article, "narration": narration(draft),
+        "question": res.topic.question, "article": res.article, "narration": narration(draft), "series": res.topic.episode_of,
         "claims": [c.model_dump() for c in draft.claims],
         "sources": [{"id": s.id, "url": s.url, "title": s.title} for s in res.sources if s.id in used],
         "description": draft.description.strip(),

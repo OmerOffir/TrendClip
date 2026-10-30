@@ -14,7 +14,7 @@ def week(tmp_path, monkeypatch):
     """A session of two researched topics, with the geocoder and the rule check faked."""
     base = _research()
     second = bw_script.Research(bw_topics.Topic(question="Why does Spain own Llívia?", article="Llívia"), "Llívia", base.sources)
-    monkeypatch.setattr(bw_topics, "next_topic", lambda out_dir, skip=None: next(
+    monkeypatch.setattr(bw_topics, "next_topic", lambda out_dir, skip=None, prefer="": next(
         (t for t in (bw_topics.Topic(question=base.topic.question, article=base.article), second.topic) if t.article not in (skip or set())), None))
     monkeypatch.setattr(bw_script, "research", lambda topic, progress=None: base if topic.article == base.article else second)
     monkeypatch.setattr(bw_script, "check", lambda draft, res, find=None: [])

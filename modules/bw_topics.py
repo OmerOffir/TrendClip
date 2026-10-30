@@ -15,6 +15,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from modules import bw_series
+
 logger = logging.getLogger(__name__)
 
 REFILL_AT = 8
@@ -76,6 +78,11 @@ class Topic(BaseModel):
     question: str
     article: str
     source: str = "seed"  # seed | gemini | llm (your own, pasted) | manual (added on the dashboard: goes first)
+    series: str | None = None  # its numbered series (modules.bw_series), "" none, None not said (judged by its words)
+
+    @property
+    def episode_of(self) -> str:
+        return bw_series.classify(self.question, self.article, self.series)
 
 
 class TopicState(BaseModel):
@@ -104,7 +111,8 @@ def save(state: TopicState, out_dir: Path) -> None:
 
 
 def all_topics(state: TopicState) -> list[Topic]:
-    return [Topic(question=q, article=a) for q, a in SEEDS] + list(state.proposed)
+    return [Topic(question=q, article=a, series=bw_series.WEIRD_BORDERS if a in bw_series.SEED_ARTICLES else "")
+            for q, a in SEEDS] + list(state.proposed)
 
 
 def remaining(out_dir: Path) -> list[Topic]:
@@ -139,13 +147,17 @@ def listing(out_dir: Path) -> list[dict[str, Any]]:
             status, note = "dropped", state.rejected[t.article]
         else:
             status, note = "next" if order.get(t.article) == 0 else "waiting", ""
-        out.append({**t.model_dump(), "status": status, "note": note, "order": order.get(t.article)})
+        out.append({**t.model_dump(), "series": t.episode_of, "status": status, "note": note, "order": order.get(t.article)})
     return sorted(out, key=lambda r: (r["order"] is None, r["order"] if r["order"] is not None else 0))
 
 
-def next_topic(out_dir: Path, skip: set[str] | None = None) -> Topic | None:
-    """The first unused topic (seeds in order, then Gemini's), not in `skip`."""
-    return next((t for t in remaining(out_dir) if t.article not in (skip or set())), None)
+def next_topic(out_dir: Path, skip: set[str] | None = None, prefer: str = "") -> Topic | None:
+    """The first unused topic (seeds in order, then Gemini's), not in `skip`. With `prefer` (a series, when its
+    next episode is due: bw_series.due) the first topic of that series goes first, after the ones added by hand."""
+    left = [t for t in remaining(out_dir) if t.article not in (skip or set())]
+    if prefer and left and left[0].source != "manual":
+        return next((t for t in left if t.episode_of == prefer), left[0])
+    return left[0] if left else None
 
 
 def mark(out_dir: Path, article: str, used: bool, note: str = "") -> None:
@@ -163,6 +175,8 @@ def mark(out_dir: Path, article: str, used: bool, note: str = "") -> None:
 class Proposal(BaseModel):
     question: str = Field(description="A 'Why...?' question a curious viewer would ask, under 90 characters.")
     article: str = Field(description="The exact title of the English Wikipedia article that answers it.")
+    series: str = Field("", description="'Weird Borders' when the question is about " + bw_series.SERIES[bw_series.WEIRD_BORDERS]
+                        + "; else ''.")
 
 
 class Proposals(BaseModel):
@@ -178,8 +192,15 @@ Propose 20 new questions. Each must:
 - have a surprising but true answer that fits in 60 seconds;
 - avoid active wars, ongoing ethnic conflicts and current elections.
 
+The channel runs a numbered series, "Weird Borders": {series_rule}. Make at least half of the
+questions Weird Borders episodes and set "series" to "Weird Borders" for those (and "" for the others).
+
 Do not repeat any of these articles: {used}
 """
+
+
+def propose_prompt(used: list[str]) -> str:
+    return PROPOSE_PROMPT.format(used=", ".join(used), series_rule=bw_series.SERIES[bw_series.WEIRD_BORDERS])
 
 
 def _taken(state: TopicState) -> list[str]:
@@ -204,7 +225,8 @@ def keep(out_dir: Path, proposals: list[Proposal], source: str, check=None) -> l
             logger.info("Topic %r not checked: %s", article, err)
             continue
         if title and title not in used:
-            new.append(Topic(question=p.question.strip(), article=title, source=source))
+            series = bw_series.normalize(p.series) if p.series.strip() else None  # unsaid: judged by its words
+            new.append(Topic(question=p.question.strip(), article=title, source=source, series=series))
             used.append(title)
     with _lock:
         state = load(out_dir)
@@ -224,7 +246,7 @@ def propose(out_dir: Path, client=None, check=None) -> list[Topic]:
     used = _taken(load(out_dir))
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=Proposals, temperature=0.9)
     try:
-        response, _ = script_writer._generate_with_fallback(client, model, [PROPOSE_PROMPT.format(used=", ".join(used))], config,
+        response, _ = script_writer._generate_with_fallback(client, model, [propose_prompt(used)], config,
                                                             lambda f, m: None, errors.APIError)
     except errors.APIError as err:
         raise bw_script.ScriptError(str(script_writer._explain(err, model))) from err
@@ -236,7 +258,7 @@ def propose(out_dir: Path, client=None, check=None) -> list[Topic]:
 
 LLM_FORMAT = """ANSWER FORMAT
 Answer with ONLY one JSON object (no text before or after it, no code fence), shaped like this:
-{"topics": [{"question": "Why does a Spanish town sit completely inside France?", "article": "Llívia"}]}"""
+{"topics": [{"question": "Why does a Spanish town sit completely inside France?", "article": "Llívia", "series": "Weird Borders"}]}"""
 
 
 class LLMTopicsError(ValueError):
@@ -245,7 +267,7 @@ class LLMTopicsError(ValueError):
 
 def llm_prompt(out_dir: Path) -> str:
     """Gemini's topic prompt, for any LLM (the dashboard's "New topics from your LLM")."""
-    return PROPOSE_PROMPT.format(used=", ".join(_taken(load(out_dir)))) + "\n" + LLM_FORMAT
+    return propose_prompt(_taken(load(out_dir))) + "\n" + LLM_FORMAT
 
 
 def llm_add(out_dir: Path, text: str, check=None) -> dict[str, Any]:

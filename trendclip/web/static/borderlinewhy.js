@@ -27,6 +27,7 @@
         + ` and posted in Discord · ${body.require_approval ? "goes out only after <b>Approve</b>" : "goes out unless vetoed"}`
         + ` · as ${esc(body.privacy)}`
         + (nxt ? ` · next: ${esc(fmtWhen(nxt.post_at))} (made at ${esc(nxt.start.slice(11, 16))})` : "")
+        + (body.series || []).map((x) => ` · 📺 ${esc(x.series)}: ${x.episodes} out, next #${x.next}`).join("")
         + ` · ${body.topics.left} topics left${body.queued.length ? `, ${body.queued.length} hand-checked script(s) queued` : ""}`
         + (body.auto_make ? "" : " · <b>automatic making is off</b> (BW_AUTO_MAKE)")
         + (body.discord ? "" : " · <b>no Discord channel</b> (channels/borderlinewhy/channel.env)");
@@ -130,7 +131,7 @@
           <span class="pill">📅 ${esc(fmtWhen((v.job || {}).post_at))}</span><span class="pill">${esc(v.words)} words</span></div>
         <span class="hint">made ${esc(fmtWhen(v.created_at))} · ${esc(v.origin || "")}${v.music ? ` · 🎵 ${esc(v.music.title)}` : ""} · palette ${esc(v.theme || "")}</span>
         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}
-        ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a>${up.studio_url ? ` · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a>` : ""}</span>` : ""}
+        ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a>${up.studio_url ? ` · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a>` : ""}${up.comment ? ` · 💬 <a href="${esc(up.comment.url)}" target="_blank" rel="noopener">comment posted</a>: pin it on YouTube` : up.comment_error ? ` · 💬 comment failed: ${esc(up.comment_error)}` : ""}</span>` : ""}
         <div class="da-yt-text">
           <div class="da-yt-row"><span class="da-yt-label">Question</span><span>${esc(v.question || "")}</span></div>
           <div class="da-yt-row"><span class="da-yt-label">Sources</span><ul class="bw-sources">${sources || "<li>none</li>"}</ul></div>
@@ -315,7 +316,7 @@
       els.topicsCount.textContent = `· ${s.left} left · ${s.used} made · ${s.rejected} dropped`;
       els.topics.innerHTML = body.topics.map((t) => `<div class="bw-topic ${esc(t.status)}">
           <span class="bw-n">${t.order != null ? t.order + 1 : ""}</span>
-          <span>${esc(t.question)}<small>Wikipedia: ${esc(t.article)}${t.source !== "seed" ? ` · ${esc(t.source)}` : ""}${t.note ? ` · ${esc(t.note)}` : ""}</small></span>
+          <span>${esc(t.question)}<small>Wikipedia: ${esc(t.article)}${t.source !== "seed" ? ` · ${esc(t.source)}` : ""}${t.series ? ` · 📺 ${esc(t.series)}` : ""}${t.note ? ` · ${esc(t.note)}` : ""}</small></span>
           <span class="pill">${TOPIC[t.status] || esc(t.status)}</span>
         </div>`).join("") || '<div class="empty">No topics.</div>';
       els.topicsError.hidden = true;
