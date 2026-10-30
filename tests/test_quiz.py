@@ -665,7 +665,8 @@ def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path):
     assert "wiki" in seen["prompts"][1]  # the game check, not the general trivia one
     assert result.mode == "gamer" and result.answer == "10" and result.game == "Minecraft"
     assert result.script.startswith("How many obsidian blocks make the smallest Nether portal? Is it ")
-    assert result.script.endswith(quiz.LOOP_END) and len(result.script.split()) <= quiz.LOOP_MAX_WORDS
+    # The close asks for the answer, then hooks the next level and says Subscribe (the button pops there).
+    assert result.script.endswith("Got it? Drop your answer below! Level 2 drops next. Subscribe so you don't miss it!")
     assert result.title_card == "LEVEL 1 - MINECRAFT FANS ONLY"
     assert result.title == "Real Minecraft Players Know This | Level 1 🎮"  # Gemini's emoji is dropped
     assert "Level 2 drops next!" in result.pinned_comment and "10 leaderboard points" in result.pinned_comment

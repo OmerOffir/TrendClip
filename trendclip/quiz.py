@@ -1134,6 +1134,9 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
 
 GAMER_CANDIDATES = 4
 GAMER_HOOK = "{game} fans only."
+# The close: the comment ask, then the series hook; saying "Subscribe" pops the subscribe button. "Next", not
+# "tomorrow": two levels go out a day.
+GAMER_NEXT = "Level {level} drops next. Subscribe so you don't miss it!"
 
 
 def gamer_level(settings: Settings) -> int:
@@ -1269,10 +1272,9 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
         _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))
     hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
     asks = [f"Is it {options[0]}?", f"{options[1][:1].upper()}{options[1][1:]}?", f"Or {options[2]}?"]
-    # Like the trivia trap: the question is the first word spoken and the Short loops back into it.
-    lines = [question, *asks, COUNTDOWN]
-    end = loop_end(lines)
-    lines.append(end)
+    # Like the trivia trap: the question is the first word spoken.
+    end = LOOP_END_SHORT
+    lines = [question, *asks, COUNTDOWN, end, GAMER_NEXT.format(level=level + 1)]
     flashes = [Flash(word=question.split()[0], text="?")]
     for letter, option, said in zip("ABC", options, ("Is it ", "", "Or ")):
         name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
