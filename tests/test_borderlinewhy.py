@@ -991,3 +991,15 @@ def test_long_video_research_with_only_wikipedia_markdown_links_adds_the_article
     assert read == ["Treaty of Paris (1783)", "Canada–United States border"]
     assert [x["title"] for x in s["sources"][-2:]] == ["Treaty of Paris (1783) - Wikipedia", "Canada–United States border - Wikipedia"]
     assert "Not Wikipedia" in bw_long.RESEARCH_PROMPT
+
+
+def test_owner_icons_have_short_names(tmp_path, monkeypatch):
+    from modules import bw_fx
+
+    for name in ("king_waving.gif", "horse_trotting.gif", "settlers.gif"):
+        (tmp_path / name).write_bytes(b"")
+    monkeypatch.setattr(bw_fx, "CUSTOM_DIR", tmp_path)
+    assert bw_fx.icon_code("King") == "king" and bw_fx.icon_code("king_waving") == "king_waving"
+    assert bw_fx.icon_code("horse") == "horse"  # the owner's horse, not the Noto one
+    extra = [n for n in bw_fx.icon_names() if n not in bw_fx.ICONS]
+    assert extra == ["settlers", "king"]  # the short name only, in the prompt's list

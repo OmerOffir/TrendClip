@@ -58,7 +58,7 @@ ICONS = dict(
 SLOTS = {  # per layout (modules.bw_render.LAYOUTS)
     "portrait": dict(icon={"map": ((540, 640), (250, 760), (830, 760), (540, 1170)), "card": ((540, 1230), (260, 1230), (820, 1230))},
                      pole={"map": ((150, 1270), (420, 1270), (690, 1270)), "card": ((200, 1340), (640, 1340), (420, 1340))}),
-    "landscape": dict(icon={"map": ((1500, 360), (420, 360), (1500, 700), (420, 700)), "card": ((560, 780), (1360, 780), (960, 780))},
+    "landscape": dict(icon={"map": ((1500, 360), (420, 360), (1500, 700), (420, 700)), "card": ((560, 740), (1360, 740), (960, 740))},
                       pole={"map": ((170, 830), (1660, 830), (430, 830)), "card": ((230, 840), (1600, 840), (430, 840))}),
 }
 ICON_SLOTS, POLE_SLOTS = SLOTS["portrait"]["icon"], SLOTS["portrait"]["pole"]
@@ -272,6 +272,14 @@ CUSTOM_DIR = bw_geo.PROJECT_ROOT / "stickers" / "borderlinewhy"
 CUSTOM_EXT = (".gif", ".webp", ".png", ".apng")
 
 
+# Short names for the owner's files named after what they do (king_waving.gif): a script writes "king"
+ALIASES = {"king": "king_waving", "queen": "queen_curtsying", "soldier": "soldier_marching", "soldiers": "blue_and_red_soldiers_marching",
+           "army": "blue_and_red_soldiers_marching", "explorer": "explorer_scanning", "diplomats": "diplomats_handshake",
+           "handshake": "diplomats_handshake", "judge": "judge_gavel", "court": "judge_gavel", "crowd": "crowd_waving",
+           "newspaper": "newspaper_unfolding", "vote": "vote_ballot_cast", "horse": "horse_trotting", "castle": "castle_flags_and_gate",
+           "town": "town_life"}
+
+
 def _key(name: str) -> str:
     return name.strip().lower().replace(" ", "_").replace("-", "_")
 
@@ -286,12 +294,16 @@ def custom_icons() -> dict[str, Path]:
     for path in files:
         if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith("."):
             out.setdefault(_key(path.stem), path)
+    for short, name in ALIASES.items():
+        if name in out:
+            out.setdefault(short, out[name])
     return out
 
 
 def icon_names() -> list[str]:
     """Every icon name a script may use: the Noto ones, then the owner's own."""
-    return list(ICONS) + [name for name in custom_icons() if name not in ICONS]
+    long_names = set(ALIASES.values())
+    return list(ICONS) + [name for name in custom_icons() if name not in ICONS and not (name in long_names and name not in ALIASES)]
 
 
 def _custom_frames(path: Path, size: int) -> tuple[list[Image.Image], list[float]]:
