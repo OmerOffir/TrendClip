@@ -31,10 +31,14 @@ channels/
 ```
 
 - `CHANNEL` in `.env` picks the active channel (default `sidequestlogic`).
-- `PLATFORMS` (default `youtube,instagram`) is where the videos go: the plan's platforms and goals,
+- `PLATFORMS` (default `youtube`) is where the videos go: the plan's platforms and goals,
   the captions the bot posts, the morning channel report and the Upload tab's tabs. TikTok has no
-  upload API, so it is off by default; `PLATFORMS=youtube,instagram,tiktok` brings its captions, tab,
+  upload API, so it is off by default; `PLATFORMS=youtube,tiktok` brings its captions, tab,
   stats and plan buttons back. A platform switched off disappears from existing plans on load.
+- **Instagram is off since 2026-10-30 (YouTube only for now).** The bot and the dashboard no longer post,
+  reply or read stats there, and an old `PLATFORMS=youtube,instagram` is read as `youtube`. The
+  Instagram code (`instagram.py`, `ig_replies.py`, `tunnel.py`) is kept but disconnected; the Instagram
+  sections below describe it as it was.
 
 - Settings in `channel.env` win over `.env`, so any setting (`TTS_VOICE`, `MUSIC_VOLUME`, …) can
   differ per channel. Real environment variables win over both.
@@ -447,7 +451,7 @@ Setup: create a key at [Google AI Studio](https://aistudio.google.com/apikey) an
 `gemini-3.8-flash`), `TTS_VOICE`, `TTS_RATE`, `SHORT_TARGET_SECONDS`. On the free tier Google may use
 prompts to improve its products and applies daily limits.
 
-## Upload tab (YouTube / Instagram / TikTok)
+## Upload tab (YouTube / TikTok)
 
 In **Create → Your Shorts**, press **Ready to upload** on the videos you want to publish; they move to
 the **Upload** tab (the counter on the tab shows how many). Pick one and switch between three sub-tabs:

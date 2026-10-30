@@ -8,6 +8,9 @@ This API only takes videos by URL, so the Short is served for a few minutes from
 secret temporary link (tunnel.py, a Cloudflare quick tunnel). A Reel goes out in three steps: create a
 container with that link, wait while Instagram downloads and processes it (then the link closes), and
 publish. Instagram allows 100 API posts a day; the caption is the Instagram text from the Upload tab.
+
+Disconnected on 2026-10-30 (YouTube only for now): nothing in the bot or the dashboard calls this module.
+Kept so Instagram can be wired back in later without rebuilding it.
 """
 
 from __future__ import annotations
@@ -111,7 +114,7 @@ def status(settings: Settings) -> dict[str, Any]:
 def caption(short: shorts.ShortVideo) -> str:
     """The Instagram text from the Upload tab: caption, mentions, 5 hashtags and the credits."""
     texts = publish.PlatformTexts.model_validate(short.texts) if short.texts else publish.template_texts(short)
-    return publish.full_text(texts.instagram, texts.credit)
+    return publish.full_text(texts.tiktok, texts.credit)  # no Instagram caption is written since 2026-10-30
 
 
 def _wait(container: str, access_token: str, progress: ProgressFn) -> None:

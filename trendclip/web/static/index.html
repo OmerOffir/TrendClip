@@ -679,7 +679,6 @@
       <section class="card form upload-main">
         <div class="subtabs" role="tablist" id="uTabs">
           <button type="button" role="tab" data-platform="youtube" class="active">YouTube</button>
-          <button type="button" role="tab" data-platform="instagram">Instagram</button>
           <button type="button" role="tab" data-platform="tiktok">TikTok</button>
         </div>
         <div class="texts-source">
@@ -752,29 +751,6 @@
             </div>
             <div class="hint" id="ytCommentHint"></div>
           </div>
-        </div>
-
-        <div class="platform" data-pane="instagram" hidden>
-          <div class="yt-account" id="igAccount"></div>
-          <label class="field"><span>Caption</span><textarea id="igCaption" rows="4" maxlength="2000"></textarea></label>
-          <label class="field"><span>Hashtags <em id="igTagCount"></em></span><input id="igHashtags" type="text" /></label>
-          <label class="field"><span>Mentions <em>(@accounts to tag)</em></span><input id="igMentions" type="text" placeholder="@account" /></label>
-          <div class="field"><span>Ready to paste <em id="igCount"></em></span><pre class="paste" id="igFinal"></pre></div>
-          <div class="dl-actions">
-            <button type="button" class="btn-primary" id="igCopy">Copy caption</button>
-            <a id="igDownload" download>Download video</a>
-            <a href="https://www.instagram.com/" target="_blank" rel="noopener">Open Instagram</a>
-            <label class="check" id="igPostedField"><input type="checkbox" id="igPosted" /> Posted</label>
-          </div>
-          <label class="check" id="igCommentField" hidden><input type="checkbox" id="igComment" checked />
-            <span>Also post the comment <em id="igCommentText"></em></span></label>
-          <button id="igPost" class="btn-primary btn-block" type="button">Post on Instagram</button>
-          <div id="igJob" class="job" hidden></div>
-          <div id="igDone" class="banner banner-ok" hidden></div>
-          <ul class="tips">
-            <li>Posted as a <b>Reel</b> (also shown in the feed) with the caption above. Instagram allows at most 5 hashtags.</li>
-            <li>Choose a cover frame with the title card; add the music from the credits if Instagram asks.</li>
-          </ul>
         </div>
 
         <div class="platform" data-pane="tiktok" hidden>

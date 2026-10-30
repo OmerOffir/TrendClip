@@ -149,7 +149,7 @@ class Settings(BaseModel):
     discord_allowed_users: list[int] = Field(default_factory=list)  # empty: everyone on the server
     discord_morning_time: str = Field("10:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
     discord_reminder_minutes: int = Field(30, ge=0, le=180)  # 0 = no slot reminders
-    # At 14:30 / 23:00 the bot posts the planned Short on YouTube and Instagram itself (its plan platforms).
+    # At 14:30 / 23:00 the bot posts the planned Short on YouTube itself.
     auto_post: bool = True
     # An hour before 14:30 / 23:00 with nothing planned, the bot makes a random video and plans it there.
     emergency_video: bool = True
@@ -216,6 +216,8 @@ class Settings(BaseModel):
     youtube_reply_daily_max: int = Field(100, ge=1, le=180)
     # Read the comments this often to reply to new ones (0 = only the morning read and /replies).
     youtube_reply_check_hours: float = Field(3, ge=0, le=24)
+    # Instagram settings below are only read by the disconnected instagram.py / ig_replies.py (off since
+    # 2026-10-30, YouTube only): nothing posts, replies or reads stats there.
     # Reply on Instagram too (one per fan per Reel; every reply invites them to the YouTube leaderboard).
     instagram_auto_replies: bool = True
     instagram_reply_daily_max: int = Field(50, ge=1, le=200)
@@ -226,8 +228,9 @@ class Settings(BaseModel):
     channel: str = DEFAULT_CHANNEL
 
     # Where the videos go: the plan's platforms, the captions, the morning report and the Upload tab's tabs.
-    # TikTok (no upload API) is kept in the code but off by default: PLATFORMS=youtube,instagram,tiktok adds it.
-    platforms: list[Literal["youtube", "instagram", "tiktok"]] = Field(default_factory=lambda: ["youtube", "instagram"])
+    # TikTok (no upload API) is kept in the code but off by default: PLATFORMS=youtube,tiktok adds it.
+    # Instagram was dropped on 2026-10-30 (YouTube only for now): an old PLATFORMS=youtube,instagram is read as youtube.
+    platforms: list[Literal["youtube", "tiktok"]] = Field(default_factory=lambda: ["youtube"])
 
     @field_validator("platforms", mode="before")
     @classmethod
@@ -235,10 +238,10 @@ class Settings(BaseModel):
         if isinstance(value, str):
             value = [part.strip().lower() for part in value.split(",") if part.strip()]
         if isinstance(value, list):
-            order = ("youtube", "instagram", "tiktok")
-            value = [p for p in order if p in value]
-            if not value:
-                raise ValueError("PLATFORMS must name at least one of youtube, instagram, tiktok")
+            known = [p for p in ("youtube", "tiktok") if p in value]
+            if not known and "instagram" not in value:
+                raise ValueError("PLATFORMS must name at least one of youtube, tiktok")
+            value = known or ["youtube"]
         return value
 
 

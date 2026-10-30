@@ -20,9 +20,9 @@ from . import shorts
 from .config import Settings
 from .models import utcnow
 
-Platform = Literal["youtube", "instagram", "tiktok"]
+Platform = Literal["youtube", "tiktok"]
 Kind = Literal["reel", "long"]
-PLATFORMS: tuple[Platform, ...] = ("youtube", "instagram", "tiktok")
+PLATFORMS: tuple[Platform, ...] = ("youtube", "tiktok")
 # Daily upload times (in Settings.timezone); each slot of a day holds at most one item.
 Slot = Literal["14:30", "23:00"]
 SLOTS: tuple[Slot, ...] = ("14:30", "23:00")
@@ -33,11 +33,18 @@ def _new_slot(value):
     return OLD_SLOTS.get(value, value) if isinstance(value, str) else value
 
 
+def _known_platforms(value):
+    """Saved plans may still name a platform dropped since (Instagram, 2026-10-30): it is left out."""
+    return [p for p in value if p in PLATFORMS] if isinstance(value, list) else value
+
+
 class Goals(BaseModel):
     reels_per_day: int = Field(2, ge=0, le=10)
     long_per_week: int = Field(2, ge=0, le=14)
     reel_platforms: list[Platform] = Field(default_factory=lambda: list(PLATFORMS))
     long_platforms: list[Platform] = Field(default_factory=lambda: ["youtube"])
+
+    _known = field_validator("reel_platforms", "long_platforms", mode="before")(staticmethod(_known_platforms))
 
     @field_validator("reel_platforms", "long_platforms")
     @classmethod
@@ -58,6 +65,7 @@ class PlanItem(BaseModel):
     created_at: datetime = Field(default_factory=utcnow)
 
     _slot = field_validator("slot", mode="before")(staticmethod(_new_slot))
+    _known = field_validator("platforms", mode="before")(staticmethod(_known_platforms))
 
 
 class Plan(BaseModel):
@@ -313,7 +321,7 @@ def short_status(short: shorts.ShortVideo | None) -> dict[str, dict[str, Any]]:
         out[p] = {"done": False, "auto": False, "url": ""}
         if short is None:
             continue
-        upload = short.uploads.get(p) if p in ("youtube", "instagram") else None
+        upload = short.uploads.get(p) if p == "youtube" else None
         if upload:
             out[p] = {"done": True, "auto": True, "url": upload.get("url", ""),
                       "scheduled_for": upload.get("scheduled_for")}

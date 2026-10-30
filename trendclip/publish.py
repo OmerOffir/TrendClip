@@ -1,4 +1,4 @@
-"""Upload tab backend: per-platform texts (YouTube / TikTok / Instagram) and YouTube Shorts upload.
+"""Upload tab backend: per-platform texts (YouTube / TikTok) and YouTube Shorts upload.
 
 Texts come from a template built from the Short (instant, no key) or from Gemini (better hooks,
 tags and platform style). Credits (gameplay, music, pop-up images) are always appended.
@@ -42,7 +42,6 @@ COMMENT_SCOPE = SCOPES[2]
 ANALYTICS_SCOPE = SCOPES[3]
 GAMING_CATEGORY = "20"
 YT_TITLE_MAX, YT_TAGS_MAX_CHARS, CAPTION_MAX = 100, 450, 2200
-INSTAGRAM_MAX_HASHTAGS = 5  # Instagram allows at most 5 hashtags per post
 MIN_SCHEDULE_MINUTES, MAX_SCHEDULE_DAYS = 15, 180
 Privacy = Literal["private", "unlisted", "public"]
 
@@ -77,9 +76,6 @@ class GeminiTexts(BaseModel):
     tiktok: SocialText = Field(description=(
         "TikTok: caption of 1-2 short lines (under 150 characters) with a hook or a question that invites "
         "comments; 3-5 hashtags mixing broad (#gaming, #storytime) and niche ones."))
-    instagram: SocialText = Field(description=(
-        "Instagram Reels: caption of 2-4 short lines with line breaks and a call to action (save, share, "
-        "follow); at most 5 hashtags."))
 
 
 class PlatformTexts(GeminiTexts):
@@ -156,9 +152,6 @@ def clean(texts: GeminiTexts, credit: str, source: str, model: str = "", as_shor
                             tags=_tags(yt.tags), hashtags=hashtags),
         tiktok=SocialText(caption=texts.tiktok.caption.strip(), hashtags=_hashtags(texts.tiktok.hashtags, 6),
                           mentions=_mentions(texts.tiktok.mentions)),
-        instagram=SocialText(caption=texts.instagram.caption.strip(),
-                             hashtags=_hashtags(texts.instagram.hashtags, INSTAGRAM_MAX_HASHTAGS),
-                             mentions=_mentions(texts.instagram.mentions)),
         source=source, model=model, credit=public_credit(credit),
     )
 
@@ -184,7 +177,6 @@ def template_texts(short: shorts.ShortVideo) -> PlatformTexts:
                             + (["shorts"] if is_short(short) else ["storytime", "gameplay"]),
                             hashtags=base[:4]),
         tiktok=SocialText(caption=tiktok, hashtags=base[:3] + [game_tag, "#fyp"]),
-        instagram=SocialText(caption=f"{first}\n\n{_social_cta(short)}", hashtags=base[:4] + [game_tag]),
     )
     return clean(texts, short.credit, "template", as_short=is_short(short))
 
@@ -228,9 +220,9 @@ def gemini_texts(settings: Settings, short: shorts.ShortVideo, progress: Progres
 
     model = script_writer.gemini_model(settings)
     client = client or genai.Client(api_key=api_key)
-    kind = ("vertical video for YouTube Shorts, TikTok and Instagram Reels" if is_short(short) else
+    kind = ("vertical video for YouTube Shorts and TikTok" if is_short(short) else
             "16:9 video: a regular (long-form) YouTube video, NOT a Short, so never use #shorts; "
-            "TikTok and Instagram get it too")
+            "TikTok gets it too")
     prompt = PROMPT.format(kind=kind, game=short.game, title=short.title, script=short.script,
                            description=_story_part(short), hashtags=" ".join(short.hashtags))
     prompt += _series_prompt(short)
@@ -584,6 +576,6 @@ def post_comment(settings: Settings, filename: str, text: str, youtube=None) -> 
     return record
 
 
-def set_posted(settings: Settings, filename: str, platform: Literal["youtube", "tiktok", "instagram"], posted: bool):
+def set_posted(settings: Settings, filename: str, platform: Literal["youtube", "tiktok"], posted: bool):
     """Manual "I posted it" (YouTube too, for videos uploaded in YouTube Studio)."""
     return shorts.update_short(settings, filename, lambda s: s.posted.__setitem__(platform, posted))

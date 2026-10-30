@@ -541,22 +541,22 @@ def test_create_asks_story_math_or_riddle_with_buttons(settings, monkeypatch):
 
 
 
-def test_caption_message_is_copy_ready_for_youtube_tiktok_and_instagram(settings):
+def test_caption_message_is_copy_ready_for_youtube_and_tiktok(settings):
     from trendclip import discord_bot
 
     short = shorts.get_short(settings, add_short(settings))
     text = discord_bot.caption_message(settings, short, "📝 `14:30` **The Day**")
-    for label in ("▶️ YouTube", "📸 Instagram"):
-        assert label in text
-    assert "TikTok" not in text  # off by default (PLATFORMS)
+    assert "▶️ YouTube" in text
+    assert "TikTok" not in text and "Instagram" not in text  # YouTube only by default (PLATFORMS)
     with_tiktok = discord_bot.caption_message(settings.with_overrides(platforms=["youtube", "instagram", "tiktok"]),
                                               short, "📝")
-    assert "🎵 TikTok" in with_tiktok and discord_bot.platform_names(settings) == "YouTube and Instagram"
+    assert "🎵 TikTok" in with_tiktok and "Instagram" not in with_tiktok
+    assert discord_bot.platform_names(settings) == "YouTube"
 
     assert "I searched for three hours" in text  # the description text
     assert "#storytime" in text and "#shorts" in text and "#fyp" in with_tiktok  # #fyp is TikTok's
 
-    assert text.count("```") == 4 and with_tiktok.count("```") == 6 and len(text) <= discord_bot.MESSAGE_MAX
+    assert text.count("```") == 2 and with_tiktok.count("```") == 4 and len(text) <= discord_bot.MESSAGE_MAX
 
 
 
@@ -564,7 +564,7 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
     import asyncio
     from types import SimpleNamespace
 
-    from trendclip import discord_bot, ig_replies, leaderboard
+    from trendclip import discord_bot, leaderboard
 
     said, steps = [], []
 
@@ -583,10 +583,6 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
             steps.append("read" if wait else "read now")
             return leaderboard.Board(channel_id="UCme")
 
-        async def check_instagram(self, channel, wait=True):
-            steps.append("ig read" if wait else "ig read now")
-            return leaderboard.Board()
-
     async def fake_reply(interaction, content, **kw):
         said.append(content)
 
@@ -597,7 +593,6 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
         "replied": 7, "queued": 3, "quiz_wait": 2, "next_quiz": "2026-10-15T00:00:00+00:00", "unchecked": 0,
         "skipped": 1, "failed": 0, "sent_today": 8, "daily_max": 100})
 
-    monkeypatch.setattr(ig_replies, "enabled", lambda s: False)
     interaction = SimpleNamespace(client=Bot("YouTube isn't connected."), response=Response(), channel=None)
     asyncio.run(discord_bot.replies_cmd.callback(interaction))
     assert said == ["YouTube isn't connected."] and steps == []
@@ -615,17 +610,6 @@ def test_replies_command_reads_queues_sends_and_reports(settings, monkeypatch):
     assert "Not checked" not in text and "refused" not in text and "Instagram" not in text
     assert discord_bot.replies_cmd in discord_bot.COMMANDS
 
-    monkeypatch.setattr(ig_replies, "enabled", lambda s: True)
-    monkeypatch.setattr(ig_replies, "send_next_reply", lambda s, day: steps.append("ig send"))
-    monkeypatch.setattr(ig_replies, "reply_overview", lambda s, board, day: {
-        "replied": 0, "queued": 0, "quiz_wait": 0, "next_quiz": "", "unchecked": 0, "skipped": 0, "failed": 0,
-        "sent_today": 0, "daily_max": 50, "paused_until": ""})
-    said.clear(), steps.clear()
-    interaction.client = Bot("YouTube isn't connected.")
-    asyncio.run(discord_bot.replies_cmd.callback(interaction))
-    assert steps == ["defer", "ig read", "ig send"]
-    text = "\n".join(said)
-    assert "YouTube isn't connected" in text and "Instagram replies" in text and "Development mode" in text
 
 
 def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypatch, tmp_path):
@@ -651,8 +635,7 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
     commented, ran = [], []
     monkeypatch.setattr(publish, "post_comment", lambda s, f, text: commented.append(text))
     monkeypatch.setattr(assistant, "upload_now", lambda s, f, p: {"url": "https://youtu.be/v1", "privacy": "public"})
-    monkeypatch.setattr(instagram, "post_reel", lambda s, f, first_comment, progress: {
-        "url": "https://instagram.com/reel/r1"})
+    monkeypatch.setattr(instagram, "post_reel", lambda *a, **kw: ran.append("Instagram"))  # never: YouTube only
 
     class Channel:
         def __init__(self):
@@ -680,35 +663,42 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
 
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
-    assert ran == ["YouTube upload", "Instagram post"]
-    assert "posting \"Only 3% get this\" on YouTube and Instagram" in channel.sent[0][0]
+    assert item.platforms == ["youtube", "tiktok"]  # a plan item saved with Instagram drops it
+    assert ran == ["YouTube upload"]
+    assert "posting \"Only 3% get this\" on YouTube" in channel.sent[0][0] and "Instagram" not in channel.sent[0][0]
     report = channel.sent[-1][0]
-    assert report.startswith("✅") and "https://youtu.be/v1" in report and "https://instagram.com/reel/r1" in report
+    assert report.startswith("✅") and "https://youtu.be/v1" in report and "Instagram" not in report
     assert "TikTok has no upload API" in report and commented == ["Answer below 👇"]
 
     def broken(*a, **kw):
-        raise instagram.InstagramError("Instagram: token expired")
+        raise publish.PublishError("token expired")
 
-    monkeypatch.setattr(instagram, "post_reel", broken)
+    monkeypatch.setattr(assistant, "upload_now", broken)
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
     report, view = channel.sent[-1]
-    assert report.startswith("⚠️") and "Instagram failed: Instagram: token expired" in report
-    assert [b.custom_id for b in view.children] == ["tc:ig:q.mp4"]
+    assert report.startswith("⚠️") and "YouTube failed: token expired" in report and "Instagram" not in report
+    assert [b.custom_id for b in view.children] == ["tc:up:q.mp4"]
 
     short.uploads = {"youtube": {"url": "u"}, "instagram": {"url": "i"}}
     ran.clear()
-    item.platforms = ["youtube", "instagram"]
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
-    assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]
+    assert ran == [] and "already on YouTube." in channel.sent[0][0]
 
-    # posted by hand in the YouTube / Instagram app, then ticked "posted" in the Upload tab or the plan
+    # posted by hand in YouTube Studio, then ticked "posted" in the Upload tab or the plan
     short.uploads, short.posted = {}, {"youtube": True}
-    item.posted = {"instagram": item.date}
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
-    assert ran == [] and "already on YouTube and Instagram" in channel.sent[0][0]
+    assert ran == [] and "already on YouTube." in channel.sent[0][0]
+
+
+def test_no_instagram_buttons_or_actions_are_left(settings):
+    from trendclip import discord_bot
+
+    assert "ig" not in discord_bot.ACTIONS and "iggo" not in discord_bot.ACTIONS
+    assert not hasattr(discord_bot.TrendClipBot, "post_instagram")
+    assert not hasattr(discord_bot.TrendClipBot, "check_instagram")
 
 
 # --------------------------------------------------------------------------- the production run

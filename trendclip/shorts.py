@@ -71,9 +71,9 @@ class ShortVideo(BaseModel):
     # Upload tab: marked ready in Create; per-platform texts; where it was published.
     ready: bool = False
     ready_at: datetime | None = None
-    texts: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {...}, "tiktok": {...}, "instagram": {...}}
+    texts: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {...}, "tiktok": {...}}
     uploads: dict[str, Any] = Field(default_factory=dict)  # {"youtube": {"video_id", "url", "privacy", ...}}
-    posted: dict[str, bool] = Field(default_factory=dict)  # manual "I posted it" for TikTok / Instagram
+    posted: dict[str, bool] = Field(default_factory=dict)  # manual "I posted it" (TikTok)
     sent: dict[str, Any] = Field(default_factory=dict)  # {"hub": {"date", "slot", "at"}} once sent to the hub
 
 

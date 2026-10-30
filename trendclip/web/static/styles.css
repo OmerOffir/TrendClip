@@ -623,7 +623,6 @@ input[type="number"]:focus, input[type="date"]:focus { border-color: var(--accen
 .pf-chip:hover { color: var(--text); border-color: #3a4256; }
 .pf-chip.on { color: #fff; border-color: transparent; }
 .pf-chip.on.pf-youtube { background: #c4302b; }
-.pf-chip.on.pf-instagram { background: linear-gradient(135deg, #833ab4, #e1306c 60%, #f77737); }
 .pf-chip.on.pf-tiktok { background: #111; border-color: #25f4ee; box-shadow: 2px 0 0 #fe2c55 inset; }
 .pf-chip.auto { cursor: alias; }
 .plan-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }

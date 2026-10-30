@@ -40,7 +40,7 @@ FIRST_POINTS, CORRECT_POINTS, COMMENT_POINTS = 10, 3, 1
 # counts as missed once it is MISS_GRACE old without their comment (a late comment still saves it).
 MISS_LIMIT, MISS_GRACE = 3, timedelta(hours=24)
 PRIZES = ("🎁 1st place: a digital gift card (Steam / Amazon / Google Play) + a pinned comment!",
-          "🏅 2nd & 3rd place: a Hall of Fame shoutout on YouTube & Instagram!",
+          "🏅 2nd & 3rd place: a Hall of Fame shoutout on YouTube!",
           "📩 To claim: DM @sidequestlogic or email sidequestlogic@gmail.com (you must be subscribed to win).")
 MAX_COMMENT_PAGES = 200  # 100 threads a page, 1 quota unit each
 RESULT_POINTS = {"first": FIRST_POINTS, "correct": CORRECT_POINTS, "voted": CORRECT_POINTS,

@@ -40,7 +40,6 @@ def test_template_texts_follow_platform_rules(tmp_path):
     assert t.youtube.title == "The Day My Cat Outsmarted the Block #shorts"
     assert t.youtube.description == "I searched for three hours. He was upstairs."  # credits kept separately
     assert "#shorts" in t.youtube.hashtags and "GTA V / Online" in t.youtube.tags
-    assert len(t.instagram.hashtags) <= publish.INSTAGRAM_MAX_HASHTAGS
     assert "#GTAV" in t.tiktok.hashtags
     full = publish.full_text(t.tiktok, t.credit)
     assert full.startswith(t.tiktok.caption) and full.endswith(POSTED) and "Orbital" not in full
@@ -52,14 +51,13 @@ def test_clean_limits_and_normalises():
         youtube=publish.YouTubeText(title="x" * 120, description="d", tags=["<bad>", "a" * 300, "b" * 300, "a" * 300],
                                     hashtags=["fun", "#Fun"]),
         tiktok=publish.SocialText(caption=" c ", hashtags=["#a"], mentions=["rockstargames", "@RockstarGames", "@x y"]),
-        instagram=publish.SocialText(caption="c", hashtags=[f"#t{i}" for i in range(9)]),
     )
     t = publish.clean(raw, "", "gemini")
     assert len(t.youtube.title) == 100 and t.youtube.title.endswith("#shorts")
     assert t.youtube.tags == ["bad", "a" * 300]  # 450-character budget
     assert t.youtube.hashtags == ["#fun", "#shorts"]
     assert t.tiktok.mentions == ["@rockstargames", "@xy"] and t.tiktok.caption == "c"
-    assert len(t.instagram.hashtags) == 5
+    assert not hasattr(t, "instagram")
 
 
 def test_gemini_texts_uses_schema_and_keeps_credit(tmp_path, monkeypatch):
@@ -74,7 +72,6 @@ def test_gemini_texts_uses_schema_and_keeps_credit(tmp_path, monkeypatch):
                 youtube=publish.YouTubeText(title="Cat hid all day", description="Wow.", tags=["cat story"],
                                             hashtags=["#storytime"]),
                 tiktok=publish.SocialText(caption="Where was he?? 😭", hashtags=["#cat"]),
-                instagram=publish.SocialText(caption="Cats.\n\nSave this.", hashtags=["#cats"]),
             ), text="")
 
     t = publish.gemini_texts(settings, short, client=SimpleNamespace(models=Models()))
@@ -166,10 +163,10 @@ def test_ready_flow_and_texts_endpoints(client, monkeypatch):
 
     texts = item["texts"]
     texts["tiktok"]["caption"] = "Edited caption"
-    texts["instagram"]["hashtags"] = ["a", "b", "c", "d", "e", "f"]
+    texts["tiktok"]["hashtags"] = ["a", "b", "c", "d", "e", "f", "g"]
     saved = http.put(f"/api/upload/shorts/{name}/texts", json=texts).json()
     assert saved["texts"]["tiktok"]["caption"] == "Edited caption"
-    assert saved["texts"]["instagram"]["hashtags"] == ["#a", "#b", "#c", "#d", "#e"]
+    assert saved["texts"]["tiktok"]["hashtags"] == ["#a", "#b", "#c", "#d", "#e", "#f"]
     assert saved["paste"]["tiktok"].startswith("Edited caption")
 
     posted = http.post(f"/api/upload/shorts/{name}/posted/tiktok", json={"posted": True}).json()

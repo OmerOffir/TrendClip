@@ -13,9 +13,9 @@ DAY = date(2026, 10, 6)
 
 @pytest.fixture
 def settings(tmp_path):
-    # Every platform on, so the tests below cover TikTok too; the default (YouTube + Instagram) has its own test.
+    # Every platform on, so the tests below cover TikTok too; the default (YouTube only) has its own test.
     return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output",
-                    platforms=["youtube", "instagram", "tiktok"])
+                    platforms=["youtube", "tiktok"])
 
 
 
@@ -33,7 +33,7 @@ def test_planning_a_short_copies_its_title_and_marks_it_ready(settings):
     item = planner.add_item(settings, planner.ItemRequest(date=DAY, short=name))
 
     assert item.title == "The Day My Cat Outsmarted the Block"
-    assert item.platforms == ["youtube", "instagram", "tiktok"]
+    assert item.platforms == ["youtube", "tiktok"]
     assert shorts.get_short(settings, name).ready
     view = planner.view(settings)
     assert view["goals"]["reels_per_day"] == 2 and view["goals"]["long_per_week"] == 2
@@ -57,16 +57,15 @@ def test_posted_marks_sync_with_the_upload_tab(settings):
     name = add_short(settings)
     item = planner.add_item(settings, planner.ItemRequest(date=DAY, short=name))
 
-    planner.set_posted(settings, item.id, "instagram", True)
     planner.set_posted(settings, item.id, "youtube", True)
-    assert shorts.get_short(settings, name).posted == {"instagram": True, "youtube": True}
+    assert shorts.get_short(settings, name).posted == {"youtube": True}
 
     shorts.update_short(settings, name, lambda s: s.posted.__setitem__("tiktok", True))  # Upload tab tick
     assert planner.view(settings)["items"][0]["done"]
 
-    shorts.update_short(settings, name, lambda s: s.posted.__setitem__("instagram", False))  # untick there
+    shorts.update_short(settings, name, lambda s: s.posted.__setitem__("tiktok", False))  # untick there
     v = planner.view(settings)["items"][0]
-    assert not v["done"] and not v["status"]["instagram"]["done"]
+    assert not v["done"] and not v["status"]["tiktok"]["done"]
 
 
 def test_a_dashboard_youtube_upload_counts_automatically(settings):
@@ -122,10 +121,11 @@ def test_plan_endpoints(settings, monkeypatch):
     assert client.post("/api/plan/items", json={"date": "2026-10-06"}).status_code == 400
     assert client.post("/api/plan/items", json={"date": "not a day", "title": "x"}).status_code == 422
 
-    for p in ("youtube", "instagram", "tiktok"):
+    for p in ("youtube", "tiktok"):
         r = client.post(f"/api/plan/items/{item_id}/posted/{p}", json={"posted": True})
     assert r.json()["done"]
     assert client.post(f"/api/plan/items/{item_id}/posted/facebook", json={"posted": True}).status_code == 422
+    assert client.post(f"/api/plan/items/{item_id}/posted/instagram", json={"posted": True}).status_code == 422
 
     r = client.post(f"/api/upload/shorts/{name}/posted/youtube", json={"posted": False})  # Upload tab, YouTube by hand
     assert r.status_code == 200 and r.json()["posted"]["youtube"] is False
@@ -149,23 +149,41 @@ def test_only_the_active_platforms_are_in_the_plan(tmp_path, settings):
     from trendclip.config import Settings
 
 
-    # A plan made with TikTok on (goals and items), then read with the default PLATFORMS=youtube,instagram.
+    # A plan made with TikTok on (goals and items), then read with the default PLATFORMS=youtube.
     name = add_short(settings, "t.mp4")
-    planner.set_goals(settings, planner.Goals(reel_platforms=["youtube", "instagram", "tiktok"], long_platforms=["tiktok"]))
+    planner.set_goals(settings, planner.Goals(reel_platforms=["youtube", "tiktok"], long_platforms=["tiktok"]))
     item = planner.add_item(settings, planner.ItemRequest(date=DAY, short=name))
-    assert item.platforms == ["youtube", "instagram", "tiktok"]
+    assert item.platforms == ["youtube", "tiktok"]
     default = Settings(youtube_api_key="k", assets_dir=settings.assets_dir, output_dir=settings.output_dir)
-    assert default.platforms == ["youtube", "instagram"]
+    assert default.platforms == ["youtube"]
     plan = planner.load(default)
-    assert plan.goals.reel_platforms == ["youtube", "instagram"] and plan.goals.long_platforms == ["youtube"]
-    assert plan.items[0].platforms == ["youtube", "instagram"]
-    assert planner.view(default)["platforms"] == ["youtube", "instagram"]
-    assert planner.view(default)["items"][0]["status"].keys() == {"youtube", "instagram"}
+    assert plan.goals.reel_platforms == ["youtube"] and plan.goals.long_platforms == ["youtube"]
+    assert plan.items[0].platforms == ["youtube"]
+    assert planner.view(default)["platforms"] == ["youtube"]
+    assert planner.view(default)["items"][0]["status"].keys() == {"youtube"}
     # New items can't ask for a platform that is off.
-    with pytest.raises(ValueError, match="youtube, instagram"):
+    with pytest.raises(ValueError, match="youtube"):
         planner.add_item(default, planner.ItemRequest(date=DAY + timedelta(days=1), short=name, platforms=["tiktok"]))
-    assert planner.add_item(default, planner.ItemRequest(date=DAY + timedelta(days=1), short=name)).platforms == ["youtube", "instagram"]
+    assert planner.add_item(default, planner.ItemRequest(date=DAY + timedelta(days=1), short=name)).platforms == ["youtube"]
     # The setting accepts a comma list in any order and refuses an empty one.
     assert Settings(youtube_api_key="k", platforms="tiktok, YouTube").platforms == ["youtube", "tiktok"]
     with pytest.raises(ValueError):
         Settings(youtube_api_key="k", platforms="")
+
+
+def test_instagram_is_dropped_from_old_settings_and_saved_plans(tmp_path):
+    # Instagram went away on 2026-10-30: a hub still saying PLATFORMS=youtube,instagram, and plans saved
+    # with Instagram on, load as YouTube only.
+    s = Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output",
+                 platforms="youtube,instagram")
+    assert s.platforms == ["youtube"]
+    assert Settings(youtube_api_key="k", platforms="instagram").platforms == ["youtube"]
+    planner.plan_path(s).parent.mkdir(parents=True, exist_ok=True)
+    planner.plan_path(s).write_text(
+        '{"goals": {"reel_platforms": ["youtube", "instagram"], "long_platforms": ["youtube"]},'
+        ' "items": [{"id": "a", "kind": "reel", "date": "2026-10-06", "slot": "14:30", "title": "Old",'
+        ' "platforms": ["youtube", "instagram"], "posted": {"instagram": "2026-10-06T12:00:00Z"}}]}',
+        encoding="utf-8")
+    plan = planner.load(s)
+    assert plan.goals.reel_platforms == ["youtube"] and plan.items[0].platforms == ["youtube"]
+    assert planner.view(s)["items"][0]["status"].keys() == {"youtube"}

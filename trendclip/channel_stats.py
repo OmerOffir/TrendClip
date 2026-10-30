@@ -324,7 +324,7 @@ def _instagram_public(session, handle: str, since: datetime) -> PlatformStats:
 
 
 FETCHERS: dict[Platform, Callable[[Settings, datetime], PlatformStats]] = {
-    "youtube": youtube_stats, "tiktok": tiktok_stats, "instagram": instagram_stats,
+    "youtube": youtube_stats, "tiktok": tiktok_stats,  # instagram_stats is off since 2026-10-30 (YouTube only)
 }
 HANDLE_FIELD = {"youtube": "stats_youtube", "tiktok": "stats_tiktok", "instagram": "stats_instagram"}
 

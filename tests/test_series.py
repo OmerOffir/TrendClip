@@ -151,7 +151,7 @@ def test_render_series_names_offsets_and_links(tmp_path, monkeypatch):
     assert info2["pinned_comment"].startswith("Missed Part 1? It's on @SideQuestLogic")
 
     texts = publish.template_texts(shorts.get_short(settings, p1.filename))
-    assert "Part 2 drops tomorrow" in texts.instagram.caption and "Part 2 drops tomorrow" in texts.tiktok.caption
+    assert "Part 2 drops tomorrow" in texts.tiktok.caption
 
 
 def test_post_comment(tmp_path):

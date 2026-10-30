@@ -10,6 +10,9 @@ leaderboard by the channel's name (no links or @: Instagram flags those as spam)
 Quiz answers come from the Shorts this machine posted (Short.uploads["instagram"]["media_id"]); other
 Reels are thanked like stories. Stored in output/instagram_comments.json (Reels, comments, Gemini's
 verdicts) and output/instagram_replies.json (what was replied, the queue).
+
+Disconnected on 2026-10-30 (YouTube only for now): nothing in the bot or the dashboard calls this module.
+Kept so Instagram can be wired back in later without rebuilding it.
 """
 
 from __future__ import annotations

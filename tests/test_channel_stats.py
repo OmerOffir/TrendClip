@@ -140,14 +140,15 @@ def test_report_shows_changes_since_yesterday_and_survives_a_failing_platform(tm
                                                       published=NOW - timedelta(hours=2), views=90, likes=4, comments=1)])
 
     def broken(settings, since):
-        raise cs.StatsError("Instagram refuses logged-out requests")
+        raise cs.StatsError("TikTok refuses logged-out requests")
 
-    monkeypatch.setattr(cs, "FETCHERS", {"youtube": youtube, "instagram": broken})
+    monkeypatch.setattr(cs, "FETCHERS", {"youtube": youtube, "tiktok": broken})
+    s = s.model_copy(update={"platforms": ["youtube", "tiktok"]})
     first = cs.build_report(s, at=NOW - timedelta(days=1))
     assert first.platforms[0].since is None
     report = cs.build_report(s, at=NOW)
-    yt, ig = report.platforms
-    assert (yt.followers_change, yt.views_change) == (3, 150) and ig.error
+    yt, tt = report.platforms
+    assert (yt.followers_change, yt.views_change) == (3, 150) and tt.error
     text = cs.format_report(report, timezone.utc)
     assert "**13** subscribers (+3)" in text[1] and "650 views overall (+150)" in text[1]
     assert "[Big one](<https://youtu.be/v>) · today 05:00" in text[1] and "👁 90 · ❤️ 4 · 💬 1" in text[1]

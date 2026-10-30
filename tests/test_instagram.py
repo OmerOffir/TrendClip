@@ -98,8 +98,7 @@ def test_post_reel_creates_waits_and_publishes(settings, monkeypatch):
 
     short = shorts.get_short(settings, name)
     assert short.uploads["instagram"]["media_id"] == "m1"
-    assert planner.short_status(short)["instagram"] == {
-        "done": True, "auto": True, "url": "https://www.instagram.com/reel/ABC/", "scheduled_for": None}
+    assert "instagram" not in planner.short_status(short)  # Instagram is off the plan since 2026-10-30
 
 
 def test_a_failed_comment_keeps_the_reel(settings, monkeypatch):
@@ -127,27 +126,13 @@ def test_errors_are_explained(settings, monkeypatch):
         instagram.token(settings)
 
 
-def test_instagram_routes(settings, monkeypatch):
+def test_instagram_routes_are_gone(settings, monkeypatch):
     from trendclip.web import app as web
 
     monkeypatch.setattr(web, "_base_settings", lambda: settings)
-    monkeypatch.setattr(instagram.requests, "request", FakeInstagram().request)
     client = TestClient(web.app)
-    assert client.get("/api/upload/instagram/status").json() == {
-        "configured": True, "connected": True, "user": {"username": "sidequestlogic", "profile_image_url": ""}}
-    assert client.post("/api/upload/shorts/missing.mp4/instagram", json={}).status_code == 404
-
-    jobs = []
-    monkeypatch.setattr(web._create, "submit", lambda kind, game, fn: jobs.append(fn) or SimpleNamespace(
-        model_dump=lambda mode: {"id": "j1"}))
-    name = add_short(settings)
-    monkeypatch.setattr(instagram, "post_reel", lambda s, f, caption, comment, p: jobs.append((f, caption, comment)))
-    client.post(f"/api/upload/shorts/{name}/instagram", json={"caption": "Hi", "first_comment": "Answer?"})
-    jobs[0](lambda f, m: None)
-    assert jobs[1] == (name, "Hi", "Answer?")
-
-    monkeypatch.setattr(web, "_base_settings", lambda: settings.model_copy(update={"instagram_access_token": None}))
-    assert client.post(f"/api/upload/shorts/{name}/instagram", json={}).status_code == 400
+    assert client.get("/api/upload/instagram/status").status_code in (404, 405)
+    assert client.post(f"/api/upload/shorts/{add_short(settings)}/instagram", json={}).status_code in (404, 405)
 
 
 def test_heavy_videos_get_a_lighter_copy(settings, monkeypatch):

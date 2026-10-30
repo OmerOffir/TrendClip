@@ -19,7 +19,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import (gamer_queue, analytics, assistant, channel_stats, hub, ig_replies, instagram, leaderboard, leaderboard_card, planner, publish,
+from . import (gamer_queue, analytics, assistant, channel_stats, hub, leaderboard, leaderboard_card, planner, publish,
                script_writer, shorts, video_downloader)
 from .config import ConfigError, Settings, get_settings
 
@@ -47,7 +47,7 @@ REPLY_EVERY_MINUTES = 2  # YouTube auto replies: never a burst
 NO_PINGS = discord.AllowedMentions.none()  # comment text from YouTube is shown as is
 
 
-PLATFORM_NAMES = {"youtube": "YouTube", "instagram": "Instagram", "tiktok": "TikTok"}
+PLATFORM_NAMES = {"youtube": "YouTube", "tiktok": "TikTok"}
 
 
 class JobFailed(Exception):
@@ -73,7 +73,7 @@ def clip_text(text: str, limit: int = MESSAGE_MAX) -> str:
 
 def champions_note(final: list[dict]) -> str:
     """For you, above the champions post: who to check before giving a prize (must be subscribed)."""
-    text = "👑 Last month's final podium: post the next message on YouTube (Community) and Instagram."
+    text = "👑 Last month's final podium: post the next message on YouTube (Community)."
     if missing := leaderboard.unverified(final):
         names = ", ".join(f"**{leaderboard.safe(p['name'], 40)}**" for p in missing)
         text += (f"\n⚠️ YouTube doesn't show {names} as subscribed (their subscriptions may be private). "
@@ -143,11 +143,11 @@ def _fence(text: str) -> str:
     return "```\n" + text.replace("```", "'''").strip() + "\n```"
 
 
-CAPTION_LABELS = {"youtube": "▶️ YouTube", "instagram": "📸 Instagram", "tiktok": "🎵 TikTok"}
+CAPTION_LABELS = {"youtube": "▶️ YouTube", "tiktok": "🎵 TikTok"}
 
 
 def platform_names(settings: Settings) -> str:
-    """"YouTube and Instagram" / "YouTube, Instagram and TikTok" (PLATFORMS)."""
+    """"YouTube" / "YouTube and TikTok" (PLATFORMS)."""
     names = [PLATFORM_NAMES[p] for p in settings.platforms]
     return " and ".join([", ".join(names[:-1]), names[-1]]) if len(names) > 1 else names[0]
 
@@ -158,7 +158,6 @@ def caption_message(settings: Settings, short: shorts.ShortVideo, heading: str) 
     texts = publish.PlatformTexts.model_validate(stored.texts)
     links = (publish.series_info(settings, stored) or {}).get("links", "")
     bodies = {"youtube": publish.youtube_description(texts.youtube, texts.credit, links),
-              "instagram": publish.full_text(texts.instagram, texts.credit),
               "tiktok": publish.full_text(texts.tiktok, texts.credit)}
     blocks = [(CAPTION_LABELS[p], bodies[p]) for p in settings.platforms]
     lines = [heading, f"**{texts.youtube.title}**"]
@@ -265,8 +264,6 @@ def video_buttons(bot: "TrendClipBot", short: shorts.ShortVideo) -> list[ActionB
         out.append(button("up", short.filename, "Upload to YouTube now", discord.ButtonStyle.danger))
     elif assistant.pinned_comment(settings, short.filename):
         out.append(button("cm", short.filename, "Post the pinned comment"))
-    if instagram.configured(settings) and not short.uploads.get("instagram"):
-        out.append(button("ig", short.filename, "Post on Instagram"))
     planned = [i for i in planner.load(settings).items if i.short == short.filename]
     if planned:
         for item in planned[:2]:
@@ -310,7 +307,6 @@ class TrendClipBot(discord.Client):
         self.render_lock = asyncio.Lock()  # renders are CPU heavy: one at a time
         self.upload_lock = asyncio.Lock()
         self.comments_lock = asyncio.Lock()  # one YouTube comments read at a time
-        self.ig_lock = asyncio.Lock()  # one Instagram comments read at a time
         self.jobs: set[asyncio.Task] = set()  # background posts (a task nobody holds can be dropped)
         self.emergency: set[str] = set()  # "day slot" whose emergency video is being made
         self.sent = assistant.SentLog(settings)
@@ -488,21 +484,8 @@ class TrendClipBot(discord.Client):
             text += (f"\nYouTube set it to **{record.get('privacy')}** (unverified API projects can only upload "
                      f"private videos). Make it public in Studio: <{record['studio_url']}>")
         comment = assistant.pinned_comment(self.settings, filename)
-        ig_too = instagram.configured(self.settings) and not short.uploads.get("instagram")
-        view = view_of(button("cm", filename, "Post the pinned comment") if comment else None,
-                       button("ig", filename, "Post on Instagram too") if ig_too else None)
+        view = view_of(button("cm", filename, "Post the pinned comment") if comment else None)
         await channel.send(clip_text(text), view=view)
-
-    async def post_instagram(self, channel: discord.abc.Messageable, filename: str) -> None:
-        short = shorts.get_short(self.settings, filename)
-        record = await self.run_job(channel, f"Posting \"{short.title}\" on Instagram",
-                                    lambda p: instagram.post_reel(self.settings, filename,
-                                                                  first_comment=short.pinned_comment, progress=p),
-                                    self.upload_lock)
-        text = f"✅ **{short.title}** is on Instagram: {record['url']}"
-        if record.get("comment_error"):
-            text += f"\nThe comment didn't go through: {record['comment_error']}"
-        await channel.send(clip_text(text))
 
 
     def today_text(self, day: Day) -> tuple[str, list[ActionButton | None], bool]:
@@ -1009,14 +992,6 @@ class TrendClipBot(discord.Client):
                 item = None
             if item:
                 logger.info("Replied on YouTube to %s: %s", item["name"], item["text"])
-        if ig_replies.enabled(settings):
-            try:
-                item = await asyncio.to_thread(ig_replies.send_next_reply, settings, assistant.today(settings))
-            except Exception:  # noqa: BLE001 - logged; the next round tries the next one
-                logger.exception("Instagram auto reply failed")
-                item = None
-            if item:
-                logger.info("Replied on Instagram to %s: %s", item["name"], item["text"])
 
     @reply_loop.before_loop
     async def _before_reply_loop(self) -> None:
@@ -1037,29 +1012,6 @@ class TrendClipBot(discord.Client):
         async with self.comments_lock:
             board, _ = await asyncio.to_thread(leaderboard.refresh, self.settings)
         await self.queue_replies(channel, board, wait)
-        return board
-
-    async def check_instagram(self, channel: discord.abc.Messageable, wait: bool = True) -> leaderboard.Board:
-        """Read the Instagram comments now, list the flagged ones and queue a reply to every new fan."""
-        settings = self.settings
-        async with self.ig_lock:
-            board = await asyncio.to_thread(ig_replies.refresh, settings)
-        skipped = await asyncio.to_thread(ig_replies.new_skips, settings, board)
-        if skipped:
-            reels = await asyncio.to_thread(ig_replies.links, settings)
-            lines = [f"🚫 **{len(skipped)} Instagram comment(s) look like spam, links or rude**: no reply. "
-                     "Remove them on the Reel if you agree:"]
-            lines += [f"• **{leaderboard.safe(c.author, 32)}**: {leaderboard.safe(c.text, 100)}"
-                      + (f" <{reels[c.video_id]}>" if reels.get(c.video_id) else "") for c in skipped[:15]]
-            for text in chunks(lines):
-                await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
-        queued = await asyncio.to_thread(ig_replies.plan_replies, settings, board, assistant.today(settings), None,
-                                         wait)
-        if queued:
-            invites = sum(settings.instagram_youtube_name in q["text"] for q in queued)
-            await channel.send(clip_text(
-                f"📸 Replying on Instagram to {len(queued)} fan(s), {invites} with the YouTube invite, one every "
-                f"{REPLY_EVERY_MINUTES} min (~{len(queued) * REPLY_EVERY_MINUTES} min)."), allowed_mentions=NO_PINGS)
         return board
 
     @staticmethod
@@ -1090,20 +1042,13 @@ class TrendClipBot(discord.Client):
                     await self.check_comments(channel)
                 except Exception:  # noqa: BLE001 - logged; the next round tries again
                     logger.exception("Reading the YouTube comments for replies failed")
-        if ig_replies.enabled(settings) and not self.ig_lock.locked():
-            board = await asyncio.to_thread(ig_replies.load, settings)
-            if self._due(board.updated_at, hours, first=True):
-                try:
-                    await self.check_instagram(channel)
-                except Exception:  # noqa: BLE001 - logged; the next round tries again
-                    logger.exception("Reading the Instagram comments for replies failed")
 
     @comment_check.before_loop
     async def _before_comment_check(self) -> None:
         await self.wait_until_ready()
 
     async def send_stats(self, channel: discord.abc.Messageable) -> None:
-        """The channel report (YouTube / TikTok / Instagram, last 24 h); a failure here never blocks the plan."""
+        """The channel report (YouTube / TikTok, last 24 h); a failure here never blocks the plan."""
         try:
             report = await asyncio.to_thread(channel_stats.build_report, self.settings)
         except Exception as err:  # noqa: BLE001 - shown in the channel
@@ -1121,17 +1066,12 @@ class TrendClipBot(discord.Client):
                 go.append("youtube")
             else:
                 notes.append("YouTube isn't connected (dashboard → Upload → Connect YouTube), so it wasn't posted there.")
-        if "instagram" in item.platforms and not already_on(item, short, "instagram"):
-            if instagram.configured(self.settings):
-                go.append("instagram")
-            else:
-                notes.append("Instagram isn't set up (INSTAGRAM_ACCESS_TOKEN), so it wasn't posted there.")
         if "tiktok" in item.platforms and not short.posted.get("tiktok"):
             notes.append("TikTok has no upload API: post it there yourself (the caption is in the Upload tab).")
         return go, notes
 
     async def auto_post(self, channel: discord.abc.Messageable, day: Day, slot: str) -> None:
-        """AUTO_POST: the slot's planned Short goes out on YouTube and Instagram, with a report here."""
+        """AUTO_POST: the slot's planned Short goes out on YouTube, with a report here."""
         settings = self.settings
         item = await asyncio.to_thread(planner.slot_item, settings, day, slot)
         if item is None:
@@ -1149,7 +1089,7 @@ class TrendClipBot(discord.Client):
             return
         go, notes = self.auto_targets(item, short)
         if not go:
-            done = [p for p in ("youtube", "instagram") if already_on(item, short, p)]
+            done = [p for p in ("youtube",) if already_on(item, short, p)]
             if done:
                 notes.insert(0, f"**{short.title}** is already on {' and '.join(PLATFORM_NAMES[p] for p in done)}.")
             if notes:
@@ -1176,16 +1116,6 @@ class TrendClipBot(discord.Client):
             except JobFailed as err:
                 lines.append(f"❌ YouTube failed: {err}")
                 retry.append(button("up", item.short, "Retry YouTube", discord.ButtonStyle.danger))
-        if "instagram" in go:
-            try:
-                record = await self.run_job(channel, "Instagram post", lambda p: instagram.post_reel(
-                    settings, item.short, first_comment=short.pinned_comment, progress=p), self.upload_lock)
-                lines.append(f"📸 Instagram: {record['url']}")
-                if record.get("comment_error"):
-                    lines.append(f"   The comment didn't go through: {record['comment_error']}")
-            except JobFailed as err:
-                lines.append(f"❌ Instagram failed: {err}")
-                retry.append(button("ig", item.short, "Retry Instagram", discord.ButtonStyle.danger))
         head = "✅" if not retry else "⚠️"
         await channel.send(clip_text(f"{head} **{short.title}** ({slot})\n" + "\n".join(lines + notes)),
                            view=view_of(*retry), suppress_embeds=True)
@@ -1357,22 +1287,6 @@ async def act_upload_confirm(bot: TrendClipBot, interaction: discord.Interaction
 async def act_upload(bot: TrendClipBot, interaction: discord.Interaction, filename: str) -> None:
     await interaction.response.edit_message(content="Publishing…", view=None)
     await bot.upload(interaction.channel, filename)
-
-
-async def act_instagram_confirm(bot: TrendClipBot, interaction: discord.Interaction, filename: str) -> None:
-    short = shorts.get_short(bot.settings, filename)
-    up = short.uploads.get("instagram")
-    text = (f"**{short.title}** is already on Instagram (<{up.get('url')}>). Post it again?" if up
-            else f"Post **{short.title}** on Instagram now as a Reel (with the Upload tab's caption"
-                 f"{' and the pinned comment' if short.pinned_comment else ''})?")
-    await reply(interaction, text, view=view_of(
-        button("iggo", filename, "Yes, post on Instagram", discord.ButtonStyle.danger),
-        button("no", "-", "Cancel")))
-
-
-async def act_instagram(bot: TrendClipBot, interaction: discord.Interaction, filename: str) -> None:
-    await interaction.response.edit_message(content="Posting on Instagram…", view=None)
-    await bot.post_instagram(interaction.channel, filename)
 
 
 async def act_cancel(bot: TrendClipBot, interaction: discord.Interaction, _arg: str) -> None:
@@ -1748,8 +1662,7 @@ async def act_bw_upload(bot: TrendClipBot, interaction: discord.Interaction, key
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
-    "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "ig": act_instagram_confirm,
-    "iggo": act_instagram, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
+    "mk": act_make, "own": act_own_text, "mkt": act_make_from_text, "veto": act_veto, "prod": act_produce, "daveto": act_da_veto, "daprod": act_da_produce,
     "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
     "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
     "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload,
@@ -2069,43 +1982,24 @@ def reply_overview_lines(settings: Settings, platform: str, o: dict[str, Any], s
     return lines
 
 
-@app_commands.command(name="replies", description="Read the YouTube and Instagram comments now and reply to new fans")
+@app_commands.command(name="replies", description="Read the YouTube comments now and reply to new fans")
 @app_commands.describe(now="True: reply on quiz videos too, without the 10 h wait (the replies show the answer)")
 async def replies_cmd(interaction: discord.Interaction, now: bool = False) -> None:
     bot = _bot(interaction)
     settings = bot.settings
-    youtube_off, ig_on = bot.replies_on(), ig_replies.enabled(settings)
-    if youtube_off and not ig_on:
+    if youtube_off := bot.replies_on():
         return await reply(interaction, youtube_off)
     await interaction.response.defer(thinking=True)
     today = assistant.today(settings)
-    lines: list[str] = []
-    if youtube_off:
-        lines.append(f"▶️ **YouTube replies**: {youtube_off}")
-    else:
-        lines.append(f"▶️ **YouTube replies** (comments from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)")
-        try:
-            board = await bot.check_comments(interaction.channel, wait=not now)
-            sent = await asyncio.to_thread(leaderboard.send_next_reply, settings, board.channel_id, today)
-            o = await asyncio.to_thread(leaderboard.reply_overview, settings, board, today)
-            lines += reply_overview_lines(settings, "YouTube", o, sent, "YOUTUBE_REPLY_DAILY_MAX")
-        except Exception as err:  # noqa: BLE001 - shown in the channel
-            logger.exception("Reading the YouTube comments for replies failed")
-            lines.append(clip_text(f"Couldn't read the YouTube comments: {err}", 500))
-    if ig_on:
-        lines.append("")
-        lines.append(f"📸 **Instagram replies** (Reels from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)")
-        try:
-            board = await bot.check_instagram(interaction.channel, wait=not now)
-            sent = await asyncio.to_thread(ig_replies.send_next_reply, settings, today)
-            o = await asyncio.to_thread(ig_replies.reply_overview, settings, board, today)
-            if not board.comments:
-                lines.append("No fan comments visible. If your Reels have comments, the Meta app is still in "
-                             "Development mode: switch it to Live (README → Instagram replies).")
-            lines += reply_overview_lines(settings, "Instagram", o, sent, "INSTAGRAM_REPLY_DAILY_MAX")
-        except Exception as err:  # noqa: BLE001 - shown in the channel
-            logger.exception("Reading the Instagram comments for replies failed")
-            lines.append(clip_text(f"Couldn't read the Instagram comments: {err}", 500))
+    lines: list[str] = [f"▶️ **YouTube replies** (comments from the last {leaderboard.REPLY_MAX_AGE_DAYS} days)"]
+    try:
+        board = await bot.check_comments(interaction.channel, wait=not now)
+        sent = await asyncio.to_thread(leaderboard.send_next_reply, settings, board.channel_id, today)
+        o = await asyncio.to_thread(leaderboard.reply_overview, settings, board, today)
+        lines += reply_overview_lines(settings, "YouTube", o, sent, "YOUTUBE_REPLY_DAILY_MAX")
+    except Exception as err:  # noqa: BLE001 - shown in the channel
+        logger.exception("Reading the YouTube comments for replies failed")
+        lines.append(clip_text(f"Couldn't read the YouTube comments: {err}", 500))
     if settings.youtube_reply_check_hours:
         lines.append(f"_New comments are read every {settings.youtube_reply_check_hours:g} h by themselves._")
     await reply_lines(interaction, lines)
@@ -2203,8 +2097,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "post it here; it goes out by itself unless you press **Don't post this**. An hour before a slot that is "
         "still empty, the emergency video fills it.",
 
-        "`/upload` publish on YouTube now (default: the next video planned today) · **Post on Instagram** "
-        "button under a video posts it as a Reel",
+        "`/upload` publish on YouTube now (default: the next video planned today)",
         "`/videos` made but not planned yet · `/status` YouTube, Gemini, free slots",
         "`/stats` followers + views / likes / comments of the last 24 h (also in the morning summary)",
         "`/insights` which kinds of video, games, hook styles, lengths and upload times get the most views, "
@@ -2212,7 +2105,7 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/leaderboard` fans ranked by points from their YouTube comments (new comments + top 10 each morning; "
         "`image:True` the podium picture + YouTube post text, `post:True` just the post text)",
         "`/comments` every comment on one video · `/points` one fan · `/answer` set a quiz answer",
-        "`/replies` read the YouTube and Instagram comments now and reply to new fans (also every few hours); "
+        "`/replies` read the YouTube comments now and reply to new fans (also every few hours); "
         "`now:True` replies on quiz videos too, without the 10 h spoiler wait",
         "",
         "**Dark Outliers** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "

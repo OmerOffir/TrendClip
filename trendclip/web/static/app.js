@@ -760,7 +760,7 @@
       return;
     }
     const params = new URLSearchParams(location.search);
-    window.TrendClip.platforms = cfg.platforms || ["youtube", "instagram", "tiktok"];
+    window.TrendClip.platforms = cfg.platforms || ["youtube"];
     document.dispatchEvent(new CustomEvent("trendclip:config", { detail: cfg }));
     const d = cfg.defaults;
 

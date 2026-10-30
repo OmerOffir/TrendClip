@@ -20,7 +20,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from .. import (__version__, analytics, assistant, gamer_manual, gamer_queue, gamer_week, hub, instagram, kokoro_voice, music, planner,
+from .. import (__version__, analytics, assistant, gamer_manual, gamer_queue, gamer_week, hub, kokoro_voice, music, planner,
                 publish, quiz, script_writer, shorts, stickers, video_downloader, voiceover)
 from ..config import ConfigError, Settings, get_settings
 from ..main import make_youtube_client, run_pipeline
@@ -736,7 +736,6 @@ def _with_texts(short: shorts.ShortVideo) -> dict[str, Any]:
             "youtube_description": publish.youtube_description(t.youtube, t.credit,
                                                                series["links"] if series else ""),
             "tiktok": publish.full_text(t.tiktok, t.credit),
-            "instagram": publish.full_text(t.instagram, t.credit),
         }
     return data
 
@@ -795,7 +794,7 @@ def gemini_texts(filename: str) -> dict[str, Any]:
 
 
 @app.post("/api/upload/shorts/{filename}/posted/{platform}")
-def mark_posted(filename: str, platform: Literal["youtube", "tiktok", "instagram"], req: PostedRequest) -> dict[str, Any]:
+def mark_posted(filename: str, platform: Literal["youtube", "tiktok"], req: PostedRequest) -> dict[str, Any]:
     settings = _base_settings()
     _short_or_http(settings, filename)
     return _with_texts(publish.set_posted(settings, filename, platform, req.posted))
@@ -1127,27 +1126,6 @@ def upload_youtube(filename: str, req: publish.YouTubeUploadRequest) -> dict[str
     if not publish.TOKEN_FILE.is_file():
         raise HTTPException(status_code=400, detail="Connect YouTube first")
     job = _create.submit("upload", short.game, lambda p: publish.upload_youtube(settings, filename, req, p))
-    return job.model_dump(mode="json")
-
-
-class InstagramPostRequest(BaseModel):
-    caption: str = Field("", max_length=publish.CAPTION_MAX)
-    first_comment: str = Field("", max_length=2200)
-
-
-@app.get("/api/upload/instagram/status")
-def instagram_status() -> dict[str, Any]:
-    return instagram.status(_base_settings())
-
-
-@app.post("/api/upload/shorts/{filename}/instagram", status_code=202)
-def post_instagram(filename: str, req: InstagramPostRequest) -> dict[str, Any]:
-    settings = _base_settings()
-    short = _short_or_http(settings, filename)
-    if not instagram.configured(settings):
-        raise HTTPException(status_code=400, detail="Add INSTAGRAM_ACCESS_TOKEN to the channel's channel.env first")
-    job = _create.submit("upload", short.game, lambda p: instagram.post_reel(
-        settings, filename, req.caption, req.first_comment, p))
     return job.model_dump(mode="json")
 
 
