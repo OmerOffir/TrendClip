@@ -1044,3 +1044,36 @@ def test_flags_follow_the_name_the_narration_uses(monkeypatch):
     assert bw_fx.usable_flag("Flag of Prussia (1892–1918).svg") == "Flag of Prussia (1892–1918).svg"
     assert bw_fx.usable_flag("Flag of Atlantis.svg") == ""
     assert "Flag of Germany.svg" in bw_script.SCENE_RULES and "flag of that time" not in bw_script.SCENE_RULES
+
+
+def test_a_cards_flags_and_icons_stand_in_a_row_above_its_text(world, fx_offline):
+    """Two poles and two icons on a treaty card: one evenly spaced row on the paper above the kicker, in script
+    order, none of them on the subtitle (the card slots put them there on 2026-10-30)."""
+    data = _fx_dict()
+    data["scenes"][1]["elements"] = [{"kind": "pole", "flag": "Canada"}, {"kind": "icon", "icon": "money_bag"},
+                                     {"kind": "pole", "flag": "Canada"}, {"kind": "icon", "icon": "car"}]
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    bw_render.prepare(spec)
+    fx_offline.FxRenderer(spec)  # dresses the spec
+    card = spec.scenes[1]
+    assert card.kind == "card"
+    els = [e for e in card.elements if e.kind in ("pole", "icon")]
+    assert [e.kind for e in els] == ["pole", "icon", "pole", "icon"]
+    for e in els:  # everything ends above the kicker at CARD_Y, below a headline at HEAD_Y
+        bottom = e.opts["y"] if e.kind == "pole" else e.opts["y"] + e.opts["size"] / 2
+        top = e.opts["y"] - e.opts.get("height", 230) if e.kind == "pole" else e.opts["y"] - e.opts["size"] / 2
+        assert bw_render.HEAD_Y + 60 < top and bottom < bw_render.CARD_Y - 40, (e.kind, e.opts)
+    # the row is packed by what each one draws (a pole's flag width, an icon's picture width), a gap of 40 between
+    # neighbours, and centered as a whole
+    edges = [(e.opts["x"], e.opts["x"] + e.opts.get("width", 190)) if e.kind == "pole"
+             else (e.opts["x"] - e.opts["size"] / 2, e.opts["x"] + e.opts["size"] / 2) for e in els]
+    assert all(abs((b[0] - a[1]) - 40) <= 1 for a, b in zip(edges, edges[1:]))
+    assert abs((edges[0][0] + edges[-1][1]) / 2 - bw_render.W / 2) <= 1
+    assert all(e.opts["size"] <= 200 for e in els if e.kind == "icon")  # four in a row: smaller icons
+    # one icon alone sits in the middle of the row
+    data["scenes"][1]["elements"] = [{"kind": "icon", "icon": "money_bag"}]
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    bw_render.prepare(spec)
+    fx_offline.FxRenderer(spec)
+    one = next(e for e in spec.scenes[1].elements if e.kind == "icon")
+    assert (one.opts["x"], one.opts["y"], one.opts["size"]) == (bw_render.W // 2, 500, 250)

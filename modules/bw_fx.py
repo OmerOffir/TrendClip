@@ -62,6 +62,12 @@ SLOTS = {  # per layout (modules.bw_render.LAYOUTS)
                       pole={"map": ((170, 830), (1660, 830), (430, 830)), "card": ((230, 840), (1600, 840), (430, 840))}),
 }
 ICON_SLOTS, POLE_SLOTS = SLOTS["portrait"]["icon"], SLOTS["portrait"]["pole"]
+# A portrait card's free poles and icons stand in one row on the empty paper above the kicker (CARD_Y 720): icons
+# centered on icon_y, pole feet on pole_y, at most `step` apart. The card slots above put them on the subtitle
+# (the 2026-10-30 treaty card: two flags and a handshake over "Germany swaps Zanzibar with Britain"). A landscape
+# card has no room above its text and keeps its side slots.
+CARD_ROWS = {"portrait": dict(icon_y=500, pole_y=640, step=270), "landscape": None}
+CARD_ROW = CARD_ROWS["portrait"]
 # a run of map scenes on the same place cuts between these zooms, the place sitting off center by these fractions
 # of the width, so the picture changes at every scene
 ZOOMS = (1.0, 0.45, 0.8, 0.3, 0.65)
@@ -587,12 +593,55 @@ def usable_flag(name: str) -> str:
     return ""
 
 
+def _icon_width(code: str, size: int) -> int:
+    """How wide an icon draws at `size`: the owner's flat GIFs are wider than tall (about 2.6 x size for an 800x400 one)."""
+    try:
+        return icon_image(code, size).width
+    except Exception:  # noqa: BLE001 - unknown icon: dress() drops it later
+        return size
+
+
+def card_row(row: list) -> None:
+    """Stand a card's free poles and icons in one row above its text, in script order, centered on the frame,
+    with a gap between neighbours; icons shrink (never below 120) until the row fits the frame's width."""
+    gap, room = 40, W - 100
+    for el in row:
+        if el.kind == "icon":
+            el.opts["size"] = min(int(el.opts.get("size", 250)), 250 if len(row) <= 2 else 200)
+        elif len(row) >= 4:
+            el.opts.setdefault("width", 160)
+            el.opts.setdefault("height", 200)
+
+    def widths() -> list[int]:
+        return [_icon_width(el.opts["icon"], el.opts["size"]) if el.kind == "icon" else int(el.opts.get("width", 190)) for el in row]
+
+    ws = widths()
+    for _ in range(8):
+        over = sum(ws) + gap * (len(row) - 1) - room
+        icons = [el for el in row if el.kind == "icon" and el.opts["size"] > 120]
+        if over <= 0 or not icons:
+            break
+        icon_w = sum(w for el, w in zip(row, ws) if el in icons)
+        shrink = max(0.5, (icon_w - over) / icon_w)
+        for el in icons:
+            el.opts["size"] = max(120, int(el.opts["size"] * shrink))
+        ws = widths()
+    x = (W - sum(ws) - gap * (len(row) - 1)) / 2
+    for el, w in zip(row, ws):
+        if el.kind == "icon":
+            el.opts["x"], el.opts["y"] = round(x + w / 2), CARD_ROW["icon_y"]
+        else:
+            el.opts["x"], el.opts["y"] = round(x), CARD_ROW["pole_y"]  # the pole stands at the flag's left edge
+        x += w + gap
+
+
 def dress(spec) -> list[str]:
     """Get a script's extras ready: flags and icons that exist (the rest dropped, so a bad name never stops a
     video), places for unplaced icons and poles, and the opening globe. Returns what was dropped."""
     dropped: list[str] = []
     for n, scene in enumerate(spec.scenes):
         keep = []
+        row: list = []  # a card's free poles and icons, laid out in one row below
         icons = poles = 0
         for el in scene.elements:
             if el.opts.get("flag"):
@@ -622,17 +671,24 @@ def dress(spec) -> list[str]:
             free = el.feature is None and "at" not in el.opts and "x" not in el.opts
             if el.kind == "icon" and scene.kind == "card":
                 el.opts.setdefault("size", 250)
-            if el.kind == "icon" and free:
+            in_row = scene.kind == "card" and CARD_ROW is not None
+            if el.kind == "icon" and free and in_row:
+                row.append(el)
+            elif el.kind == "icon" and free:
                 slots = ICON_SLOTS[scene.kind]
                 el.opts["x"], el.opts["y"] = slots[icons % len(slots)]
                 icons += 1
             elif el.kind == "icon" and el.feature is not None and "dy" not in el.opts:
                 el.opts["dy"] = -int(el.opts.get("size", 190) * 0.6)  # stand above the place, not on it
-            if el.kind == "pole" and free:
+            if el.kind == "pole" and free and in_row:
+                row.append(el)
+            elif el.kind == "pole" and free:
                 slots = POLE_SLOTS[scene.kind]
                 el.opts["x"], el.opts["y"] = slots[poles % len(slots)]
                 poles += 1
             keep.append(el)
+        if row:
+            card_row(row)
         scene.elements = keep
     first = spec.scenes[0] if spec.scenes else None
     if first is not None and first.kind == "map" and first.view and not any("globe" in s.opts for s in spec.scenes):
@@ -1308,9 +1364,10 @@ class FxRenderer(Renderer):
 
 def _use_layout() -> None:
     """modules.bw_render.use_layout: copy the new frame size and positions, and drop pictures made for the old one."""
-    global W, H, CY, MAP_TOP, MAP_BOTTOM, ICON_SLOTS, POLE_SLOTS, _space, _clouds
+    global W, H, CY, MAP_TOP, MAP_BOTTOM, ICON_SLOTS, POLE_SLOTS, CARD_ROW, _space, _clouds
     W, H, CY, MAP_TOP, MAP_BOTTOM = bw_render.W, bw_render.H, bw_render.CY, bw_render.MAP_TOP, bw_render.MAP_BOTTOM
     ICON_SLOTS, POLE_SLOTS = SLOTS[bw_render.LAYOUT]["icon"], SLOTS[bw_render.LAYOUT]["pole"]
+    CARD_ROW = CARD_ROWS.get(bw_render.LAYOUT)
     _space = _clouds = None
 
 
