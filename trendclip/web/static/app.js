@@ -785,18 +785,22 @@
   }
 
   // Shared with create.js (Create tab).
-  const views = { trends: $("viewTrends"), create: $("viewCreate"), upload: $("viewUpload"), plan: $("viewPlan"),
+  // The trends (and the gameplay library) sit at the end of Insights; an old #trends link opens it there.
+  const views = { create: $("viewCreate"), upload: $("viewUpload"), plan: $("viewPlan"),
     insights: $("viewInsights"), write: $("viewWrite"), week: $("viewGamerWeek") };
 
   const nav = $("nav");
 
   function showView(name, clip) {
-    if (!views[name]) name = "trends";
+    const trends = name === "trends";
+    if (trends) name = "insights";
+    if (!views[name]) name = "create";
     for (const [key, el] of Object.entries(views)) el.hidden = key !== name;
     nav.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
     if (location.hash !== `#${name}`) history.replaceState(null, "", `${location.pathname}${location.search}#${name}`);
     document.dispatchEvent(new CustomEvent("trendclip:view", { detail: { view: name, clip } }));
-    window.scrollTo({ top: 0 });
+    if (trends) $("trending").scrollIntoView({ block: "start" });
+    else window.scrollTo({ top: 0 });
   }
 
   nav.addEventListener("click", (e) => {
@@ -842,6 +846,5 @@
   };
 
   init();
-  const startView = location.hash.slice(1);
-  if (startView !== "trends" && views[startView]) showView(startView);
+  showView(location.hash.slice(1));
 })();

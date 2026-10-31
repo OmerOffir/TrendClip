@@ -281,9 +281,11 @@
         state.seriesId = draft.seriesId || null;
       }
       state.format = "";
-      setFormat(draft.format || "short", draft.length);
+      els.mode.value = ONLY_MODE;  // a draft from before Gamer IQ only
+      setFormat("short", draft.length);
       return draft;
     } catch (_) {
+      els.mode.value = ONLY_MODE;
       setFormat("short");
       return {};
     }
@@ -297,7 +299,7 @@
     if (loaded && state.clip && !list.some((c) => c.filename === state.clip)) state.clip = null;
     if (!list.length) {
       els.picker.innerHTML =
-        '<div class="empty">No clips yet. Go to <a href="#trends" data-goto="trends"><b>Trends</b></a> and press <b>Get gameplay</b> on a game.</div>';
+        '<div class="empty">No clips yet. Go to <a href="#trends" data-goto="trends"><b>Trending on YouTube</b></a> in Insights and press <b>Get gameplay</b> on a game.</div>';
       updatePreview();
       return;
     }
@@ -381,6 +383,8 @@
   }
 
   const QUIZ = ["math", "riddle", "trivia", "paradox", "movie", "gamer"];
+  // SideQuestLogic makes only Gamer IQ: the form starts there (editing an old Short still loads its own kind).
+  const ONLY_MODE = "gamer";
   // The movie quiz picks its shape from the notes ("emoji" = guess the movie from 3 emojis).
   const EMOJI_NOTES = "Guess the movie from 3 emojis";
   const isQuiz = () => QUIZ.includes(els.mode.value);
@@ -475,7 +479,7 @@
       : multi ? "Write Part 1 + Part 2 with Gemini"
       : quiz ? { math: "Write a math challenge", riddle: "Write a riddle with Gemini",
         trivia: "Write a trivia trap with Gemini", paradox: "Write a paradox trap with Gemini",
-        movie: "Write a movie quiz with Gemini" }[els.mode.value]
+        movie: "Write a movie quiz with Gemini", gamer: "🎮 Write a Gamer IQ question" }[els.mode.value]
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);
@@ -1205,7 +1209,7 @@
       'add <code>GEMINI_API_KEY=your-key</code> to <code>.env</code>, then <button type="button" class="btn-link" id="cRecheck">check again</button>. ' +
       "You can still type a script yourself and create a Short.";
     els.geminiInfo.textContent = s.gemini_enabled
-      ? `Gemini (${s.gemini_model}) watches the clip and writes the voiceover, title and hashtags`
+      ? `Gemini (${s.gemini_model}) writes a fact-checked question about the game with 3 options; it becomes the next level`
       : "Gemini needs GEMINI_API_KEY in .env";
     updateButtons();
   }

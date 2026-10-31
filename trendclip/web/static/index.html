@@ -41,8 +41,7 @@
     <div class="subbar" data-workspace-panel="sidequestlogic">
       <span class="subbar-label">SideQuestLogic</span>
       <nav class="nav" id="nav" role="tablist" aria-label="Sections">
-        <button type="button" role="tab" data-view="trends" class="active">Trends</button>
-        <button type="button" role="tab" data-view="create">Create</button>
+        <button type="button" role="tab" data-view="create" class="active">Create</button>
         <button type="button" role="tab" data-view="upload">Upload <span class="nav-count" id="navUploadCount" hidden></span></button>
         <button type="button" role="tab" data-view="plan">Plan <span class="nav-count todo" id="navPlanCount" hidden title="Uploads left for today"></span></button>
         <button type="button" role="tab" data-view="insights">Insights</button>
@@ -372,7 +371,7 @@
       <div class="card-head">
         <div>
           <h2><span class="step">1</span>Pick a background clip</h2>
-          <span class="hint">Your downloaded gameplay · get more with <b>Get gameplay</b> in the Trends tab (vertical clips look best)</span>
+          <span class="hint">Your downloaded gameplay · the question is about this game · get more with <b>Get gameplay</b> under <b>Trending on YouTube</b> in Insights</span>
         </div>
       </div>
       <div id="clipPicker" class="clip-picker"></div>
@@ -382,11 +381,11 @@
       <section class="card form">
         <div class="card-head">
           <div>
-            <h2><span class="step">2</span>Script</h2>
-            <span class="hint" id="geminiInfo">Gemini watches the clip and writes the voiceover, title and hashtags</span>
+            <h2><span class="step">2</span>Gamer IQ question</h2>
+            <span class="hint" id="geminiInfo">Gemini writes a fact-checked question about the game with 3 options; it becomes the next level</span>
           </div>
         </div>
-        <div class="field">
+        <div class="field sq-off">
           <span>Format</span>
           <div class="formats" id="cFormat" role="radiogroup">
             <button type="button" data-format="short" role="radio"><b>Short</b><small>18–22 s viral · or 45–60 s</small></button>
@@ -395,7 +394,7 @@
           </div>
         </div>
         <div class="form-row">
-          <label class="field field-grow">
+          <label class="field field-grow sq-off">
             <span>Script type</span>
             <select id="cMode">
               <option value="clip">About the clip (Gemini narrates the gameplay)</option>
@@ -411,7 +410,7 @@
         </div>
         <div class="form-row">
           <label class="field field-grow"><span>Game</span><input id="cGame" type="text" maxlength="80" placeholder="e.g. Minecraft" /></label>
-          <label class="field">
+          <label class="field sq-off">
             <span>Length</span>
             <select id="cLength">
               <option value="22" selected>18–22 s · viral (60–72 words)</option>
@@ -425,10 +424,10 @@
             <input id="cHandle" type="text" maxlength="31" placeholder="@SideQuestLogic" />
           </label>
         </div>
-        <label class="field"><span>Notes for Gemini (optional)</span>
+        <label class="field sq-off"><span>Notes for Gemini (optional)</span>
           <textarea id="cNotes" rows="2" maxlength="1000" placeholder="Angle or tone, e.g. 'speedrun tips for beginners', 'funny', 'mention the new update'"></textarea>
         </label>
-        <div class="idea-chips" id="cIdeas">
+        <div class="idea-chips sq-off" id="cIdeas">
           <span class="hint">Ideas:</span>
           <button type="button" class="idea" data-quiz="gamer" title="'Level 12: Minecraft fans only': a 3-option question about the game in the background (a number players meet, the fake one, which came first), fact-checked on Google; set the Game field">🎮 Gamer IQ</button>
           <button type="button" class="idea" data-quiz="math" title="'Only 5% finish without pausing': a fast chain of numbers flashes on screen, viewers comment their answer">🧮 Math challenge</button>
@@ -440,8 +439,8 @@
         </div>
         <div class="cleared-note" id="cCleared" hidden></div>
         <div class="form-row form-actions">
-          <label class="check"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
-          <button id="cDescribe" class="btn-secondary" type="button">✨ Fill the rest for my story</button>
+          <label class="check sq-off"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
+          <button id="cDescribe" class="btn-secondary sq-off" type="button">✨ Fill the rest for my story</button>
           <button id="cWrite" class="btn-primary" type="button">Write script with Gemini</button>
         </div>
         <div id="cScriptJob" class="job" hidden></div>
@@ -464,6 +463,8 @@
           <textarea id="cScript" rows="7" maxlength="3000" placeholder="Generate with Gemini, or type your own voiceover here."></textarea>
         </label>
         <label class="field"><span>Title</span><input id="cTitle" type="text" maxlength="150" /></label>
+        <details class="sq-more">
+          <summary>More: description, hashtags, banners, pinned comment</summary>
         <label class="field"><span>Description</span><textarea id="cDesc" rows="3" maxlength="4000"></textarea></label>
         <label class="field"><span>Hashtags</span><input id="cTags" type="text" placeholder="#minecraft #gaming #shorts" /></label>
         <label class="field"><span>Title card <em>(top banner for the first 3 seconds, empty = none)</em></span>
@@ -485,13 +486,13 @@
           </div>
         </div>
         <div class="field">
-          <span>Reaction stickers <em>(your <code>stickers/</code> folder: memes pop up at funny / awkward / shocking beats, away from the captions)</em></span>
-          <div class="chips" id="cReactions"></div>
+          <span>Stickers</span>
+          <div class="chips sq-off" id="cReactions"></div>
           <div class="form-row sticker-toggles">
-            <label class="check"><input type="checkbox" id="cStickers" checked /> Auto reaction stickers</label>
-            <label class="check"><input type="checkbox" id="cCtaSticker" checked /> Subscribe / Part 2 sticker at the call to action</label>
+            <label class="check sq-off"><input type="checkbox" id="cStickers" checked /> Auto reaction stickers</label>
+            <label class="check"><input type="checkbox" id="cCtaSticker" checked /> Subscribe button when the voice says "Subscribe"</label>
           </div>
-          <details class="sticker-lib" id="cStickerLib">
+          <details class="sticker-lib sq-off" id="cStickerLib">
             <summary id="cStickerSummary">Sticker library</summary>
             <div class="sticker-grid" id="cStickerGrid"></div>
             <div class="form-row">
@@ -501,10 +502,13 @@
             </div>
           </details>
         </div>
+        </details>
       </section>
 
       <section class="card form">
-        <div class="card-head"><h2><span class="step">3</span>Voice &amp; style</h2></div>
+        <div class="card-head"><h2><span class="step">3</span>Make the video</h2></div>
+        <details class="sq-more">
+          <summary>Voice, captions and music</summary>
         <div class="form-row">
           <label class="field field-grow"><span>Voice</span><select id="cVoice"><option value="">Loading voices…</option></select></label>
           <label class="field">
@@ -596,6 +600,7 @@
             <div class="dl-meta" id="cTrackMeta"></div>
           </div>
         </div>
+        </details>
         <div class="phone" id="cPhone">
           <video id="cPreview" muted loop playsinline></video>
           <div class="phone-sub" id="cPhoneSub">YOUR <b>SUBTITLES</b> HERE</div>
@@ -957,9 +962,10 @@
         </table>
       </div>
     </section>
-  </main>
-
-  <main class="container view" id="viewTrends">
+    <h2 class="sq-section" id="trending">📈 Trending on YouTube</h2>
+    <p class="hint sq-section-hint">What gaming videos trend now, and the no-copyright gameplay library (Get gameplay).</p>
+    <div id="viewTrends">
+      <div id="loading" class="loading loading-inline" hidden><div class="spinner"></div><span id="loadingText">Fetching trends from YouTube…</span></div>
     <section class="card controls" aria-label="Filters">
       <label class="field field-wide">
         <span>Region</span>
@@ -1149,9 +1155,10 @@
         </table>
       </div>
     </section>
+    </div>
   </main>
 
-  <div id="loading" class="loading" hidden><div class="spinner"></div><span id="loadingText">Fetching trends from YouTube…</span></div>
+
 
   <script src="/static/app.js"></script>
   <script src="/static/create.js"></script>
