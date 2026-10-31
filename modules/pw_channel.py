@@ -138,8 +138,8 @@ def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
     problems = []
     scenes = script.get("scenes") or []
-    if not scenes or scenes[0].get("kind") != "tag":
-        problems.append("the first scene must be the price tag (kind tag)")
+    if not scenes or scenes[0].get("kind") not in ("tag", "product"):
+        problems.append("the first scene must be the product (kind product) or the price tag (kind tag)")
     if not scenes or scenes[-1].get("kind") != "follow":
         problems.append("the last scene must be the follow line (kind follow)")
     sources = script.get("sources") or []
@@ -572,7 +572,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
          script_file: str = "") -> dict:
     """Draw a script into output/pricetagwhy/<key>/ (in this process: call it from `python -m modules.pw_channel`).
     `job`: the slot it is for ({day, slot, post_at}); `script_file`: the queued script it came from (used up)."""
-    from modules import bw_brand, pw_render
+    from modules import pw_render
 
     if problems := check_script(script):
         raise ChannelError("The script breaks the rules: " + "; ".join(problems))
@@ -585,12 +585,13 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     progress(0.05, "Recording the narration")
     spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
     spec = bw_render.spec_from_dict(script, spoken)
-    spec.hold = bw_brand.END_HOLD["short"]  # the end card stays a moment after the follow line
+    spec.hold = 0.6  # the hand finishes drawing the opening again, so the Short loops
+    pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
     music = pick_music(int(script["seed"]))
     pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, float(setting("PW_MUSIC_VOLUME", "0.07")),
-                     lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle())
+                     lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle(), question=script.get("question", ""))
     info = {
         "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:6],

@@ -21,14 +21,14 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from modules import pw_channel
+from modules import pw_channel, pw_draw
 from trendclip import llm_json
 
 KINDS = ("one", "week")
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 90, 135  # about 35-50 s with the channel's voice
-SCENE_KINDS = ("tag", "board", "number", "compare", "chart", "map", "photo", "follow")
-MIDDLE = ("board", "number", "compare", "chart", "map", "photo")  # what goes between the tag and the follow line
+SCENE_KINDS = ("product", "tag", "board", "number", "compare", "chart", "map", "photo", "follow")
+MIDDLE = ("product", "board", "number", "compare", "chart", "map", "photo")  # what goes between the opening and the follow line
 PILLARS = ("everyday prices", "countries and money", "business tricks", "money history")
 # icons a script may put on a board (Noto emoji names, modules.bw_fx.ICONS and modules.pw_render.ICONS)
 ICONS = ("cup_straw", "tea", "tv", "moon", "receipt", "label", "store", "money_wings", "bank", "handshake", "megaphone",
@@ -141,9 +141,12 @@ def format_problems(script: dict) -> list[str]:
             if not tag.get("question") or not tag.get("price"):
                 problems.append(f"scene {k}: the tag needs question (1-3 short lines) and price")
         if s.get("kind") == "board":
-            lines = (s.get("board") or {}).get("write") or []
-            if not 2 <= len(lines) <= 4:
-                problems.append(f"scene {k}: a board writes 2-4 lines (a title first)")
+            board = s.get("board") or {}
+            lines = board.get("write") or []
+            if not 2 <= len(lines) <= 3:
+                problems.append(f"scene {k}: a board writes 2-3 lines (a title first), its picture does the explaining")
+            if board.get("picture") not in pw_draw.DRAWINGS:
+                problems.append(f"scene {k}: board.picture is one of {', '.join(pw_draw.DRAWINGS)}")
             for line in lines:
                 text = line.get("text", "") if isinstance(line, dict) else str(line)
                 if len(text) > 26:
@@ -154,9 +157,11 @@ def format_problems(script: dict) -> list[str]:
                 problems.append(f"scene {k}: unknown icon {el.get('icon')!r}")
     if scenes and scenes[-1].get("kind") == "follow" and "follow" not in str(scenes[-1].get("narration", "")).lower():
         problems.append("the last scene says the follow line (\"Follow for tomorrow's why.\")")
+    if not any(s.get("kind") == "product" for s in scenes):
+        problems.append("show the product: a scene of kind product (drawn, or a free photo when it can't be drawn)")
     middle = [s.get("kind") for s in scenes[1:-1]]
     if len(middle) < 3:
-        problems.append("2-3 reasons and a twist need at least 3 scenes between the tag and the follow line")
+        problems.append("2-3 reasons and a twist need at least 3 scenes between the opening and the follow line")
     if middle and all(k == "board" for k in middle):
         problems.append("vary the pictures: at least one number, compare, chart, map or photo scene, not only boards")
     for src in script.get("sources") or []:
@@ -204,6 +209,14 @@ def scene_problems(s: dict) -> list[str]:
                 out += [f"no such place on the map: {name}" for name in focus if bw_geo.resolve(str(name)) is None]
             except Exception:  # noqa: BLE001 - no map data here: the hub checks it when it draws
                 pass
+    elif kind == "product":
+        if o.get("draw") not in pw_draw.PRODUCTS and not str(o.get("photo") or "").strip():
+            out.append(f"product.draw is one of {', '.join(pw_draw.PRODUCTS)}, or product.photo names a Wikimedia Commons picture of it")
+        if not all(_short(x, 10) for x in o.get("label") or []) or len(o.get("label") or []) > 3:
+            out.append("product.label is 1-3 words of 10 characters at most (our own words, never the brand's logo)")
+        lines = o.get("lines") or []
+        if len(lines) > 4 or not all(_short(x.get("text") if isinstance(x, dict) else x, 12) for x in lines):
+            out.append("product.lines is up to 4 lines of 12 characters at most")
     elif kind == "photo":
         if not str(s.get("photo") or "").strip():
             out.append("a photo scene names the English Wikipedia article whose picture it shows (photo)")
@@ -232,17 +245,22 @@ you'll finally understand why money works the way it does."
 Each script is ONE JSON object shaped exactly like the example below:
 - {MIN_WORDS}-{MAX_WORDS} words of narration in all (35-50 seconds), short spoken sentences, numbers written as a
   narrator says them ("99 cents", "1992").
-- scene 1, kind "tag": the question plus a shocking fact in the first 2 seconds. tag.question is 1-3 short lines
-  written on a hand-drawn price tag; tag.price is the big red number above it (a price, an amount, a year); tag.note
-  a few words under it.
+- scene 1 is the HOOK, and it must SHOCK, not just ask: open on a surprising fact ("This can should cost $2.38
+  today."), then the price that contradicts it, then "Why?". Best as kind "product": the product drawn big on the
+  first frame, so a scroller recognises it at once. {{"kind": "product", "narration": ..., "product": {{"draw":
+  "can", "label": ["ICED", "TEA"], "lines": ["Should cost", {{"text": "$2.38", "color": "red"}}, "Costs",
+  {{"text": "99¢", "color": "green"}}]}}}}. product.draw is one of {", ".join(pw_draw.PRODUCTS)} (our own drawing:
+  label is 1-3 plain words, never the brand's name or logo); when no drawing fits, leave draw out and give
+  product.photo, a Wikimedia Commons search for a free-licensed picture of it (credited automatically). Every
+  script shows its product. (Kind "tag" is the older opening: the question on a hand-drawn price tag.)
 - then 3-5 scenes: 2-3 reasons, each drawn on the whiteboard, then the twist. Mix the kinds so no two videos look
   alike, and use at least one that isn't a board:
-  * "board": board.write is 2-4 lines, the first a short title ("Reason 1: ..."), each at most 26 characters. A line
-    may be {{"text": ..., "color": "green" | "red", "strike": true}}: green for money in, red for cost, strike crosses
-    it out. Up to 2 elements of kind "icon" per board, at x 300 and x 780, y 1230, each with a "cue" word from the
-    narration. Icons: {", ".join(ICONS)}.
+  * "board": a big drawing that explains, with a few words over it. board.write is 2-3 lines, the first a short
+    title ("Reason 1: ..."), each at most 26 characters. A line may be {{"text": ..., "color": "green" | "red",
+    "strike": true}}: green for money in, red for cost, strike crosses it out. board.picture is the drawing, one of
+    {", ".join(pw_draw.DRAWINGS)}; board.color "red" washes it red (a cost).
   * "number": a big figure that counts up as it is said. {{"kind": "number", "narration": ..., "number": {{"label":
-    "If it rose with inflation", "from": "99¢", "to": "$2.27", "note": "BLS inflation calculator"}}}} ("from" may be
+    "If it rose with inflation", "from": "99¢", "to": "$2.38", "note": "BLS inflation calculator"}}}} ("from" may be
     left out; figures at most 10 characters, so "$100T" not "100 trillion dollars").
   * "compare": two price tags side by side, the winner circled. {{"kind": "compare", "narration": ..., "compare":
     {{"title": "Same tea, two prices", "left": {{"label": "On the can", "price": "99¢"}}, "right": {{"label":
@@ -254,7 +272,10 @@ Each script is ONE JSON object shaped exactly like the example below:
     "Smaller than Central Park", "elements": [{{"kind": "highlight", "place": "Monaco", "cue": "Monaco"}}]}}.
   * "photo": the lead picture of an English Wikipedia article (free licence, credited automatically).
     {{"kind": "photo", "narration": ..., "photo": "Monte Carlo Casino", "caption": "Monte Carlo Casino"}}.
-- last scene, kind "follow", narration exactly "Follow for tomorrow's why."
+- the twist must surprise (a number that flips the story, what the owner said), never a letdown.
+- last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
+  (the hand draws the opening again, so the Short loops).
+- every reason needs its 2 sources: leave out anything only one source says.
 - "sources": 2 or more real pages with working links (news, official, academic; Wikipedia only to find others).
   "claims": every fact the narration states, each with the numbers of 2 or more sources that support it.
 - "description": 2-3 sentences with the short answer. "hashtags": 2-3 without #. "pillar": one of

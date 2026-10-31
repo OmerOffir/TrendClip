@@ -25,6 +25,7 @@ COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 WIDTH = 1600
 MIN_SIDE = 500  # smaller pictures look blurry on a 1080 frame
 KINDS = ("image/jpeg", "image/png")
+FREE = re.compile(r"^(cc0|cc[ -]by(-sa)?\b|public domain|pd\b|pd-)", re.I)  # licences we can use with a credit
 
 
 @dataclass
@@ -65,6 +66,8 @@ def _info(title: str) -> dict | None:
     if ii.get("mime") not in KINDS or min(ii.get("width", 0), ii.get("height", 0)) < MIN_SIDE:
         return None
     meta = ii.get("extmetadata") or {}
+    if not FREE.match(_plain((meta.get("LicenseShortName") or {}).get("value", ""))):
+        return None  # e.g. GFDL only, or no licence given: not a picture we can credit and use
     return {"file": pages[0]["title"], "url": ii.get("thumburl") or ii["url"], "page": ii.get("descriptionurl", ""),
             "author": _plain((meta.get("Artist") or {}).get("value", "")),
             "license": _plain((meta.get("LicenseShortName") or {}).get("value", ""))}

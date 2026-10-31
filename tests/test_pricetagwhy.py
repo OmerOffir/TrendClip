@@ -276,7 +276,7 @@ def test_a_missing_photo_becomes_a_whiteboard_and_the_rules_check_the_scenes():
 
     spec = bw_render.Spec(scenes=[bw_render.Scene(kind="card", narration="x", title="Monte Carlo Casino")], words=[])
     pw_render.restyle(spec)
-    assert spec.scenes[0].kind == "board" and spec.scenes[0].opts["board"]["write"] == ["Monte Carlo Casino"]
+    assert spec.scenes[0].kind == "sketch" and spec.scenes[0].opts["sketch"]["write"] == ["Monte Carlo Casino"]
     assert pw_write.scene_problems({"kind": "number", "number": {"to": "100 trillion dollars"}})
     assert pw_write.scene_problems({"kind": "compare", "compare": {"left": {"label": "a", "price": "1"}, "right": {}}})
     assert pw_write.scene_problems({"kind": "chart", "chart": {"lines": [{"points": [["1992", "x"]]}]}})
@@ -347,3 +347,44 @@ def test_the_tab_removes_and_places(tmp_path, monkeypatch):
     assert client.post("/api/pricetagwhy/plan/place", json={"day": "2020-01-01", "slot": "19:00", "video": "x"}).status_code == 400
     assert client.post("/api/pricetagwhy/scripts/restore", json={"file": FIRST.name}).status_code == 200
     assert not web._making()
+
+
+def test_every_drawing_draws_and_the_hatch_stays_inside():
+    from modules import pw_draw
+
+    for name in pw_draw.DRAWINGS:
+        d, k, dx, dy = pw_draw.scaled(name, (0, 0, 400, 400))
+        assert d.strokes and 0 < k and d.w * k <= 400.5 and d.h * k <= 400.5, name
+    path = pw_draw.hatch(pw_draw.rect(0, 0, 100, 50)[:-1], 10, 6)
+    assert path and all(6 <= x <= 94 and 6 <= y <= 44 for x, y in path)
+
+
+def test_the_product_opens_drawn_boards_get_pictures_and_the_end_loops(monkeypatch):
+    for name in ("INK", "BLUE", "RED", "GREEN"):
+        monkeypatch.setattr(bw_brand, name, getattr(bw_brand, name))
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    product = bw_render.Scene(kind="product", narration="a b c", start=0.0, end=5.0, opts={"product": {
+        "draw": "can", "label": ["ICED", "TEA"], "lines": ["Should cost", {"text": "$2.38", "color": "red"}]}})
+    drawn = pw_render.Drawn(product, first=True)
+    early = drawn.items[:drawn.late]
+    assert early and all(it["at"] < 0 for it in early)  # the can is on the first frame
+    assert {it["text"] for it in early if it["kind"] == "write"} == {"ICED", "TEA"}
+    assert [it["text"] for it in drawn.items[drawn.late:] if it["kind"] == "write"] == ["Should cost", "$2.38"]
+    board = bw_render.Scene(kind="board", narration="x", start=5.0, end=9.0, opts={"board": {"write": ["Reason 1", "No ads"]}},
+                            elements=[bw_render.Element(kind="icon", opts={"icon": "tv"})])
+    photo = bw_render.Scene(kind="product", narration="x", start=9.0, end=10.0, opts={"product": {"photo": "AriZona Iced Tea"}})
+    spec = bw_render.Spec(scenes=[product, board, photo], words=[])
+    pw_render.restyle(spec)
+    assert board.kind == "sketch" and board.opts["sketch"]["picture"] == "tv" and board.opts["_drawn_icons"]
+    assert photo.kind == "photo" and photo.opts["photo"] == "AriZona Iced Tea"
+    replay = pw_render.Replay(drawn, 20.0, 22.0)
+    assert len(replay.items) == drawn.late and replay.items[0]["at"] == 20.0 and replay.done <= 22.01
+    assert pw_render.NAME == "Price Tag Why"
+
+
+def test_photos_need_a_free_licence():
+    from modules import bw_photos
+
+    assert all(bw_photos.FREE.match(x) for x in ("CC BY-SA 4.0", "CC BY 2.0", "CC0", "Public domain", "PD-US"))
+    assert not any(bw_photos.FREE.match(x) for x in ("GFDL", "", "All rights reserved"))

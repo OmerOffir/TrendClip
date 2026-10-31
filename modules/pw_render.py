@@ -12,9 +12,17 @@ colours, so the two channels never look alike.
     compare  {title, left: {label, price}, right: {label, price}, winner: left|right}: two price tags side by side
     chart    {title, unit, lines: [{label, color, points: [[x, value], ...], end}]}: a hand-drawn line chart
   and Borderline Why's map and photo scenes;
+    product  {draw: can|bottle|box|..., label: ["ICED", "TEA"], lines: ["Should cost", {text: "$2.30", color: red}],
+              photo: "a Wikimedia Commons search"}: the product drawn big (modules.pw_draw, our own drawing, never a
+              logo), the lines written beside it; with only a photo (no drawing fits) it becomes a photo scene, credited
+              in the description. As the first scene the product is already drawn on the first frame (the hook);
+  and Borderline Why's map and photo scenes;
+- a board is drawn as a "sketch": its title and lines, and a big drawing under them (board.picture, or the drawing of
+  an icon it names: tv, family, truck...), so the picture explains and the words support;
 - the question stays at the top of every drawn scene, on a small price tag;
-- icons pop in on board and tag scenes too (Noto emoji, Apache 2.0; the owner's GIFs when one has the name);
-- a scene of kind "follow" ends the video: the narrator says the follow line over the channel's end card.
+- icons pop in on tag scenes and on boards without a drawing (Noto emoji, Apache 2.0; the owner's GIFs when one has the name);
+- a scene of kind "follow" ends the video: the narrator says the follow line while the hand draws the opening again,
+  so the last frame is the first one and the Short loops.
 
 use_style() changes module-wide colours, so a Price Tag Why video is drawn in a process of its own
 (python -m modules.pw_channel make ...), never in the dashboard's process next to a Borderline Why render.
@@ -28,14 +36,15 @@ from typing import Any
 
 import numpy as np
 
-from modules import bw_brand, bw_fx, bw_render
+from modules import bw_brand, bw_fx, bw_render, pw_draw
 from modules.bw_render import Scene
 
-NAME = "PRICE TAG WHY"
+NAME = "Price Tag Why"  # spelled the same everywhere: the YouTube name, the captions, the description
 INK = (22, 22, 26)
 GREEN = (22, 140, 72)
 RED = (212, 36, 40)
 SAID = (120, 232, 140)  # a caption word once it is said
+TINT = {"green": (196, 232, 205), "red": (246, 204, 204), "ink": (210, 210, 216)}  # marker colour washed into a drawing
 # Noto 3D emoji (Apache 2.0) the channel's scripts may name, on top of Borderline Why's list (modules.bw_fx.ICONS)
 ICONS = dict(cup_straw="1f964", tea="1f375", tv="1f4fa", moon="1f319", receipt="1f9fe", label="1f3f7", store="1f3ea",
              money_wings="1f4b8", bank="1f3e6", handshake="1f91d", megaphone="1f4e3", family="1f46a", dollar="1f4b2",
@@ -69,6 +78,28 @@ def wobble(pts: list[tuple[float, float]], seed: int = 3, amp: float = 3.0) -> n
 
 def segment(a: tuple[float, float], b: tuple[float, float], n: int = 14) -> list[tuple[float, float]]:
     return [(a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n) for k in range(n)]
+
+
+def densify(pts: list[tuple[float, float]], step: float = 26.0) -> list[tuple[float, float]]:
+    """Points every `step` pixels along a polyline (so the wobble bends its edges, not just its corners)."""
+    out = []
+    for a, b in zip(pts, pts[1:]):
+        out += segment(a, b, max(1, int(math.dist(a, b) / step)))
+    return out + pts[-1:]
+
+
+def predraw(board: bw_brand.Board, scene: Scene, late: int) -> None:
+    """Board._time, then the first `late` items already there on the scene's first frame (the hook, and what the
+    thumbnail shows); the rest is written from a moment in."""
+    bw_brand.Board._time(board, scene)
+    early, rest = board.items[:late], board.items[late:]
+    for it in early:
+        it["at"], it["dur"] = scene.start - 10.0, 0.01
+    if rest:
+        shift = scene.start + 0.25 - rest[0]["at"]
+        for it in rest:
+            it["at"] += shift
+        board.done += shift
 
 
 class TagBoard(bw_brand.Board):
@@ -134,17 +165,8 @@ class TagBoard(bw_brand.Board):
             self.items.append(dict(kind="line", pts=np.array(pts), rgb=RED, width=12, cost=0.35))
 
     def _time(self, scene: Scene) -> None:
-        """The tag and its question are there on the first frame (the hook, and what the thumbnail shows); the hand
-        writes the price and the note from a moment in."""
-        super()._time(scene)
-        early, late = self.items[:self.late], self.items[self.late:]
-        for it in early:
-            it["at"], it["dur"] = scene.start - 10.0, 0.01
-        if late:
-            shift = scene.start + 0.25 - late[0]["at"]
-            for it in late:
-                it["at"] += shift
-            self.done += shift
+        """The tag and its question are there on the first frame; the hand writes the price and the note."""
+        predraw(self, scene, self.late)
 
 
 NUMBER = re.compile(r"^(\D*?)(\d[\d,]*(?:\.\d+)?)(.*)$")
@@ -189,15 +211,19 @@ class Drawn(bw_brand.Board):
     """One of the channel's drawn scenes: what the hand writes and draws (Board's items), from the scene option named
     like its kind. Laid out under the question header, above the captions."""
 
-    def __init__(self, scene: Scene):
+    def __init__(self, scene: Scene, first: bool = False):
         o = scene.opts.get(scene.kind)
         self.items: list[dict[str, Any]] = []
         portrait = bw_render.LAYOUT == "portrait"
         self.W = bw_render.W
-        self.top = bw_render.MAP_TOP + (60 if portrait else 30)
-        self.bottom = bw_render.CAPTION_Y - (110 if portrait else 80)
+        self.top = 400 if portrait else bw_render.MAP_TOP + 30  # under the question header
+        self.bottom = bw_render.CAPTION_Y - (90 if portrait else 80)
+        self.late = 0  # items drawn before the first frame when this is the opening (the product)
         getattr(self, "draw_" + scene.kind)(o if isinstance(o, dict) else {})
-        self._time(scene)
+        if first and self.late:
+            predraw(self, scene, self.late)
+        else:
+            self._time(scene)
 
     def frame(self, t: float):
         for it in self.items:
@@ -231,6 +257,75 @@ class Drawn(bw_brand.Board):
         y = self.top + px * 0.62
         self.put_line([(self.W / 2 - half + k * 2 * half / 30, y + 5 * math.sin(k / 4)) for k in range(31)], GREEN, 10, 0.35)
         return self.top + px + 50
+
+    def put_drawing(self, name: str, box: tuple[float, float, float, float], label: list[str] | None = None,
+                    accent: str = "green", seed: int = 0) -> None:
+        """One of modules.pw_draw's drawings, as big as fits in box: its outline, its marker colour, then the label."""
+        if name not in pw_draw.DRAWINGS:
+            return
+        d, k, dx, dy = pw_draw.scaled(name, box)
+        at = lambda pts: [(dx + x * k, dy + y * k) for x, y in pts]
+        acc = RED if accent == "red" else GREEN
+        width = int(max(9, min(15, k * 4.2)))
+        for j, (pts, role) in enumerate(d.strokes):
+            rgb = RED if role == "red" else acc if role == "accent" else INK
+            self.put_line(wobble(densify(at(pts)), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)))
+        tint_w = int(width * 2.6)
+        for poly, role in d.washes:
+            tint = TINT["ink"] if role == "ink_wash" else TINT["red" if accent == "red" else "green"]
+            path = pw_draw.hatch(at(poly), tint_w * 0.75, tint_w / 2 + width / 2)
+            if len(path) > 1:
+                self.put_line(path, tint, tint_w, min(0.9, 0.25 + len(path) * 0.012))
+        words = [str(x) for x in (label or []) if str(x).strip()][:3]
+        if words and d.label_at:
+            lx, ly, lw = d.label_at
+            room = lw * k
+            px = min(fit(w, int(min(150, room * 0.5)), room) for w in words)
+            lead = px * 1.05
+            for j, w in enumerate(words):
+                self.put_text(w, (dx + lx * k, dy + ly * k - lead * (len(words) - 1) / 2 + j * lead), px, INK)
+
+    def draw_product(self, o: dict[str, Any]) -> None:
+        """The product drawn big on the left, the lines (what it costs, what it should cost) written on the right."""
+        lines = [bw_brand.pen_line(x) for x in (o.get("lines") or []) if str(bw_brand.pen_line(x)["text"]).strip()][:4]
+        name = str(o.get("draw") or "")
+        y0, y1 = self.top, self.bottom
+        split = self.W * (0.5 if lines else 1.0)
+        self.put_drawing(name, (50, y0, split - 20, y1), o.get("label") or [], str(o.get("color") or "green"), seed=21)
+        self.late = len(self.items)
+        if not lines:
+            return
+        cx, room = (split + self.W - 30) / 2, self.W - split - 60
+        sizes = [fit(ln["text"], 210 if number_parts(ln["text"]) else 92, room) for ln in lines]
+        total = sum(px * 1.25 for px in sizes)
+        y = (y0 + y1) / 2 - total / 2
+        for ln, px in zip(lines, sizes):
+            y += px * 0.62
+            default = RED if number_parts(ln["text"]) else INK
+            self.put_text(ln["text"], (cx, y), px, bw_brand.pen_color(ln.get("color"), default))
+            if ln.get("strike"):
+                half = bw_fx.hand_font(px).getlength(ln["text"]) / 2 + 16
+                self.put_line([(cx - half + k * 2 * half / 20, y + 8 - k * 1.5) for k in range(21)], RED, 12, 0.35)
+            y += px * 0.63
+
+    def draw_sketch(self, o: dict[str, Any]) -> None:
+        """A board: its title underlined, its lines, and a big drawing filling the rest of the board."""
+        writes = [bw_brand.pen_line(x) for x in (o.get("write") or []) if str(bw_brand.pen_line(x)["text"]).strip()][:4]
+        y = self.put_title(writes[0]["text"]) if writes else self.top
+        picture = str(o.get("picture") or "")
+        lines = writes[1:]
+        px = min([fit(ln["text"], 84 if picture else 96, self.W - 140) for ln in lines], default=84)
+        if not picture:
+            y = y + (self.bottom - y) / 2 - len(lines) * (px + 26) / 2
+        for k, ln in enumerate(lines):
+            at = y + px * 0.55
+            self.put_text(ln["text"], (self.W / 2, at), px, bw_brand.pen_color(ln.get("color"), GREEN if k % 2 == 0 else RED))
+            if ln.get("strike"):
+                half = bw_fx.hand_font(px).getlength(ln["text"]) / 2 + 16
+                self.put_line([(self.W / 2 - half + j * 2 * half / 20, at + 8 - j * 1.2) for j in range(21)], RED, 12, 0.35)
+            y += px + 26
+        if picture:
+            self.put_drawing(picture, (90, y + 20, self.W - 90, self.bottom), o.get("label") or [], str(o.get("color") or "green"), seed=37)
 
     def draw_number(self, o: dict[str, Any]) -> None:
         y = self.put_title(str(o.get("label") or ""))
@@ -294,7 +389,28 @@ class Drawn(bw_brand.Board):
             self.put_text(text, (lx, pts[-1][1] - 52 - 64 * j), px, rgb)
 
 
-DRAWN = ("number", "compare", "chart")
+DRAWN = ("number", "compare", "chart", "product", "sketch")
+
+
+class Replay(bw_brand.Board):
+    """The follow line's picture: the hand draws the opening's first frame again, done a moment before the video
+    ends, so the last frame cuts back into the first one (the Short loops)."""
+
+    def __init__(self, opening: bw_brand.Board, start: float, end: float):
+        import copy
+
+        late = getattr(opening, "late", 0) or len(opening.items)
+        self.items = [copy.deepcopy(it) for it in opening.items[:late]]
+        for it in self.items:
+            it.pop("count", None)
+        gap = 0.08
+        need = sum(it["cost"] for it in self.items) + gap * max(0, len(self.items) - 1)
+        k = max(0.05, end - start) / max(0.1, need)
+        t = start
+        for it in self.items:
+            it["at"], it["dur"] = t, it["cost"] * k
+            t += it["dur"] + gap * k
+        self.done = t - gap * k
 
 
 def header(question: str, size: tuple[int, int]):
@@ -303,7 +419,7 @@ def header(question: str, size: tuple[int, int]):
 
     W = size[0]
     portrait = bw_render.LAYOUT == "portrait"
-    x0, x1, y0, y1 = (110, W - 110, 300, 430) if portrait else (W * 0.25, W * 0.75, 28, 128)
+    x0, x1, y0, y1 = (110, W - 110, 190, 310) if portrait else (W * 0.25, W * 0.75, 28, 128)
     cy = (y0 + y1) / 2
     img = Image.new("RGBA", size, (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
@@ -320,32 +436,42 @@ def header(question: str, size: tuple[int, int]):
 class PwRenderer(bw_fx.FxRenderer):
     SAID = SAID
 
+    question = ""  # the script's question: the header when there is no tag scene
+
     def __init__(self, spec: bw_render.Spec):
         super().__init__(spec)
         self.moods = []  # no mascot: it is Borderline Why's
         self.tags = {i: TagBoard(s) for i, s in enumerate(spec.scenes) if s.kind == "tag"}
-        self.drawn = {i: Drawn(s) for i, s in enumerate(spec.scenes) if s.kind in DRAWN}
+        self.drawn = {i: Drawn(s, first=i == 0) for i, s in enumerate(spec.scenes) if s.kind in DRAWN}
         tag = next((s.opts.get("tag") for s in spec.scenes if s.kind == "tag" and isinstance(s.opts.get("tag"), dict)), {})
-        question = " ".join(str(bw_brand.pen_line(q)["text"]) for q in tag.get("question") or [])
+        question = " ".join(str(bw_brand.pen_line(q)["text"]) for q in tag.get("question") or []) or self.question
         self.header = header(question, (bw_render.W, bw_render.H)) if question else None
+        self.replays: dict[int, Replay] = {}
+
+    def with_header(self, i: int) -> bool:
+        return self.header is not None and self.spec.scenes[i].kind in ("board", *DRAWN)
 
     def scene_frame(self, i: int, t: float):
         scene = self.spec.scenes[i]
         if scene.kind == "follow":
-            if i not in self.ends:
-                prev = max(0, i - 1)
-                self.ends[i] = bw_brand.EndCard(scene, self.scene_frame(prev, self.spec.scenes[prev].end - 0.05), name=NAME,
-                                                handle=self.handle)
-            return self.ends[i].frame(t)
+            opening = self.tags.get(0) or self.drawn.get(0)
+            if opening is None:
+                return self.scene_frame(max(0, i - 1), t)
+            if i not in self.replays:
+                self.replays[i] = Replay(opening, scene.start + 0.2, self.spec.duration - 0.75)
+            img = self.replays[i].frame(t)
+            if self.with_header(0):
+                img.alpha_composite(self.header)
+            return img
         if i in self.tags:
             img = self.tags[i].frame(t)
         elif i in self.drawn:
             img = self.drawn[i].frame(t)
         else:
             img = super().scene_frame(i, t)
-        if self.header is not None and scene.kind in ("board", *DRAWN):
+        if self.with_header(i):
             img.alpha_composite(self.header)
-        if scene.kind in ("tag", "board", *DRAWN) and scene.elements:
+        if scene.kind in ("tag", "board", *DRAWN) and scene.elements and not scene.opts.get("_drawn_icons"):
             from PIL import Image
 
             ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
@@ -359,20 +485,38 @@ class PwRenderer(bw_fx.FxRenderer):
 
 
 def restyle(spec: bw_render.Spec) -> None:
-    """Borderline Why's old-paper card (what a photo scene becomes when its picture can't be found) as this channel's
-    whiteboard instead: its caption or title written as the board's title, its subtitle under it."""
+    """Before the photos are fetched: a product with no drawing becomes a photo scene of it. After: Borderline Why's
+    old-paper card (a photo that couldn't be found) becomes a board, and every board a sketch with a big drawing (its
+    picture, else the drawing of the first icon it names; that icon is then not popped in as well)."""
     for scene in spec.scenes:
+        o = scene.opts.get("product") if isinstance(scene.opts.get("product"), dict) else None
+        if scene.kind == "product" and o is not None and str(o.get("draw") or "") not in pw_draw.DRAWINGS and o.get("photo"):
+            scene.kind = "photo"
+            scene.opts["photo"] = str(o["photo"])
+            scene.opts.setdefault("caption", " ".join(str(x) for x in o.get("label") or []) or str(o["photo"]))
         if scene.kind == "card":
             lines = [x for x in (scene.title or str(scene.opts.get("caption") or ""), scene.subtitle) if x]
             scene.kind = "board"
             scene.opts["board"] = {"write": lines or [scene.headline or "…"]}
+        if scene.kind == "board":
+            board = dict(scene.opts.get("board") or {})
+            board.setdefault("write", [scene.headline or scene.title or "…"])
+            if not board.get("picture"):
+                icons = [el.opts.get("icon") for el in scene.elements if el.kind == "icon"]
+                board["picture"] = next((pw_draw.FROM_ICON[n] for n in icons if n in pw_draw.FROM_ICON), "")
+            if board["picture"] in pw_draw.DRAWINGS:
+                scene.opts["_drawn_icons"] = True
+            scene.kind = "sketch"
+            scene.opts["sketch"] = board
 
 
-def render(spec: bw_render.Spec, voice, out, music=None, music_volume: float = 0.08, progress=lambda f, m: None, handle: str = ""):
+def render(spec: bw_render.Spec, voice, out, music=None, music_volume: float = 0.08, progress=lambda f, m: None, handle: str = "",
+           question: str = ""):
     """bw_render.render with this channel's renderer (call use_style first)."""
     restyle(spec)
     original = bw_fx.FxRenderer
     PwRenderer.handle = handle or PwRenderer.handle
+    PwRenderer.question = question
     bw_fx.FxRenderer = PwRenderer  # bw_render.render builds bw_fx.FxRenderer for the satellite look
     try:
         return bw_render.render(spec, voice, out, music, music_volume, progress)
