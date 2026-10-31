@@ -222,3 +222,25 @@ def test_upcoming_shows_the_channel_with_its_queued_script(tmp_path, monkeypatch
     rows = upcoming.pricetag_rows(settings, now, ["2026-11-01", "2026-11-02"])
     assert [(r["day"], r["state"]) for r in rows] == [("2026-11-01", "empty"), ("2026-11-02", "empty")]
     assert [i["title"] for i in upcoming.waiting(settings)["pricetagwhy"]["items"]] == ["Why is AriZona Iced Tea still 99 cents?"]
+
+
+def test_the_hold_stops_making_and_uploading_until_its_day(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    from trendclip import publish
+
+    monkeypatch.setenv("PW_SLOTS", "19:00")
+    monkeypatch.setenv("PW_HOLD_UNTIL", "2026-11-09")
+    settings = _settings()
+    at = datetime(2026, 11, 1, 14, 0, tzinfo=settings.tz)
+    assert pw_channel.due_makes(settings, at, set(), tmp_path) == []
+    assert pw_channel.due_posts(settings, datetime(2026, 11, 1, 19, 5, tzinfo=settings.tz), set()) == []
+    days = pw_channel.plan_days(settings, at, before=0, after=0, out_dir=tmp_path)
+    assert days[0]["slots"][0]["state"] == "held" and days[0]["slots"][0]["script"] is None
+    later = datetime(2026, 11, 9, 14, 0, tzinfo=settings.tz)
+    assert [j.key for j in pw_channel.due_makes(settings, later, set(), tmp_path)] == ["2026-11-09_1900"]
+    _made(tmp_path, "2026-11-01_1900")
+    monkeypatch.setattr(pw_channel, "Day", type("D", (), {"today": staticmethod(lambda: datetime(2026, 11, 1).date()),
+                                                         "fromisoformat": staticmethod(lambda s: datetime.fromisoformat(s).date())}))
+    with pytest.raises(publish.PublishError, match="on hold"):
+        pw_channel.upload("2026-11-01_1900", youtube=object(), out_dir=tmp_path)

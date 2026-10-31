@@ -14,7 +14,7 @@
     waits: ["⏳ waits for its time", ""], posted: ["▶️ on YouTube", "good"], late: ["⚠️ not posted", "warn"],
     missing: ["⚠️ video missing", "warn"], empty: ["empty slot", "warn"], passed: ["passed, nothing went out", ""],
     approval: ["✋ waiting for Approve", "warn"], making: ["🎬 being made", ""], blocked: ["⛔ failed its check", "warn"],
-    vetoed: ["🚫 vetoed", ""], error: ["❌ could not read this channel", "warn"],
+    vetoed: ["🚫 vetoed", ""], held: ["⏸ on hold", ""], error: ["❌ could not read this channel", "warn"],
   };
   const PLAN_VIEW = { sidequestlogic: ["plan", "data-view"], darkarchives: ["plan", "data-da-view"], borderlinewhy: ["plan", "data-bw-view"], pricetagwhy: ["plan", "data-pw-view"] };
   // A made video's thumbnail, to upload by hand in YouTube Studio (GET /api/thumbnail/<channel>/<ref>).

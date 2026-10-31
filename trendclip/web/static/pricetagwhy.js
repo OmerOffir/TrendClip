@@ -17,7 +17,7 @@
   const STATES = {
     posted: ["good", "▶️ On YouTube"], approved: ["good", "✅ Approved"], waiting: ["warn", "⏸ Waiting for Approve"],
     vetoed: ["", "🚫 Won't be posted"], blocked: ["warn", "❌ Failed its check"], due: ["", "⏳ Being made"],
-    later: ["", "🕒 Made later"], missed: ["", "Passed, nothing went out"], no_script: ["warn", "✍️ No script left"], sample: ["", "Sample"],
+    later: ["", "🕒 Made later"], held: ["", "⏸ On hold"], missed: ["", "Passed, nothing went out"], no_script: ["warn", "✍️ No script left"], sample: ["", "Sample"],
   };
   const pill = (st) => { const [cls, label] = STATES[st] || ["", st]; return `<span class="pill ${cls}">${label}</span>`; };
   const videoSrc = (key, t) => `/api/pricetagwhy/videos/${encodeURIComponent(key)}/video.mp4?t=${encodeURIComponent(t || "")}`;
@@ -55,7 +55,8 @@
       ? `<b>${esc(v.title)}</b> <span class="hint">${Math.round(v.duration_seconds || 0)} s${yt ? ` · <a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a>` : ""}</span>
          ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}`
       : r.script ? `<span class="hint">made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== day ? ` (${esc(r.start.slice(5, 10))})` : ""} from</span> <b>${esc(r.script.title)}</b>`
-      : r.state === "no_script" ? '<span class="hint">no script left: ✍️ Write it myself or 📅 Write a week</span>' : "";
+      : r.state === "no_script" ? '<span class="hint">no script left: ✍️ Write it myself or 📅 Write a week</span>'
+      : r.state === "held" ? '<span class="hint">nothing is made or uploaded until the YouTube channel is renamed</span>' : "";
     const actions = [];
     if (v) {
       actions.push(`<button type="button" class="btn-secondary" data-watch="${esc(v.key)}" data-t="${esc(v.created_at)}">▶ Watch</button>`);
@@ -63,7 +64,7 @@
       if (r.state !== "vetoed") actions.push(`<button type="button" class="btn-secondary" data-veto="${esc(v.key)}">🚫 ${yt ? "Make it private" : "Don't post this"}</button>`);
       if (!yt && r.state !== "blocked" && r.state !== "vetoed") actions.push(`<button type="button" class="btn-secondary" data-upload="${esc(v.key)}" ${connected ? "" : "disabled"}>⬆️ Upload now</button>`);
     }
-    if (!yt && r.state !== "missed" && (r.script || v) && !busy) {
+    if (!yt && r.state !== "missed" && r.state !== "held" && (r.script || v) && !busy) {
       actions.push(`<button type="button" class="btn-secondary" data-makeslot="${esc(day)} ${esc(r.slot)}">💲 ${v ? "Make another" : "Make now"}</button>`);
     }
     return `<div class="pw-slot"><span class="pw-time">${esc(r.slot)}</span>${pill(r.state)}<span class="pw-what">${what}</span>${actions.join("")}</div>`;
@@ -118,7 +119,8 @@
         api("/api/pricetagwhy/plan"), api("/api/pricetagwhy/scripts"), api("/api/pricetagwhy/videos")]);
       state.status = st;
       const busy = st.making.length > 0 || st.upload.running;
-      els.hint.innerHTML = `${esc(st.handle)} · one video a day at <b>${esc(st.slots.join(", "))}</b> (${esc(st.timezone)}), made ${st.lead_hours} h before`
+      els.hint.innerHTML = (st.hold_until ? `<b>⏸ On hold until ${esc(st.hold_until)}</b> (the YouTube channel's new name): no slot videos, no uploads; samples still work · ` : "")
+        + `${esc(st.handle)} · one video a day at <b>${esc(st.slots.join(", "))}</b> (${esc(st.timezone)}), made ${st.lead_hours} h before`
         + ` · ${st.require_approval ? "goes out only after <b>Approve</b>" : "goes out unless vetoed"} as ${esc(st.privacy)}`
         + ` · <b>${st.queued}</b> script(s) queued · voice Kokoro ${esc(st.voice)}`
         + (st.auto_make ? "" : " · <b>automatic making is off</b> (PW_AUTO_MAKE)")

@@ -98,6 +98,25 @@ def require_approval() -> bool:
     return _on("PW_REQUIRE_APPROVAL", "1")
 
 
+def hold_until() -> Day | None:
+    """PW_HOLD_UNTIL (YYYY-MM-DD): before that day nothing is made for a slot and nothing is uploaded (2026-10-31: the
+    YouTube channel's new name can only be set on 2026-11-09). Samples can still be made from the tab."""
+    try:
+        return Day.fromisoformat(setting("PW_HOLD_UNTIL", "").strip())
+    except ValueError:
+        return None
+
+
+def hold_text() -> str:
+    found = hold_until()
+    return found.isoformat() if found else ""
+
+
+def on_hold(day: Day) -> bool:
+    found = hold_until()
+    return found is not None and day < found
+
+
 def upload_privacy() -> str:
     value = setting("PW_UPLOAD_PRIVACY", "public").strip().lower()
     return value if value in ("private", "unlisted", "public") else "public"
@@ -259,7 +278,8 @@ def due_makes(settings, at: datetime, sent: set[str], out_dir: Path | None = Non
         return []
     at = at.astimezone(settings.tz)
     return [job for day in (at.date(), at.date() + timedelta(days=1)) for job in jobs_for(settings, day)
-            if job.make_key not in sent and job.start <= at < job.post_at and load_info(job.key, out_dir) is None]
+            if job.make_key not in sent and job.start <= at < job.post_at and load_info(job.key, out_dir) is None
+            and not on_hold(job.day)]
 
 
 def due_posts(settings, at: datetime, sent: set[str]) -> list[Job]:
@@ -268,12 +288,12 @@ def due_posts(settings, at: datetime, sent: set[str]) -> list[Job]:
         return []
     at = at.astimezone(settings.tz)
     return [job for day in (at.date() - timedelta(days=1), at.date()) for job in jobs_for(settings, day)
-            if job.post_key not in sent and job.post_at <= at < job.post_at + POST_WINDOW]
+            if job.post_key not in sent and job.post_at <= at < job.post_at + POST_WINDOW and not on_hold(job.day)]
 
 
 def slot_state(job: Job, info: dict | None, now: datetime, script: Path | None = None) -> str:
     """posted | blocked | vetoed | approved | waiting (for Approve) | due (being made) | missed (no video, slot passed) |
-    later (made at job.start from `script`) | no_script (nothing left in the queue for it)."""
+    later (made at job.start from `script`) | no_script (nothing left in the queue for it) | held (PW_HOLD_UNTIL)."""
     if info:
         if (info.get("uploads") or {}).get("youtube"):
             return "posted"
@@ -284,6 +304,8 @@ def slot_state(job: Job, info: dict | None, now: datetime, script: Path | None =
         return "approved" if is_approved(info) or not require_approval() else "waiting"
     if now >= job.post_at:
         return "missed"
+    if on_hold(job.day):
+        return "held"
     if script is None:
         return "no_script"
     return "due" if now >= job.start else "later"
@@ -299,7 +321,7 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
         rows = []
         for job in jobs_for(settings, day):
             info = load_info(job.key, out_dir)
-            script = left.pop(0) if info is None and now < job.post_at and left else None
+            script = left.pop(0) if info is None and now < job.post_at and not on_hold(day) and left else None
             rows.append({**job.view(), "state": slot_state(job, info, now, script), "video": _plan_video(info),
                          "script": {"file": script.name, "title": (_read(script) or {}).get("title", "")} if script else None})
         days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
@@ -321,6 +343,7 @@ def plan_view(settings, now: datetime | None = None) -> dict[str, Any]:
     days = plan_days(settings, now)
     return {"days": days, "slots": slots(), "lead_hours": lead_hours(), "timezone": settings.timezone,
             "require_approval": require_approval(), "privacy": upload_privacy(), "auto_make": auto_make(),
+            "hold_until": hold_text(),
             "now": now.isoformat(timespec="minutes"), "queued": len(queued()),
             "waiting": sum(1 for d in days for r in d["slots"] if r["state"] == "waiting")}
 
@@ -539,6 +562,8 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
         raise publish.PublishError(f"No Price Tag Why video {key}")
     if info.get("check"):
         raise publish.PublishError(f"{info['title']} failed its check: " + "; ".join(info["check"]))
+    if on_hold(Day.today()):
+        raise publish.PublishError(f"Uploads are on hold until {hold_until():%d %b} (PW_HOLD_UNTIL: the YouTube channel's new name)")
     if youtube is None and not connected():
         raise publish.PublishError("Connect the Price Tag Why YouTube channel first (dashboard → Price Tag Why → Connect YouTube)")
     client = youtube or publish._youtube(TOKEN)

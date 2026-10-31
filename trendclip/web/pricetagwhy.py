@@ -56,7 +56,8 @@ def status() -> dict[str, Any]:
             "folder": pw_channel.DIR.is_dir(), "youtube": pw_channel.youtube_status(), "discord": bool(pw_channel.discord_channel_id()),
             "slots": pw_channel.slots(), "lead_hours": pw_channel.lead_hours(), "timezone": settings.timezone,
             "require_approval": pw_channel.require_approval(), "privacy": pw_channel.upload_privacy(),
-            "auto_make": pw_channel.auto_make(), "queued": len(pw_channel.queued()), "upload": dict(_upload)}
+            "auto_make": pw_channel.auto_make(), "queued": len(pw_channel.queued()), "upload": dict(_upload),
+            "hold_until": pw_channel.hold_text()}
 
 
 @router.get("/plan")
@@ -110,6 +111,8 @@ def make_slot(req: SlotRequest) -> dict[str, Any]:
     if req.slot not in pw_channel.slots():
         raise HTTPException(status_code=400, detail=f"{req.slot} is not a Price Tag Why time ({', '.join(pw_channel.slots())})")
     job = pw_channel.job_for(settings, req.day, req.slot)
+    if pw_channel.on_hold(job.day):
+        raise HTTPException(status_code=400, detail=f"Slots are on hold until {pw_channel.hold_until():%d %b}: make a sample from the Scripts list instead")
     left = pw_channel.queued()
     if not left:
         raise HTTPException(status_code=400, detail="No script left in the queue: add one to content/pricetagwhy/scripts/")
