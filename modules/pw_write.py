@@ -281,7 +281,8 @@ Each script is ONE JSON object shaped exactly like the example below:
 - last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
   (the hand draws the opening again, so the Short loops).
 - every reason needs its 2 sources: leave out anything only one source says.
-- "sources": 2 or more real pages with working links (news, official, academic; Wikipedia only to find others).
+- "sources": 2 or more real pages with working links (news, official, academic). Never Wikipedia, Wikiwand, Kiddle or
+  a fandom wiki: use them to find the real source and cite that.
   "claims": every fact the narration states, each with the numbers of 2 or more sources that support it.
 - "description": 2-3 sentences with the short answer. "hashtags": 2-3 without #. "pillar": one of
   {", ".join(PILLARS)}.

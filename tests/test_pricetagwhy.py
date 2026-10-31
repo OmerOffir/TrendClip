@@ -475,3 +475,11 @@ def test_the_description_credits_only_what_the_video_shows(monkeypatch):
     assert "Noto" not in text and "drawn by code" not in text  # AriZona draws its own pictures
     with_icon = {**_script(), "scenes": [{"kind": "tag", "elements": [{"kind": "icon", "icon": "tea"}]}]}
     assert "Noto Emoji" in pw_channel.description(with_icon)
+
+
+def test_encyclopedias_are_not_sources():
+    bad = {**_script(), "sources": _script()["sources"] + [{"title": "W", "url": "https://en.wikipedia.org/wiki/AriZona"},
+                                                          {"title": "K", "url": "https://kids.kiddle.co/Hyperinflation"}]}
+    found = [p for p in pw_channel.check_script(bad) if "open encyclopedia" in p]
+    assert len(found) == 2 and not pw_channel.check_script(_script())
+    assert not pw_channel.WIKI.search("https://commons.wikimedia.org/wiki/File:x.jpg")

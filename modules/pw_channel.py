@@ -134,6 +134,9 @@ def words(text: str) -> int:
     return len(re.findall(r"[\w'¢$%.,]+", text))
 
 
+WIKI = re.compile(r"^https?://([\w-]+\.)*(wikipedia\.org|wikiwand\.com|kiddle\.co|fandom\.com|wikia\.com)(/|$)", re.I)
+
+
 def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
     problems = []
@@ -145,6 +148,10 @@ def check_script(script: dict) -> list[str]:
     sources = script.get("sources") or []
     if len(sources) < 2:
         problems.append("fewer than two sources")
+    for n, src in enumerate(sources, 1):
+        if WIKI.search(str(src.get("url") or "")):
+            problems.append(f"source {n} is an open encyclopedia ({src.get('url', '')[:60]}): use it to find the real "
+                            "source (news, official, academic) and cite that instead")
     for c in script.get("claims") or []:
         if len(set(c.get("sources") or [])) < 2:
             problems.append(f"claim checked in fewer than two sources: {c.get('claim', '')[:60]}")
