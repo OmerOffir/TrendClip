@@ -515,7 +515,8 @@ class TrendClipBot(discord.Client):
     @tasks.loop(seconds=60)
     async def reminders(self) -> None:
         at = assistant.now(self.settings)
-        self.darkarchives_posts(at)
+        if not _da_retired():  # replaced by Pricetag Why (modules.da_channel.retired)
+            self.darkarchives_posts(at)
         self.borderlinewhy_jobs(at)
         self.cleanup_job(at)
         if not self.settings.discord_channel_id:
@@ -2122,12 +2123,6 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "`/replies` read the YouTube comments now and reply to new fans (also every few hours); "
         "`now:True` replies on quiz videos too, without the 10 h spoiler wait",
         "",
-        "**Dark Outliers** (its own plan, bank and YouTube channel): `/da plan` · `/da videos` · `/da status` · "
-        "`/da make` a video for the next empty slot now (`slots:` more, `fetch:True` refresh the bank first) · "
-        "`/da rank` a ranking video (the 5 best stories counted down; every 4th video is one by itself) · "
-        "`/da fetch` · `/da upload` · `/da insights` what the channel's own numbers say. Every morning the bank is refreshed and each empty slot gets a video, posted "
-        "in its channel with **Don't post this**, **Upload now** and **Delete** buttons.",
-        "",
         "**Borderline Why** (map Shorts, its own YouTube channel): `/bw status` · `/bw make` the next video now · "
         "`/bw connect` the YouTube login. Every day the bot makes one video hours before its slot and posts it in its "
         "channel; press **Approve** and it goes out at the slot.",
@@ -2135,6 +2130,13 @@ async def help_cmd(interaction: discord.Interaction) -> None:
 
 
 # --------------------------------------------------------------------------- Dark Outliers
+
+
+def _da_retired() -> bool:
+    from modules import da_channel
+
+    return da_channel.retired()
+
 
 
 da_group = app_commands.Group(name="da", description="Dark Outliers: the dark-stories channel (its own plan, bank and YouTube)")
@@ -2369,7 +2371,9 @@ async def bw_connect_cmd(interaction: discord.Interaction) -> None:
 
 
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
-            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, da_group, bw_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, bw_group, help_cmd]
+if not _da_retired():  # Dark Outliers' /da only while the channel runs (DA_ENABLED=1)
+    COMMANDS.insert(COMMANDS.index(bw_group), da_group)
 
 
 

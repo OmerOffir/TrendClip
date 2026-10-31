@@ -70,3 +70,13 @@ def test_the_tab_lists_scripts_and_videos(tmp_path, monkeypatch):
     assert client.get("/api/pricetagwhy/videos/k1/video.mp4").status_code == 200
     assert client.get("/api/pricetagwhy/videos/nope/video.mp4").status_code == 404
     assert client.post("/api/pricetagwhy/make", json={"file": "../x.json"}).status_code == 400
+
+
+def test_dark_outliers_is_retired_unless_switched_on(monkeypatch):
+    from modules import da_channel
+
+    monkeypatch.delenv("DA_ENABLED", raising=False)
+    monkeypatch.setattr("dotenv.dotenv_values", lambda *a, **k: {})
+    assert da_channel.retired()
+    monkeypatch.setenv("DA_ENABLED", "1")
+    assert not da_channel.retired()

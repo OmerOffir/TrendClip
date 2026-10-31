@@ -20,6 +20,12 @@ CHANNELS = {
 }
 
 
+def _dark_retired() -> bool:
+    from modules import da_channel
+
+    return da_channel.retired()
+
+
 def _row(channel: str, day: str, time: str, **extra) -> dict[str, Any]:
     return {"channel": channel, "label": CHANNELS[channel], "day": day, "time": time, "title": "", "seconds": None,
             "state": "empty", "url": "", "ref": None, "twice": False, **extra}
@@ -56,7 +62,10 @@ def sidequest_rows(settings, now: datetime, days: list[str]) -> list[dict[str, A
 
 
 def dark_rows(now: datetime, days: list[str]) -> list[dict[str, Any]]:
-    from modules import da_plan
+    from modules import da_channel, da_plan
+
+    if da_channel.retired():  # replaced by Pricetag Why: no slots to fill
+        return []
 
     view = da_plan.view()
     rows = []
@@ -130,6 +139,8 @@ def waiting(settings) -> dict[str, dict[str, Any]]:
         return [{"title": f"{e['game']}: {e['question'].get('question', '')}", "game": e["game"]} for e in gamer_queue.entries(settings)]
 
     for name, source in (("sidequestlogic", sidequest), ("darkarchives", dark), ("borderlinewhy", borderline)):
+        if name == "darkarchives" and _dark_retired():
+            continue
         try:
             items = source()
             out[name] = {"items": items, "count": len(items), "note": ""}
@@ -205,6 +216,8 @@ def local_unsent(settings) -> list[dict[str, Any]]:
     out = [{"channel": "sidequestlogic", "label": CHANNELS["sidequestlogic"], "day": i.date.isoformat(),
             "time": i.slot or "", "title": i.title} for i in hub.planned(settings)]
     for name in ("darkarchives", "borderlinewhy"):
+        if name == "darkarchives" and _dark_retired():
+            continue
         try:
             out += [{"channel": name, "label": CHANNELS[name], "day": p["date"], "time": p["slot"], "title": p["title"]}
                     for p in channel_hub.planned(settings, name)]

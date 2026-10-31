@@ -22,10 +22,6 @@
           <span class="ws-mark" aria-hidden="true">SQ</span>
           <span><b>SideQuestLogic</b><small>Gameplay storytime Shorts</small></span>
         </button>
-        <button type="button" role="tab" class="workspace" data-workspace="darkarchives" aria-selected="false">
-          <span class="ws-mark ws-mark-dark" aria-hidden="true">DA</span>
-          <span><b>Dark Outliers</b><small>Real dark stories &amp; mysteries</small></span>
-        </button>
         <button type="button" role="tab" class="workspace" data-workspace="borderlinewhy" aria-selected="false">
           <span class="ws-mark ws-mark-bw" aria-hidden="true">BW</span>
           <span><b>Borderline Why</b><small>Map mysteries, explained</small></span>
@@ -52,16 +48,6 @@
         <button type="button" role="tab" data-view="insights">Insights</button>
         <button type="button" role="tab" data-view="write" title="Write a Gamer IQ question with any LLM">✍️ Write it myself</button>
         <button type="button" role="tab" data-view="week" title="One prompt for the coming week's Gamer IQ questions in any LLM; Linux makes the levels from them">📅 Write a week</button>
-      </nav>
-    </div>
-    <div class="subbar" data-workspace-panel="darkarchives" hidden>
-      <span class="subbar-label">Dark Outliers</span>
-      <nav class="nav" id="daNav" role="tablist" aria-label="Dark Outliers sections">
-        <button type="button" role="tab" class="active" data-da-view="stories">Stories <span class="nav-count" id="daNavCount" hidden></span></button>
-        <button type="button" role="tab" data-da-view="videos">Videos <span class="nav-count" id="daNavVideos" hidden></span></button>
-        <button type="button" role="tab" data-da-view="plan">Plan <span class="nav-count todo" id="daNavPlan" hidden title="Planned videos not yet on YouTube"></span></button>
-        <button type="button" role="tab" data-da-view="write" title="Write the script with any LLM when Gemini is out of quota">✍️ Write it myself</button>
-        <button type="button" role="tab" data-da-view="week" title="One prompt for the coming week's scripts in any LLM; Linux makes the videos from them">📅 Write a week</button>
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="borderlinewhy" hidden>
@@ -273,164 +259,6 @@
       </div>
       <div class="bw-topics" id="bwTopics"><div class="empty">Loading…</div></div>
     </section>
-  </main>
-
-  <main class="container da-view" id="viewDarkStories" data-workspace-panel="darkarchives" data-da-panel="stories" hidden>
-    <div id="daError" class="banner banner-error" hidden></div>
-
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Story bank</h2>
-          <span class="hint">Raw stories from Reddit, Wikipedia, Gemini and RSS feeds (Atlas Obscura, Listverse), saved once each (a story is never fetched or told twice). Only 200-3,500 character stories are kept; promos, fiction and off-topic posts are filtered out. Pick a story → <b>Write the Shorts script</b> → <b>Make the video</b> (narration, GPU pictures, real photos, captions, music)</span>
-        </div>
-      </div>
-      <div class="da-sources" id="daSources"></div>
-      <div class="da-mix" id="daMix"></div>
-      <div class="da-fetch">
-        <label class="da-check"><input type="checkbox" value="reddit" checked /> Reddit <input type="number" id="daNReddit" min="1" max="100" value="25" title="Posts per subreddit feed" /></label>
-        <label class="da-check"><input type="checkbox" value="wikipedia" checked /> Wikipedia <input type="number" id="daNWiki" min="1" max="50" value="10" title="New articles" /></label>
-        <label class="da-check"><input type="checkbox" value="gemini" checked /> Gemini <input type="number" id="daNGemini" min="1" max="20" value="5" title="New cases" /></label>
-        <label class="da-check"><input type="checkbox" value="rss" checked /> RSS <input type="number" id="daNRss" min="1" max="50" value="10" title="New stories per feed" /></label>
-        <button type="button" class="btn-primary" id="daFetch">Fetch new stories</button>
-        <button type="button" id="daRank" title="Gemini picks the 5 strongest NEW stories, ranks them and writes a countdown script (a story of its own in the list)">Rank the best stories</button>
-        <span class="hint" id="daFetchStatus"></span>
-      </div>
-    </section>
-
-    <section class="card llm-topics" data-llm-topics="/api/darkarchives/llm-topics" data-refresh="daStatus">
-      <div class="card-head">
-        <div>
-          <h2>New stories from your own LLM</h2>
-          <span class="hint">Gemini's own research prompt (famous cases, anniversaries near today, the cases already in the bank to avoid), for when Gemini is out of quota. The cases are scored by their Wikipedia page views, like Gemini's</span>
-        </div>
-      </div>
-      <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
-        <div class="llm-topics-row"><label class="hint">Cases <input type="number" data-l="count" min="1" max="20" value="10" /></label><button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
-        <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
-      </div>
-      <div class="bw-w-step"><b>2 · Paste its answer</b>
-        <textarea class="bw-w-answer" data-l="answer" rows="4" placeholder="Paste the whole answer here (the JSON)"></textarea>
-        <div class="llm-topics-row"><button type="button" class="btn-primary" data-l="add">➕ Add them</button><span class="hint" data-l="status"></span></div>
-      </div>
-    </section>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Stories <span class="hint" id="daShown"></span></h2>
-          <span class="hint">Best score first. <span class="pill good">NEXT</span> = what <code>get_next_story()</code> returns now: the best story of the pillar furthest below its share</span>
-        </div>
-        <div class="da-filters">
-          <select id="daPillar">
-            <option value="">All pillars</option>
-            <option value="mystery">Mysteries &amp; cold cases</option>
-            <option value="history">Creepy history</option>
-            <option value="outrage">Disturbing true events</option>
-          </select>
-          <select id="daSource">
-            <option value="">All sources</option>
-            <option value="reddit">Reddit</option>
-            <option value="wikipedia">Wikipedia</option>
-            <option value="gemini">Gemini</option>
-            <option value="rss">RSS feeds</option>
-            <option value="llm">Your LLM</option>
-          </select>
-          <select id="daStatus">
-            <option value="">All statuses</option>
-            <option value="NEW" selected>New</option>
-            <option value="PROCESSING">Processing</option>
-            <option value="SCRIPT_READY">Script ready</option>
-            <option value="USED">Used</option>
-            <option value="REJECTED">Rejected</option>
-          </select>
-          <input type="search" id="daQuery" maxlength="100" placeholder="Search title or text" />
-        </div>
-      </div>
-      <div class="da-layout">
-        <div class="da-list" id="daList"></div>
-        <article class="da-detail" id="daDetail"><div class="empty">Pick a story to read it</div></article>
-      </div>
-    </section>
-  </main>
-
-  <main class="container da-view" id="viewDarkVideos" data-workspace-panel="darkarchives" data-da-panel="videos" hidden>
-    <div id="daVideosError" class="banner banner-error" hidden></div>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Videos <span class="hint" id="daVideosCount"></span></h2>
-          <span class="hint">Every finished Dark Outliers Short, newest first. <b>Plan</b> puts it on a day and time (the bot uploads it then); <b>Story</b> opens it, with Upload to YouTube for right now</span>
-        </div>
-        <button type="button" class="btn-secondary" id="daVideosRefresh">Refresh</button>
-      </div>
-      <div class="da-ytbar" id="daVideosYouTube"></div>
-      <div class="da-videos" id="daVideos"><div class="empty">Loading…</div></div>
-    </section>
-  </main>
-
-  <main class="container da-view" id="viewDarkWrite" data-workspace-panel="darkarchives" data-da-panel="write" hidden>
-    <div id="daWError" class="banner banner-error" hidden></div>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Write it myself</h2>
-          <span class="hint">For when Gemini is out of quota. Pick a story from the bank; you paste each prompt into any LLM and its
-            answer back here. The same rules check runs as on Gemini's scripts, then a fact check against the story (best in a second LLM).</span>
-        </div>
-      </div>
-      <div class="bw-w-start">
-        <select id="daWStory" aria-label="Story"><option value="">The next story</option></select>
-        <button type="button" class="btn-primary" id="daWStart">✍️ Get the prompt</button>
-        <span class="spacer"></span>
-        <select id="daWSessions" aria-label="Continue a script" hidden></select>
-        <button type="button" class="btn-secondary" id="daWOpen" hidden>Continue</button>
-      </div>
-      <div class="bw-w" id="daWSession"></div>
-    </section>
-  </main>
-
-  <main class="container da-view" id="viewDarkWeek" data-workspace-panel="darkarchives" data-da-panel="week" hidden>
-    <div id="daKError" class="banner banner-error" hidden></div>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Write a week</h2>
-          <span class="hint">No Gemini needed. The code picks the best stories of the bank and the groups for the rankings; you paste ONE prompt
-            into any LLM (the Gemini app, ChatGPT, Claude) and its answer back here; every script gets the rules check and the stories a fact
-            check (best in a second LLM). The ready scripts go to Linux, whose production run uses them before asking Gemini, oldest first.</span>
-        </div>
-      </div>
-      <div class="bw-w-start">
-        <label class="hint" for="daKCount">Stories</label>
-        <input type="number" id="daKCount" min="0" max="21" value="10" style="width:4.5em">
-        <label class="hint" for="daKRankings">Rankings</label>
-        <input type="number" id="daKRankings" min="0" max="7" value="3" style="width:4.5em">
-        <button type="button" class="btn-primary" id="daKStart">📚 Pick the next stories</button>
-        <span class="hint" id="daKInfo"></span>
-      </div>
-      <div class="bw-w" id="daKSession"></div>
-    </section>
-  </main>
-
-  <main class="container da-view" id="viewDarkPlan" data-workspace-panel="darkarchives" data-da-panel="plan" hidden>
-    <div id="daPlanError" class="banner banner-error" hidden></div>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Plan</h2>
-          <span class="hint" id="daPlanHint">Which video goes out when. The Discord bot uploads each slot's video to the Dark Outliers channel at its time</span>
-        </div>
-        <div class="week-nav">
-          <button type="button" class="btn-secondary" id="daPlanPrev">◀</button>
-          <button type="button" class="btn-secondary" id="daPlanToday">Today</button>
-          <button type="button" class="btn-secondary" id="daPlanNext">▶</button>
-        </div>
-      </div>
-      <div class="da-ytbar" id="daProduce"></div>
-      <div class="da-insights" id="daInsights"></div>
-      <div class="da-plan" id="daPlan"><div class="empty">Loading…</div></div>
-    </section>
-    <section class="card ch-hub" id="daHub" hidden></section>
   </main>
 
   <main class="container view" id="viewCreate" hidden>
@@ -1234,10 +1062,7 @@
   <script src="/static/bwlong.js"></script>
   <script src="/static/gamermanual.js"></script>
   <script src="/static/gamerweek.js"></script>
-  <script src="/static/darkmanual.js"></script>
-  <script src="/static/daweek.js"></script>
   <script src="/static/llmtopics.js"></script>
-  <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
   <script src="/static/pricetagwhy.js"></script>
   <script src="/static/upcoming.js"></script>

@@ -4,8 +4,22 @@ from __future__ import annotations
 
 from datetime import date as Day, datetime
 
+import pytest
+
 from modules import da_plan, upcoming, video_gen
 from trendclip.config import get_settings
+
+
+@pytest.fixture(autouse=True)
+def _dark_outliers_on(monkeypatch):
+    """These tests cover Dark Outliers' rows, so the retired channel is switched back on (DA_ENABLED=1)."""
+    monkeypatch.setenv("DA_ENABLED", "1")
+
+
+def test_a_retired_dark_outliers_has_no_rows(monkeypatch):
+    monkeypatch.setenv("DA_ENABLED", "0")
+    monkeypatch.setattr(da_plan, "view", lambda: (_ for _ in ()).throw(AssertionError("read the retired plan")))
+    assert upcoming.dark_rows(datetime(2026, 10, 31, 12, 0), ["2026-10-31"]) == []
 
 
 def test_upcoming_lists_every_channel_and_flags_doubles(tmp_path, monkeypatch):
