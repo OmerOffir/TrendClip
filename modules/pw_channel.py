@@ -1,7 +1,7 @@
 """The Price Tag Why channel (@PriceTagWhy): whiteboard answers to the money questions everyone wonders about, drawn
 by Borderline Why's renderer in its own colours (modules.pw_render). Brief: channel-brief-pricetag-why.md.
 
-Its day: one video per PW_SLOTS time (default 19:00 in Settings.timezone, noon in New York). PW_LEAD hours before the
+Its day: one video per PW_SLOTS time (default 14:00 and 23:00 in Settings.timezone, like the other channels). PW_LEAD hours before the
 slot (default 6) the bot makes it from the next hand-checked script in the queue (content/pricetagwhy/scripts/ in git,
 then output/pricetagwhy/queue/ on the hub; each script is made once, oldest name first) and shows it on the dashboard
 and in the channel's Discord channel. With PW_REQUIRE_APPROVAL=1 (the default for this new channel) it goes to YouTube
@@ -48,7 +48,7 @@ VOICE = "af_heart"  # Kokoro-82M (Apache 2.0, commercial use allowed): warm and 
 MUSIC = "funny"  # a music/ folder; PW_MUSIC=none for the voice alone
 DISCLAIMER = "Not financial advice, just the fascinating reasons behind the prices."
 HASHTAGS = ("money", "economics", "pricetagwhy", "shorts")
-DEFAULT_SLOTS = "19:00"  # one a day (PW_SLOTS, in Settings.timezone)
+DEFAULT_SLOTS = "14:00,23:00"  # two a day, like the other channels (PW_SLOTS, in Settings.timezone)
 DEFAULT_LEAD = 6  # hours before the slot the video is made (PW_LEAD)
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
 MAKE_TIMEOUT = 1800  # seconds a make process may take
