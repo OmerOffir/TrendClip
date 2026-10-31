@@ -21,6 +21,7 @@ import json
 import logging
 import random
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -193,16 +194,113 @@ def _read(path: Path) -> dict | None:
         return None
 
 
+def plan_path(out_dir: Path | None = None) -> Path:
+    return out_root(out_dir) / "plan.json"
+
+
+def load_plan(out_dir: Path | None = None) -> dict[str, Any]:
+    """The owner's changes to the plan: "removed" scripts (out of the queue until put back) and "pins" (slot key ->
+    the script that slot is made from, ahead of the queue's order)."""
+    data = _read(plan_path(out_dir)) or {}
+    return {"removed": list(data.get("removed") or []), "pins": dict(data.get("pins") or {})}
+
+
+def save_plan(plan: dict[str, Any], out_dir: Path | None = None) -> None:
+    path = plan_path(out_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def queued(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list[Path]:
-    """The scripts the next slots take, in order: not made yet and passing the rule check."""
+    """The scripts the next slots take, in order: not made yet, not removed from the plan and passing the rule check."""
     used = used_scripts(out_dir)
+    removed = set(load_plan(out_dir)["removed"])
     return [p for p in script_files(out_dir, scripts_dir)
-            if p.name not in used and (s := _read(p)) is not None and not check_script(s)]
+            if p.name not in used and p.name not in removed and (s := _read(p)) is not None and not check_script(s)]
+
+
+def script_for(job: "Job", out_dir: Path | None = None, scripts_dir: Path | None = None) -> Path | None:
+    """The script a slot is made from: the one pinned to it, else the first queued script no slot is pinned to."""
+    left = queued(out_dir, scripts_dir)
+    pins = load_plan(out_dir)["pins"]
+    pinned = next((p for p in left if p.name == pins.get(job.key)), None)
+    return pinned or next((p for p in left if p.name not in pins.values()), None)
+
+
+def remove_script(name: str, out_dir: Path | None = None) -> None:
+    """Take a script out of the plan (it stays in the Scripts list, where it can be put back)."""
+    plan = load_plan(out_dir)
+    if name not in plan["removed"]:
+        plan["removed"].append(name)
+    plan["pins"] = {k: v for k, v in plan["pins"].items() if v != name}
+    save_plan(plan, out_dir)
+
+
+def restore_script(name: str, out_dir: Path | None = None) -> None:
+    plan = load_plan(out_dir)
+    plan["removed"] = [n for n in plan["removed"] if n != name]
+    save_plan(plan, out_dir)
+
+
+def remove_slot(job: "Job", out_dir: Path | None = None) -> dict[str, Any]:
+    """Empty a made slot: its video is set aside (not one already on YouTube) and its script leaves the plan (a slot
+    not made yet is emptied with remove_script on the script shown for it)."""
+    info = load_info(job.key, out_dir)
+    name = (info or {}).get("script_file", "")
+    if info:
+        set_aside(job.key, out_dir)
+    if name:
+        remove_script(name, out_dir)
+    plan = load_plan(out_dir)
+    if plan["pins"].pop(job.key, None):
+        save_plan(plan, out_dir)
+    return {"removed": name, "video": bool(info)}
+
+
+def pin_script(job: "Job", name: str, out_dir: Path | None = None) -> None:
+    """Make a slot from this script (taken back from "removed" if it was there)."""
+    if load_info(job.key, out_dir):
+        raise ChannelError("That slot already has a video: remove it first")
+    restore_script(name, out_dir)
+    if name not in {p.name for p in queued(out_dir)}:
+        raise ChannelError(f"{name} can't be used: it was made for a slot already or breaks the rules")
+    plan = load_plan(out_dir)
+    plan["pins"] = {k: v for k, v in plan["pins"].items() if v != name}
+    plan["pins"][job.key] = name
+    save_plan(plan, out_dir)
+
+
+def place_video(key: str, job: "Job", out_dir: Path | None = None) -> dict:
+    """Put a made video (a sample) on a slot: copied into the slot's folder, where it waits for Approve like one the
+    bot made. Its script (when known) counts as used."""
+    src = load_info(key, out_dir)
+    if src is None:
+        raise ChannelError("No such video")
+    if src.get("job"):
+        raise ChannelError("That video already belongs to a slot")
+    if src.get("check"):
+        raise ChannelError("That video breaks the rules: " + "; ".join(src["check"]))
+    if load_info(job.key, out_dir):
+        raise ChannelError("That slot already has a video: remove it first")
+    stale = out_root(out_dir) / job.key
+    if stale.exists():
+        set_aside(job.key, out_dir)
+    shutil.copytree(out_root(out_dir) / key, out_root(out_dir) / job.key)
+    info = {**src, "key": job.key, "job": {"day": job.day.isoformat(), "slot": job.slot, "post_at": job.post_at.isoformat(timespec="minutes")},
+            "placed_from": key}
+    info.pop("approved", None)
+    info.pop("veto", None)
+    save_info(info, out_dir)
+    plan = load_plan(out_dir)
+    if plan["pins"].pop(job.key, None):
+        save_plan(plan, out_dir)
+    return load_info(job.key, out_dir)
 
 
 def scripts(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list[dict[str, Any]]:
     """Every script with its rule check and whether a slot's video was made from it."""
     used = used_scripts(out_dir)
+    plan = load_plan(out_dir)
     out = []
     for path in script_files(out_dir, scripts_dir):
         script = _read(path)
@@ -212,7 +310,8 @@ def scripts(out_dir: Path | None = None, scripts_dir: Path | None = None) -> lis
             continue
         out.append({"file": path.name, "title": script.get("title", ""), "question": script.get("question", ""),
                     "words": words(narration(script)), "sources": script.get("sources", []), "claims": script.get("claims", []),
-                    "check": check_script(script), "used": path.name in used})
+                    "check": check_script(script), "used": path.name in used, "removed": path.name in plan["removed"],
+                    "pinned": next((k for k, v in plan["pins"].items() if v == path.name), "")})
     return out
 
 
@@ -279,7 +378,7 @@ def due_makes(settings, at: datetime, sent: set[str], out_dir: Path | None = Non
     at = at.astimezone(settings.tz)
     return [job for day in (at.date(), at.date() + timedelta(days=1)) for job in jobs_for(settings, day)
             if job.make_key not in sent and job.start <= at < job.post_at and load_info(job.key, out_dir) is None
-            and not on_hold(job.day)]
+            and not on_hold(job.day) and script_for(job, out_dir) is not None]  # an emptied plan makes nothing
 
 
 def due_posts(settings, at: datetime, sent: set[str]) -> list[Job]:
@@ -314,16 +413,22 @@ def slot_state(job: Job, info: dict | None, now: datetime, script: Path | None =
 def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir: Path | None = None) -> list[dict[str, Any]]:
     """Every slot from `before` days back to `after` days ahead: its video, or the queued script it will be made from."""
     now = now.astimezone(settings.tz)
+    pins = load_plan(out_dir)["pins"]
     left = list(queued(out_dir))
+    by_name = {p.name: p for p in left}
+    left = [p for p in left if p.name not in pins.values()]
     days = []
     for n in range(-before, after + 1):
         day = now.date() + timedelta(days=n)
         rows = []
         for job in jobs_for(settings, day):
             info = load_info(job.key, out_dir)
-            script = left.pop(0) if info is None and now < job.post_at and not on_hold(day) and left else None
+            script = None
+            if info is None and now < job.post_at and not on_hold(day):
+                script = by_name.get(pins.get(job.key)) or (left.pop(0) if left else None)
             rows.append({**job.view(), "state": slot_state(job, info, now, script), "video": _plan_video(info),
-                         "script": {"file": script.name, "title": (_read(script) or {}).get("title", "")} if script else None})
+                         "script": {"file": script.name, "title": (_read(script) or {}).get("title", ""),
+                                    "pinned": pins.get(job.key) == script.name} if script else None})
         days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
     return days
 
@@ -503,10 +608,9 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
 
 
 def _make_cmd(script_path: Path, key: str, out_dir: Path | None, job: Job | None) -> list[str]:
-    cmd = [sys.executable, "-m", "modules.pw_channel", "make", str(script_path), "--key", key]
+    cmd = [sys.executable, "-m", "modules.pw_channel", "make", str(script_path), "--key", key, "--script-file", script_path.name]
     if job is not None:
-        cmd += ["--day", job.day.isoformat(), "--slot", job.slot, "--post-at", job.post_at.isoformat(timespec="minutes"),
-                "--script-file", script_path.name]
+        cmd += ["--day", job.day.isoformat(), "--slot", job.slot, "--post-at", job.post_at.isoformat(timespec="minutes")]
     return cmd + (["--out", str(out_dir)] if out_dir else [])
 
 
@@ -520,20 +624,20 @@ def start_make(script_path: Path, key: str, out_dir: Path | None = None, job: Jo
 
 
 def make_slot(settings, job: Job, out_dir: Path | None = None, run=subprocess.run) -> dict:
-    """The slot's video from the next queued script, drawn in its own process (blocks until it is done). Raises
+    """The slot's video from its script (script_for), drawn in its own process (blocks until it is done). Raises
     ChannelError when no script is left or the make fails; the info (with "check" when it can't go out) otherwise."""
-    left = queued(out_dir)
-    if not left:
+    script = script_for(job, out_dir)
+    if script is None:
         raise ChannelError("No script left in the queue: add one to content/pricetagwhy/scripts/")
     root = out_root(out_dir)
     root.mkdir(parents=True, exist_ok=True)
     with (root / f"{job.key}.log").open("w") as log:
-        result = run(_make_cmd(left[0], job.key, out_dir, job), cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
+        result = run(_make_cmd(script, job.key, out_dir, job), cwd=str(PROJECT_ROOT), stdout=log, stderr=subprocess.STDOUT,
                      timeout=MAKE_TIMEOUT)
     info = load_info(job.key, out_dir)
     if result.returncode or info is None:
         tail = (root / f"{job.key}.log").read_text(encoding="utf-8", errors="replace").strip().splitlines()[-3:]
-        raise ChannelError(f"Making {left[0].name} failed: " + (" | ".join(tail) or f"exit {result.returncode}"))
+        raise ChannelError(f"Making {script.name} failed: " + (" | ".join(tail) or f"exit {result.returncode}"))
     return info
 
 

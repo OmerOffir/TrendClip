@@ -113,8 +113,8 @@ def make_slot(req: SlotRequest) -> dict[str, Any]:
     job = pw_channel.job_for(settings, req.day, req.slot)
     if pw_channel.on_hold(job.day):
         raise HTTPException(status_code=400, detail=f"Slots are on hold until {pw_channel.hold_until():%d %b}: make a sample from the Scripts list instead")
-    left = pw_channel.queued()
-    if not left:
+    script = pw_channel.script_for(job)
+    if script is None:
         raise HTTPException(status_code=400, detail="No script left in the queue: add one to content/pricetagwhy/scripts/")
     if _making():
         raise HTTPException(status_code=409, detail="A video is already being made")
@@ -122,7 +122,68 @@ def make_slot(req: SlotRequest) -> dict[str, Any]:
         pw_channel.set_aside(job.key)
     except pw_channel.ChannelError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
-    return _start(left[0], job.key, job)
+    return _start(script, job.key, job)
+
+
+class PlaceRequest(SlotRequest):
+    video: str = ""  # a sample's key
+    script: str = ""  # a script file name
+
+
+class ScriptRequest(BaseModel):
+    file: str
+
+
+def _slot_job(req: SlotRequest):
+    settings = _settings()
+    if req.slot not in pw_channel.slots():
+        raise HTTPException(status_code=400, detail=f"{req.slot} is not a Price Tag Why time ({', '.join(pw_channel.slots())})")
+    job = pw_channel.job_for(settings, req.day, req.slot)
+    if datetime.now(settings.tz) >= job.post_at:
+        raise HTTPException(status_code=400, detail="That slot has passed")
+    return job
+
+
+def _plan_change(fn, *args) -> dict[str, Any]:
+    try:
+        fn(*args)
+    except pw_channel.ChannelError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return plan()
+
+
+@router.post("/plan/place")
+def place(req: PlaceRequest) -> dict[str, Any]:
+    """Put a made video (a sample) or a chosen script on a slot."""
+    job = _slot_job(req)
+    if req.video:
+        if req.video in _making():
+            raise HTTPException(status_code=409, detail="That video is still being made")
+        return _plan_change(pw_channel.place_video, req.video, job)
+    if not req.script:
+        raise HTTPException(status_code=400, detail="Choose a video or a script")
+    return _plan_change(pw_channel.pin_script, job, req.script)
+
+
+@router.post("/plan/remove")
+def remove_slot(req: SlotRequest) -> dict[str, Any]:
+    """Empty a slot that has a video (it is set aside; its script leaves the plan)."""
+    return _plan_change(pw_channel.remove_slot, pw_channel.job_for(_settings(), req.day, req.slot))
+
+
+@router.post("/scripts/remove")
+def remove_script(req: ScriptRequest) -> dict[str, Any]:
+    """Take a script out of the plan; it stays in the Scripts list."""
+    if pw_channel.find_script(req.file) is None:
+        raise HTTPException(status_code=404, detail="No such script")
+    return _plan_change(pw_channel.remove_script, req.file)
+
+
+@router.post("/scripts/restore")
+def restore_script(req: ScriptRequest) -> dict[str, Any]:
+    if pw_channel.find_script(req.file) is None:
+        raise HTTPException(status_code=404, detail="No such script")
+    return _plan_change(pw_channel.restore_script, req.file)
 
 
 def _known(key: str) -> dict:

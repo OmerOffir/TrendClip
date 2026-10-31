@@ -48,14 +48,22 @@
       ${yt.error ? `<span class="da-note">${esc(yt.error)}</span>` : ""}`;
   }
 
-  function slotRow(day, r, connected, busy) {
+  // What can be put on a slot: the made samples (rule check passed) and every script still in the queue
+  function placeOptions(vids, scripts) {
+    const samples = vids.filter((v) => v.state === "sample" && v.has_video && !(v.check && v.check.length));
+    const free = scripts.filter((s) => !s.used && !s.check.length);
+    return (samples.length ? `<optgroup label="Made videos">${samples.map((v) => `<option value="video:${esc(v.key)}">${esc(v.title)} (${Math.round(v.duration_seconds || 0)} s, ${esc(fmtWhen(v.created_at))})</option>`).join("")}</optgroup>` : "")
+      + (free.length ? `<optgroup label="Scripts (made 6 h before)">${free.map((s) => `<option value="script:${esc(s.file)}">${esc(s.title)}${s.removed ? " (removed)" : ""}</option>`).join("")}</optgroup>` : "");
+  }
+
+  function slotRow(day, r, connected, busy, options) {
     const v = r.video;
     const yt = v && v.youtube;
     const what = v
       ? `<b>${esc(v.title)}</b> <span class="hint">${Math.round(v.duration_seconds || 0)} s${yt ? ` · <a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a>` : ""}</span>
          ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}`
-      : r.script ? `<span class="hint">made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== day ? ` (${esc(r.start.slice(5, 10))})` : ""} from</span> <b>${esc(r.script.title)}</b>`
-      : r.state === "no_script" ? '<span class="hint">no script left: ✍️ Write it myself or 📅 Write a week</span>'
+      : r.script ? `<span class="hint">made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== day ? ` (${esc(r.start.slice(5, 10))})` : ""} from</span> <b>${esc(r.script.title)}</b>${r.script.pinned ? ' <span class="pill">📌 chosen</span>' : ""}`
+      : r.state === "no_script" ? '<span class="hint">empty: put a video or a script here, or ✍️ Write it myself / 📅 Write a week</span>'
       : r.state === "held" ? '<span class="hint">nothing is made or uploaded until the YouTube channel is renamed</span>' : "";
     const actions = [];
     if (v) {
@@ -67,6 +75,12 @@
     if (!yt && r.state !== "missed" && r.state !== "held" && (r.script || v) && !busy) {
       actions.push(`<button type="button" class="btn-secondary" data-makeslot="${esc(day)} ${esc(r.slot)}">💲 ${v ? "Make another" : "Make now"}</button>`);
     }
+    const open = !yt && r.state !== "missed" && r.state !== "held";
+    if (open && v) actions.push(`<button type="button" class="btn-secondary" data-slot-remove="${esc(day)} ${esc(r.slot)}" title="The video is set aside and its script leaves the plan">✕ Remove</button>`);
+    else if (open && r.script) actions.push(`<button type="button" class="btn-secondary" data-script-remove="${esc(r.script.file)}" title="The script leaves the plan (it stays in the Scripts list)">✕ Remove</button>`);
+    if (open && !v && options) {
+      actions.push(`<select class="pw-place" data-place="${esc(day)} ${esc(r.slot)}"><option value="">📅 Put here…</option>${options}</select>`);
+    }
     return `<div class="pw-slot"><span class="pw-time">${esc(r.slot)}</span>${pill(r.state)}<span class="pw-what">${what}</span>${actions.join("")}</div>`;
   }
 
@@ -75,7 +89,7 @@
     return `<article class="da-vcard pw-script"><div class="da-vcard-body">
       <b>${esc(s.title)}</b>
       <div class="pills"><span class="pill ${ok ? "good" : "warn"}">${ok ? "✅ Rules OK" : "❌ " + esc(s.check.join("; "))}</span>
-        <span class="pill">${s.used ? "made for a slot" : "queued"}</span>
+        <span class="pill">${s.used ? "made for a slot" : s.removed ? "removed from the plan" : s.pinned ? `📌 ${esc(s.pinned.replace("_", " "))}` : "queued"}</span>
         <span class="pill">${esc(s.words)} words</span><span class="pill">${s.sources.length} sources</span><span class="pill">${esc(s.file)}</span></div>
       <details><summary class="hint">Question, claims and sources</summary><div class="da-yt-text">
         <div class="da-yt-row"><span class="da-yt-label">Question</span><span>${esc(s.question)}</span></div>
@@ -84,6 +98,8 @@
       </div></details>
       <div class="da-vcard-actions da-actions">
         <button type="button" class="btn-secondary" data-make="${esc(s.file)}" ${ok && !busy ? "" : "disabled"} title="A sample to watch; the script stays in the queue">💲 Make a sample</button>
+        ${s.used ? "" : s.removed ? `<button type="button" class="btn-secondary" data-script-restore="${esc(s.file)}">↩ Back in the plan</button>`
+          : `<button type="button" class="btn-secondary" data-script-remove="${esc(s.file)}">✕ Remove from the plan</button>`}
       </div>
     </div></article>`;
   }
@@ -128,8 +144,9 @@
         + (st.making.length ? ` · <b>making ${esc(st.making.join(", "))}…</b>` : "")
         + (st.upload.running ? ` · <b>uploading: ${esc(st.upload.message || "")}</b>` : st.upload.error ? ` · ❌ upload: ${esc(st.upload.error)}` : "");
       renderYouTube(st);
+      const options = placeOptions(vids.videos, sc.scripts);
       els.plan.innerHTML = p.days.map((d) => `<div class="pw-day"><h3>${esc(d.weekday)} ${esc(d.day)}${d.today ? " · today" : ""}</h3>
-        ${d.slots.map((r) => slotRow(d.day, r, st.youtube.connected, busy)).join("")}<div class="pw-watch"></div></div>`).join("");
+        ${d.slots.map((r) => slotRow(d.day, r, st.youtube.connected, busy, options)).join("")}<div class="pw-watch"></div></div>`).join("");
       els.scripts.innerHTML = sc.scripts.length ? sc.scripts.map((s) => scriptCard(s, busy)).join("") : '<div class="empty">No scripts yet</div>';
       els.count.textContent = `· ${vids.videos.length}`;
       els.videos.innerHTML = vids.videos.length ? vids.videos.map(videoCard).join("") : '<div class="empty">No videos yet</div>';
@@ -250,6 +267,15 @@
     }
   }
 
+  document.addEventListener("change", (e) => {
+    const sel = e.target.closest("select[data-place]");
+    if (!sel || !sel.value || document.body.dataset.workspace !== "pricetagwhy") return;
+    const [day, slot] = sel.dataset.place.split(" ");
+    const [what, ...rest] = sel.value.split(":");
+    sel.disabled = true;
+    act(() => post("/api/pricetagwhy/plan/place", { day, slot, [what]: rest.join(":") }));
+  });
+
   document.addEventListener("click", async (e) => {
     if (document.body.dataset.workspace !== "pricetagwhy") return;
     const nav = e.target.closest("#pwNav [data-pw-view]");
@@ -266,6 +292,13 @@
       t.disabled = true;
       return act(() => post("/api/pricetagwhy/make-slot", { day, slot }));
     }
+    if (d.slotRemove) {
+      const [day, slot] = d.slotRemove.split(" ");
+      if (!window.confirm(`Remove the video from ${day} ${slot}? Its script leaves the plan too (it stays in the Scripts list).`)) return;
+      return act(() => post("/api/pricetagwhy/plan/remove", { day, slot }));
+    }
+    if (d.scriptRemove) return act(() => post("/api/pricetagwhy/scripts/remove", { file: d.scriptRemove }));
+    if (d.scriptRestore) return act(() => post("/api/pricetagwhy/scripts/restore", { file: d.scriptRestore }));
     if (d.approve) return act(() => post(`/api/pricetagwhy/videos/${encodeURIComponent(d.approve)}/approve`));
     if (d.veto) return act(() => post(`/api/pricetagwhy/videos/${encodeURIComponent(d.veto)}/veto`));
     if (d.upload) {

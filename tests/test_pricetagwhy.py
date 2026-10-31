@@ -283,3 +283,67 @@ def test_a_missing_photo_becomes_a_whiteboard_and_the_rules_check_the_scenes():
     assert pw_write.scene_problems({"kind": "photo"}) and not pw_write.scene_problems({"kind": "photo", "photo": "Monaco"})
     only_boards = {**_script(), "scenes": [s for s in _script()["scenes"] if s["kind"] in ("tag", "board", "follow")]}
     assert any("vary the pictures" in p for p in pw_write.format_problems(only_boards))
+
+
+def test_the_plan_can_remove_pin_and_place(tmp_path, monkeypatch):
+    from datetime import datetime
+
+    monkeypatch.setenv("PW_SLOTS", "19:00")
+    monkeypatch.setenv("PW_LEAD", "6")
+    monkeypatch.delenv("PW_HOLD_UNTIL", raising=False)
+    settings = _settings()
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    base = _script()
+    for name, title in (("a.json", "First"), ("b.json", "Second"), ("c.json", "Third")):
+        (scripts / name).write_text(json.dumps({**base, "title": title}))
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", scripts)
+    out = tmp_path / "out"
+    now = datetime(2026, 11, 1, 12, 0, tzinfo=settings.tz)
+
+    def plan():
+        days = pw_channel.plan_days(settings, now, before=0, after=2, out_dir=out)
+        return [(r["state"], (r["script"] or {}).get("title"), bool(r["video"])) for d in days for r in d["slots"]]
+
+    pw_channel.remove_script("a.json", out)  # out of the plan, still listed
+    assert plan() == [("later", "Second", False), ("later", "Third", False), ("no_script", None, False)]
+    assert next(s for s in pw_channel.scripts(out) if s["file"] == "a.json")["removed"]
+    nov3 = pw_channel.job_for(settings, datetime(2026, 11, 3).date())
+    pw_channel.pin_script(nov3, "a.json", out)  # chosen for 3 Nov: back from "removed", the others keep their order
+    assert plan() == [("later", "Second", False), ("later", "Third", False), ("later", "First", False)]
+    assert pw_channel.script_for(nov3, out).name == "a.json"
+    for name in ("a.json", "b.json", "c.json"):
+        pw_channel.remove_script(name, out)
+    assert plan() == [("no_script", None, False)] * 3
+    nov1 = pw_channel.job_for(settings, now.date())
+    assert pw_channel.due_makes(settings, datetime(2026, 11, 1, 13, 5, tzinfo=settings.tz), set(), out) == []  # nothing to make
+
+    sample = out / "sample-x"  # a made sample put on 1 Nov: it waits for Approve there
+    sample.mkdir(parents=True)
+    (sample / "video.mp4").write_bytes(b"x")
+    (sample / "info.json").write_text(json.dumps({"title": "Sample", "created_at": "2026-11-01T10:00:00", "check": [],
+                                                  "script_file": "b.json"}))
+    info = pw_channel.place_video("sample-x", nov1, out)
+    assert info["job"]["post_at"].startswith("2026-11-01T19:00") and info["placed_from"] == "sample-x"
+    assert pw_channel.slot_state(nov1, info, now) == "waiting" and (sample / "video.mp4").is_file()
+    with pytest.raises(pw_channel.ChannelError):
+        pw_channel.place_video("sample-x", nov1, out)  # the slot has a video now
+    pw_channel.restore_script("b.json", out)
+    assert "b.json" not in [p.name for p in pw_channel.queued(out)]  # used by the placed video
+    assert pw_channel.remove_slot(nov1, out) == {"removed": "b.json", "video": True}
+    assert pw_channel.load_info(nov1.key, out) is None and plan()[0] == ("no_script", None, False)
+
+
+def test_the_tab_removes_and_places(tmp_path, monkeypatch):
+    from trendclip.web import pricetagwhy as web
+    from trendclip.web.app import app
+
+    monkeypatch.setattr(pw_channel, "OUTPUT_DIR", tmp_path)
+    monkeypatch.delenv("PW_HOLD_UNTIL", raising=False)
+    client = TestClient(app)
+    r = client.post("/api/pricetagwhy/scripts/remove", json={"file": FIRST.name})
+    assert r.status_code == 200 and all(not (row["script"] or {}).get("file") == FIRST.name for d in r.json()["days"] for row in d["slots"])
+    assert client.post("/api/pricetagwhy/scripts/remove", json={"file": "nope.json"}).status_code == 404
+    assert client.post("/api/pricetagwhy/plan/place", json={"day": "2020-01-01", "slot": "19:00", "video": "x"}).status_code == 400
+    assert client.post("/api/pricetagwhy/scripts/restore", json={"file": FIRST.name}).status_code == 200
+    assert not web._making()
