@@ -862,6 +862,8 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 
 /* ---------- Borderline Why tab ---------- */
 .ws-mark-bw { background: linear-gradient(135deg, #3a6aa8, #f2c14e); }
+.ws-mark-pw { background: linear-gradient(135deg, #168c48, #d42428); }
+.pw-script.da-vcard { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; }
 .bw-make { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .bw-make .btn-primary { margin: 0; width: auto; }
 .bw-sources { margin: 0; padding-left: 18px; font-size: 12px; }

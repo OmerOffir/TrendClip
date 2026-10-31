@@ -38,6 +38,7 @@ RED = (206, 32, 40)  # the signature marker colour: everything the hand draws on
 INK = (30, 32, 40)
 BLUE = (28, 84, 196)
 RIVER = (60, 160, 240)
+GREEN = (24, 138, 70)
 BOARD = (247, 247, 243)
 PEN_KINDS = ("highlight", "arrow", "line", "sketch")  # what the hand can draw on a map
 THINK_WORDS = re.compile(r"\b(but|why|how|odd|strange|mystery|weird|however|yet|bizarre|puzzle)\b", re.I)
@@ -487,6 +488,18 @@ def outline_points(feat: bw_geo.Feature) -> np.ndarray:
     return pts if feat.is_line else np.vstack([pts, pts[:1]])
 
 
+def pen_line(x: Any) -> dict[str, Any]:
+    """A board line as {text, color, strike}: a script may give a plain string or that dict."""
+    if isinstance(x, dict):
+        return {"text": str(x.get("text") or ""), "color": str(x.get("color") or ""), "strike": bool(x.get("strike"))}
+    return {"text": str(x or ""), "color": "", "strike": False}
+
+
+def pen_color(name: str | None, default):
+    """A marker colour by name (looked up when drawn, so a channel's style can change them), else `default`."""
+    return {"ink": INK, "blue": BLUE, "red": RED, "green": GREEN}.get((name or "").lower(), default)
+
+
 class Board:
     """A board scene's plan: what the hand writes and draws, where, and when."""
 
@@ -494,7 +507,8 @@ class Board:
         o = scene.opts.get("board") if isinstance(scene.opts.get("board"), dict) else {}
         W, H = bw_render.W, bw_render.H
         portrait = bw_render.LAYOUT == "portrait"
-        writes = [str(s) for s in (o.get("write") or [scene.headline or scene.title]) if str(s).strip()][:4]
+        # a line is a string, or {text, color: ink|blue|red|green, strike: true} (crossed out in red once written)
+        writes = [w for w in (pen_line(x) for x in (o.get("write") or [scene.headline or scene.title])) if w["text"].strip()][:4]
         feats = [f for f in (bw_geo.resolve(str(n)) for n in (o.get("draw") or [])[:3]) if f is not None]
         if feats and not feats[0].parts:
             feats = []  # the drawing needs an outline to fit the others into
@@ -503,9 +517,10 @@ class Board:
         top = bw_render.MAP_TOP + (60 if portrait else 70)
         if writes:
             self._write(writes[0], (W / 2, top), title_size, INK)
+            title = writes[0]["text"]
             if o.get("underline", True):
                 f = bw_fx.hand_font(title_size)
-                half = min(W / 2 - 80, f.getlength(writes[0]) / 2 + 20)
+                half = min(W / 2 - 80, f.getlength(title) / 2 + 20)
                 y = top + title_size * 0.62
                 pts = [(W / 2 - half + k * 2 * half / 30, y + 6 * math.sin(k / 4) + k * 0.4) for k in range(31)]
                 self.items.append(dict(kind="line", pts=np.array(pts), rgb=RED, width=11, cost=0.4))
@@ -525,7 +540,10 @@ class Board:
                 self._write(s, (W * 0.75, top + 260 + k * (line_size + 40)), line_size, BLUE if k % 2 == 0 else RED)
         self._time(scene)
 
-    def _write(self, s: str, center: tuple[float, float], px: int, rgb) -> None:
+    def _write(self, line: dict[str, Any], center: tuple[float, float], px: int, rgb) -> None:
+        """Write a line (pen_line) centred on `center`, in its own colour when it names one, else `rgb`."""
+        s = line["text"]
+        rgb = pen_color(line.get("color"), rgb)
         f = bw_fx.hand_font(px)
         while f.getlength(s) > bw_render.W - 140 and px > 40:
             px -= 6
@@ -533,6 +551,10 @@ class Board:
         width = f.getlength(s)
         x0 = center[0] - width / 2
         self.items.append(dict(kind="write", text=s, x0=x0, y=center[1], width=width, px=px, rgb=rgb, cost=0.18 + 0.05 * len(s)))
+        if line.get("strike"):  # a slightly rising red stroke through the words
+            y = center[1] + px * 0.08
+            pts = [(x0 - 18 + k * (width + 36) / 20, y + 10 - k * 1.2 + 3 * math.sin(k / 3)) for k in range(21)]
+            self.items.append(dict(kind="line", pts=np.array(pts), rgb=RED, width=12, cost=0.35))
 
     def _draw(self, feats: list[bw_geo.Feature], box: tuple[float, float, float, float], circle: bool) -> None:
         """The places' real outlines fitted into the box together, the first in black and the others in red; a place

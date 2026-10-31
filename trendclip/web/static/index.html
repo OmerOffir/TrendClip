@@ -30,6 +30,10 @@
           <span class="ws-mark ws-mark-bw" aria-hidden="true">BW</span>
           <span><b>Borderline Why</b><small>Map mysteries, explained</small></span>
         </button>
+        <button type="button" role="tab" class="workspace" data-workspace="pricetagwhy" aria-selected="false">
+          <span class="ws-mark ws-mark-pw" aria-hidden="true">PW</span>
+          <span><b>Pricetag Why</b><small>Money questions, explained</small></span>
+        </button>
         <button type="button" role="tab" class="workspace" data-workspace="upcoming" aria-selected="false" title="Everything planned to go out this week, every channel">
           <span class="ws-mark ws-mark-up" aria-hidden="true">📅</span>
           <span><b>Upcoming</b><small>All channels, this week <span class="nav-count todo" id="upNavEmpty" hidden title="Empty slots this week"></span></small></span>
@@ -72,6 +76,37 @@
       </nav>
     </div>
   </header>
+
+  <main class="container da-view" id="viewPwVideos" data-workspace-panel="pricetagwhy" hidden>
+    <div id="pwError" class="banner banner-error" hidden></div>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Pricetag Why</h2>
+          <span class="hint" id="pwHint">Loading…</span>
+        </div>
+        <button type="button" class="btn-secondary" id="pwRefresh">Refresh</button>
+      </div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Scripts</h2>
+          <span class="hint">Hand-checked scripts in content/pricetagwhy/scripts/: every claim with two or more sources</span>
+        </div>
+      </div>
+      <div class="da-videos" id="pwScripts"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Videos <span class="hint" id="pwVideosCount"></span></h2>
+          <span class="hint">Newest first. Watch them here; uploading comes in a later step</span>
+        </div>
+      </div>
+      <div class="da-videos" id="pwVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
 
   <main class="container da-view" id="viewUpcoming" data-workspace-panel="upcoming" hidden>
     <div id="upError" class="banner banner-error" hidden></div>
@@ -1204,6 +1239,7 @@
   <script src="/static/llmtopics.js"></script>
   <script src="/static/darkarchives.js"></script>
   <script src="/static/borderlinewhy.js"></script>
+  <script src="/static/pricetagwhy.js"></script>
   <script src="/static/upcoming.js"></script>
 </body>
 </html>

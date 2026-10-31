@@ -457,6 +457,8 @@ def curve(p0, p1, bend: float = 0.18, n: int = 40) -> list[tuple[float, float]]:
 
 
 class Renderer:
+    SAID = (255, 220, 60)  # a caption word once it is said (a channel's style may change it)
+
     def __init__(self, spec: Spec):
         self.spec = spec
         self.pal = {**THEMES.get(spec.theme, THEMES["atlas"]), **FIXED}
@@ -718,7 +720,7 @@ class Renderer:
         popped = None
         for i, p, width in zip(group, parts, widths):
             age = t - words[i].start
-            fill = (255, 220, 60) if age >= 0 else (255, 255, 255)
+            fill = self.SAID if age >= 0 else (255, 255, 255)
             if 0 <= age < POP:  # the word being said pops up a size, then settles; drawn last, on top
                 popped = (x, p, fill, age)
             else:
