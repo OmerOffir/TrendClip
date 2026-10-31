@@ -21,6 +21,7 @@ class Drawing:
     strokes: list[tuple[list[Pt], str]] = field(default_factory=list)  # (points, role: ink | accent | red | thin)
     washes: list[tuple[list[Pt], str]] = field(default_factory=list)  # (polygon, role) coloured in, before the strokes
     label_at: tuple[float, float, float] | None = None  # (x, y, width) where the label words go
+    body: list[Pt] = field(default_factory=list)  # the outer silhouette, filled white on a thumbnail (modules.pw_thumb)
     label_rot: float = 0.0
 
 
@@ -46,6 +47,7 @@ def poly(*pts: Pt) -> list[Pt]:
 
 def can() -> Drawing:
     d = Drawing(100, 210)
+    d.body = ellipse(50, 14, 40, 9, 180, 360, 12) + [(94, 30)] + ellipse(50, 188, 44, 11, 0, 180, 14) + [(6, 30)]
     d.washes.append((ellipse(50, 70, 44, 8, 0, 180) + ellipse(50, 150, 44, 8, 180, 0), "accent"))
     d.strokes += [(ellipse(50, 14, 40, 9), "ink"), (ellipse(50, 14, 31, 6), "thin"), (ellipse(56, 13, 9, 3.5), "thin"),
                   (poly((10, 14), (6, 30), (6, 188)), "ink"), (poly((90, 14), (94, 30), (94, 188)), "ink"),
@@ -57,6 +59,7 @@ def can() -> Drawing:
 
 def bottle() -> Drawing:
     d = Drawing(100, 240)
+    d.body = [(37, 0), (63, 0), (60, 52), (86, 92), (88, 228), (82, 238), (18, 238), (12, 228), (14, 92), (40, 52)]
     d.washes.append((rect(12, 125, 88, 185)[:-1], "accent"))
     d.strokes += [(rrect(37, 0, 63, 20, 4), "ink"), (poly((40, 20), (40, 52), (14, 92), (12, 228)), "ink"),
                   (poly((60, 20), (60, 52), (86, 92), (88, 228)), "ink"), (poly((12, 228), (18, 238), (82, 238), (88, 228)), "ink"),
@@ -67,6 +70,7 @@ def bottle() -> Drawing:
 
 def box() -> Drawing:
     d = Drawing(150, 200)
+    d.body = [(0, 26), (34, 0), (148, 0), (148, 174), (114, 200), (0, 200)]
     d.washes.append((rrect(14, 60, 100, 150, 10)[:-1], "accent"))
     d.strokes += [(rect(0, 26, 114, 200), "ink"), (poly((0, 26), (34, 0), (148, 0), (114, 26)), "ink"),
                   (poly((114, 200), (148, 174), (148, 0)), "ink"), (rrect(14, 60, 100, 150, 10), "ink")]
@@ -76,6 +80,7 @@ def box() -> Drawing:
 
 def bag() -> Drawing:
     d = Drawing(140, 200)
+    d.body = [(8, 10), (132, 10), (138, 60), (140, 100), (138, 140), (132, 190), (8, 190), (2, 140), (0, 100), (2, 60)]
     zig_top = [(8 + k * 8, 10 + (5 if k % 2 else 0)) for k in range(16)]
     zig_bot = [(8 + k * 8, 190 - (5 if k % 2 else 0)) for k in range(16)]
     d.washes.append((ellipse(70, 100, 42, 40), "accent"))
@@ -88,6 +93,7 @@ def bag() -> Drawing:
 
 def cup() -> Drawing:
     d = Drawing(120, 190)
+    d.body = [(26, 0), (94, 0), (94, 14), (120, 14), (120, 34), (112, 34), (96, 190), (24, 190), (8, 34), (0, 34), (0, 14), (26, 14)]
     d.washes.append((poly((14, 75), (106, 75), (101, 130), (19, 130)), "accent"))
     d.strokes += [(rrect(26, 0, 94, 14, 5), "ink"), (rrect(0, 14, 120, 34, 8), "ink"), (poly((8, 34), (24, 190), (96, 190), (112, 34)), "ink"),
                   (poly((14, 75), (106, 75)), "ink"), (poly((19, 130), (101, 130)), "ink")]
@@ -97,6 +103,7 @@ def cup() -> Drawing:
 
 def phone() -> Drawing:
     d = Drawing(110, 210)
+    d.body = rrect(0, 0, 110, 210, 18)
     d.washes.append((rrect(10, 22, 100, 188, 8)[:-1], "accent"))
     d.strokes += [(rrect(0, 0, 110, 210, 18), "ink"), (rrect(10, 22, 100, 188, 8), "thin"), (rrect(40, 8, 70, 15, 3), "thin"),
                   (ellipse(55, 199, 6, 6), "thin")]
@@ -106,6 +113,7 @@ def phone() -> Drawing:
 
 def jar() -> Drawing:
     d = Drawing(120, 170)
+    d.body = [(16, 0), (104, 0), (104, 24), (112, 44), (112, 160), (104, 170), (16, 170), (8, 160), (8, 44), (16, 24)]
     d.washes.append((rect(8, 70, 112, 130)[:-1], "accent"))
     d.strokes += [(rrect(16, 0, 104, 24, 6), "ink"), (poly((20, 24), (8, 44), (8, 160), (16, 170), (104, 170), (112, 160), (112, 44), (100, 24)), "ink"),
                   (poly((8, 70), (112, 70)), "ink"), (poly((8, 130), (112, 130)), "ink")]
@@ -115,6 +123,7 @@ def jar() -> Drawing:
 
 def card() -> Drawing:
     d = Drawing(220, 140)
+    d.body = rrect(0, 0, 220, 140, 14)
     d.washes.append((rect(0, 30, 220, 56)[:-1], "ink_wash"))
     d.strokes += [(rrect(0, 0, 220, 140, 14), "ink"), (rrect(18, 72, 58, 102, 5), "ink"), (poly((18, 120), (150, 120)), "thin"),
                   (poly((0, 30), (220, 30)), "thin"), (poly((0, 56), (220, 56)), "thin")]
@@ -124,6 +133,7 @@ def card() -> Drawing:
 
 def money() -> Drawing:
     d = Drawing(230, 110)
+    d.body = rect(0, 0, 230, 110)
     d.washes.append((rect(0, 0, 230, 110)[:-1], "accent"))
     d.strokes += [(rect(0, 0, 230, 110), "ink"), (rect(12, 10, 218, 100), "thin"), (ellipse(115, 55, 30, 34), "ink")]
     d.label_at = (115, 56, 50)

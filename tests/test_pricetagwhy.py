@@ -388,3 +388,24 @@ def test_photos_need_a_free_licence():
 
     assert all(bw_photos.FREE.match(x) for x in ("CC BY-SA 4.0", "CC BY 2.0", "CC0", "Public domain", "PD-US"))
     assert not any(bw_photos.FREE.match(x) for x in ("GFDL", "", "All rights reserved"))
+
+
+def test_the_thumbnail_comes_from_the_product_and_is_set_after_the_upload(tmp_path, monkeypatch):
+    from PIL import Image
+
+    from modules import pw_thumb
+
+    w = pw_thumb.words(_script())
+    assert w["draw"] == "can" and w["old"] == "$2.38" and w["now"] == "99¢" and w["hook"] == "HOW?!"
+    monkeypatch.setattr(pw_thumb, "SS", 1)  # quick
+    for style in pw_thumb.STYLES:
+        assert Image.open(pw_thumb.make(_script(), tmp_path / f"{style}.jpg", style)).size == (1080, 1920)
+    calls = []
+
+    class Thumbs:
+        def set(self, videoId, media_body):
+            calls.append(videoId)
+            return type("Q", (), {"execute": lambda self: (_ for _ in ()).throw(RuntimeError("forbidden"))})()
+
+    client = type("C", (), {"thumbnails": lambda self: Thumbs()})()
+    assert pw_channel.set_thumbnail(client, "vid1", tmp_path / "shock.jpg").startswith("not set: forbidden") and calls == ["vid1"]

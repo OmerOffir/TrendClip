@@ -115,6 +115,8 @@
           <span class="pill">🎙️ ${esc(v.voice || "")}</span>${v.music ? `<span class="pill">🎵 ${esc(v.music)}</span>` : ""}
           ${v.job ? `<span class="pill">📅 ${esc(fmtWhen(v.job.post_at))}</span>` : ""}</div>
         <span class="hint">made ${esc(fmtWhen(v.created_at))} · ${esc(v.key)}</span>
+        ${v.thumbnail ? `<div class="pw-thumb"><a href="/api/pricetagwhy/videos/${encodeURIComponent(v.key)}/thumb.jpg?t=${encodeURIComponent(v.created_at || "")}" target="_blank" rel="noopener" title="Open the thumbnail full size"><img src="/api/pricetagwhy/videos/${encodeURIComponent(v.key)}/thumb.jpg?t=${encodeURIComponent(v.created_at || "")}" alt="Thumbnail" loading="lazy"></a>
+          <span class="hint">Thumbnail${v.uploads && v.uploads.youtube && v.uploads.youtube.thumbnail ? ` · on YouTube: ${esc(v.uploads.youtube.thumbnail === "set" ? "set" : "not set (custom Shorts thumbnails need the YouTube Partner Program)")}` : ""}</span></div>` : ""}
         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}
         <div class="da-yt-text">
           <div class="da-yt-row"><span class="da-yt-label">Sources</span><ol class="bw-sources">${sourceList(v.sources)}</ol></div>

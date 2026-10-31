@@ -83,6 +83,14 @@ def video_file(key: str) -> FileResponse:
     return FileResponse(path, media_type="video/mp4")
 
 
+@router.get("/videos/{key}/thumb.jpg", include_in_schema=False)
+def thumb_file(key: str) -> FileResponse:
+    path = pw_channel.thumb_path(key)
+    if path is None:
+        raise HTTPException(status_code=404, detail="No thumbnail")
+    return FileResponse(path, media_type="image/jpeg")
+
+
 def _start(script_path, key: str, job=None) -> dict[str, Any]:
     if _making():
         raise HTTPException(status_code=409, detail="A video is already being made")

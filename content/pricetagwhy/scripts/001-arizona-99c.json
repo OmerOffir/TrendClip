@@ -4,15 +4,33 @@
   "description": "With inflation, a 99-cent can of AriZona from 1992 would cost about $2.38 today, yet the 23-ounce can is still 99 cents. AriZona spends little on ads, made its cans thinner, and is family owned with no debt, so it sells more cans instead of charging more per can. The twist: adjusted for inflation, it now costs less than half of what it did, and the founder says there's no plan to raise it.",
   "pillar": "everyday prices",
   "seed": 1992,
-  "hashtags": ["arizonaicedtea", "inflation", "prices"],
+  "hashtags": [
+    "arizonaicedtea",
+    "inflation",
+    "prices"
+  ],
   "scenes": [
     {
       "kind": "product",
       "narration": "This can of iced tea should cost about two dollars and thirty-eight cents today. It still costs 99 cents. Why?",
       "product": {
         "draw": "can",
-        "label": ["ICED", "TEA"],
-        "lines": ["Should cost", {"text": "$2.38", "color": "red"}, "Costs", {"text": "99¢", "color": "green"}]
+        "label": [
+          "ICED",
+          "TEA"
+        ],
+        "lines": [
+          "Should cost",
+          {
+            "text": "$2.38",
+            "color": "red"
+          },
+          "Costs",
+          {
+            "text": "99¢",
+            "color": "green"
+          }
+        ]
       }
     },
     {
@@ -22,8 +40,52 @@
         "title": "99¢ in 1992, then...",
         "unit": "$",
         "lines": [
-          {"label": "With inflation", "color": "red", "points": [["1992", 0.99], ["2002", 1.27], ["2012", 1.62], ["2026", 2.38]], "end": "$2.38"},
-          {"label": "AriZona", "color": "green", "points": [["1992", 0.99], ["2002", 0.99], ["2012", 0.99], ["2026", 0.99]], "end": "99¢"}
+          {
+            "label": "With inflation",
+            "color": "red",
+            "points": [
+              [
+                "1992",
+                0.99
+              ],
+              [
+                "2002",
+                1.27
+              ],
+              [
+                "2012",
+                1.62
+              ],
+              [
+                "2026",
+                2.38
+              ]
+            ],
+            "end": "$2.38"
+          },
+          {
+            "label": "AriZona",
+            "color": "green",
+            "points": [
+              [
+                "1992",
+                0.99
+              ],
+              [
+                "2002",
+                0.99
+              ],
+              [
+                "2012",
+                0.99
+              ],
+              [
+                "2026",
+                0.99
+              ]
+            ],
+            "end": "99¢"
+          }
         ]
       }
     },
@@ -31,7 +93,14 @@
       "kind": "board",
       "narration": "Reason one: almost no ads. Big brands pay millions for TV ads. AriZona lets word of mouth do the selling.",
       "board": {
-        "write": ["Reason 1: no big ads", {"text": "TV ads: $ millions", "color": "red", "strike": true}],
+        "write": [
+          "Reason 1: no big ads",
+          {
+            "text": "TV ads: $ millions",
+            "color": "red",
+            "strike": true
+          }
+        ],
         "picture": "tv",
         "color": "red"
       }
@@ -40,7 +109,13 @@
       "kind": "board",
       "narration": "Reason two: cheaper cans. The founder says the cans got thinner, so each one uses less aluminum.",
       "board": {
-        "write": ["Reason 2: thinner cans", {"text": "Less aluminum", "color": "green"}],
+        "write": [
+          "Reason 2: thinner cans",
+          {
+            "text": "Less aluminum",
+            "color": "green"
+          }
+        ],
         "picture": "sheet"
       }
     },
@@ -48,14 +123,25 @@
       "kind": "board",
       "narration": "Reason three: no one to pay back. A family owns it, with no debt, so it sells more cans instead of charging more per can.",
       "board": {
-        "write": ["Reason 3: no debt", {"text": "Family owned", "color": "green"}],
+        "write": [
+          "Reason 3: no debt",
+          {
+            "text": "Family owned",
+            "color": "green"
+          }
+        ],
         "picture": "family"
       }
     },
     {
       "kind": "number",
       "narration": "And the twist: adjusted for inflation, this can now costs less than half of what it did in 1992. The founder says he has no plan to raise it.",
-      "number": {"label": "Its real price vs 1992", "from": "100%", "to": "42%", "note": "No raise planned"}
+      "number": {
+        "label": "Its real price vs 1992",
+        "from": "100%",
+        "to": "42%",
+        "note": "No raise planned"
+      }
     },
     {
       "kind": "follow",
@@ -63,25 +149,109 @@
     }
   ],
   "sources": [
-    {"title": "TODAY: Arizona Iced Tea founder on why he's kept the 99-cent price tag (2022)", "url": "https://www.today.com/today/rcna24899"},
-    {"title": "CNBC: AriZona Iced Tea CEO vows to keep 99-cent price tag (2022)", "url": "https://www.cnbc.com/2022/10/13/arizona-iced-tea-ceo-vows-to-keep-99-cent-price-tag.html"},
-    {"title": "CNBC via NBC San Diego: Why AriZona Iced Tea's CEO won't raise the 99-cent price (2024)", "url": "https://www.nbcsandiego.com/news/business/money-report/why-arizona-iced-tea-ceo-wont-raise-99-cent-price-its-my-little-way-of-giving-back/3552323/"},
-    {"title": "Fortune: AriZona Iced Tea's founder explains the 99-cent price (2024)", "url": "https://fortune.com/2024/06/27/arizona-iced-tea-price-founder-explains/"},
-    {"title": "Fox Business: AriZona Iced Tea keeps price of 99-cent cans despite surging inflation (2022)", "url": "https://www.foxbusiness.com/business-leaders/arizona-iced-tea-keeps-price-of-99-cent-cans-despite-surging-inflation"},
-    {"title": "TODAY: AriZona founder on tariffs and the 99-cent price (2025)", "url": "https://www.today.com/today/rcna226200"},
-    {"title": "U.S. Bureau of Labor Statistics: CPI Inflation Calculator", "url": "https://data.bls.gov/cgi-bin/cpicalc.pl"},
-    {"title": "U.S. Bureau of Labor Statistics: Consumer Price Index, all urban consumers (CUUR0000SA0)", "url": "https://data.bls.gov/timeseries/CUUR0000SA0"},
-    {"title": "Modern Retail: AriZona Beverage CEO Abid Rizvi on the beverage landscape (2024)", "url": "https://www.modernretail.co/marketing/people-are-not-buying-any-particular-brand-because-they-saw-a-super-bowl-ad-arizona-beverage-ceo-abid-rizvi-on-the-current-beverage-landscape/"},
-    {"title": "The Hustle: Why is AriZona iced tea so cheap? (2024)", "url": "https://thehustle.co/4-18-22-arizona-iced-tea-cheap"}
+    {
+      "title": "TODAY: Arizona Iced Tea founder on why he's kept the 99-cent price tag (2022)",
+      "url": "https://www.today.com/today/rcna24899"
+    },
+    {
+      "title": "CNBC: AriZona Iced Tea CEO vows to keep 99-cent price tag (2022)",
+      "url": "https://www.cnbc.com/2022/10/13/arizona-iced-tea-ceo-vows-to-keep-99-cent-price-tag.html"
+    },
+    {
+      "title": "CNBC via NBC San Diego: Why AriZona Iced Tea's CEO won't raise the 99-cent price (2024)",
+      "url": "https://www.nbcsandiego.com/news/business/money-report/why-arizona-iced-tea-ceo-wont-raise-99-cent-price-its-my-little-way-of-giving-back/3552323/"
+    },
+    {
+      "title": "Fortune: AriZona Iced Tea's founder explains the 99-cent price (2024)",
+      "url": "https://fortune.com/2024/06/27/arizona-iced-tea-price-founder-explains/"
+    },
+    {
+      "title": "Fox Business: AriZona Iced Tea keeps price of 99-cent cans despite surging inflation (2022)",
+      "url": "https://www.foxbusiness.com/business-leaders/arizona-iced-tea-keeps-price-of-99-cent-cans-despite-surging-inflation"
+    },
+    {
+      "title": "TODAY: AriZona founder on tariffs and the 99-cent price (2025)",
+      "url": "https://www.today.com/today/rcna226200"
+    },
+    {
+      "title": "U.S. Bureau of Labor Statistics: CPI Inflation Calculator",
+      "url": "https://data.bls.gov/cgi-bin/cpicalc.pl"
+    },
+    {
+      "title": "U.S. Bureau of Labor Statistics: Consumer Price Index, all urban consumers (CUUR0000SA0)",
+      "url": "https://data.bls.gov/timeseries/CUUR0000SA0"
+    },
+    {
+      "title": "Modern Retail: AriZona Beverage CEO Abid Rizvi on the beverage landscape (2024)",
+      "url": "https://www.modernretail.co/marketing/people-are-not-buying-any-particular-brand-because-they-saw-a-super-bowl-ad-arizona-beverage-ceo-abid-rizvi-on-the-current-beverage-landscape/"
+    },
+    {
+      "title": "The Hustle: Why is AriZona iced tea so cheap? (2024)",
+      "url": "https://thehustle.co/4-18-22-arizona-iced-tea-cheap"
+    }
   ],
   "claims": [
-    {"claim": "The 23-ounce AriZona can has cost 99 cents since 1992 and still does.", "sources": [1, 2, 3]},
-    {"claim": "99 cents in 1992 is worth about $2.38 in September 2026 by the US CPI-U (1992 average 140.3, Sep 2026 336.94).", "sources": [7, 8]},
-    {"claim": "The inflation line: about $1.27 in 2002, $1.62 in 2012 and $2.38 in 2026 (CPI-U annual averages).", "sources": [7, 8]},
-    {"claim": "AriZona spends little on advertising and relies on word of mouth, while big drink brands spend millions on TV ads.", "sources": [3, 9]},
-    {"claim": "The founder says the cans were made thinner, using less aluminum.", "sources": [3, 4]},
-    {"claim": "AriZona is family owned and has no debt, and sells more cans rather than raising the price.", "sources": [3, 4, 6]},
-    {"claim": "Adjusted for inflation, the can now costs less than half of what it did in 1992 (99 cents is about 42% of $2.38).", "sources": [8, 10]},
-    {"claim": "The founder says he has no plan to raise the price (not in the foreseeable future).", "sources": [3, 5, 6]}
-  ]
+    {
+      "claim": "The 23-ounce AriZona can has cost 99 cents since 1992 and still does.",
+      "sources": [
+        1,
+        2,
+        3
+      ]
+    },
+    {
+      "claim": "99 cents in 1992 is worth about $2.38 in September 2026 by the US CPI-U (1992 average 140.3, Sep 2026 336.94).",
+      "sources": [
+        7,
+        8
+      ]
+    },
+    {
+      "claim": "The inflation line: about $1.27 in 2002, $1.62 in 2012 and $2.38 in 2026 (CPI-U annual averages).",
+      "sources": [
+        7,
+        8
+      ]
+    },
+    {
+      "claim": "AriZona spends little on advertising and relies on word of mouth, while big drink brands spend millions on TV ads.",
+      "sources": [
+        3,
+        9
+      ]
+    },
+    {
+      "claim": "The founder says the cans were made thinner, using less aluminum.",
+      "sources": [
+        3,
+        4
+      ]
+    },
+    {
+      "claim": "AriZona is family owned and has no debt, and sells more cans rather than raising the price.",
+      "sources": [
+        3,
+        4,
+        6
+      ]
+    },
+    {
+      "claim": "Adjusted for inflation, the can now costs less than half of what it did in 1992 (99 cents is about 42% of $2.38).",
+      "sources": [
+        8,
+        10
+      ]
+    },
+    {
+      "claim": "The founder says he has no plan to raise the price (not in the foreseeable future).",
+      "sources": [
+        3,
+        5,
+        6
+      ]
+    }
+  ],
+  "thumbnail": {
+    "hook": "HOW?!"
+  }
 }

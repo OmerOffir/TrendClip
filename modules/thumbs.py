@@ -243,7 +243,12 @@ def sidequest(video: Path, out: Path) -> None:
 
 
 def pricetag(video: Path, thumb: Path) -> None:
-    """Price Tag Why: the video's own frame at the end of its price-tag opening (info.json's thumb_at)."""
+    """Price Tag Why: its own thumbnail (thumb.jpg, modules.pw_thumb), else the video's frame at the end of its
+    opening (info.json's thumb_at)."""
+    made = video.parent / "thumb.jpg"
+    if made.is_file():
+        thumb.write_bytes(made.read_bytes())
+        return
     info = video.parent / "info.json"
     at = 5.0
     if info.is_file():

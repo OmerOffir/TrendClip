@@ -272,6 +272,8 @@ Each script is ONE JSON object shaped exactly like the example below:
     "Smaller than Central Park", "elements": [{{"kind": "highlight", "place": "Monaco", "cue": "Monaco"}}]}}.
   * "photo": the lead picture of an English Wikipedia article (free licence, credited automatically).
     {{"kind": "photo", "narration": ..., "photo": "Monte Carlo Casino", "caption": "Monte Carlo Casino"}}.
+- "thumbnail": {{"hook": "HOW?!"}}: 1-3 words in capitals that make someone tap (a question or a shock: "HOW?!",
+  "WAIT, WHAT?", "WHO PAYS?"); the thumbnail shows the product and the two prices from the product scene.
 - the twist must surprise (a number that flips the story, what the owner said), never a letdown.
 - last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
   (the hand draws the opening again, so the Short loops).

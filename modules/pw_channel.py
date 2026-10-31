@@ -572,7 +572,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
          script_file: str = "") -> dict:
     """Draw a script into output/pricetagwhy/<key>/ (in this process: call it from `python -m modules.pw_channel`).
     `job`: the slot it is for ({day, slot, post_at}); `script_file`: the queued script it came from (used up)."""
-    from modules import pw_render
+    from modules import pw_render, pw_thumb
 
     if problems := check_script(script):
         raise ChannelError("The script breaks the rules: " + "; ".join(problems))
@@ -601,6 +601,11 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
     }
+    try:  # a picture made to be clicked (modules.pw_thumb), not a frame of the video
+        pw_thumb.make(script, work / "thumb.jpg", thumb_style(script))
+        info["thumbnail"] = "thumb.jpg"
+    except Exception:  # noqa: BLE001 - the video is still good without it
+        logger.exception("Price Tag Why thumbnail for %s failed", key)
     seconds = info["duration_seconds"]
     info["check"] = [] if MIN_SECONDS <= seconds <= MAX_SECONDS else [f"{seconds:.0f} s long (wanted {MIN_SECONDS:.0f}-{MAX_SECONDS:.0f})"]
     save_info(info, out_dir)
@@ -658,6 +663,34 @@ def ready(info: dict) -> bool:
     return not is_vetoed(info) and not info.get("check") and (is_approved(info) or not require_approval())
 
 
+def thumb_style(script: dict) -> str:
+    """The script's thumbnail.style, else PW_THUMB_STYLE (shock | versus | tag)."""
+    from modules import pw_thumb
+
+    style = str((script.get("thumbnail") or {}).get("style") or setting("PW_THUMB_STYLE", "shock")).strip().lower()
+    return style if style in pw_thumb.STYLES else "shock"
+
+
+def thumb_path(key: str, out_dir: Path | None = None) -> Path | None:
+    if not re.fullmatch(r"[\w.-]+", key or ""):
+        return None
+    path = out_root(out_dir) / key / "thumb.jpg"
+    return path if path.is_file() else None
+
+
+def set_thumbnail(client, video_id: str, path: Path) -> str:
+    """Give the uploaded Short its thumbnail: "set", or why YouTube refused (custom Shorts thumbnails need the
+    YouTube Partner Program; until then YouTube picks a frame)."""
+    from googleapiclient.http import MediaFileUpload
+
+    try:
+        client.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(path), mimetype="image/jpeg")).execute()
+        return "set"
+    except Exception as err:  # noqa: BLE001 - the video is up either way
+        logger.warning("Price Tag Why thumbnail for %s not set: %s", video_id, err)
+        return f"not set: {str(err)[:200]}"
+
+
 def upload_request(info: dict, privacy: str | None = None):
     from trendclip import publish
 
@@ -681,6 +714,9 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
         raise publish.PublishError("Connect the Price Tag Why YouTube channel first (dashboard → Price Tag Why → Connect YouTube)")
     client = youtube or publish._youtube(TOKEN)
     record = publish.upload_file(video_file(key, out_dir), upload_request(info, privacy), True, progress, client)
+    if thumb := thumb_path(key, out_dir):
+        progress(0.99, "Setting the thumbnail")
+        record["thumbnail"] = set_thumbnail(client, record["video_id"], thumb)
     info.setdefault("uploads", {})["youtube"] = record
     save_info(info, out_dir)
     progress(1.0, "Uploaded")
