@@ -515,9 +515,10 @@ class TrendClipBot(discord.Client):
     @tasks.loop(seconds=60)
     async def reminders(self) -> None:
         at = assistant.now(self.settings)
-        if not _da_retired():  # replaced by Pricetag Why (modules.da_channel.retired)
+        if not _da_retired():  # replaced by Price Tag Why (modules.da_channel.retired)
             self.darkarchives_posts(at)
         self.borderlinewhy_jobs(at)
+        self.pricetagwhy_jobs(at)
         self.cleanup_job(at)
         if not self.settings.discord_channel_id:
             return
@@ -736,6 +737,60 @@ class TrendClipBot(discord.Client):
         for job in posts:
             self.sent.add(job.post_key, at.date())
             self._spawn(self.borderlinewhy_post(job))
+
+    def pricetagwhy_jobs(self, at: datetime) -> None:
+        """Price Tag Why (its own channel and token): PW_LEAD hours before the slot the bot makes the video from the next
+        queued script and posts it with Approve in the channel's Discord channel; at the slot the approved video goes out."""
+        from modules import pw_channel
+
+        try:
+            sent = self.sent.load()
+            makes = pw_channel.due_makes(self.settings, at, sent)
+            posts = pw_channel.due_posts(self.settings, at, sent)
+        except Exception:  # noqa: BLE001 - never let one channel stop the others' reminders
+            logger.exception("Price Tag Why job check failed")
+            return
+        for job in makes:
+            self.sent.add(job.make_key, at.date())  # marked first: a render takes minutes and must never start twice
+            self._spawn(self.pricetagwhy_make(job))
+        for job in posts:
+            self.sent.add(job.post_key, at.date())
+            self._spawn(self.pricetagwhy_post(job))
+
+    async def pricetagwhy_make(self, job) -> None:
+        """Make the slot's video in its own process (one render at a time) and post it in Discord with its buttons."""
+        from modules import pw_channel
+
+        label = f"{day_label(self.settings, job.day)} {job.slot}"
+        try:
+            async with self.render_lock:
+                info = await asyncio.to_thread(pw_channel.make_slot, self.settings, job)
+        except Exception as err:  # noqa: BLE001 - reported in the channel
+            logger.exception("Price Tag Why video for %s failed", label)
+            await asyncio.to_thread(pw_channel.announce_text, clip_text(
+                f"💲 No Price Tag Why video for {label}: {err}"), self.settings, pw_try_again(job))
+            return
+        logger.info("Price Tag Why %s made: %s", job.key, info.get("title"))
+        await asyncio.to_thread(pw_channel.announce_video, info, self.settings)
+
+    async def pricetagwhy_post(self, job) -> None:
+        """The slot's time: upload the approved video; say so when it is still waiting for Approve."""
+        from modules import pw_channel
+
+        info = await asyncio.to_thread(pw_channel.load_info, job.key)
+        if info is None or (info.get("uploads") or {}).get("youtube") or pw_channel.is_vetoed(info) or info.get("check"):
+            return
+        if not pw_channel.ready(info):
+            await asyncio.to_thread(pw_channel.announce_text, f"⏸ {job.slot}: **{info['title']}** is waiting for **Approve**; "
+                                    "it goes out as soon as you press it.", self.settings, pw_channel.buttons(info["key"]))
+            return
+        try:
+            record = await asyncio.to_thread(pw_channel.publish_if_allowed, job.key, settings=self.settings)
+            logger.info("Price Tag Why %s: %s", job.key, (record or {}).get("url"))
+        except Exception as err:  # noqa: BLE001 - reported in the channel
+            logger.exception("Price Tag Why upload of %s failed", job.key)
+            await asyncio.to_thread(pw_channel.announce_text, clip_text(f"❌ **{info['title']}** did not go out: {err}"),
+                                    self.settings, pw_channel.buttons(info["key"]))
 
     def cleanup_job(self, at: datetime) -> None:
         """Once a day (the first minute the bot runs that day): the old videos nothing still needs leave the
@@ -1579,6 +1634,93 @@ async def act_da_delete(bot: TrendClipBot, interaction: discord.Interaction, arg
                              f"removed; the story is {result['status'] or 'kept'}).")
 
 
+def pw_try_again(job) -> list[dict[str, Any]]:
+    """Price Tag Why's "Try again now" button for a slot (a REST message component)."""
+    from modules import channel_common
+
+    return channel_common.rows(channel_common.button("pwrun", f"{job.day.isoformat()} {job.slot}", "💲 Try again now", "success"))
+
+
+async def act_pw_approve(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    """Price Tag Why "Approve": it goes out at its slot, or now when the slot has passed."""
+    from modules import pw_channel
+
+    await interaction.response.defer(thinking=True)
+    try:
+        result = await asyncio.to_thread(pw_channel.approve, key, bot.settings)
+    except KeyError:
+        return await reply(interaction, "That Price Tag Why video is gone.")
+    except Exception as err:  # noqa: BLE001 - the approval is saved; the late upload failed
+        return await reply(interaction, f"✅ Approved, but the upload failed: {err}")
+    if result["record"]:
+        return await reply(interaction, f"✅ **{result['title']}** is on YouTube: {result['record'].get('url', '')}")
+    when = result["post_at"].strftime("%H:%M") if result["post_at"] else "its slot"
+    await reply(interaction, f"✅ **{result['title']}** is approved: it goes out at {when} as {pw_channel.upload_privacy()}.")
+
+
+async def act_pw_veto(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import pw_channel
+
+    try:
+        result = await asyncio.to_thread(pw_channel.veto, key)
+    except KeyError:
+        return await reply(interaction, "That Price Tag Why video is gone.", ephemeral=True)
+    text = (f"🚫 **{result['title']}** is private on YouTube now." if result["hidden"] else
+            f"🚫 **{result['title']}** was already private." if result["uploaded"] else f"🚫 **{result['title']}** won't be posted.")
+    day, slot = key[:10], f"{key[11:13]}:{key[13:15]}"
+    await reply(interaction, text, view=view_of(button("pwrun", f"{day} {slot}", "💲 Make another now", discord.ButtonStyle.success)))
+
+
+async def act_pw_run(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    """Price Tag Why "Try again now" / "Make another now": a new video for that slot from the next queued script."""
+    from modules import pw_channel
+
+    try:
+        date_text, slot = arg.split()
+        day = Day.fromisoformat(date_text)
+    except ValueError as err:
+        return await reply(interaction, f"Couldn't read the slot: {err}", ephemeral=True)
+    job = pw_channel.job_for(bot.settings, day, slot)
+    try:
+        await asyncio.to_thread(pw_channel.set_aside, job.key)
+    except pw_channel.ChannelError as err:
+        return await reply(interaction, str(err), ephemeral=True)
+    await reply(interaction, f"💲 Making a new Price Tag Why video for {day_label(bot.settings, day)} {job.slot}…", ephemeral=True)
+    bot._spawn(bot.pricetagwhy_make(job))
+
+
+async def act_pw_upload_confirm(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import pw_channel
+
+    info = pw_channel.load_info(key)
+    if info is None:
+        return await reply(interaction, "That Price Tag Why video is gone.", ephemeral=True)
+    if (info.get("uploads") or {}).get("youtube"):
+        return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
+    if info.get("check"):
+        return await reply(interaction, f"**{info['title']}** failed its check ({'; '.join(info['check'])}) and can't go out.", ephemeral=True)
+    if not pw_channel.connected():
+        return await reply(interaction, "The Price Tag Why YouTube channel is not connected: dashboard → Price Tag Why → Connect YouTube.", ephemeral=True)
+    privacy = pw_channel.upload_privacy()
+    await reply(interaction, f"Upload **{info['title']}** to Price Tag Why now, as **{privacy}**?",
+                view=view_of(button("pwupgo", key, f"Yes, upload as {privacy}", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
+                ephemeral=True)
+
+
+async def act_pw_upload(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    from modules import pw_channel
+
+    info = pw_channel.load_info(key)
+    if info is None:
+        return await reply(interaction, "That Price Tag Why video is gone.", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    try:
+        record = await asyncio.to_thread(pw_channel.upload, key, settings=bot.settings)
+    except Exception as err:  # noqa: BLE001
+        return await reply(interaction, f"❌ Upload failed: {err}")
+    await reply(interaction, f"▶️ **{info['title']}** is on YouTube ({record.get('privacy')}): {record.get('url')}")
+
+
 def bw_view(key: str) -> discord.ui.View | None:
     return view_of(button("bwok", key, "✅ Approve", discord.ButtonStyle.success),
                    button("bwveto", key, "🚫 Don't post this", discord.ButtonStyle.danger),
@@ -1681,6 +1823,7 @@ ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "daup": act_da_upload_confirm, "daupgo": act_da_upload, "daplan": act_da_plan, "dadel": act_da_delete_confirm,
     "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
     "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload, "bwcm": act_bw_comment,
+    "pwok": act_pw_approve, "pwveto": act_pw_veto, "pwrun": act_pw_run, "pwup": act_pw_upload_confirm, "pwupgo": act_pw_upload,
 }
 
 

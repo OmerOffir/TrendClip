@@ -8,6 +8,7 @@ Still needed, whatever its age:
                   is planned (darkarchives/plan.json) for today or later and not posted
   Borderline Why  a slot's folder (<date>_<HHMM>/) whose video is not on YouTube yet, unless vetoed; a folder set
                   aside (<key>.old-<time>) is a leftover
+  Price Tag Why   the same as Borderline Why (output/pricetagwhy/); a sample made from the tab is a leftover
 A channel whose state can't be read keeps all its files. JSON, logs, databases and output/samples/ are never
 touched. Files nothing claims (test renders, a removed channel's folder, failed renders) are leftovers.
 
@@ -118,9 +119,10 @@ def _dark_needed(root: Path, today: Day) -> set[str]:
     return needed
 
 
-def _borderline_needed(root: Path) -> set[str]:
+def _borderline_needed(root: Path, channel: str = "borderlinewhy") -> set[str]:
+    """A slot folder's video not on YouTube yet, unless vetoed (Borderline Why, and Price Tag Why's the same way)."""
     needed = set()
-    for folder in (root / "borderlinewhy").glob("*_*"):
+    for folder in (root / channel).glob("*_*"):
         if not folder.is_dir() or not BW_FOLDER.fullmatch(folder.name) or ".old-" in folder.name:
             continue
         info = folder / "info.json"
@@ -142,8 +144,8 @@ def owner(rel: Path) -> tuple[str, str] | None:
         name = parts[2] if parts[1] == "discord" and len(parts) == 3 else parts[1]
         if m := DA_STORY.fullmatch(name):
             return "darkarchives", m.group(1)
-    if parts[0] == "borderlinewhy" and len(parts) > 2 and BW_FOLDER.fullmatch(parts[1]):
-        return "borderlinewhy", parts[1]
+    if parts[0] in ("borderlinewhy", "pricetagwhy") and len(parts) > 2 and BW_FOLDER.fullmatch(parts[1]):
+        return parts[0], parts[1]
     return None
 
 
@@ -152,7 +154,8 @@ def needed(settings, root: Path, today: Day) -> dict[str, set[str] | None]:
     out: dict[str, set[str] | None] = {}
     for name, source in (("shorts", lambda: _shorts_needed(settings, root, today)),
                          ("darkarchives", lambda: _dark_needed(root, today)),
-                         ("borderlinewhy", lambda: _borderline_needed(root))):
+                         ("borderlinewhy", lambda: _borderline_needed(root)),
+                         ("pricetagwhy", lambda: _borderline_needed(root, "pricetagwhy"))):
         try:
             out[name] = source()
         except Exception:  # noqa: BLE001 - unreadable state keeps the channel's files, never deletes them

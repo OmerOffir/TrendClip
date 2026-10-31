@@ -1,9 +1,9 @@
-# Pricetag Why — channel brief
+# Price Tag Why — channel brief
 
 The owner's brief for the channel that replaces Dark Outliers (pasted 2026-10-31). Code: `modules/pw_*.py`,
-dashboard tab "Pricetag Why", scripts in `content/pricetagwhy/scripts/`.
+dashboard tab "Price Tag Why", scripts in `content/pricetagwhy/scripts/`.
 
-**Name:** Pricetag Why (@PricetagWhy), working name; backup "Money Why". Check the handle is free.
+**Name:** Price Tag Why (@PriceTagWhy) on YouTube (the owner set it up 2026-10-31; the brief's working name was "Pricetag Why"). Discord channel 1563997738666819707 (Dark Outliers' old one).
 
 **Concept:** whiteboard-animated answers to the money questions everyone wonders about.
 Promise: "In under a minute, you'll finally understand why money works the way it does."
@@ -41,7 +41,7 @@ end in .99; why Monaco is so rich with no resources.
 First long-form: "Why Can't Countries Just Print Money?" (Weimar Germany, Zimbabwe, Venezuela).
 
 ## Channel description (draft)
-"Why does that cost so much? Why can't countries just print money? Why do casinos never have clocks? Pricetag Why
+"Why does that cost so much? Why can't countries just print money? Why do casinos never have clocks? Price Tag Why
 answers the money questions you've always wondered about, with simple whiteboard animation and real stories. New
 'why' every day. Not financial advice, just the fascinating reasons behind the prices."
 

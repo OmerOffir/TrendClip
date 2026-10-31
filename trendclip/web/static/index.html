@@ -28,7 +28,7 @@
         </button>
         <button type="button" role="tab" class="workspace" data-workspace="pricetagwhy" aria-selected="false">
           <span class="ws-mark ws-mark-pw" aria-hidden="true">PW</span>
-          <span><b>Pricetag Why</b><small>Money questions, explained</small></span>
+          <span><b>Price Tag Why</b><small>Money questions, explained</small></span>
         </button>
         <button type="button" role="tab" class="workspace" data-workspace="upcoming" aria-selected="false" title="Everything planned to go out this week, every channel">
           <span class="ws-mark ws-mark-up" aria-hidden="true">📅</span>
@@ -61,36 +61,108 @@
         <button type="button" role="tab" data-bw-view="long" title="An 8-15 minute landscape video in chapters, written with any LLM">🎬 Long video</button>
       </nav>
     </div>
+    <div class="subbar" data-workspace-panel="pricetagwhy" hidden>
+      <span class="subbar-label">Price Tag Why</span>
+      <nav class="nav" id="pwNav" role="tablist" aria-label="Price Tag Why sections">
+        <button type="button" role="tab" class="active" data-pw-view="videos">Videos <span class="nav-count todo" id="pwNavWaiting" hidden title="Videos waiting for Approve"></span></button>
+        <button type="button" role="tab" data-pw-view="plan">Plan <span class="nav-count" id="pwNavQueued" hidden title="Scripts queued"></span></button>
+        <button type="button" role="tab" data-pw-view="topics">Topics <span class="nav-count" id="pwNavTopics" hidden title="Topics left"></span></button>
+        <button type="button" role="tab" data-pw-view="write" title="Write one script with any LLM">✍️ Write it myself</button>
+        <button type="button" role="tab" data-pw-view="week" title="Write the coming week's scripts with any LLM at once">📅 Write a week</button>
+        <button type="button" role="tab" data-pw-view="long" title="An 8-12 minute deep dive, from week 2">🎬 Long video</button>
+      </nav>
+    </div>
   </header>
 
-  <main class="container da-view" id="viewPwVideos" data-workspace-panel="pricetagwhy" hidden>
+  <main class="container da-view" id="viewPwVideos" data-workspace-panel="pricetagwhy" data-pw-panel="videos" hidden>
     <div id="pwError" class="banner banner-error" hidden></div>
     <section class="card">
       <div class="card-head">
         <div>
-          <h2>Pricetag Why</h2>
-          <span class="hint" id="pwHint">Loading…</span>
+          <h2>Price Tag Why</h2>
+          <span class="hint"><span id="pwHint">Loading…</span></span>
         </div>
         <button type="button" class="btn-secondary" id="pwRefresh">Refresh</button>
       </div>
-    </section>
-    <section class="card">
-      <div class="card-head">
-        <div>
-          <h2>Scripts</h2>
-          <span class="hint">Hand-checked scripts in content/pricetagwhy/scripts/: every claim with two or more sources</span>
-        </div>
-      </div>
-      <div class="da-videos" id="pwScripts"><div class="empty">Loading…</div></div>
+      <div class="da-ytbar" id="pwYouTube"></div>
     </section>
     <section class="card">
       <div class="card-head">
         <div>
           <h2>Videos <span class="hint" id="pwVideosCount"></span></h2>
-          <span class="hint">Newest first. Watch them here; uploading comes in a later step</span>
+          <span class="hint">Newest first: the slots' videos and the samples</span>
         </div>
       </div>
       <div class="da-videos" id="pwVideos"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+  <main class="container da-view" id="viewPwPlan" data-workspace-panel="pricetagwhy" data-pw-panel="plan" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Plan</h2>
+          <span class="hint">One video a day: made hours before its slot from the next queued script, posted at the slot after <b>Approve</b></span>
+        </div>
+      </div>
+      <div id="pwPlan"><div class="empty">Loading…</div></div>
+    </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Scripts</h2>
+          <span class="hint">Every script with its rules check: content/pricetagwhy/scripts/ (in git) and the queue written here. Each claim has two or more sources</span>
+        </div>
+      </div>
+      <div class="da-videos" id="pwScripts"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+  <main class="container da-view" id="viewPwTopics" data-workspace-panel="pricetagwhy" data-pw-panel="topics" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>Topics <span class="hint" id="pwTopicsCount"></span></h2>
+          <span class="hint">The money questions the writing prompts take next, the four pillars in turn</span>
+        </div>
+      </div>
+      <form class="pw-add" id="pwAddTopic">
+        <input type="text" id="pwAddQuestion" placeholder="Why does …?" maxlength="160" required>
+        <select id="pwAddPillar"><option value="">pillar</option></select>
+        <button type="submit" class="btn-primary">Add</button>
+      </form>
+      <div id="pwTopics"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+  <main class="container da-view" id="viewPwWrite" data-workspace-panel="pricetagwhy" data-pw-panel="write" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>✍️ Write it myself</h2>
+          <span class="hint">One script with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take</span>
+        </div>
+      </div>
+      <div class="pw-write" id="pwWriteOne"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+  <main class="container da-view" id="viewPwWeek" data-workspace-panel="pricetagwhy" data-pw-panel="week" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>📅 Write a week</h2>
+          <span class="hint">The coming week's scripts in one prompt (the next topics, pillars in turn), then one fact-check prompt. They join the queue in order</span>
+        </div>
+      </div>
+      <div class="pw-write" id="pwWriteWeek"><div class="empty">Loading…</div></div>
+    </section>
+  </main>
+  <main class="container da-view" id="viewPwLong" data-workspace-panel="pricetagwhy" data-pw-panel="long" hidden>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>🎬 Long video</h2>
+          <span class="hint">From week 2: one 8-12 minute deep dive a week on the best Shorts' topics</span>
+        </div>
+      </div>
+      <div id="pwLong"></div>
     </section>
   </main>
 

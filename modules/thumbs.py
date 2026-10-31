@@ -5,6 +5,7 @@ One 1080x1920 JPEG per video, drawn once and kept beside the video (redrawn when
                     question in huge letters and the panda as a sticker (modules.bw_long.thumbnail, portrait)
   - Dark Outliers   the hook's picture, darkened, the cover text huge with its last words in red
   - SideQuestLogic  a clean frame of the gameplay, "LEVEL N" huge in yellow, the rest of the title card under it
+  - Price Tag Why   the opening's frame once the price tag, the question and the price are all drawn
 
 The dashboard's Upcoming tab shows each one with a Download button (trendclip.web.app). Drawing runs in its own
 process (python -m modules.thumbs <channel> <ref>): the map renderer keeps its layout in module globals.
@@ -25,7 +26,7 @@ from modules import bw_geo
 
 PROJECT_ROOT = bw_geo.PROJECT_ROOT
 W, H = 1080, 1920
-CHANNELS = ("borderlinewhy", "darkarchives", "sidequestlogic")
+CHANNELS = ("borderlinewhy", "darkarchives", "sidequestlogic", "pricetagwhy")
 YELLOW, RED, WHITE, BLACK = (255, 214, 0), (226, 38, 38), (255, 255, 255), (0, 0, 0)
 
 
@@ -46,6 +47,9 @@ def paths(channel: str, ref: str, out_dir: Path | None = None) -> tuple[Path, Pa
     ref = _safe(ref)
     if channel == "borderlinewhy":
         folder = out / "borderlinewhy" / ref
+        return folder / "video.mp4", folder / "thumbnail.jpg"
+    if channel == "pricetagwhy":
+        folder = out / "pricetagwhy" / ref
         return folder / "video.mp4", folder / "thumbnail.jpg"
     if channel == "darkarchives":
         stem = f"story_{int(ref)}"
@@ -83,7 +87,7 @@ def draw(channel: str, ref: str, out_dir: Path | None = None) -> Path:
     video, thumb = paths(channel, ref, out_dir)
     if not video.is_file():
         raise ThumbError("the video isn't made yet")
-    {"borderlinewhy": borderline, "darkarchives": dark, "sidequestlogic": sidequest}[channel](video, thumb)
+    {"borderlinewhy": borderline, "darkarchives": dark, "sidequestlogic": sidequest, "pricetagwhy": pricetag}[channel](video, thumb)
     return thumb
 
 
@@ -238,6 +242,18 @@ def sidequest(video: Path, out: Path) -> None:
     img.convert("RGB").save(out, quality=92)
 
 
+def pricetag(video: Path, thumb: Path) -> None:
+    """Price Tag Why: the video's own frame at the end of its price-tag opening (info.json's thumb_at)."""
+    info = video.parent / "info.json"
+    at = 5.0
+    if info.is_file():
+        at = float(json.loads(info.read_text(encoding="utf-8")).get("thumb_at") or at)
+    run = subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", f"{at:.2f}", "-i", str(video), "-frames:v", "1",
+                          "-q:v", "2", str(thumb)], capture_output=True, text=True)
+    if run.returncode or not thumb.is_file():
+        raise ThumbError(f"ffmpeg could not take the frame: {run.stderr[-200:]}")
+
+
 def main(argv: list[str]) -> int:
     if len(argv) < 2:
         print("usage: python -m modules.thumbs <channel> <ref> [output dir]")
@@ -248,3 +264,4 @@ def main(argv: list[str]) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+

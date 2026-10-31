@@ -862,6 +862,9 @@ def test_reminders_run_posts_first_and_never_wait_for_the_morning_summary(settin
         def borderlinewhy_jobs(self, at):
             pass
 
+        def pricetagwhy_jobs(self, at):
+            pass
+
         def cleanup_job(self, at):
             pass
 

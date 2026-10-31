@@ -5,7 +5,7 @@ The dashboard process serves one active channel (CHANNEL in .env, the gameplay c
 keeps its own channel.env and token_youtube.json in channels/darkarchives/ and goes through the same
 OAuth client (client_secret.json) and the same upload code, just with its own token file.
 
-Retired on 2026-10-31: Pricetag Why (modules.pw_channel) replaces it. The code stays for reuse, but the bot makes and
+Retired on 2026-10-31: Price Tag Why (modules.pw_channel) replaces it. The code stays for reuse, but the bot makes and
 posts nothing for it, /da is not registered, and its dashboard tab and Upcoming rows are gone, unless DA_ENABLED=1.
 """
 
@@ -21,7 +21,7 @@ from modules.scene_images import setting
 
 
 def retired() -> bool:
-    """Dark Outliers is off (replaced by Pricetag Why) unless DA_ENABLED=1."""
+    """Dark Outliers is off (replaced by Price Tag Why) unless DA_ENABLED=1."""
     return setting("DA_ENABLED", "0").strip().lower() not in ("1", "true", "on", "yes")
 from trendclip import assistant, publish
 from trendclip.config import CHANNELS_DIR

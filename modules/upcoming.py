@@ -1,7 +1,7 @@
 """Everything planned to go out, every channel in one list (the dashboard's Upcoming tab).
 
 One row per upload slot of the coming week for SideQuestLogic (trendclip.planner), Dark Outliers
-(modules.da_plan) and Borderline Why (modules.bw_channel): the video that takes it and its state, or an
+(modules.da_plan, retired), Borderline Why (modules.bw_channel) and Price Tag Why (modules.pw_channel): the video that takes it and its state, or an
 empty slot shown as such, so a gap is visible before a video is planned twice to fill it. A video planned
 more than once is flagged on every one of its rows.
 """
@@ -17,6 +17,7 @@ CHANNELS = {
     "sidequestlogic": "SideQuestLogic",
     "darkarchives": "Dark Outliers",
     "borderlinewhy": "Borderline Why",
+    "pricetagwhy": "Price Tag Why",
 }
 
 
@@ -109,6 +110,29 @@ def borderline_rows(settings, now: datetime, days: list[str]) -> list[dict[str, 
     return rows
 
 
+def pricetag_rows(settings, now: datetime, days: list[str]) -> list[dict[str, Any]]:
+    """Price Tag Why's slots (modules.pw_channel): a slot still to be made is "empty", and the queued script that
+    makes it is named by _assign_waiting, like the other channels' scripts written for later."""
+    from modules import pw_channel
+
+    rows = []
+    for day in pw_channel.plan_days(settings, now, before=0, after=DAYS - 1):
+        if day["day"] not in days:
+            continue
+        for r in day["slots"]:
+            video = r.get("video") or {}
+            state = r["state"]
+            if video:
+                state = {"approved": "waits", "waiting": "approval"}.get(state, state)
+            else:
+                state = {"missed": "passed", "due": "making", "later": "empty", "no_script": "empty"}.get(state, state)
+            yt = video.get("youtube") or {}
+            rows.append(_row("pricetagwhy", day["day"], r["slot"], title=video.get("title", ""),
+                             seconds=video.get("duration_seconds"), ref=video.get("key"), url=yt.get("url", "") if yt else "",
+                             state=state, made_at=r.get("start", "")))
+    return rows
+
+
 def waiting(settings) -> dict[str, dict[str, Any]]:
     """The scripts written for later on this machine (the dashboard's "Write a week" tabs), per channel, in the
     order each channel's run takes them: {"channel": {"items": [{"title", ...}], "count": n, "note": ""}}.
@@ -138,7 +162,14 @@ def waiting(settings) -> dict[str, dict[str, Any]]:
 
         return [{"title": f"{e['game']}: {e['question'].get('question', '')}", "game": e["game"]} for e in gamer_queue.entries(settings)]
 
-    for name, source in (("sidequestlogic", sidequest), ("darkarchives", dark), ("borderlinewhy", borderline)):
+    def pricetag():
+        import json
+
+        from modules import pw_channel
+
+        return [{"title": json.loads(path.read_text(encoding="utf-8")).get("title") or path.stem} for path in pw_channel.queued()]
+
+    for name, source in (("sidequestlogic", sidequest), ("darkarchives", dark), ("borderlinewhy", borderline), ("pricetagwhy", pricetag)):
         if name == "darkarchives" and _dark_retired():
             continue
         try:
@@ -173,7 +204,7 @@ def view(settings, now: datetime | None = None) -> dict[str, Any]:
     days = [(now.date() + timedelta(days=n)).isoformat() for n in range(DAYS)]
     rows: list[dict[str, Any]] = []
     for source in (lambda: sidequest_rows(settings, now, days), lambda: dark_rows(now, days),
-                   lambda: borderline_rows(settings, now, days)):
+                   lambda: borderline_rows(settings, now, days), lambda: pricetag_rows(settings, now, days)):
         try:
             rows += source()
         except Exception as err:  # noqa: BLE001 - one channel's trouble never hides the others
@@ -228,4 +259,5 @@ def local_unsent(settings) -> list[dict[str, Any]]:
 
 def _source_name(source) -> str:
     code = source.__code__.co_names
-    return "sidequestlogic" if "sidequest_rows" in code else "darkarchives" if "dark_rows" in code else "borderlinewhy"
+    return ("sidequestlogic" if "sidequest_rows" in code else "darkarchives" if "dark_rows" in code
+            else "pricetagwhy" if "pricetag_rows" in code else "borderlinewhy")

@@ -1,4 +1,4 @@
-"""Pricetag Why's look: Borderline Why's whiteboard renderer (modules.bw_fx, modules.bw_brand) in the channel's own
+"""Price Tag Why's look: Borderline Why's whiteboard renderer (modules.bw_fx, modules.bw_brand) in the channel's own
 colours, so the two channels never look alike.
 
 - black ink, money-green accents, red for what something costs (board lines may name their colour: green / red, and
@@ -9,7 +9,7 @@ colours, so the two channels never look alike.
 - icons pop in on board and tag scenes too (Noto emoji, Apache 2.0; the owner's GIFs when one has the name);
 - a scene of kind "follow" ends the video: the narrator says the follow line over the channel's end card.
 
-use_style() changes module-wide colours, so a Pricetag Why video is drawn in a process of its own
+use_style() changes module-wide colours, so a Price Tag Why video is drawn in a process of its own
 (python -m modules.pw_channel make ...), never in the dashboard's process next to a Borderline Why render.
 """
 
@@ -23,7 +23,7 @@ import numpy as np
 from modules import bw_brand, bw_fx, bw_render
 from modules.bw_render import Scene
 
-NAME = "PRICETAG WHY"
+NAME = "PRICE TAG WHY"
 INK = (22, 22, 26)
 GREEN = (22, 140, 72)
 RED = (212, 36, 40)
@@ -36,7 +36,7 @@ ICONS = dict(cup_straw="1f964", tea="1f375", tv="1f4fa", moon="1f319", receipt="
 
 
 def use_style() -> None:
-    """Switch this process to Pricetag Why's colours (call once, before drawing)."""
+    """Switch this process to Price Tag Why's colours (call once, before drawing)."""
     bw_brand.INK, bw_brand.BLUE, bw_brand.RED, bw_brand.GREEN = INK, GREEN, RED, GREEN
     for name, code in ICONS.items():
         bw_fx.ICONS.setdefault(name, code)
@@ -159,7 +159,7 @@ class PwRenderer(bw_fx.FxRenderer):
             img.alpha_composite(ov)
         return img
 
-    handle = "@PricetagWhy"
+    handle = "@PriceTagWhy"
 
 
 def render(spec: bw_render.Spec, voice, out, music=None, music_volume: float = 0.08, progress=lambda f, m: None, handle: str = ""):

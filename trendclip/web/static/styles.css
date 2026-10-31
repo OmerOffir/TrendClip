@@ -863,6 +863,16 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 /* ---------- Borderline Why tab ---------- */
 .ws-mark-bw { background: linear-gradient(135deg, #3a6aa8, #f2c14e); }
 .ws-mark-pw { background: linear-gradient(135deg, #168c48, #d42428); }
+.pw-day { margin-bottom: 10px; }
+.pw-day h3 { font-size: 13px; margin: 0 0 6px; color: var(--muted, #9aa3b2); }
+.pw-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; }
+.pw-slot .pw-time { font-weight: 700; min-width: 48px; }
+.pw-slot .pw-what { flex: 1 1 260px; min-width: 0; }
+.pw-slot .btn-primary, .pw-slot .btn-secondary { margin: 0; width: auto; padding: 6px 10px; font-size: 12px; }
+.pw-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.pw-add input[type=text] { flex: 1 1 320px; min-width: 0; }
+.pw-add .btn-primary, .pw-add .btn-secondary, .pw-write > .btn-primary, .pw-write > .btn-secondary { margin: 0; width: auto; padding: 8px 12px; }
+.pw-prompt, .pw-paste { width: 100%; box-sizing: border-box; font-family: ui-monospace, monospace; font-size: 12px; margin: 6px 0; }
 .pw-script.da-vcard { grid-template-columns: minmax(0, 1fr); grid-column: 1 / -1; }
 .bw-make { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .bw-make .btn-primary { margin: 0; width: auto; }
@@ -926,6 +936,7 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .up-row .mark.sidequestlogic { background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
 .up-row .mark.darkarchives { background: linear-gradient(135deg, #2b2d42, #6d1a2b); }
 .up-row .mark.borderlinewhy { background: linear-gradient(135deg, #1b5e20, #0f3d5e); }
+.up-row .mark.pricetagwhy { background: linear-gradient(135deg, #168c48, #d42428); }
 .up-row.empty .title { color: var(--muted); font-style: italic; }
 .up-thumb { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 6px 0 4px 110px; }
 .up-thumb img { width: 180px; aspect-ratio: 9 / 16; object-fit: cover; border-radius: 10px; border: 1px solid var(--border); background: rgba(127, 127, 127, 0.12); }
