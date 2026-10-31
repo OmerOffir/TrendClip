@@ -17,12 +17,28 @@
     vetoed: ["🚫 vetoed", ""], error: ["❌ could not read this channel", "warn"],
   };
   const PLAN_VIEW = { sidequestlogic: ["plan", "data-view"], darkarchives: ["plan", "data-da-view"], borderlinewhy: ["plan", "data-bw-view"] };
+  // A made video's thumbnail, to upload by hand in YouTube Studio (GET /api/thumbnail/<channel>/<ref>).
+  const NO_THUMB = new Set(["empty", "passed", "making", "missing", "error"]);
+  const opened = new Set();
+  let thumbsHere = true;
+  const thumbUrl = (r) => `/api/thumbnail/${encodeURIComponent(r.channel)}/${encodeURIComponent(r.ref)}`;
+  const thumbKey = (r) => `${r.channel}/${r.ref}`;
+  function thumbBox(r) {
+    const url = thumbUrl(r);
+    return `<div class="up-thumb" data-thumb-box="${esc(thumbKey(r))}">
+      <img src="${esc(url)}" alt="Thumbnail" loading="lazy" data-thumb-img>
+      <span class="hint" data-thumb-state>Drawing the thumbnail… (the map ones take up to a minute)</span>
+      <a class="btn-primary" href="${esc(url)}?download=1" download hidden data-thumb-dl>⬇️ Download</a>
+      <span class="hint">1080x1920 · upload it in YouTube Studio: the video → Details → Thumbnail</span>
+    </div>`;
+  }
   const dayLabel = (iso) => {
     const d = new Date(`${iso}T12:00:00`);
     return d.toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "short" });
   };
 
   function render(data) {
+    thumbsHere = data.source !== "linux";
     nav.textContent = data.empty;
     nav.hidden = !data.empty;
     const twice = data.twice ? ` · <b class="da-note" style="display:inline">${data.twice} slot${data.twice > 1 ? "s" : ""} hold a video that is planned twice</b>` : "";
@@ -37,6 +53,8 @@
         ${day.rows.length ? day.rows.map((r) => {
           const [text, cls] = STATES[r.state] || [r.state, ""];
           const planIt = r.state === "empty" ? `<button type="button" class="btn-ghost" data-go="${r.channel}" title="Open this channel's Plan tab">Plan it →</button>` : "";
+          const canThumb = thumbsHere && r.ref !== null && r.ref !== undefined && r.title && !NO_THUMB.has(r.state);
+          const thumb = canThumb ? `<button type="button" class="btn-ghost" data-thumb="${esc(thumbKey(r))}" title="A thumbnail for this video, to download and upload in YouTube Studio">🖼️ Thumbnail</button>` : "";
           const open = r.url ? `<a class="hint" href="${esc(r.url)}" target="_blank" rel="noopener">open ↗</a>` : "";
           const made = r.state === "empty" && r.made_at ? `<small>the bot makes it at ${esc(r.made_at.slice(11, 16))}</small>` : "";
           const waiting = r.state === "empty" && r.waiting;
@@ -46,7 +64,8 @@
             <span class="time">${esc(r.time || "—")}</span>
             <span class="mark ${esc(r.channel)}" title="${esc(r.label)}">${{ sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW" }[r.channel] || "?"}</span>
             <span class="title">${what}${r.seconds ? `<small>${Math.round(r.seconds)} s</small>` : ""}${made}${r.twice ? ' <span class="pill warn">planned twice</span>' : ""}</span>
-            <span class="actions">${pill}${open}${planIt}</span>
+            <span class="actions">${pill}${open}${planIt}${thumb}</span>
+            ${canThumb && opened.has(thumbKey(r)) ? thumbBox(r) : ""}
           </div>`;
         }).join("") : '<div class="empty">No slots</div>'}
       </div>`).join("");
@@ -142,7 +161,33 @@
     const btn = e.target.closest("button[data-send]");
     if (btn) send(btn);
   });
+  // the thumbnail's picture loaded (or failed): show Download, or the reason
+  list.addEventListener("load", (e) => {
+    const box = e.target.closest && e.target.matches("[data-thumb-img]") && e.target.closest(".up-thumb");
+    if (!box) return;
+    box.querySelector("[data-thumb-state]").hidden = true;
+    box.querySelector("[data-thumb-dl]").hidden = false;
+  }, true);
+  list.addEventListener("error", async (e) => {
+    const box = e.target.closest && e.target.matches("[data-thumb-img]") && e.target.closest(".up-thumb");
+    if (!box) return;
+    e.target.hidden = true;
+    let why = "";
+    try { why = (await (await fetch(e.target.src)).json()).detail; } catch { /* keep the plain message */ }
+    box.querySelector("[data-thumb-state]").textContent = `⚠️ No thumbnail${why ? `: ${why}` : ""}`;
+  }, true);
   list.addEventListener("click", (e) => {
+    const t = e.target.closest("button[data-thumb]");
+    if (t) {
+      const key = t.dataset.thumb;
+      const row = t.closest(".up-row");
+      const box = row.querySelector(".up-thumb");
+      if (box) { box.remove(); opened.delete(key); return; }
+      opened.add(key);
+      const [channel, ref] = [key.slice(0, key.indexOf("/")), key.slice(key.indexOf("/") + 1)];
+      row.insertAdjacentHTML("beforeend", thumbBox({ channel, ref }));
+      return;
+    }
     const btn = e.target.closest("button[data-go]");
     if (!btn) return;
     const channel = btn.dataset.go;

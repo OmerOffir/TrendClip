@@ -835,6 +835,29 @@ def get_upcoming(fresh: bool = False) -> dict[str, Any]:
         return {**upcoming.view(settings), "source": "here", "local": local, "hub_error": str(err)}
 
 
+_THUMB_LOCK = threading.Lock()  # one drawing at a time: the map renderer is heavy
+
+
+@app.get("/api/thumbnail/{channel}/{ref}")
+def get_thumbnail(channel: str, ref: str, download: bool = False) -> Response:
+    """A planned video's 1080x1920 thumbnail, to upload by hand in YouTube Studio (modules.thumbs): drawn on the
+    first ask (a few seconds; the map ones longer) and kept beside the video."""
+    from modules import thumbs
+
+    try:
+        with _THUMB_LOCK:
+            path = thumbs.ensure(channel, ref, _base_settings().output_dir)
+    except thumbs.ThumbError as err:
+        raise HTTPException(status_code=404, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001 - a timeout or a crash in the drawing process
+        raise HTTPException(status_code=500, detail=f"Couldn't draw the thumbnail: {err}"[:300]) from err
+    headers = {"Cache-Control": "no-cache"}
+    if download:
+        name = f"{channel}-{ref}".removesuffix(".mp4") + "-thumbnail.jpg"
+        headers["Content-Disposition"] = f'attachment; filename="{name}"'
+    return Response(path.read_bytes(), media_type="image/jpeg", headers=headers)
+
+
 def _plan_item_or_http(fn, *args):
     settings = _base_settings()
     try:

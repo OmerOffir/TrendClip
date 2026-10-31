@@ -698,14 +698,16 @@ def label_spots(masks: list[Image.Image], avoid: list[tuple[float, float, float,
 def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -> Path:
     """1280x720, made to be clicked: a short question in huge letters across the top (`text`, else the cover text),
     the subject place close up and glowing gold among the story's sides, each side named, a red marker circle round
-    the place with an arrow to it (and the owner's `icon` beside it), and the mascot as a sticker shading its eyes at it."""
+    the place with an arrow to it (and the owner's `icon` beside it), and the mascot as a sticker shading its eyes at it.
+    In the portrait layout (a Short's thumbnail, uploaded by hand) the same at 1080x1920, the text in up to 3 lines."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 
     W, H = bw_render.W, bw_render.H
+    portrait = H > W
     place = subject(spec)
     feat = bw_render.bw_geo.resolve(place) if place else None
-    spot = (W * 0.66, H * 0.62)  # where the place sits: under the text, in the mascot's line of sight
+    spot = (W * 0.58, H * 0.56) if portrait else (W * 0.66, H * 0.62)  # under the text, in the mascot's line of sight
     side_list: list[tuple[str, str]] = []
     cam = None
     if feat is not None:
@@ -729,7 +731,7 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
         k = max(0.2, math.cos(math.radians(lat)))
         # the place about a fifth of the width, but never closer than about 2.5 degrees of map top to bottom, so a
         # small place (or one that is only a point) still shows the lakes and borders round it
-        ppd = max(2.5, min(H / 2.5, W * 0.2 / max(1e-4, (x1 - x0) * k), H * 0.3 / max(1e-4, y1 - y0)))
+        ppd = max(2.5, min(min(W, H) / 2.5, W * (0.42 if portrait else 0.2) / max(1e-4, (x1 - x0) * k), H * 0.3 / max(1e-4, y1 - y0)))
         r.views[0] = (lon - (spot[0] - W / 2) / (ppd * k), lat - (bw_render.CY - spot[1]) / ppd, ppd)
         img = r.scene_frame(0, 3.8).convert("RGB")
         cam = r.camera(0, 3.8)
@@ -748,12 +750,13 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
     d = ImageDraw.Draw(ov)
     # the text: one huge line across the top when it fits (a short question reads at a glance), else two lines
     words = (text or spec.cover or spec.scenes[0].headline or "").upper().split()
-    size, one_line = 240, True
+    size, one_line = (190 if portrait else 240), True
     while size > 150 and bw_render.font(size).getlength(" ".join(words)) > W - 120:
         size -= 10
+    lines, width = (3, W - 100) if portrait else (2, int(W * 0.62))
     if bw_render.font(size).getlength(" ".join(words)) > W - 120:
-        one_line, size = False, 200
-        while size > 100 and len(bw_render.wrap(" ".join(words), size, int(W * 0.62))) > 2:
+        one_line, size = False, (170 if portrait else 200)
+        while size > 90 and len(bw_render.wrap(" ".join(words), size, width)) > lines:
             size -= 10
     f = bw_render.font(size)
     gold, white = bw_render.FIXED["gold"], (255, 255, 255)
@@ -766,27 +769,27 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
         right, bottom = min(box[2], spot[0] - rx - 200), box[3]
     else:
         right, bottom = W * 0.3, H * 0.3
-        for n, line in enumerate(bw_render.wrap(" ".join(words), size, int(W * 0.62))[:2]):
-            at = (70, 50 + n * size * 1.04)
+        for n, line in enumerate(bw_render.wrap(" ".join(words), size, width)[:lines]):
+            at = ((W - f.getlength(line)) / 2 if portrait else 70, (90 if portrait else 50) + n * size * 1.04)
             d.text(at, line, font=f, fill=gold if n == 0 else white, stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
             box = d.textbbox(at, line, font=f, stroke_width=16, anchor="la")  # the font's real extent (they differ by machine)
             right, bottom = (box[2], box[3]) if n == 0 else (max(right, box[2]), box[3])
     loop = bw_fx.FxRenderer.egg(spot[0], spot[1], rx, ry, seed=3)
     bw_brand.marker(ov, loop, bw_brand.RED, 22)
-    end = (min(right - 120, W * 0.5), bottom + 30)  # from under the text
+    end = (W * 0.2, bottom + 30) if portrait else (min(right - 120, W * 0.5), bottom + 30)  # from under the text
     tip = (spot[0] - rx * 0.9, spot[1] - ry * 0.25)
     arrow: list[tuple[float, float]] = []
     if tip[0] - end[0] > 120 and tip[1] > end[1]:
         arrow = bw_render.curve(end, tip, bend=0.25)
         bw_brand.marker(ov, arrow, bw_brand.RED, 26)
         bw_brand.chevron(ov, arrow, bw_brand.RED, 26)
-    keep_clear = [(0, 0, W, bottom + 20), (0, H * 0.5, W * 0.3, H), (spot[0] - rx - 60, spot[1] - ry - 60, spot[0] + rx + 60, spot[1] + ry + 130)]
+    keep_clear = [(0, 0, W, bottom + 20), (0, H * 0.64, W * 0.56, H) if portrait else (0, H * 0.5, W * 0.3, H), (spot[0] - rx - 60, spot[1] - ry - 60, spot[0] + rx + 60, spot[1] + ry + 130)]
     keep_clear += [(x - 40, y - 40, x + 40, y + 40) for x, y in arrow[::4]]
     code = bw_fx.icon_code(icon) if icon else ""
     if code:  # the owner's icon beside the circle, as a sticker
         pic = (bw_brand.frame_at(code, 230, 1.2)[0] if code in bw_fx.custom_icons()  # an owner GIF: a frame from its middle
                else bw_fx.icon_image(code, 230))
-        ix, iy = int(spot[0] + rx + 40), int(spot[1] - pic.height / 2 + 30)
+        ix, iy = int(min(spot[0] + rx + 40, W - pic.width - 30)), int(spot[1] - pic.height / 2 + 30)
         bw_brand.paste(ov, bw_brand.shadow(pic, 10, 0.5), ix - 20 + 6, iy - 20 + 10)
         bw_brand.paste(ov, pic, ix, iy)
         keep_clear.append((ix - 30, iy - 30, ix + pic.width + 30, iy + pic.height + 30))
@@ -815,7 +818,7 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
                        stroke_fill=(0, 0, 0), anchor="mm")
     img.alpha_composite(ov)
     if spec.brand:  # the mascot as a sticker: white outline, shadow, shading its eyes toward the place
-        panda, _ = bw_brand.frame_at(bw_brand.MASCOT["searching"], int(H * 0.46), 1.3)
+        panda, _ = bw_brand.frame_at(bw_brand.MASCOT["searching"], int(H * (0.3 if portrait else 0.46)), 1.3)
         pad = 24
         big = Image.new("RGBA", (panda.width + 2 * pad, panda.height + 2 * pad), (0, 0, 0, 0))
         big.alpha_composite(panda, (pad, pad))
@@ -825,7 +828,7 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
         x, y = 40, H - edge.height + 30
         bw_brand.paste(img, bw_brand.shadow(edge, 14, 0.6), x - 28 + 10, y - 28 + 14)
         bw_brand.paste(img, edge, x, y)
-    img.convert("RGB").resize((1280, 720), Image.LANCZOS).save(out, quality=92)
+    img.convert("RGB").resize((1080, 1920) if portrait else (1280, 720), Image.LANCZOS).save(out, quality=92)
     return out
 
 
