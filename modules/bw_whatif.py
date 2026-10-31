@@ -59,7 +59,7 @@ THE TITLE: the what-if question, under 70 characters, starting with "What if" ("
 cover_text: 3-7 words for the first frame. description: 2-3 sentences saying what really happened and what the
 video imagines. "claims": leave it an empty list (a what-if has no sources to quote).
 
-""" + bw_script.SCENE_RULES + """Today is {today}. Write in English.
+""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + """Today is {today}. Write in English.
 """
 
 

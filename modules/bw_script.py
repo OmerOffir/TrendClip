@@ -35,7 +35,12 @@ MAX_SOURCES = 4  # outside pages kept besides Wikipedia
 MIN_WORDS, MAX_WORDS = 95, 130  # about 40-55 s with the narrator: the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31)
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
-MAX_CARDS = 3
+MAX_CARDS = 1  # a Short's static title cards: the first card lost viewers in 4 of the first 5 Shorts (2026-11-01)
+FIRST_WORDS = 12  # scene 1, about 3-4 s: viewers left where a long opening scene ended
+CARD_WORDS = 10  # a card's narration, about 4 s
+# Scene 2 opening on a setup line ("This is Point Roberts") lost 30-40 points of retention between 3 s and 10 s
+SETUP = re.compile(r"^\W*(this is|these are|this place is|it is called|it's called|they are called|meet|here is|here's|"
+                   r"welcome to|say hello)\b", re.I)
 PHOTO_COUNT = "3-4 in the video, at most 5"
 BOARD_COUNT = "1-2 in the video"
 MASCOT_LINES = "1-2 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
@@ -412,6 +417,21 @@ must be the whole narration.
 
 """
 
+# A Short's opening and its history scenes (the Short prompts: here, modules.bw_whatif; bw_week reuses PROMPT)
+HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
+- Scene 1 is one short line (at most """ + str(FIRST_WORDS) + """ words, about 3 seconds) over the striking map: the
+  question or the surprise.
+- Scene 2 already pays something off: the strangest fact or the first part of the answer. Never a setup line like
+  "This is Point Roberts." or "It is called Pheasant Island." (the map already shows its name).
+
+HISTORY ON THE MAP, NOT ON CARDS
+- Tell the history while the map moves: the treaty or border line drawing itself across the map (line, route,
+  parallel), the land changing hands (transfer), the side lighting up (highlight), with the year as the headline.
+- A card is at most one quick beat (at most """ + str(CARD_WORDS) + """ words, about 4 seconds); a longer history step goes
+  on the map or the whiteboard instead.
+
+"""
+
 PROMPT = """You write a YouTube Short for Borderline Why: surprising geography and history questions answered with
 animated maps. Today's question: "{question}"
 
@@ -430,7 +450,7 @@ THE NARRATION ({min_words}-{max_words} words, about 40-55 seconds read aloud: sh
   details, cite it for a fact that matters or leave it out. Keep uncertainty where the sources are uncertain ("about", "historians think").
 - Numbers as digits (1783, 49th, 123).
 
-""" + SCENE_RULES + """THE CLAIMS
+""" + HOOK_RULES + SCENE_RULES + """THE CLAIMS
 List every fact the narration states (5-12 claims). For each, the id of the source that supports it and an EXACT
 quote copied from that source (no changes, no "..."). At least two different sources must back facts that matter
 to the answer. If no second source supports anything that matters, set usable to false.
@@ -577,6 +597,11 @@ class Limits:
     min_scenes: int = MIN_SCENES
     max_scenes: int = MAX_SCENES
     max_cards: int = MAX_CARDS
+    # scene 1's / a card's narration at most (0: no limit); 2 words more than the prompt asks, so a near miss
+    # doesn't spend a Gemini fix call
+    first_words: int = FIRST_WORDS + 2
+    card_words: int = CARD_WORDS + 2
+    no_setup: bool = True  # scene 2 must not open on "This is X"
     first_map: bool = True  # the first scene is the thumbnail
     max_boards: int = 2
     max_lines: int = 3  # the mascot's asks and reacts
@@ -631,7 +656,19 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
         if bad := [b for b in BANNED if b in line.lower()]:
             problems.append(f"scene {i}: banned phrases in the mascot's {k}: " + ", ".join(bad))
     if kinds.count("card") > limits.max_cards:
-        problems.append(f"{kinds.count('card')} card scenes (at most {limits.max_cards})")
+        problems.append(f"{kinds.count('card')} card scenes (at most {limits.max_cards}): tell the history on the map "
+                        "(a line or route drawing itself, a transfer, the year as the headline)")
+    if limits.first_words and draft.scenes and words(draft.scenes[0].narration) > limits.first_words:
+        problems.append(f"scene 1 is {words(draft.scenes[0].narration)} words (at most {limits.first_words}: one short line, "
+                        "the question or the surprise)")
+    if limits.no_setup and len(draft.scenes) > 1 and SETUP.match(draft.scenes[1].narration):
+        problems.append("scene 2 opens on a setup line (\"This is ...\", \"It is called ...\"): open it on the strangest fact or "
+                        "the first part of the answer")
+    if limits.card_words:
+        for i, s in enumerate(draft.scenes, 1):
+            if s.kind.strip().lower() == "card" and words(s.narration) > limits.card_words:
+                problems.append(f"card scene {i} is {words(s.narration)} words (at most {limits.card_words}): shorten it, or tell "
+                                "that step on the map (a line drawing itself, a transfer) or the whiteboard")
     if limits.first_map and kinds and kinds[0] != "map":
         problems.append("the first scene must be a map (it is the thumbnail)")
     stamps = 0

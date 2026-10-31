@@ -1465,3 +1465,23 @@ def test_sound_effects_follow_the_scenes(tmp_path):
         assert w.getframerate() == bw_sfx.RATE and w.getnframes() >= int(spec.duration * bw_sfx.RATE)
     for name in bw_sfx.GAIN:
         assert 0.5 <= float(np.max(np.abs(bw_sfx.sound(name, 1.0)))) <= 1.0
+
+
+def test_check_wants_a_quick_opening_and_short_cards(world):
+    draft = _draft()
+    assert bw_script.check(draft, _research(), _find(world)) == []
+    draft.scenes[0].narration = "There is a notch on top of Minnesota that nobody on the map can explain at all."
+    draft.scenes[1] = bw_script.SceneDraft(kind="card", narration="In 1783 a treaty used an old map that was very wrong about the big lake.", title="1783")
+    draft.scenes[2].narration = "This is the Northwest Angle. " + draft.scenes[2].narration
+    problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "scene 1 is 17 words" in problems
+    assert "card scene 2 is 16 words" in problems
+    draft.scenes[1] = bw_script.SceneDraft(kind="map", narration="It is called the Northwest Angle.", focus=["Minnesota"])
+    assert "scene 2 opens on a setup line" in " | ".join(bw_script.check(draft, _research(), _find(world)))
+    two = _draft()
+    two.scenes[3] = bw_script.SceneDraft(kind="card", narration="A line due west never met the river.", title="1818")
+    assert any("2 card scenes (at most 1)" in p for p in bw_script.check(two, _research(), _find(world)))
+    from modules import bw_long
+
+    assert bw_long.CHAPTER.first_words == 0 and bw_long.CHAPTER.card_words == 0 and not bw_long.CHAPTER.no_setup
+    assert "THE FIRST 5 SECONDS" in bw_script.write_prompt(_research()) and "THE FIRST 5 SECONDS" in bw_whatif.write_prompt("What if?")
