@@ -319,14 +319,34 @@ def find_script(name: str, out_dir: Path | None = None, scripts_dir: Path | None
     return next((p for p in script_files(out_dir, scripts_dir) if p.name == name), None)
 
 
+def shows_icons(script: dict) -> bool:
+    """Whether the video pops in Noto emoji (on a tag scene, or a board with no drawing of its own), which the
+    animated set's licence (CC BY 4.0) wants credited."""
+    from modules import pw_draw
+
+    for scene in script.get("scenes") or []:
+        icons = [el.get("icon") for el in scene.get("elements") or [] if el.get("kind") == "icon"]
+        if not icons:
+            continue
+        if scene.get("kind") == "tag":
+            return True
+        if scene.get("kind") == "board":
+            picture = (scene.get("board") or {}).get("picture") or next((pw_draw.FROM_ICON[n] for n in icons if n in pw_draw.FROM_ICON), "")
+            if picture not in pw_draw.DRAWINGS:
+                return True
+    return False
+
+
 def description(script: dict) -> str:
-    """The YouTube description: the question, the short answer, the sources, the credits, the disclaimer, hashtags."""
+    """The YouTube description: the question, the short answer, the sources, the disclaimer, hashtags; a credit only
+    for what needs one (Noto emoji here, Wikimedia pictures in with_credits)."""
     tags = list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:7]
     lines = [script.get("question", ""), "", script.get("description", ""), "", "Sources:"]
     lines += [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
-    lines += ["", "Whiteboard animation drawn by code. Icons: Noto Emoji by Google (Apache 2.0; animated Noto Emoji, "
-              "CC BY 4.0). No AI-generated images.", "", DISCLAIMER, "", f"A new 'why' every day: {handle()}",
-              "", " ".join(f"#{t}" for t in tags)]
+    if shows_icons(script):
+        lines += ["", "Icons: Noto Emoji by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0)."]
+    often = "twice a day" if len(slots()) == 2 else "every day"
+    lines += ["", DISCLAIMER, "", f"A new 'why' {often}: {handle()}", "", " ".join(f"#{t}" for t in tags)]
     return "\n".join(lines).strip()
 
 

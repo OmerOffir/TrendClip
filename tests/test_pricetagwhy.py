@@ -466,3 +466,12 @@ def test_the_thumbnail_says_the_question_and_reads_any_figure():
     w = pw_thumb.words(script)
     assert w["title"] == "WHY CAN'T WE JUST PRINT MONEY?" and w["hook"] == "WAIT, WHAT?"
     assert (w["old_label"], w["old"], w["now_label"], w["now"]) == ("Cost in 1922", "160 marks", "Cost in 1923", "200B marks")
+
+
+def test_the_description_credits_only_what_the_video_shows(monkeypatch):
+    monkeypatch.setenv("PW_SLOTS", "14:00,23:00")
+    text = pw_channel.description(_script())
+    assert "Sources:" in text and pw_channel.DISCLAIMER in text and "twice a day" in text
+    assert "Noto" not in text and "drawn by code" not in text  # AriZona draws its own pictures
+    with_icon = {**_script(), "scenes": [{"kind": "tag", "elements": [{"kind": "icon", "icon": "tea"}]}]}
+    assert "Noto Emoji" in pw_channel.description(with_icon)
