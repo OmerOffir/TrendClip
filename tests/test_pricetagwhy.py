@@ -444,3 +444,15 @@ def test_the_owner_can_accept_what_the_fact_checker_flagged(tmp_path):
     assert saved["checked"]["flags"] == ["the $2.38 figure"]
     with pytest.raises(pw_write.WriteError):
         pw_write.accept("one", tmp_path)
+
+
+def test_the_owner_can_skip_the_fact_check(tmp_path):
+    from modules import pw_write
+
+    pw_write.start("one", "Why is AriZona Iced Tea still 99 cents?", out_dir=tmp_path)
+    with pytest.raises(pw_write.WriteError):
+        pw_write.skip_facts("one", tmp_path)  # the rules check comes first
+    pw_write.answer("one", json.dumps(_script()), tmp_path)
+    assert pw_write.skip_facts("one", tmp_path)["step"] == "ready"
+    name = pw_write.queue("one", tmp_path)["queued"][0]
+    assert json.loads((pw_channel.queue_dir(tmp_path) / name).read_text())["checked"]["facts"] == "skipped by the owner"

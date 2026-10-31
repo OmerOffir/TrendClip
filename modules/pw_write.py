@@ -423,6 +423,16 @@ def accept(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
     return _save(session, out_dir)
 
 
+def skip_facts(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
+    """The owner skips the second LLM's fact check (the rules check already wants 2 sources for every claim)."""
+    session = load(kind, out_dir)
+    if session is None or session["step"] != "facts":
+        raise WriteError("The scripts must pass the rules check first")
+    session["skipped_facts"] = True
+    session["step"] = "ready"
+    return _save(session, out_dir)
+
+
 def drop(kind: str, i: int, out_dir: Path | None = None) -> dict[str, Any]:
     """Leave script i (1-based) out of the session, its topic too."""
     session = load(kind, out_dir)
@@ -452,7 +462,9 @@ def queue(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
     saved = []
     for k, d in enumerate(session["drafts"], 1):
         flags = (session.get("accepted") or {}).get(str(k), [])
-        d = {**d, "checked": {"rules": True, "facts": "accepted by the owner with flags" if flags else "pasted fact check",
+        how = ("skipped by the owner" if session.get("skipped_facts") else
+               "accepted by the owner with flags" if flags else "pasted fact check")
+        d = {**d, "checked": {"rules": True, "facts": how,
                               **({"flags": flags} if flags else {}), "at": stamp}}
         path = folder / f"{stamp}-{k:02d}-{slug(d.get('title', ''))}.json"
         path.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

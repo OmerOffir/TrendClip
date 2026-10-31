@@ -353,6 +353,11 @@ def write_accept(kind: str) -> dict[str, Any]:
     return _write(pw_write.accept, kind)
 
 
+@router.post("/write/{kind}/skip-facts")
+def write_skip_facts(kind: str) -> dict[str, Any]:
+    return _write(pw_write.skip_facts, kind)
+
+
 @router.post("/write/{kind}/drop/{i}")
 def write_drop(kind: str, i: int) -> dict[str, Any]:
     return _write(pw_write.drop, kind, i)

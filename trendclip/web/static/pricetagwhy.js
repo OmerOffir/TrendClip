@@ -190,7 +190,7 @@
     write: "1. Copy the prompt into any LLM (one that can browse is best), then paste its JSON answer below.",
     fix: "The answer broke some rules: copy this fix prompt into the same chat and paste the new answer below.",
     flagged: "The fact checker flagged the lines in red above. Either copy this fix prompt into the writing chat (it cuts or corrects only those) and paste the new answer below, or, if you checked them and they're fine, accept the script as it is.",
-    facts: "2. The rules pass. Copy this fact-check prompt into a second LLM that can open links, and paste its JSON answer below.",
+    facts: "2. The rules pass ✅. Now the fact check: copy this prompt into a second LLM that can open links (a new chat with web search), paste its JSON answer below and press Check it. Or skip it.",
   };
 
   async function loadWrite(kind) {
@@ -232,7 +232,8 @@
              <span class="hint">${(v.prompt || "").length.toLocaleString()} characters</span></div>
            <textarea class="pw-prompt" readonly rows="5" id="pwPrompt-${kind}">${esc(v.prompt || "")}</textarea>
            <textarea class="pw-paste" rows="8" id="pwPaste-${kind}" placeholder="Paste the LLM's JSON answer here"></textarea>
-           <button type="button" class="btn-primary" data-write-paste="${kind}" data-to="${pasteTo}">Check it</button>`}
+           <button type="button" class="btn-primary" data-write-paste="${kind}" data-to="${pasteTo}">Check it</button>
+           ${v.step === "facts" ? `<button type="button" class="btn-secondary" data-write-skip="${kind}" title="The rules check already wants 2 sources for every claim">⏭ Skip the fact check</button>` : ""}`}
       <button type="button" class="btn-secondary" data-write-start="${kind}" data-restart="1">Start over</button>`;
   }
 
@@ -345,12 +346,19 @@
     if (d.writePaste) {
       const kind = d.writePaste;
       const text = $(`pwPaste-${kind}`).value;
-      if (!text.trim()) return;
+      if (!text.trim()) {
+        els.write[kind].insertAdjacentHTML("afterbegin", `<div class="da-note">Paste the LLM's answer in the box first${d.to === "facts" ? " (the fact checker's JSON), or press ⏭ Skip the fact check" : ""}.</div>`);
+        return;
+      }
       return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}/${d.to}`, { text }));
     }
     if (d.writeAccept) {
       if (!window.confirm("Keep the script as it is, with what the fact checker flagged? Only if you checked those lines yourself.")) return;
       return writeAct(d.writeAccept, () => post(`/api/pricetagwhy/write/${d.writeAccept}/accept`));
+    }
+    if (d.writeSkip) {
+      if (!window.confirm("Skip the fact check and keep the script as it is?")) return;
+      return writeAct(d.writeSkip, () => post(`/api/pricetagwhy/write/${d.writeSkip}/skip-facts`));
     }
     if (d.writeDrop) return writeAct("week", () => post(`/api/pricetagwhy/write/week/drop/${d.writeDrop}`));
     if (d.writeQueue) {
