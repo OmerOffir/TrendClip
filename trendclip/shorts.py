@@ -341,7 +341,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     voice = pick_voice(settings, req.voice, engine)
     chosen_rate = req.rate or settings.tts_rate
     rate = quiz.quiz_rate(chosen_rate) if req.flashes else chosen_rate
-    if req.flashes and engine == "edge":
+    if req.flashes and engine == "edge" and req.mode != "gamer":  # Gamer IQ is whole sentences: the voice as picked
         voice = quiz.english_voice(voice)
 
     track = resolve_music(settings, req, progress)
