@@ -93,3 +93,19 @@ def test_photo_credits():
     text = bw_photos.credits([p, p])
     assert text.count("Walleye (Sander vitreus) by Some One (CC BY-SA 4.0)") == 1 and text.startswith("Pictures:")
     assert bw_photos.credits([]) == ""
+
+
+@pytest.mark.parametrize("lines", [2, 3])
+def test_a_portrait_board_keeps_clear_of_the_mascot(lines):
+    """The writing stays above the mascot's head and the drawing right of it (the Kentucky Bend board, 2026-10-31)."""
+    bw_render.use_layout("portrait")
+    write = ["Border Rules", "West: Mississippi River", "South: Straight parallel", "East: Big Sandy"][:lines + 1]
+    scene = Scene(kind="board", narration="a b c", start=0.0, end=6.0, opts={"board": {"write": write, "draw": ["Kentucky"]}})
+    board = bw_brand.Board(scene)
+    cx, feet = bw_brand.mascot_spot()
+    head = feet - bw_brand.size("mascot")
+    writes = [it for it in board.items if it["kind"] == "write"]
+    assert len(writes) == lines + 1 and all(it["y"] + it["px"] / 2 <= head for it in writes)
+    outline = [it for it in board.items if it["kind"] == "line" and len(it["pts"]) > 31]  # not the title's underline
+    assert outline and all(it["pts"][:, 0].min() >= cx + bw_brand.size("mascot") / 2 for it in outline)
+    assert all(it["pts"][:, 1].max() <= bw_render.CAPTION_Y - 200 for it in outline)  # above the bubble beside the mascot

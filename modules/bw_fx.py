@@ -1470,7 +1470,7 @@ class FxRenderer(Renderer):
     def overlay(self, img: Image.Image, t: float) -> None:
         if self.moods:
             bw_brand.draw_mascot(img, self.spec, self.moods, self.scene_at, t)
-            bw_brand.draw_bubble(img, self.spec, t)
+            bw_brand.draw_bubble(img, self.spec, t, self.scene_at)
 
     def map_frame(self, i: int, t: float) -> Image.Image:
         img = self.fx_map_frame(i, t)
