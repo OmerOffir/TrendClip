@@ -428,3 +428,19 @@ def test_a_topic_starts_its_own_script_with_its_pillar(tmp_path):
 
     view = pw_write.start("one", "Why do  prices end in .99?", out_dir=tmp_path)
     assert view["topics"] == [{"question": "Why do prices end in .99?", "pillar": "everyday prices"}]
+
+
+def test_the_owner_can_accept_what_the_fact_checker_flagged(tmp_path):
+    from modules import pw_write
+
+    pw_write.start("one", "Why is AriZona Iced Tea still 99 cents?", out_dir=tmp_path)
+    assert pw_write.answer("one", json.dumps(_script()), tmp_path)["step"] == "facts"
+    flagged = pw_write.facts("one", '{"checks": [{"script": 1, "unsupported": ["the $2.38 figure"]}]}', tmp_path)
+    assert flagged["step"] == "fix" and flagged["can_accept"] and flagged["after_facts"]
+    assert "could not confirm" in flagged["prompt"] and "the $2.38 figure" in flagged["prompt"]
+    assert pw_write.accept("one", tmp_path)["step"] == "ready"
+    name = pw_write.queue("one", tmp_path)["queued"][0]
+    saved = json.loads((pw_channel.queue_dir(tmp_path) / name).read_text())
+    assert saved["checked"]["flags"] == ["the $2.38 figure"]
+    with pytest.raises(pw_write.WriteError):
+        pw_write.accept("one", tmp_path)

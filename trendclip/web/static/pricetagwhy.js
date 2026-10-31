@@ -189,6 +189,7 @@
   const STEP_TEXT = {
     write: "1. Copy the prompt into any LLM (one that can browse is best), then paste its JSON answer below.",
     fix: "The answer broke some rules: copy this fix prompt into the same chat and paste the new answer below.",
+    flagged: "The fact checker flagged the lines in red above. Either copy this fix prompt into the writing chat (it cuts or corrects only those) and paste the new answer below, or, if you checked them and they're fine, accept the script as it is.",
     facts: "2. The rules pass. Copy this fact-check prompt into a second LLM that can open links, and paste its JSON answer below.",
   };
 
@@ -224,7 +225,9 @@
       ${drafts}
       ${v.step === "ready"
         ? `<p>✅ Both checks passed.</p><button type="button" class="btn-primary" data-write-queue="${kind}">➕ Add to the queue</button>`
-        : `<p class="hint">${esc(STEP_TEXT[v.step] || "")}</p>
+        : `<p class="hint">${esc(STEP_TEXT[v.step === "fix" && v.after_facts ? "flagged" : v.step] || "")}</p>
+           ${v.can_accept ? `<div class="pw-add"><button type="button" class="btn-primary" data-write-accept="${kind}">✅ Accept as it is</button>
+             <span class="hint">the flags are kept with the script</span></div>` : ""}
            <div class="pw-add"><button type="button" class="btn-secondary" data-copy="${kind}">📋 Copy the prompt</button>
              <span class="hint">${(v.prompt || "").length.toLocaleString()} characters</span></div>
            <textarea class="pw-prompt" readonly rows="5" id="pwPrompt-${kind}">${esc(v.prompt || "")}</textarea>
@@ -344,6 +347,10 @@
       const text = $(`pwPaste-${kind}`).value;
       if (!text.trim()) return;
       return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}/${d.to}`, { text }));
+    }
+    if (d.writeAccept) {
+      if (!window.confirm("Keep the script as it is, with what the fact checker flagged? Only if you checked those lines yourself.")) return;
+      return writeAct(d.writeAccept, () => post(`/api/pricetagwhy/write/${d.writeAccept}/accept`));
     }
     if (d.writeDrop) return writeAct("week", () => post(`/api/pricetagwhy/write/week/drop/${d.writeDrop}`));
     if (d.writeQueue) {

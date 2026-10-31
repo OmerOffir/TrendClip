@@ -299,6 +299,12 @@ def write_prompt(session: dict[str, Any]) -> str:
 
 def fix_prompt(session: dict[str, Any]) -> str:
     lines = [f"Script {k}: " + "; ".join(p) for k, p in sorted(session["problems"].items(), key=lambda kv: int(kv[0])) if p]
+    if session.get("flagged"):
+        return (f"{write_prompt(session)}\n\nA fact checker could not confirm these statements in your last answer:\n" + "\n".join(lines)
+                + "\n\nFor each one: cut it, or say only what the listed sources say (fix the number, the year, the cause). "
+                  "Don't add any new facts, keep everything else as it is, and answer with the whole JSON again "
+                  "({\"scripts\": [...]}, every script, in order). Your last answer:\n"
+                + json.dumps({"scripts": session["drafts"]}, ensure_ascii=False))
     return (f"{write_prompt(session)}\n\nYour last answer broke these rules:\n" + "\n".join(lines)
             + "\n\nFix only that and answer with the whole JSON again ({\"scripts\": [...]}, every script, in order). Your last answer:\n"
             + json.dumps({"scripts": session["drafts"]}, ensure_ascii=False))
@@ -400,6 +406,23 @@ def facts(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     return _save(session, out_dir)
 
 
+def can_accept(session: dict[str, Any]) -> bool:
+    """The fact checker flagged something, and the scripts themselves pass the rules: the owner may decide."""
+    return session["step"] == "fix" and bool(session.get("flagged")) and all(not problems_of(d) for d in session["drafts"])
+
+
+def accept(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
+    """The owner read what the fact checker flagged and keeps the scripts as they are (a checker always finds
+    something new; this ends the loop). What was flagged is kept in the queued script."""
+    session = load(kind, out_dir)
+    if session is None or not can_accept(session):
+        raise WriteError("Nothing to accept: paste the fact checker's answer first")
+    session["accepted"] = session["flagged"]
+    session["flagged"], session["problems"] = {}, {str(k): [] for k in range(1, len(session["drafts"]) + 1)}
+    session["step"] = "ready"
+    return _save(session, out_dir)
+
+
 def drop(kind: str, i: int, out_dir: Path | None = None) -> dict[str, Any]:
     """Leave script i (1-based) out of the session, its topic too."""
     session = load(kind, out_dir)
@@ -428,7 +451,9 @@ def queue(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     saved = []
     for k, d in enumerate(session["drafts"], 1):
-        d = {**d, "checked": {"rules": True, "facts": "pasted fact check", "at": stamp}}
+        flags = (session.get("accepted") or {}).get(str(k), [])
+        d = {**d, "checked": {"rules": True, "facts": "accepted by the owner with flags" if flags else "pasted fact check",
+                              **({"flags": flags} if flags else {}), "at": stamp}}
         path = folder / f"{stamp}-{k:02d}-{slug(d.get('title', ''))}.json"
         path.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         saved.append(path.name)
@@ -454,4 +479,5 @@ def view(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
             "drafts": [{"title": d.get("title", ""), "words": pw_channel.words(pw_channel.narration(d)),
                         "sources": len(d.get("sources") or []), "problems": session["problems"].get(str(k), []),
                         "flagged": session["flagged"].get(str(k), [])} for k, d in enumerate(session["drafts"], 1)],
-            "general": session["problems"].get("0", []), "started": session.get("started", "")}
+            "general": session["problems"].get("0", []), "started": session.get("started", ""),
+            "can_accept": can_accept(session), "after_facts": bool(session.get("flagged"))}

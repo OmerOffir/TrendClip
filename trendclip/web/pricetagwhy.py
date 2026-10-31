@@ -348,6 +348,11 @@ def write_facts(kind: str, req: PasteRequest) -> dict[str, Any]:
     return _write(pw_write.facts, kind, req.text)
 
 
+@router.post("/write/{kind}/accept")
+def write_accept(kind: str) -> dict[str, Any]:
+    return _write(pw_write.accept, kind)
+
+
 @router.post("/write/{kind}/drop/{i}")
 def write_drop(kind: str, i: int) -> dict[str, Any]:
     return _write(pw_write.drop, kind, i)
