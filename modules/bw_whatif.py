@@ -41,7 +41,7 @@ class WhatIfError(ValueError):
 PROMPT = """You write a YouTube Short for Borderline Why: geography and history told with animated maps. This one is a
 WHAT IF episode: "{question}"
 
-THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
+THE NARRATION ({min_words}-{max_words} words, about 40-55 seconds read aloud: short Shorts get watched to the end and replayed)
 - Start straight away with the question or the real turning point. No greeting, no "Did you know", no "Let's dive in".
 - First, the real history up to the turning point (about a third): who owned what, when, and why it changed. Only
   well-known facts you are sure of; never invent a number, a date, a name or a quote.

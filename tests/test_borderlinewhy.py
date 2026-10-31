@@ -151,7 +151,7 @@ def _research():
                                                          bw_script.Source(2, "https://www.mnhs.org/angle", "MNHS", SOURCE_2)])
 
 
-def _draft(narration_words: int = 120, quote_ok: bool = True) -> bw_script.Draft:
+def _draft(narration_words: int = 110, quote_ok: bool = True) -> bw_script.Draft:
     filler = " ".join(["The map shows the lake and the border clearly."] * ((narration_words - 20) // 9))
     scenes = [
         bw_script.SceneDraft(kind="map", narration="There is a notch on top of Minnesota.", focus=["Lake of the Woods"],

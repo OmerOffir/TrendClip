@@ -1,5 +1,5 @@
 """Borderline Why research and script: a topic's Wikipedia article and the outside pages it cites become the
-sources; Gemini writes a 45-70 s narration split into map and card scenes, and lists its claims, each with a
+sources; Gemini writes a 40-55 s narration split into map and card scenes, and lists its claims, each with a
 quote from a source. The quotes are checked here word for word against the source text, a second Gemini pass
 looks for anything in the narration the sources do not support, and every place a scene names must exist in
 the map data. A draft that fails is sent back with the problems (ATTEMPTS drafts for the rules, CHECK_FIXES more
@@ -32,13 +32,13 @@ SOURCE_CHARS = 7000
 MIN_SOURCE_CHARS = 1200
 MAX_FETCH = 10  # cited pages tried per topic
 MAX_SOURCES = 4  # outside pages kept besides Wikipedia
-MIN_WORDS, MAX_WORDS = 110, 170  # about 45-70 s with the narrator
+MIN_WORDS, MAX_WORDS = 95, 130  # about 40-55 s with the narrator: the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31)
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 3
 PHOTO_COUNT = "3-4 in the video, at most 5"
 BOARD_COUNT = "1-2 in the video"
-MASCOT_LINES = "2-3 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
+MASCOT_LINES = "1-2 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
 ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
 CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
 SKIP_DOMAINS = ("wikipedia.org", "wikimedia.org", "wikidata.org", "books.google", "google.com", "archive.org/details",
@@ -418,7 +418,7 @@ animated maps. Today's question: "{question}"
 Use ONLY the sources below. Do not add facts, numbers, names, dates or quotes that are not in them. If they cannot
 support a clear, true answer, set usable to false and say why.
 
-THE NARRATION ({min_words}-{max_words} words, about 45-70 seconds read aloud)
+THE NARRATION ({min_words}-{max_words} words, about 40-55 seconds read aloud: short Shorts get watched to the end and replayed)
 - Start straight away with the specific question or the surprising fact. No greeting, no "Did you know", no "You won't
   believe", no "Let's dive in".
 - Build curiosity: what makes the situation odd, why the obvious answer is wrong; then a clear, satisfying answer
@@ -579,7 +579,7 @@ class Limits:
     max_cards: int = MAX_CARDS
     first_map: bool = True  # the first scene is the thumbnail
     max_boards: int = 2
-    max_lines: int = 4  # the mascot's asks and reacts
+    max_lines: int = 3  # the mascot's asks and reacts
     max_photos: int = 5
     min_claims: int = 4
     min_cited: int = 2

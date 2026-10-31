@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 CHAPTERS = (5, 8)
 CHAPTER = Limits(min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1,
-                 max_photos=6, max_boards=3)
+                 max_photos=6, max_boards=3, max_lines=4)
 TOTAL_WORDS = (1100, 2400)  # about 8-16 minutes with the narrator
 WORDS_PER_SECOND = 2.6  # the preview's guess of the voice's pace
 MORE_ARTICLES = 4  # more Wikipedia articles read at the start

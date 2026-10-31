@@ -40,7 +40,7 @@ CATEGORY = "27"  # Education
 DEFAULT_SLOTS = "14:30,23:00"  # two a day, like the other channels (BW_SLOTS, in Settings.timezone)
 DEFAULT_LEAD = 8  # hours before the slot the video is made, so there is time to approve it (BW_LEAD)
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
-MIN_SECONDS, MAX_SECONDS = 30.0, 90.0
+MIN_SECONDS, MAX_SECONDS = 30.0, 72.0  # aimed at 45-55 s (bw_script.MAX_WORDS); longer ones lost half their viewers
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
 DEFAULT_VOICE = "am_michael"
 PANDA_VOICE = "af_bella"  # the mascot (BW_PANDA_VOICE), pitched up by BW_PANDA_PITCH
