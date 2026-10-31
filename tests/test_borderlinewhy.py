@@ -1382,3 +1382,34 @@ def test_a_what_if_from_prompt_to_queue_to_video(settings, tmp_path, world, monk
     bw_channel.upload(job.key, youtube=yt, out_dir=tmp_path)
     assert uploads[0].title == "What if Minnesota had no notch?"
     assert yt.comments[0]["snippet"]["topLevelComment"]["snippet"]["textOriginal"] == bw_series.COMMENTS["whatif"]
+
+
+def test_the_owner_picks_the_next_video(tmp_path):
+    root = tmp_path
+    queue = bw_channel.queue_dir(root)
+    queue.mkdir(parents=True)
+    (queue / "001_a.json").write_text(json.dumps({**SCRIPT, "title": "Queued A"}))
+    (queue / "002_b.json").write_text(json.dumps({**SCRIPT, "title": "Queued B"}))
+    choices = bw_channel.next_choices(root)
+    assert choices["choice"] == "" and [o["label"] for o in choices["options"][:2]] == ["📥 Queued A", "📥 Queued B"]
+    assert choices["options"][2]["value"] == f"topic:{bw_topics.SEEDS[0][1]}"
+
+    pick = "Geography of Chile"
+    bw_topics.pick(root, f"topic:{pick}")  # a topic goes before the queue and before the series' turn
+    assert bw_topics.next_topic(root, prefer="Weird Borders").article == pick
+    assert bw_channel.next_choices(root)["choice"] == f"topic:{pick}"
+    assert next(t for t in bw_topics.listing(root) if t["article"] == pick)["picked"]
+    seen = []
+    script, origin = bw_channel.next_script(out_dir=root, research=lambda topic, p: seen.append(topic.article) or topic,
+                                            write=lambda res, client, progress: {"title": res.question})
+    assert origin == f"topic:{pick}" and seen == [pick] and len(bw_channel.queued_scripts(root)) == 2
+    bw_topics.mark(root, pick, used=True)  # make() marks it: the pick is used up
+    assert bw_topics.picked(root) == ""
+
+    bw_topics.pick(root, "queue:002_b.json")
+    script, origin = bw_channel.next_script(out_dir=root)
+    assert script["title"] == "Queued B" and bw_topics.picked(root) == ""
+    script, origin = bw_channel.next_script(out_dir=root)
+    assert script["title"] == "Queued A"  # then the usual order
+    with pytest.raises(ValueError):
+        bw_topics.pick(root, "topic:Nowhere")

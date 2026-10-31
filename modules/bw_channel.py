@@ -300,11 +300,40 @@ def queued_scripts(out_dir: Path | None = None) -> list[Path]:
     return sorted(folder.glob("*.json")) if folder.is_dir() else []
 
 
+def next_choices(out_dir: Path | None = None, limit: int = 60) -> dict[str, Any]:
+    """The dashboard's "Next video" picker: the queued scripts and the topics still on the list, in the order they
+    would be made, with the owner's pick."""
+    root = out_root(out_dir)
+    options = []
+    for path in queued_scripts(out_dir):
+        try:
+            title = json.loads(path.read_text(encoding="utf-8")).get("title") or path.stem
+        except ValueError:
+            continue
+        options.append({"value": f"queue:{path.name}", "label": f"📥 {title}", "kind": "queue"})
+    for t in bw_topics.remaining(root)[:limit]:
+        series = t.episode_of
+        options.append({"value": f"topic:{t.article}", "label": t.question + (f" (📺 {series})" if series else ""), "kind": "topic"})
+    choice = bw_topics.picked(root)
+    if choice and not any(o["value"] == choice for o in options):
+        choice = ""
+    return {"choice": choice, "options": options}
+
+
 def next_script(progress=lambda m: None, out_dir: Path | None = None, client=None, research=None, write=None) -> tuple[dict, str]:
     """(the script, where it came from): a queued script first, else the next topic with two readable sources
     whose script passes the checks. A topic that fails is marked rejected and the next is tried (TOPIC_TRIES);
     Wikipedia or Gemini being busy (TryLater) stops at once and leaves the topic on the list."""
-    for path in queued_scripts(out_dir):
+    root = out_root(out_dir)
+    choice = bw_topics.picked(root)  # the owner's pick (the dashboard's "Next video") goes before the queue
+    queue = queued_scripts(out_dir)
+    if choice.startswith("queue:") and not any(p.name == choice[6:] for p in queue):
+        bw_topics.pick(root, "")  # the picked script left the queue some other way
+    elif choice.startswith("queue:"):
+        queue = sorted(queue, key=lambda p: p.name != choice[6:])
+    elif choice.startswith("topic:") and any(t.article == choice[6:] for t in bw_topics.remaining(root)):
+        queue = []
+    for path in queue:
         try:
             script = json.loads(path.read_text(encoding="utf-8"))
         except ValueError as err:
@@ -313,10 +342,11 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
         done = queue_dir(out_dir) / "used"
         done.mkdir(parents=True, exist_ok=True)
         shutil.move(str(path), done / path.name)
+        if choice == f"queue:{path.name}":
+            bw_topics.pick(root, "")
         return script, f"queue:{path.name}"
     research = research or bw_script.research
     write = write or bw_script.write
-    root = out_root(out_dir)
     bw_topics.ensure(root, client)
     tried: set[str] = set()
     errors: list[str] = []

@@ -883,6 +883,9 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .bw-add input { padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; min-width: 0; }
 .bw-add .btn-primary { margin: 0; width: auto; }
 .bw-add .hint { grid-column: 1 / -1; }
+.bw-next { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); min-width: 0; flex: 1 1 320px; }
+.bw-next select { flex: 1; min-width: 0; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; }
+.bw-pick { margin: 0 0 0 6px; padding: 3px 8px; font-size: 12px; width: auto; }
 .bw-add.bw-add-one { grid-template-columns: minmax(0, 1fr) auto; }
 .bw-add select { padding: 9px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; min-width: 0; }
 .bw-topics { display: grid; gap: 6px; }

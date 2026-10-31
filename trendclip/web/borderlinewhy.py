@@ -386,6 +386,28 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
     return bw_topics.add(bw_channel.out_root(), req.question, title).model_dump()
 
 
+@router.get("/next")
+def next_choices() -> dict[str, Any]:
+    """The "Next video" picker: queued scripts and topics, with the owner's pick ("" = the usual order)."""
+    return bw_channel.next_choices()
+
+
+class NextRequest(BaseModel):
+    choice: str = Field("", max_length=300)
+
+
+@router.post("/next")
+def pick_next(req: NextRequest) -> dict[str, Any]:
+    """Choose the next video (it holds until that video is made); "" goes back to the usual order."""
+    if req.choice.startswith("queue:") and not (bw_channel.queue_dir() / req.choice[6:]).is_file():
+        raise HTTPException(status_code=400, detail="That script is no longer in the queue")
+    try:
+        bw_topics.pick(bw_channel.out_root(), req.choice)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return bw_channel.next_choices()
+
+
 class CountryRequest(BaseModel):
     country: str = Field(min_length=2, max_length=80)
 

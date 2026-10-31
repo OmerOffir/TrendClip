@@ -99,6 +99,7 @@ class TopicState(BaseModel):
     used: dict[str, str] = Field(default_factory=dict)  # article -> when it got a video
     rejected: dict[str, str] = Field(default_factory=dict)  # article -> why the research or the script failed
     proposed: list[Topic] = Field(default_factory=list)  # Gemini's extra topics
+    next: str = ""  # the owner's pick for the next video: "topic:<article>" or "queue:<file name>" ("" = the usual order)
 
 
 def state_path(out_dir: Path) -> Path:
@@ -129,7 +130,9 @@ def remaining(out_dir: Path) -> list[Topic]:
     state = load(out_dir)
     done = set(state.used) | set(state.rejected)
     left = [t for t in all_topics(state) if t.article not in done]
-    return [t for t in left if t.source == "manual"] + [t for t in left if t.source != "manual"]
+    left = [t for t in left if t.source == "manual"] + [t for t in left if t.source != "manual"]
+    picked = state.next.removeprefix("topic:") if state.next.startswith("topic:") else ""
+    return [t for t in left if t.article == picked] + [t for t in left if t.article != picked]
 
 
 def add(out_dir: Path, question: str, article: str) -> Topic:
@@ -190,14 +193,35 @@ def listing(out_dir: Path) -> list[dict[str, Any]]:
             status, note = "dropped", state.rejected[t.article]
         else:
             status, note = "next" if order.get(t.article) == 0 else "waiting", ""
-        out.append({**t.model_dump(), "series": t.episode_of, "status": status, "note": note, "order": order.get(t.article)})
+        out.append({**t.model_dump(), "series": t.episode_of, "picked": state.next == f"topic:{t.article}", "status": status, "note": note, "order": order.get(t.article)})
     return sorted(out, key=lambda r: (r["order"] is None, r["order"] if r["order"] is not None else 0))
 
 
+def picked(out_dir: Path) -> str:
+    """The owner's pick for the next video ("topic:<article>", "queue:<file name>"), "" for the usual order."""
+    return load(out_dir).next
+
+
+def pick(out_dir: Path, choice: str) -> None:
+    """Choose the next video: "topic:<article>" (a topic still on the list), "queue:<file name>" (a queued script) or
+    "" (back to the usual order). It holds until that video is made (or its topic dropped)."""
+    if choice and not re.fullmatch(r"(topic|queue):.+", choice):
+        raise ValueError(f"Can't pick {choice!r}")
+    if choice.startswith("topic:") and choice[6:] not in {t.article for t in remaining(out_dir)}:
+        raise ValueError(f"{choice[6:]!r} is not on the topic list")
+    with _lock:
+        state = load(out_dir)
+        state.next = choice
+        save(state, out_dir)
+
+
 def next_topic(out_dir: Path, skip: set[str] | None = None, prefer: str = "") -> Topic | None:
-    """The first unused topic (seeds in order, then Gemini's), not in `skip`. With `prefer` (a series, when its
-    next episode is due: bw_series.due) the first topic of that series goes first, after the ones added by hand."""
+    """The first unused topic (seeds in order, then Gemini's), not in `skip`. The owner's pick (pick) comes first;
+    with `prefer` (a series, when its next episode is due: bw_series.due) the first topic of that series goes
+    next, after the ones added by hand."""
     left = [t for t in remaining(out_dir) if t.article not in (skip or set())]
+    if left and picked(out_dir) == f"topic:{left[0].article}":
+        return left[0]
     if prefer and left and left[0].source != "manual":
         return next((t for t in left if t.episode_of == prefer), left[0])
     return left[0] if left else None
@@ -207,6 +231,8 @@ def mark(out_dir: Path, article: str, used: bool, note: str = "") -> None:
     with _lock:
         state = load(out_dir)
         stamp = datetime.now().replace(microsecond=0).isoformat()
+        if state.next == f"topic:{article}":  # the pick is made (or dropped)
+            state.next = ""
         if used:
             state.used[article] = stamp
             state.rejected.pop(article, None)

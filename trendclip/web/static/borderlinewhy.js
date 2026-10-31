@@ -22,6 +22,7 @@
     try {
       const { body } = await api("/api/borderlinewhy/status");
       state.status = body;
+      loadNext();
       const nxt = body.next_job;
       els.hint.innerHTML = `One video a day at <b>${esc(body.slots.join(", "))}</b> (${esc(body.timezone)}), made ${body.lead_hours} h before`
         + ` and posted in Discord · ${body.require_approval ? "goes out only after <b>Approve</b>" : "goes out unless vetoed"}`
@@ -100,6 +101,31 @@
       showError(err.message);
     }
   }
+
+  // ---- the next video: the owner's pick, else the queue and the topic list in their order
+  const nextSel = $("bwNext");
+  function renderNext(body) {
+    const opts = body.options || [];
+    const auto = opts.length ? `Automatic: ${opts[0].label}` : "Automatic (the topic list is empty)";
+    nextSel.innerHTML = `<option value="">${esc(auto)}</option>`
+      + opts.map((o) => `<option value="${esc(o.value)}" ${o.value === body.choice ? "selected" : ""}>${esc(o.label)}</option>`).join("");
+  }
+  async function loadNext() {
+    try {
+      renderNext((await api("/api/borderlinewhy/next")).body);
+    } catch { /* the picker is a convenience */ }
+  }
+  async function pickNext(choice) {
+    try {
+      renderNext((await post("/api/borderlinewhy/next", { choice })).body);
+      els.makeStatus.textContent = choice ? "✅ Picked: it is the next video (the slot's own or Make now)" : "Back to the usual order";
+      if (state.section === "topics") loadTopics();
+    } catch (err) {
+      showError(err.message);
+      loadNext();
+    }
+  }
+  nextSel.addEventListener("change", () => pickNext(nextSel.value));
 
   els.make.addEventListener("click", async () => {
     if (!confirm("Make the next Borderline Why video now? A video already made for that slot (not uploaded) is set aside.")) return;
@@ -317,7 +343,8 @@
       els.topics.innerHTML = body.topics.map((t) => `<div class="bw-topic ${esc(t.status)}">
           <span class="bw-n">${t.order != null ? t.order + 1 : ""}</span>
           <span>${esc(t.question)}<small>Wikipedia: ${esc(t.article)}${t.source !== "seed" ? ` · ${esc(t.source)}` : ""}${t.series ? ` · 📺 ${esc(t.series)}` : ""}${t.note ? ` · ${esc(t.note)}` : ""}</small></span>
-          <span class="pill">${TOPIC[t.status] || esc(t.status)}</span>
+          <span class="pill">${t.picked ? "⭐ picked next" : TOPIC[t.status] || esc(t.status)}${["next", "waiting"].includes(t.status) && !t.picked
+            ? ` <button type="button" class="btn-secondary bw-pick" data-pick="${esc(t.article)}">⬆ Make next</button>` : ""}</span>
         </div>`).join("") || '<div class="empty">No topics.</div>';
       els.topicsError.hidden = true;
     } catch (err) {
@@ -341,6 +368,10 @@
     }
   });
   $("bwTopicsRefresh").addEventListener("click", loadTopics);
+  els.topics.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pick]");
+    if (btn) pickNext(`topic:${btn.dataset.pick}`);
+  });
   $("bwRefresh").addEventListener("click", () => { loadStatus().then(loadVideos); });
 
   // ---- sections
