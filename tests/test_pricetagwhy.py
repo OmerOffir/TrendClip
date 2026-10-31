@@ -409,3 +409,15 @@ def test_the_thumbnail_comes_from_the_product_and_is_set_after_the_upload(tmp_pa
 
     client = type("C", (), {"thumbnails": lambda self: Thumbs()})()
     assert pw_channel.set_thumbnail(client, "vid1", tmp_path / "shock.jpg").startswith("not set: forbidden") and calls == ["vid1"]
+
+
+def test_upcoming_shows_the_designed_thumbnail(tmp_path):
+    from modules import thumbs
+
+    folder = tmp_path / "pricetagwhy" / "2026-10-31_2300"
+    folder.mkdir(parents=True)
+    (folder / "video.mp4").write_bytes(b"v")
+    (folder / "thumbnail.jpg").write_bytes(b"old frame")
+    assert thumbs.paths("pricetagwhy", "2026-10-31_2300", tmp_path)[1].name == "thumbnail.jpg"
+    (folder / "thumb.jpg").write_bytes(b"designed")
+    assert thumbs.fresh("pricetagwhy", "2026-10-31_2300", tmp_path).read_bytes() == b"designed"

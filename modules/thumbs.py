@@ -48,9 +48,10 @@ def paths(channel: str, ref: str, out_dir: Path | None = None) -> tuple[Path, Pa
     if channel == "borderlinewhy":
         folder = out / "borderlinewhy" / ref
         return folder / "video.mp4", folder / "thumbnail.jpg"
-    if channel == "pricetagwhy":
+    if channel == "pricetagwhy":  # its own designed thumbnail (modules.pw_thumb) when there is one
         folder = out / "pricetagwhy" / ref
-        return folder / "video.mp4", folder / "thumbnail.jpg"
+        made = folder / "thumb.jpg"
+        return folder / "video.mp4", made if made.is_file() else folder / "thumbnail.jpg"
     if channel == "darkarchives":
         stem = f"story_{int(ref)}"
         return out / "darkarchives" / f"{stem}.mp4", out / "darkarchives" / f"{stem}.thumbnail.jpg"
