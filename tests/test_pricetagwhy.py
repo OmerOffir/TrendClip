@@ -456,3 +456,13 @@ def test_the_owner_can_skip_the_fact_check(tmp_path):
     assert pw_write.skip_facts("one", tmp_path)["step"] == "ready"
     name = pw_write.queue("one", tmp_path)["queued"][0]
     assert json.loads((pw_channel.queue_dir(tmp_path) / name).read_text())["checked"]["facts"] == "skipped by the owner"
+
+
+def test_the_thumbnail_says_the_question_and_reads_any_figure():
+    from modules import pw_thumb
+
+    script = {"question": "Why can't we just print money?", "thumbnail": {"hook": "wait, what?"}, "scenes": [{"kind": "product", "product": {
+        "draw": "bag", "lines": ["Cost in 1922", {"text": "160 marks", "color": "green"}, "Cost in 1923", {"text": "200B marks", "color": "red"}]}}]}
+    w = pw_thumb.words(script)
+    assert w["title"] == "WHY CAN'T WE JUST PRINT MONEY?" and w["hook"] == "WAIT, WHAT?"
+    assert (w["old_label"], w["old"], w["now_label"], w["now"]) == ("Cost in 1922", "160 marks", "Cost in 1923", "200B marks")

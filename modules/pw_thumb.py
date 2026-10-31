@@ -1,13 +1,15 @@
-"""Price Tag Why's thumbnails: a picture made to be clicked, not a frame of the video. The product drawn big and
-solid (modules.pw_draw), two prices that don't add up, and a 1-3 word hook in heavy letters, on a loud background.
+"""Price Tag Why's thumbnails: a picture made to be clicked, not a frame of the video. It must say what the video is
+about at a glance: the title's question in 2-4 heavy words at the top, the product drawn big and solid
+(modules.pw_draw), the two numbers that don't add up (the first crossed out, the last in a starburst), and an
+optional 1-3 word punch at the bottom, on a loud background.
 
 Styles (THUMB_STYLE, or a script's thumbnail.style):
     shock   yellow burst behind the product, the price it should be crossed out, the real one in a red starburst
     versus  red half / green half: what it should cost against what it costs, the product between them
     tag     dark board, a giant white price tag with the real price, the product hanging beside it
 
-What goes on it comes from the script's "thumbnail" ({draw, label, old, now, hook, style}), else its product scene
-(the drawing, the first red price, the last green price) and "WHY?!".
+What goes on it comes from the script's "thumbnail" ({title, hook, draw, label, old, now, style}), else its product
+scene: the drawing, the first and the last line with a number in it, each with the line before it as its label.
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ YELLOW = (255, 214, 40)
 WHITE = (255, 255, 255)
 TINT = {"green": (150, 222, 170), "red": (250, 170, 170), "ink": (200, 200, 208)}
 STYLES = ("shock", "versus", "tag")
-PRICE = re.compile(r"[$€£¥]?\s?\d[\d,.]*\s?(¢|%|[kKmMbBT])?")
+DIGIT = re.compile(r"^[$€£¥~≈]?\s?\d")  # a line that IS a figure ("160 marks", "$2.38"), not one with a year in it
 
 
 def bold(px: int) -> ImageFont.FreeTypeFont:
@@ -45,16 +47,44 @@ def fit(text: str, px: int, width: float) -> int:
 
 
 def words(script: dict) -> dict[str, Any]:
-    """What the thumbnail shows: {draw, label, old, now, hook, style}."""
+    """What the thumbnail shows: {title, hook, draw, label, old, old_label, now, now_label, style}."""
     t = dict(script.get("thumbnail") or {})
     product = next(((s.get("product") or {}) for s in script.get("scenes") or [] if s.get("kind") == "product"), {})
-    lines = [bw_brand.pen_line(x) for x in product.get("lines") or []]
-    prices = [ln for ln in lines if PRICE.fullmatch(ln["text"].strip())]
-    old = next((ln["text"] for ln in prices if ln.get("color") == "red"), prices[0]["text"] if len(prices) > 1 else "")
-    now = next((ln["text"] for ln in reversed(prices) if ln.get("color") == "green"), prices[-1]["text"] if prices else "")
-    return {"draw": t.get("draw") or product.get("draw") or "", "label": t.get("label") or product.get("label") or [],
-            "old": t.get("old", old), "now": t.get("now", now), "hook": t.get("hook") or "WHY?!",
+    lines = [bw_brand.pen_line(x)["text"].strip() for x in product.get("lines") or []]
+    numbered = [k for k, ln in enumerate(lines) if DIGIT.search(ln)]
+    label = lambda k: lines[k - 1] if k > 0 and not DIGIT.search(lines[k - 1]) else ""
+    first, last = (numbered[0], numbered[-1]) if len(numbered) > 1 else (None, numbered[0] if numbered else None)
+    title = str(t.get("title") or script.get("question") or script.get("title") or "")
+    return {"title": title.upper(), "hook": str(t.get("hook") or "").upper(),
+            "draw": t.get("draw") or product.get("draw") or "", "label": t.get("label") or product.get("label") or [],
+            "old": t.get("old", lines[first] if first is not None else ""), "old_label": t.get("old_label", label(first) if first is not None else ""),
+            "now": t.get("now", lines[last] if last is not None else ""), "now_label": t.get("now_label", label(last) if last is not None else ""),
             "style": t.get("style") if t.get("style") in STYLES else ""}
+
+
+def lines_of(s: str, px: int, width: float, most: int = 2) -> tuple[list[str], int]:
+    """The words broken into at most `most` lines and the biggest size at which they fit `width`."""
+    words_ = s.split()
+    best: tuple[list[str], int] = ([s], fit(s, px, width))
+    for n in range(2, min(most, len(words_)) + 1):
+        cut = [words_[round(k * len(words_) / n):round((k + 1) * len(words_) / n)] for k in range(n)]
+        rows = [" ".join(r) for r in cut if r]
+        size = min(fit(r, px, width) for r in rows)
+        if size > best[1] * 1.15:
+            best = (rows, size)
+    return best
+
+
+def headline(img: Image.Image, s: str, cy: float, px: int, fill=WHITE, width: float = 980) -> None:
+    """The title's question at the top, in one or two heavy lines."""
+    if not s:
+        return
+    rows, size = lines_of(s, px, width)
+    lead = size * 1.02
+    def draw(g):
+        for k, r in enumerate(rows):
+            text(g, (540, cy - lead * (len(rows) - 1) / 2 + k * lead), r, size, fill, 12)
+    shadowed(img, draw)
 
 
 # --------------------------------------------------------------------------- drawing pieces (all in SS pixels)
@@ -155,20 +185,30 @@ def rays(img: Image.Image, cx: float, cy: float, rgb, n: int = 18, alpha: int = 
 
 def shock(w: dict[str, Any]) -> Image.Image:
     img = radial((255, 232, 92), (255, 160, 0))
-    rays(img, 540, 1000, (255, 255, 255), alpha=55)
-    product(img, w["draw"], (70, 560, 720, 1560), w["label"], "green", angle=9)
-    d = ImageDraw.Draw(img)
+    rays(img, 540, 1050, (255, 255, 255), alpha=55)
+    headline(img, w["title"], 270, 190)
+    product(img, w["draw"], (40, 640, 660, 1600), w["label"], "green", angle=9)
     if w["old"]:
-        px = fit(w["old"], 230, 560)
-        shadowed(img, lambda g: text(g, (800, 470), w["old"], px, INK, 0))
-        strike(ImageDraw.Draw(img), 800, 480, bold(px).getlength(w["old"]) / SS / 2 + 30)
+        px = fit(w["old"], 170, 430)
+        def old(g):
+            if w["old_label"]:
+                text(g, (810, 560), w["old_label"].upper(), fit(w["old_label"].upper(), 64, 420), INK)
+            text(g, (810, 680), w["old"], px, INK, 0)
+        shadowed(img, old, alpha=60)
+        strike(ImageDraw.Draw(img), 810, 690, bold(px).getlength(w["old"]) / SS / 2 + 24, 18)
     if w["now"]:
         def star(g):
-            burst(g, 790, 1060, 270, RED)
-            text(g, (790, 1060), w["now"], fit(w["now"], 250, 400), WHITE, 6)
+            burst(g, 790, 1130, 250, RED)
+            figure, _, unit = w["now"].partition(" ")  # "200B marks": the figure big, the unit under it
+            if unit:
+                px = fit(figure, 200, 320)
+                text(g, (790, 1110), figure, px, WHITE, 6)
+                text(g, (790, 1110 + px * 0.75), unit.upper(), fit(unit.upper(), 70, 260), WHITE, 4)
+            else:
+                text(g, (790, 1135), w["now"], fit(w["now"], 220, 330), WHITE, 6)
         shadowed(img, star)
-    hook = w["hook"].upper()
-    shadowed(img, lambda g: text(g, (540, 1700), hook, fit(hook, 250, 960), WHITE, 14))
+    if w["hook"]:
+        shadowed(img, lambda g: text(g, (540, 1720), w["hook"], fit(w["hook"], 200, 960), WHITE, 14))
     return img
 
 
@@ -177,15 +217,18 @@ def versus(w: dict[str, Any]) -> Image.Image:
     d = ImageDraw.Draw(img)
     d.polygon([(W * 0.62 * SS, 0), (W * SS, 0), (W * SS, H * SS), (W * 0.38 * SS, H * SS)], fill=GREEN)
     d.line([(W * 0.62 * SS, 0), (W * 0.38 * SS, H * SS)], fill=WHITE, width=18 * SS)
-    shadowed(img, lambda g: text(g, (290, 330), "SHOULD BE", fit("SHOULD BE", 110, 500), WHITE, 6))
+    headline(img, w["title"], 230, 170)
+    if w["old_label"]:
+        shadowed(img, lambda g: text(g, (290, 470), w["old_label"].upper(), fit(w["old_label"].upper(), 90, 500), WHITE, 6))
     if w["old"]:
-        shadowed(img, lambda g: text(g, (290, 520), w["old"], fit(w["old"], 230, 520), WHITE, 10))
-    shadowed(img, lambda g: text(g, (800, 1250), "IT'S", 120, WHITE, 6))
+        shadowed(img, lambda g: text(g, (290, 610), w["old"], fit(w["old"], 200, 500), WHITE, 10))
+    product(img, w["draw"], (250, 700, 790, 1280), w["label"], "green", angle=-6)
+    if w["now_label"]:
+        shadowed(img, lambda g: text(g, (780, 1370), w["now_label"].upper(), fit(w["now_label"].upper(), 90, 500), WHITE, 6))
     if w["now"]:
-        shadowed(img, lambda g: text(g, (790, 1470), w["now"], fit(w["now"], 300, 520), YELLOW, 12))
-    product(img, w["draw"], (230, 640, 850, 1400), w["label"], "green", angle=-6)
-    hook = w["hook"].upper()
-    shadowed(img, lambda g: text(g, (540, 1730), hook, fit(hook, 220, 960), WHITE, 14))
+        shadowed(img, lambda g: text(g, (780, 1530), w["now"], fit(w["now"], 240, 520), YELLOW, 12))
+    if w["hook"]:
+        shadowed(img, lambda g: text(g, (540, 1730), w["hook"], fit(w["hook"], 200, 960), WHITE, 14))
     return img
 
 
@@ -211,12 +254,14 @@ def tag(w: dict[str, Any]) -> Image.Image:
     product(img, w["draw"], (20, 980, 560, 1640), w["label"], "green", angle=-10)
     if w["old"]:
         def old(g):
-            text(g, (790, 1330), "NOT", 110, WHITE, 5)
+            if w["old_label"]:
+                text(g, (790, 1330), w["old_label"].upper(), fit(w["old_label"].upper(), 80, 440), WHITE, 5)
             text(g, (790, 1480), w["old"], fit(w["old"], 170, 420), WHITE, 6)
         shadowed(img, old)
         strike(ImageDraw.Draw(img), 790, 1490, bold(fit(w["old"], 170, 420)).getlength(w["old"]) / SS / 2 + 24, 18)
-    hook = w["hook"].upper()
-    shadowed(img, lambda g: text(g, (540, 260), hook, fit(hook, 240, 960), YELLOW, 12))
+    headline(img, w["title"], 250, 180, YELLOW)
+    if w["hook"]:
+        shadowed(img, lambda g: text(g, (540, 1740), w["hook"], fit(w["hook"], 180, 960), WHITE, 12))
     return img
 
 

@@ -272,8 +272,11 @@ Each script is ONE JSON object shaped exactly like the example below:
     "Smaller than Central Park", "elements": [{{"kind": "highlight", "place": "Monaco", "cue": "Monaco"}}]}}.
   * "photo": the lead picture of an English Wikipedia article (free licence, credited automatically).
     {{"kind": "photo", "narration": ..., "photo": "Monte Carlo Casino", "caption": "Monte Carlo Casino"}}.
-- "thumbnail": {{"hook": "HOW?!"}}: 1-3 words in capitals that make someone tap (a question or a shock: "HOW?!",
-  "WAIT, WHAT?", "WHO PAYS?"); the thumbnail shows the product and the two prices from the product scene.
+- the thumbnail is made from the script, so write for it: "question" is the video's question in at most 6 words
+  ("Why is AriZona still 99¢?"), shown big at the top so the thumbnail says what the video is about; the product
+  scene's lines go in pairs, a label then its figure ("Cost in 1922", "160 marks", "Cost in 1923", "200B marks"):
+  the first figure is crossed out and the last one goes in a red starburst, so they must clash.
+  "thumbnail": {{"hook": "WAIT, WHAT?"}} adds 1-3 punch words at the bottom ("HOW?!", "WHO PAYS?").
 - the twist must surprise (a number that flips the story, what the owner said), never a letdown.
 - last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
   (the hand draws the opening again, so the Short loops).
