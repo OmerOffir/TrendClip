@@ -4,49 +4,182 @@
   "description": "AriZona's 23-ounce can cost 99 cents in 1992 and still does. The company spends little on advertising, cut its costs (thinner cans, deliveries at night), and is family owned with no debt, so it sells more cans instead of charging more per can. The twist: the price is printed on the can, yet some stores charge more anyway.",
   "pillar": "everyday prices",
   "seed": 1992,
-  "hashtags": ["arizonaicedtea", "prices", "inflation"],
+  "hashtags": [
+    "arizonaicedtea",
+    "prices",
+    "inflation"
+  ],
   "scenes": [
     {
       "kind": "tag",
       "narration": "Why does this giant can of iced tea still cost 99 cents? It cost 99 cents in 1992, too.",
-      "tag": {"question": ["Why is AriZona", "still 99¢?"], "price": "99¢", "note": "since 1992"},
-      "elements": [{"kind": "icon", "icon": "cup_straw", "x": 880, "y": 600, "size": 170, "cue": "1992"}]
+      "tag": {
+        "question": [
+          "Why is AriZona",
+          "still 99¢?"
+        ],
+        "price": "99¢",
+        "note": "since 1992"
+      },
+      "elements": [
+        {
+          "kind": "icon",
+          "icon": "cup_straw",
+          "x": 880,
+          "y": 600,
+          "size": 170,
+          "cue": "1992"
+        }
+      ]
+    },
+    {
+      "kind": "chart",
+      "narration": "Thirty years of rising prices, and its price line stays flat.",
+      "chart": {
+        "title": "The can's price",
+        "unit": "$",
+        "lines": [
+          {
+            "label": "AriZona",
+            "color": "green",
+            "points": [
+              [
+                "1992",
+                0.99
+              ],
+              [
+                "2002",
+                0.99
+              ],
+              [
+                "2012",
+                0.99
+              ],
+              [
+                "2022",
+                0.99
+              ]
+            ],
+            "end": "99¢"
+          }
+        ]
+      }
     },
     {
       "kind": "board",
       "narration": "Reason one: almost no ads. Other drink giants pay millions for TV commercials. AriZona mostly lets word of mouth do the selling.",
-      "board": {"write": ["Reason 1: no big ads",
-                          {"text": "TV ads: $ millions", "color": "red", "strike": true},
-                          {"text": "Word of mouth", "color": "green"}]},
-      "elements": [{"kind": "icon", "icon": "tv", "cue": "commercials", "x": 300, "y": 1230},
-                   {"kind": "icon", "icon": "megaphone", "cue": "word", "x": 780, "y": 1230}]
+      "board": {
+        "write": [
+          "Reason 1: no big ads",
+          {
+            "text": "TV ads: $ millions",
+            "color": "red",
+            "strike": true
+          },
+          {
+            "text": "Word of mouth",
+            "color": "green"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "kind": "icon",
+          "icon": "tv",
+          "cue": "commercials",
+          "x": 300,
+          "y": 1230
+        },
+        {
+          "kind": "icon",
+          "icon": "megaphone",
+          "cue": "word",
+          "x": 780,
+          "y": 1230
+        }
+      ]
     },
     {
       "kind": "board",
       "narration": "Reason two: it got cheaper to make. The cans got thinner, and trucks deliver at night to skip the traffic.",
-      "board": {"write": ["Reason 2: cut costs",
-                          {"text": "Thinner cans", "color": "green"},
-                          {"text": "Trucks at night", "color": "green"}]},
-      "elements": [{"kind": "icon", "icon": "truck", "cue": "trucks", "x": 300, "y": 1230},
-                   {"kind": "icon", "icon": "moon", "cue": "night", "x": 780, "y": 1230}]
+      "board": {
+        "write": [
+          "Reason 2: cut costs",
+          {
+            "text": "Thinner cans",
+            "color": "green"
+          },
+          {
+            "text": "Trucks at night",
+            "color": "green"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "kind": "icon",
+          "icon": "truck",
+          "cue": "trucks",
+          "x": 300,
+          "y": 1230
+        },
+        {
+          "kind": "icon",
+          "icon": "moon",
+          "cue": "night",
+          "x": 780,
+          "y": 1230
+        }
+      ]
     },
     {
       "kind": "board",
       "narration": "Reason three: no one to pay back. A family owns it, with no debt, so it can sell more cans instead of charging more per can.",
-      "board": {"write": ["Reason 3: no debt",
-                          {"text": "Family owned", "color": "green"},
-                          {"text": "Sell MORE cans", "color": "green"}]},
-      "elements": [{"kind": "icon", "icon": "family", "cue": "family", "x": 300, "y": 1230},
-                   {"kind": "icon", "icon": "chart_up", "cue": "more", "x": 780, "y": 1230}]
+      "board": {
+        "write": [
+          "Reason 3: no debt",
+          {
+            "text": "Family owned",
+            "color": "green"
+          },
+          {
+            "text": "Sell MORE cans",
+            "color": "green"
+          }
+        ]
+      },
+      "elements": [
+        {
+          "kind": "icon",
+          "icon": "family",
+          "cue": "family",
+          "x": 300,
+          "y": 1230
+        },
+        {
+          "kind": "icon",
+          "icon": "chart_up",
+          "cue": "more",
+          "x": 780,
+          "y": 1230
+        }
+      ]
     },
     {
-      "kind": "board",
+      "kind": "compare",
       "narration": "But here's the twist. The 99 cents is printed right on the can. Still, some stores charge more anyway.",
-      "board": {"write": ["The twist",
-                          {"text": "99¢ printed on the can", "color": "green"},
-                          {"text": "Some stores: MORE", "color": "red"}]},
-      "elements": [{"kind": "icon", "icon": "label", "cue": "printed", "x": 300, "y": 1230},
-                   {"kind": "icon", "icon": "store", "cue": "stores", "x": 780, "y": 1230}]
+      "compare": {
+        "title": "The twist",
+        "left": {
+          "label": "On the can",
+          "price": "99¢"
+        },
+        "right": {
+          "label": "Some stores",
+          "price": "MORE"
+        },
+        "winner": "left"
+      }
     },
     {
       "kind": "follow",
@@ -54,20 +187,94 @@
     }
   ],
   "sources": [
-    {"title": "TODAY: Arizona Iced Tea founder on why he's kept the 99-cent price tag (2022)", "url": "https://www.today.com/today/rcna24899"},
-    {"title": "CNBC: AriZona Iced Tea CEO vows to keep 99-cent price tag (2022)", "url": "https://www.cnbc.com/2022/10/13/arizona-iced-tea-ceo-vows-to-keep-99-cent-price-tag.html"},
-    {"title": "Salon: Defying inflation, how AriZona Iced Tea mostly maintains its 99-cent price tag (2024)", "url": "https://www.salon.com/2024/07/07/defying-inflation-how-arizona-iced-tea-mostly-maintains-its-99-cent-price-tag"},
-    {"title": "The Daily Meal: Why does AriZona Iced Tea come so cheap?", "url": "https://www.thedailymeal.com/1254467/arizona-iced-tea-cheap/"},
-    {"title": "Chowhound: The iconic iced tea brand that's kept the same price since 1992", "url": "https://www.chowhound.com/1963674/why-arizona-tea-will-not-change-price-99-cents"}
+    {
+      "title": "TODAY: Arizona Iced Tea founder on why he's kept the 99-cent price tag (2022)",
+      "url": "https://www.today.com/today/rcna24899"
+    },
+    {
+      "title": "CNBC: AriZona Iced Tea CEO vows to keep 99-cent price tag (2022)",
+      "url": "https://www.cnbc.com/2022/10/13/arizona-iced-tea-ceo-vows-to-keep-99-cent-price-tag.html"
+    },
+    {
+      "title": "Salon: Defying inflation, how AriZona Iced Tea mostly maintains its 99-cent price tag (2024)",
+      "url": "https://www.salon.com/2024/07/07/defying-inflation-how-arizona-iced-tea-mostly-maintains-its-99-cent-price-tag"
+    },
+    {
+      "title": "The Daily Meal: Why does AriZona Iced Tea come so cheap?",
+      "url": "https://www.thedailymeal.com/1254467/arizona-iced-tea-cheap/"
+    },
+    {
+      "title": "Chowhound: The iconic iced tea brand that's kept the same price since 1992",
+      "url": "https://www.chowhound.com/1963674/why-arizona-tea-will-not-change-price-99-cents"
+    }
   ],
   "claims": [
-    {"claim": "The 23-ounce can cost 99 cents in 1992 and still does.", "sources": [1, 2, 5]},
-    {"claim": "AriZona relies on word of mouth rather than big advertising campaigns, while other drink brands spend millions on ads (a 30-second Super Bowl ad is about $6.5 million).", "sources": [2, 4]},
-    {"claim": "The cans were made thinner (about 40% less aluminum) to hold costs down.", "sources": [1, 4]},
-    {"claim": "Trucks deliver at night / overnight to avoid daytime traffic.", "sources": [1, 4]},
-    {"claim": "The company is family owned (Don Vultaggio and his sons) and debt-free.", "sources": [1, 3, 5]},
-    {"claim": "It offsets rising costs by selling more cans (volume) rather than raising the price.", "sources": [2, 5]},
-    {"claim": "The 99-cent price is printed on the can.", "sources": [3, 4, 5]},
-    {"claim": "Some stores charge more than 99 cents anyway ($1.59 and up, some up to $2).", "sources": [3, 5]}
+    {
+      "claim": "The 23-ounce can cost 99 cents in 1992 and still does.",
+      "sources": [
+        1,
+        2,
+        5
+      ]
+    },
+    {
+      "claim": "The price stayed at 99 cents for 30 years (1992-2022) while prices in general rose.",
+      "sources": [
+        1,
+        2,
+        5
+      ]
+    },
+    {
+      "claim": "AriZona relies on word of mouth rather than big advertising campaigns, while other drink brands spend millions on ads (a 30-second Super Bowl ad is about $6.5 million).",
+      "sources": [
+        2,
+        4
+      ]
+    },
+    {
+      "claim": "The cans were made thinner (about 40% less aluminum) to hold costs down.",
+      "sources": [
+        1,
+        4
+      ]
+    },
+    {
+      "claim": "Trucks deliver at night / overnight to avoid daytime traffic.",
+      "sources": [
+        1,
+        4
+      ]
+    },
+    {
+      "claim": "The company is family owned (Don Vultaggio and his sons) and debt-free.",
+      "sources": [
+        1,
+        3,
+        5
+      ]
+    },
+    {
+      "claim": "It offsets rising costs by selling more cans (volume) rather than raising the price.",
+      "sources": [
+        2,
+        5
+      ]
+    },
+    {
+      "claim": "The 99-cent price is printed on the can.",
+      "sources": [
+        3,
+        4,
+        5
+      ]
+    },
+    {
+      "claim": "Some stores charge more than 99 cents anyway ($1.59 and up, some up to $2).",
+      "sources": [
+        3,
+        5
+      ]
+    }
   ]
 }

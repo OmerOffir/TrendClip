@@ -429,6 +429,14 @@ def video_path(key: str, out_dir: Path | None = None) -> Path | None:
 # --------------------------------------------------------------------------- making a video
 
 
+def with_credits(text: str, spec: bw_render.Spec) -> str:
+    """The description with the credits of the Wikimedia pictures the video shows (photo scenes, modules.bw_photos)."""
+    from modules import bw_photos
+
+    credits = bw_photos.credits([s.opts["_photo"] for s in spec.scenes if s.kind == "photo" and s.opts.get("_photo")])
+    return f"{text}\n\n{credits}" if credits else text
+
+
 def record(text: str, out: Path, progress=lambda m: None) -> list[bw_render.Word]:
     """The narration in the channel's voice: Kokoro (the hub's) when installed, else an Edge voice."""
     from trendclip import kokoro_voice
@@ -479,7 +487,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, float(setting("PW_MUSIC_VOLUME", "0.07")),
                      lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle())
     info = {
-        "key": key, "title": script["title"], "question": script.get("question", ""), "description": description(script),
+        "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:6],
         "sources": script.get("sources", []), "claims": script.get("claims", []), "duration_seconds": round(spec.duration, 2),
         "words": words(script["narration"]), "voice": setting("PW_TTS_VOICE", VOICE), "music": music.stem if music else None,

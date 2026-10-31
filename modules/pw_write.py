@@ -27,7 +27,8 @@ from trendclip import llm_json
 KINDS = ("one", "week")
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 90, 135  # about 35-50 s with the channel's voice
-SCENE_KINDS = ("tag", "board", "follow")
+SCENE_KINDS = ("tag", "board", "number", "compare", "chart", "map", "photo", "follow")
+MIDDLE = ("board", "number", "compare", "chart", "map", "photo")  # what goes between the tag and the follow line
 PILLARS = ("everyday prices", "countries and money", "business tricks", "money history")
 # icons a script may put on a board (Noto emoji names, modules.bw_fx.ICONS and modules.pw_render.ICONS)
 ICONS = ("cup_straw", "tea", "tv", "moon", "receipt", "label", "store", "money_wings", "bank", "handshake", "megaphone",
@@ -147,17 +148,66 @@ def format_problems(script: dict) -> list[str]:
                 text = line.get("text", "") if isinstance(line, dict) else str(line)
                 if len(text) > 26:
                     problems.append(f"scene {k}: board line too long for the board (26 characters at most): {text!r}")
+        problems += [f"scene {k}: {p}" for p in scene_problems(s)]
         for el in s.get("elements") or []:
             if el.get("kind") == "icon" and el.get("icon") not in ICONS:
                 problems.append(f"scene {k}: unknown icon {el.get('icon')!r}")
     if scenes and scenes[-1].get("kind") == "follow" and "follow" not in str(scenes[-1].get("narration", "")).lower():
         problems.append("the last scene says the follow line (\"Follow for tomorrow's why.\")")
-    if sum(1 for s in scenes if s.get("kind") == "board") < 3:
-        problems.append("2-3 reasons and a twist need at least 3 board scenes")
+    middle = [s.get("kind") for s in scenes[1:-1]]
+    if len(middle) < 3:
+        problems.append("2-3 reasons and a twist need at least 3 scenes between the tag and the follow line")
+    if middle and all(k == "board" for k in middle):
+        problems.append("vary the pictures: at least one number, compare, chart, map or photo scene, not only boards")
     for src in script.get("sources") or []:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
     return problems
+
+
+def _short(text: Any, most: int) -> bool:
+    return 0 < len(str(text or "")) <= most
+
+
+def scene_problems(s: dict) -> list[str]:
+    """What one of the drawn, map or photo scenes needs to be drawn well."""
+    kind, o = s.get("kind"), s.get(s.get("kind") or "") or {}
+    out = []
+    if kind == "number":
+        if not _short(o.get("to"), 10):
+            out.append("number.to is the big figure, 10 characters at most (\"$2.27\", \"100 trillion\" won't fit: \"$100T\")")
+        if o.get("from") and not _short(o.get("from"), 10):
+            out.append("number.from is 10 characters at most")
+    elif kind == "compare":
+        for side in ("left", "right"):
+            x = o.get(side) or {}
+            if not _short(x.get("label"), 14) or not _short(x.get("price"), 8):
+                out.append(f"compare.{side} needs label (14 characters at most) and price (8 at most)")
+        if o.get("winner", "left") not in ("left", "right"):
+            out.append("compare.winner is left or right")
+    elif kind == "chart":
+        lines = o.get("lines") or []
+        if not 1 <= len(lines) <= 2:
+            out.append("chart.lines has 1 or 2 lines")
+        for ln in lines:
+            pts = ln.get("points") or []
+            if not 2 <= len(pts) <= 8 or not all(isinstance(p, list) and len(p) >= 2 and isinstance(p[1], (int, float)) for p in pts):
+                out.append("each chart line has 2-8 points [label, number]")
+    elif kind == "map":
+        focus = s.get("focus") or []
+        if not 1 <= len(focus) <= 4:
+            out.append("a map scene names 1-4 places in focus")
+        else:
+            try:
+                from modules import bw_geo
+
+                out += [f"no such place on the map: {name}" for name in focus if bw_geo.resolve(str(name)) is None]
+            except Exception:  # noqa: BLE001 - no map data here: the hub checks it when it draws
+                pass
+    elif kind == "photo":
+        if not str(s.get("photo") or "").strip():
+            out.append("a photo scene names the English Wikipedia article whose picture it shows (photo)")
+    return out
 
 
 def problems_of(script: dict) -> list[str]:
@@ -185,11 +235,25 @@ Each script is ONE JSON object shaped exactly like the example below:
 - scene 1, kind "tag": the question plus a shocking fact in the first 2 seconds. tag.question is 1-3 short lines
   written on a hand-drawn price tag; tag.price is the big red number above it (a price, an amount, a year); tag.note
   a few words under it.
-- then 3-4 scenes of kind "board": 2-3 reasons, each drawn on the whiteboard, then the twist. board.write is 2-4
-  lines, the first a short title ("Reason 1: ..."), each line at most 26 characters. A line may be
-  {{"text": ..., "color": "green" | "red", "strike": true}}: green for money in, red for cost, strike crosses it out.
-  Up to 2 elements of kind "icon" per board, at x 300 and x 780, y 1230, each with a "cue" word from the narration.
-  Icons: {", ".join(ICONS)}.
+- then 3-5 scenes: 2-3 reasons, each drawn on the whiteboard, then the twist. Mix the kinds so no two videos look
+  alike, and use at least one that isn't a board:
+  * "board": board.write is 2-4 lines, the first a short title ("Reason 1: ..."), each at most 26 characters. A line
+    may be {{"text": ..., "color": "green" | "red", "strike": true}}: green for money in, red for cost, strike crosses
+    it out. Up to 2 elements of kind "icon" per board, at x 300 and x 780, y 1230, each with a "cue" word from the
+    narration. Icons: {", ".join(ICONS)}.
+  * "number": a big figure that counts up as it is said. {{"kind": "number", "narration": ..., "number": {{"label":
+    "If it rose with inflation", "from": "99¢", "to": "$2.27", "note": "BLS inflation calculator"}}}} ("from" may be
+    left out; figures at most 10 characters, so "$100T" not "100 trillion dollars").
+  * "compare": two price tags side by side, the winner circled. {{"kind": "compare", "narration": ..., "compare":
+    {{"title": "Same tea, two prices", "left": {{"label": "On the can", "price": "99¢"}}, "right": {{"label":
+    "Some stores", "price": "$1.59"}}, "winner": "left"}}}} (labels at most 14 characters, prices at most 8).
+  * "chart": a hand-drawn line chart. {{"kind": "chart", "narration": ..., "chart": {{"title": "...", "unit": "$",
+    "lines": [{{"label": "Bread", "color": "red", "points": [["1990", 0.7], ["2020", 2.5]], "end": "$2.50"}}]}}}}
+    (1-2 lines, 2-8 points each, real numbers from the sources).
+  * "map": a satellite map of real places. {{"kind": "map", "narration": ..., "focus": ["Monaco"], "headline":
+    "Smaller than Central Park", "elements": [{{"kind": "highlight", "place": "Monaco", "cue": "Monaco"}}]}}.
+  * "photo": the lead picture of an English Wikipedia article (free licence, credited automatically).
+    {{"kind": "photo", "narration": ..., "photo": "Monte Carlo Casino", "caption": "Monte Carlo Casino"}}.
 - last scene, kind "follow", narration exactly "Follow for tomorrow's why."
 - "sources": 2 or more real pages with working links (news, official, academic; Wikipedia only to find others).
   "claims": every fact the narration states, each with the numbers of 2 or more sources that support it.

@@ -244,3 +244,42 @@ def test_the_hold_stops_making_and_uploading_until_its_day(tmp_path, monkeypatch
                                                          "fromisoformat": staticmethod(lambda s: datetime.fromisoformat(s).date())}))
     with pytest.raises(publish.PublishError, match="on hold"):
         pw_channel.upload("2026-11-01_1900", youtube=object(), out_dir=tmp_path)
+
+
+# --------------------------------------------------------------------------- the drawn scenes
+
+
+def test_number_compare_and_chart_scenes(monkeypatch):
+    for name in ("INK", "BLUE", "RED", "GREEN"):
+        monkeypatch.setattr(bw_brand, name, getattr(bw_brand, name))
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    assert pw_render.number_parts("$2.27") == ("$", 2.27, "", 2, False)
+    assert pw_render.number_parts("$190,000")[1:] == (190000.0, "", 0, True)
+    number = bw_render.Scene(kind="number", narration="a b", start=0.0, end=4.0,
+                             opts={"number": {"label": "If it rose with inflation", "from": "99¢", "to": "$2.27"}})
+    drawn = pw_render.Drawn(number)
+    big = next(it for it in drawn.items if "count" in it)
+    assert big["count"]["from"] == 99.0 and pw_render.counted(big, big["at"]).startswith("$99")  # 99¢ counts up from 99
+    assert pw_render.counted(big, 9.0) == "$2.27" and drawn.frame(2.0).size == (bw_render.W, bw_render.H)
+    compare = bw_render.Scene(kind="compare", narration="a", start=0.0, end=3.0, opts={"compare": {
+        "title": "T", "left": {"label": "On the can", "price": "99¢"}, "right": {"label": "Stores", "price": "$1.59"}, "winner": "left"}})
+    texts = {it["text"]: it["rgb"] for it in pw_render.Drawn(compare).items if it["kind"] == "write"}
+    assert texts["99¢"] == pw_render.GREEN and texts["$1.59"] == pw_render.RED and "vs" in texts
+    chart = bw_render.Scene(kind="chart", narration="a", start=0.0, end=3.0, opts={"chart": {
+        "title": "T", "lines": [{"label": "Tea", "points": [["1992", 0.99], ["2022", 0.99]], "end": "99¢"}]}})
+    assert "Tea 99¢" in [it["text"] for it in pw_render.Drawn(chart).items if it["kind"] == "write"]
+
+
+def test_a_missing_photo_becomes_a_whiteboard_and_the_rules_check_the_scenes():
+    from modules import pw_write
+
+    spec = bw_render.Spec(scenes=[bw_render.Scene(kind="card", narration="x", title="Monte Carlo Casino")], words=[])
+    pw_render.restyle(spec)
+    assert spec.scenes[0].kind == "board" and spec.scenes[0].opts["board"]["write"] == ["Monte Carlo Casino"]
+    assert pw_write.scene_problems({"kind": "number", "number": {"to": "100 trillion dollars"}})
+    assert pw_write.scene_problems({"kind": "compare", "compare": {"left": {"label": "a", "price": "1"}, "right": {}}})
+    assert pw_write.scene_problems({"kind": "chart", "chart": {"lines": [{"points": [["1992", "x"]]}]}})
+    assert pw_write.scene_problems({"kind": "photo"}) and not pw_write.scene_problems({"kind": "photo", "photo": "Monaco"})
+    only_boards = {**_script(), "scenes": [s for s in _script()["scenes"] if s["kind"] in ("tag", "board", "follow")]}
+    assert any("vary the pictures" in p for p in pw_write.format_problems(only_boards))
