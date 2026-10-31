@@ -291,14 +291,16 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
     to: str = Field("", description="line / arrow: where it ends.")
     value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W).")
     text: str = Field("", description="A short label, 1-4 words (stamp: 1-2 words).")
     color: str = Field("a", description="a | b | c | gold | red | white")
     cue: str = Field("", description="The word of this scene's narration it appears on.")
-    flag: str = Field("", description="highlight / pole: the flag's Wikimedia Commons file, e.g. 'Flag of Canada.svg'.")
+    flag: str = Field("", description="highlight / pole: the flag's Wikimedia Commons file, e.g. 'Flag of Canada.svg'; "
+                                       "transfer: the new owner's flag.")
+    from_flag: str = Field("", description="transfer: the old owner's flag (give both flags or neither).")
     icon: str = Field("", description="icon / route: one name from the icon list.")
     points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
 
@@ -362,7 +364,10 @@ must be the whole narration.
   icon (a 3D picture that pops in: "icon" from the list below; with a place it stands on that place, else the
   layout places it), pole (a waving flag on a pole: "flag"; good for who claimed or owned something, and on cards),
   route (a path drawn place by place through "points", e.g. a road, a voyage, an army's march; "icon" can ride
-  along it, like car, ship, canoe, horse, train).
+  along it, like car, ship, canoe, horse, train), transfer (a place changing hands: it shows in the old owner's
+  "from_flag" from the scene's start, then on the cue word the new owner's "flag" wipes over it; "color" is the new
+  owner's letter, "text" an optional 1-3 word label like "SOLD 1867". Use it whenever the narration says a place was
+  sold, swapped, ceded, conquered or handed over; give both flags or neither).
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
   flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
   flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name of
@@ -660,6 +665,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: unknown icon {e.icon!r} (use a name from the icon list)")
             if e.kind == "pole" and not e.flag.strip():
                 problems.append(f"scene {i}: a pole needs a flag")
+            if e.kind == "transfer" and (not e.place.strip() or bool(e.flag.strip()) != bool(e.from_flag.strip())):
+                problems.append(f"scene {i}: a transfer needs a place and both flags (from_flag and flag) or neither")
     if stamps > 1:
         problems.append(f"{stamps} stamps (at most one)")
     spec = bw_render.spec_from_dict(to_spec_dict(draft), [])
@@ -701,7 +708,8 @@ def series_note(topic: Topic) -> str:
     if not series:
         return ""
     return (f'This Short is the next episode of the channel\'s numbered series "{series}" ({bw_series.SERIES[series]}). '
-            f"Viewers follow the series, so make the weirdness of the map the hook. Keep the title the plain question: "
+            f"Viewers follow the series, so make the weirdness of the map the hook. {bw_series.HINTS.get(series, '')} "
+            f"Keep the title the plain question: "
             f'never write "{series}" or an episode number in it (the channel adds "| {series} #N" at the upload).')
 
 
@@ -836,8 +844,12 @@ def _finish_draft(client, model: str, prompt: str, draft: "Draft", fixes: dict[s
 def description(script: dict[str, Any], handle: str = "") -> str:
     """The YouTube description: the question, the short answer, the sources, the map credit, hashtags."""
     tags = list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps", "shorts"]))[:7]
-    lines = [script.get("question", ""), "", script.get("description", ""), "", "Sources:"]
-    lines += [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
+    lines = [script.get("question", ""), "", script.get("description", "")]
+    if script.get("kind") == "whatif":  # modules.bw_whatif: no sources to list, and it says it is a guess
+        lines += ["", "A what-if: the real history up to the turning point, then one possible guess at what might have "
+                  "happened. Nobody knows for sure."]
+    else:
+        lines += ["", "Sources:"] + [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
     if script.get("look", "satellite") == "satellite":
         lines += ["", "Maps: NASA Blue Marble and Natural Earth (public domain). Flags: Wikimedia Commons. Icons: Noto Emoji "
                   "by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0). No AI-generated images."]

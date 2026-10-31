@@ -41,7 +41,8 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
      "headline": "2-6 words", "elements": [
        {"kind": "highlight", "place": "Canada", "flag": "Flag of Canada.svg", "color": "b", "cue": "Canada"},
        {"kind": "route", "points": ["Warroad", "Northwest Angle"], "icon": "car", "color": "gold", "cue": "drive"},
-       {"kind": "icon", "icon": "money_bag", "cue": "paid"}]},
+       {"kind": "icon", "icon": "money_bag", "cue": "paid"},
+       {"kind": "transfer", "place": "Alaska", "from_flag": "Flag of Russia.svg", "flag": "Flag of the United States.svg", "text": "Sold 1867", "cue": "sold"}]},
     {"kind": "card", "narration": "Next sentence.", "kicker": "Treaty of Paris", "title": "1783",
      "subtitle": "one short line", "elements": [
        {"kind": "pole", "flag": "Flag of the United Kingdom.svg", "cue": "British"}]},
@@ -57,8 +58,8 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
 }
 Scene kinds: map | card | board | photo. Board fields: board_write, board_draw. Photo fields: photo (a Wikipedia article), caption. The mascot: ask, react (any scene).
 Element fields: kind (highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole |
-route), place, to (line / arrow: where it ends), value (parallel / meridian: the degrees), text (a short label),
-color (a | b | c | gold | red | white), cue, flag, icon, points. Leave out the fields an element doesn't use."""
+route | transfer), place, to (line / arrow: where it ends), value (parallel / meridian: the degrees), text (a short label),
+color (a | b | c | gold | red | white), cue, flag, from_flag (transfer: the old owner's flag), icon, points. Leave out the fields an element doesn't use."""
 
 FACTS_FORMAT = """ANSWER FORMAT
 Answer with ONLY one JSON object (no text before or after it, no code fence):

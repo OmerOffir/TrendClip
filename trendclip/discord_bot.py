@@ -2486,6 +2486,20 @@ async def bw_status_cmd(interaction: discord.Interaction) -> None:
     ]))
 
 
+@bw_group.command(name="country", description="Borderline Why: \"Why is <country> shaped like this?\", made next (Shaped Like This)")
+@app_commands.describe(country="The country, e.g. Chile")
+async def bw_country_cmd(interaction: discord.Interaction, country: str) -> None:
+    from modules import bw_channel, bw_topics
+
+    await interaction.response.defer(thinking=True)
+    try:
+        topic = await asyncio.to_thread(bw_topics.add_country, bw_channel.out_root(), country)
+    except ValueError as err:
+        return await reply(interaction, f"❌ {err}")
+    await reply(interaction, f"📺 Added **{topic.question}** (Wikipedia: {topic.article}): it is the next Borderline Why topic, "
+                             "a Shaped Like This episode.")
+
+
 @bw_group.command(name="make", description="Make the next Borderline Why video now (topic → research → script → maps)")
 async def bw_make_cmd(interaction: discord.Interaction) -> None:
     from modules import bw_channel

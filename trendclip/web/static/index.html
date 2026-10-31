@@ -305,6 +305,34 @@
         <span class="hint" id="bwAddStatus"></span>
       </form>
     </section>
+    <section class="card">
+      <div class="card-head">
+        <div>
+          <h2>📺 Shaped Like This: add a country</h2>
+          <span class="hint">"Why is &lt;country&gt; shaped like this?", made next as the series' next episode. The research starts from its Wikipedia article about its borders or geography</span>
+        </div>
+      </div>
+      <form class="bw-add bw-add-one" id="bwCountry">
+        <input type="text" id="bwCountryName" placeholder="Chile" required minlength="2" maxlength="80" aria-label="Country" />
+        <button type="submit" class="btn-primary">Add</button>
+        <span class="hint" id="bwCountryStatus"></span>
+      </form>
+    </section>
+    <section class="card" id="bwWhatIf">
+      <div class="card-head">
+        <div>
+          <h2>🔮 What if…? (your own LLM)</h2>
+          <span class="hint">Type a what-if, copy the prompt into any LLM, paste its JSON back. A script that passes the check goes to the queue, so the next slot makes it. The real history is told straight, the rest as a guess; the description says so</span>
+        </div>
+      </div>
+      <div id="bwWhatIfError" class="banner banner-error" hidden></div>
+      <form class="bw-add" id="bwWhatIfStart">
+        <input type="text" id="bwWhatIfQuestion" placeholder="What if Alaska was still Russian?" required minlength="4" maxlength="140" aria-label="What-if question" />
+        <button type="submit" class="btn-primary">Get the prompt</button>
+        <select id="bwWhatIfSessions" aria-label="Earlier what-ifs"><option value="">Earlier what-ifs…</option></select>
+      </form>
+      <div class="bw-w" id="bwWhatIfSession"></div>
+    </section>
     <section class="card llm-topics" data-llm-topics="/api/borderlinewhy/llm-topics" data-refresh="bwTopicsRefresh">
       <div class="card-head">
         <div>
@@ -1130,6 +1158,7 @@
   <script src="/static/find.js"></script>
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
+  <script src="/static/bwwhatif.js"></script>
   <script src="/static/bwweek.js"></script>
   <script src="/static/bwlong.js"></script>
   <script src="/static/gamermanual.js"></script>

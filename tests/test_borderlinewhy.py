@@ -1282,3 +1282,103 @@ def test_check_keeps_the_series_out_of_the_title(world):
     draft = _draft()
     draft.title = "Why does Minnesota have a notch? | Weird Borders #3"
     assert any("series name" in p for p in bw_script.check(draft, _research(), _find(world)))
+
+
+# --------------------------------------------------------------------------- Shaped Like This, transfers, what-ifs
+
+from modules import bw_whatif  # noqa: E402
+
+
+def test_shaped_like_this_series_and_rotation(monkeypatch):
+    monkeypatch.delenv("BW_SERIES_EVERY", raising=False)
+    assert bw_series.classify("Why is Chile shaped like this?", "Geography of Chile") == "Shaped Like This"
+    seeds = {t.article: t.episode_of for t in bw_topics.all_topics(bw_topics.TopicState())}
+    assert seeds["Geography of Chile"] == "Shaped Like This" and seeds["Lesotho"] == "Weird Borders"
+    assert bw_series.due(["Weird Borders"]) == ""  # the last one was an episode
+    assert bw_series.due(["", "Weird Borders"]) == "Shaped Like This"  # the series made least lately takes its turn
+    assert bw_series.due(["", "Shaped Like This", "Weird Borders"]) == "Weird Borders"
+    assert bw_series.comment_text("Shaped Like This") == "Which country's shape should I explain next?"
+    assert bw_series.comment_text("Weird Borders") == "Which weird border should I cover next?"
+    assert "map next" in bw_series.comment_text("", "whatif")
+    note = bw_script.series_note(bw_topics.Topic(question="Why is Chile shaped like this?", article="Geography of Chile"))
+    assert '"Shaped Like This"' in note and "board_draw" in note
+
+
+def test_add_a_country(tmp_path):
+    exists = {"Geography of Chile"}
+    topic = bw_topics.add_country(tmp_path, " chile ", check=lambda t: t if t in exists else None, on_map=lambda n: object())
+    assert topic.question == "Why is Chile shaped like this?" and topic.article == "Geography of Chile"
+    assert bw_topics.next_topic(tmp_path).article == "Geography of Chile"  # added by hand: made next
+    assert bw_topics.next_topic(tmp_path).episode_of == "Shaped Like This"
+    with pytest.raises(ValueError, match="not a country"):
+        bw_topics.add_country(tmp_path, "Atlantis", check=lambda t: t, on_map=lambda n: None)
+
+
+def test_a_transfer_is_the_old_owner_then_the_new():
+    spec = bw_render.spec_from_dict({"title": "t", "scenes": [{"kind": "map", "narration": "Russia sold Alaska.", "elements": [
+        {"kind": "transfer", "place": "Alaska", "from_flag": "Flag of Russia.svg", "flag": "Flag of the United States.svg",
+         "text": "Sold 1867", "cue": "sold", "color": "a"}]}]}, _words("Russia sold Alaska."))
+    old, new = spec.scenes[0].elements
+    assert (old.kind, old.place, old.opts["flag"], old.opts["_side"], old.cue) == ("highlight", "Alaska", "Flag of Russia.svg", "from", "")
+    assert (new.opts["flag"], new.opts["_side"], new.cue, new.text, new.color) == ("Flag of the United States.svg", "to", "sold", "Sold 1867", "a")
+    assert old.color == "b"
+    fills = {}
+    feat = bw_geo.Feature("region", "Alaska")
+    bw_render.add_fill(fills, feat, (200, 0, 0), 1.0)
+    bw_render.add_fill(fills, feat, (0, 0, 200), 0.0)  # not there yet: the old owner stays
+    assert fills[id(feat)] == ((200, 0, 0), 1.0)
+    bw_render.add_fill(fills, feat, (0, 0, 200), 0.5)
+    assert fills[id(feat)] == ((100, 0, 100), 1.0)
+
+
+def test_check_wants_both_transfer_flags(world):
+    draft = _draft()
+    draft.scenes[0].elements.append(bw_script.ElementDraft(kind="transfer", place="Minnesota", flag="Flag of the United States.svg"))
+    assert any("both flags" in p for p in bw_script.check(draft, _research(), _find(world)))
+    draft.scenes[0].elements[-1].from_flag = "Flag of the United Kingdom.svg"
+    assert bw_script.check(draft, _research(), _find(world)) == []
+
+
+def _whatif_json(**changes):
+    draft = _draft()
+    draft.title = "What if Minnesota had no notch?"
+    draft.claims = []
+    draft.scenes[4].narration = "So the border might have run straight, and Minnesota would probably have no notch."
+    draft.scenes[4].elements.append(bw_script.ElementDraft(kind="transfer", place="Minnesota", color="b", cue="border"))
+    for k, v in changes.items():
+        setattr(draft, k, v)
+    return draft.model_dump_json()
+
+
+def test_a_what_if_from_prompt_to_queue_to_video(settings, tmp_path, world, monkeypatch):
+    s = bw_whatif.start("Alaska was still Russian", tmp_path)
+    assert s["question"] == "What if Alaska was still Russian?" and s["step"] == "write"
+    assert "WHAT IF episode" in s["prompt"] and "transfer" in s["prompt"] and '"claims": [],' in s["prompt"]
+    bad = bw_whatif.answer(s["id"], _whatif_json(title="Why does Minnesota have a notch?"), tmp_path, find=_find(world))
+    assert bad["step"] == "fix" and any('start with "What if"' in p for p in bad["problems"]) and "missed" not in bad["prompt"]
+    good = bw_whatif.answer(s["id"], _whatif_json(), tmp_path, find=_find(world))
+    assert good["step"] == "ready", good["problems"]
+    queued = bw_whatif.queue(s["id"], tmp_path)
+    assert queued["step"] == "queued"
+    path = bw_channel.queued_scripts(tmp_path)[0]
+    script = json.loads(path.read_text())
+    assert script["kind"] == "whatif" and script["series"] == "" and script["sources"] == []
+    assert any(e["kind"] == "transfer" for sc in script["scenes"] for e in sc["elements"])
+
+    def voice(text, out, progress):
+        out.write_bytes(b"mp3")
+        ws = _words(text)
+        ws[-1] = bw_render.Word(ws[-1].text, 45 - bw_render.TAIL - 0.3, 45 - bw_render.TAIL)
+        return ws
+
+    job = bw_channel.job_for(settings, Day(2026, 11, 2), "14:30")
+    info = bw_channel.make(settings, job, out_dir=tmp_path, script={**_spec_dict(), **script}, voice=voice,
+                           render=lambda spec, v, out, *a: out.write_bytes(b"\x00"))
+    assert info["check"] == [] and info["kind"] == "whatif" and info["series"] == ""  # no sources needed, no number
+    assert "Nobody knows for sure" in info["description"] and "Sources:" not in info["description"]
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
+    _fake_upload(monkeypatch, uploads := [])
+    yt = FakeComments()
+    bw_channel.upload(job.key, youtube=yt, out_dir=tmp_path)
+    assert uploads[0].title == "What if Minnesota had no notch?"
+    assert yt.comments[0]["snippet"]["topLevelComment"]["snippet"]["textOriginal"] == bw_series.COMMENTS["whatif"]

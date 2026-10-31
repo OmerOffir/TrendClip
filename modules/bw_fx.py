@@ -933,7 +933,7 @@ class FxRenderer(Renderer):
                     if not self.tiny(cam, el.feature):
                         flags.append(el)
                 else:
-                    fills[id(el.feature)] = (self.color(el.color), ramp(t, el.at))
+                    bw_render.add_fill(fills, el.feature, self.color(el.color), ramp(t, el.at))
         if globe:
             img = globe_image(cam).convert("RGBA")
             self.vectors(img, cam, fills)
@@ -1158,8 +1158,16 @@ class FxRenderer(Renderer):
             self.sketch_on_map(ov, cam, el, t)
         elif el.kind == "highlight" and el.opts.get("flag"):
             if el.feature is not None and self.tiny(cam, el.feature):
-                same = [e for e in scene.elements if e.kind == "highlight" and e.opts.get("flag") and e.feature is el.feature]
+                same = [e for e in scene.elements if e.kind == "highlight" and e.opts.get("flag") and e.feature is el.feature
+                        and (e.opts.get("_side") != "from" or e is el)]
                 x, y = cam.pt(*el.feature.label_point())
+                if el.opts.get("_side") == "from":  # a transfer: the old owner's badge gives way to the new one's
+                    new = next((e for e in scene.elements if e.opts.get("_handover") == el.opts["_handover"] and e.opts.get("_side") == "to"), None)
+                    if new is not None and t >= new.at:
+                        return
+                    same = [e for e in same if e.opts.get("_side") != "to"]
+                else:
+                    same = [e for e in same if e.opts.get("_side") != "from"]
                 x += (same.index(el) - (len(same) - 1) / 2) * 210
                 self.flag_badge(ov, (x, y), el.opts["flag"], t, el.at)
                 if el.text:

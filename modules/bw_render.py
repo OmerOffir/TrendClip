@@ -68,7 +68,8 @@ BOLD_FONTS = ("Impact.ttf", "impact.ttf", "Anton-Regular.ttf", "DejaVuSans-Bold.
 ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.ttf"  # SIL Open Font License
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
-ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route")
+ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
+                 "transfer")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
 NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
@@ -559,7 +560,7 @@ class Renderer:
         fills: dict[int, tuple[tuple[int, int, int], float]] = {}
         for el in scene.elements:
             if el.kind == "highlight" and el.feature is not None and not el.feature.is_line and el.feature.parts:
-                fills[id(el.feature)] = (self.color(el.color), ramp(t, el.at))
+                add_fill(fills, el.feature, self.color(el.color), ramp(t, el.at))
         img = self.base(cam, fills)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
@@ -832,15 +833,46 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     return out
 
 
+def add_fill(fills: dict[int, tuple[tuple[int, int, int], float]], feat: bw_geo.Feature, rgb: tuple[int, int, int], a: float) -> None:
+    """A highlight's fill; a later one of the same place (a transfer's new owner) blends over the earlier as it fades in."""
+    key = id(feat)
+    if key not in fills:
+        fills[key] = (rgb, a)
+        return
+    if a <= 0:
+        return
+    (r0, g0, b0), a0 = fills[key]
+    fills[key] = ((int(r0 + (rgb[0] - r0) * a), int(g0 + (rgb[1] - g0) * a), int(b0 + (rgb[2] - b0) * a)), max(a0, a))
+
+
+def _elements(raw: list[dict[str, Any]], el_keys: set[str]) -> list[Element]:
+    """A scene's elements; a transfer becomes the place in its old owner's flag / colour from the scene's start,
+    then the new owner's wiping over it on the cue word."""
+    out = []
+    for n, e in enumerate(raw):
+        opts = {k: v for k, v in e.items() if k not in el_keys and v not in (None, "", [])}
+        color = e.get("color") or "a"
+        if e["kind"] == "transfer":
+            old_flag, new_flag = opts.pop("from_flag", ""), opts.pop("flag", "")
+            old = Element(kind="highlight", place=e.get("place", ""), color="b" if color == "a" else "a",
+                          opts={**({"flag": old_flag} if old_flag else {}), "_handover": n, "_side": "from"})
+            new = Element(kind="highlight", place=e.get("place", ""), color=color, cue=e.get("cue", ""), text=e.get("text", ""),
+                          opts={**opts, **({"flag": new_flag} if new_flag else {}), "_handover": n, "_side": "to"})
+            out += [old, new]
+            continue
+        opts.pop("from_flag", None)
+        out.append(Element(kind=e["kind"], place=e.get("place", ""), to=e.get("to", ""), value=e.get("value"), text=e.get("text", ""),
+                           color=color, cue=e.get("cue", ""), opts=opts))
+    return out
+
+
 def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
     """A Spec from the script JSON (modules.bw_script) and the voice's words."""
     scenes = []
     el_keys = {"kind", "place", "to", "value", "text", "color", "cue"}
     scene_keys = {"kind", "narration", "focus", "headline", "kicker", "title", "subtitle", "elements"}
     for s in data["scenes"]:
-        els = [Element(kind=e["kind"], place=e.get("place", ""), to=e.get("to", ""), value=e.get("value"), text=e.get("text", ""),
-                       color=e.get("color") or "a", cue=e.get("cue", ""),
-                       opts={k: v for k, v in e.items() if k not in el_keys and v not in (None, "", [])}) for e in s.get("elements", [])]
+        els = _elements(s.get("elements", []), el_keys)
         scenes.append(Scene(kind=s.get("kind", "map"), narration=s["narration"], focus=list(s.get("focus") or []),
                             headline=s.get("headline", ""), kicker=s.get("kicker", ""), title=s.get("title", ""),
                             subtitle=s.get("subtitle", ""), elements=els,

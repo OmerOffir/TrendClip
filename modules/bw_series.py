@@ -1,5 +1,5 @@
-"""Borderline Why's numbered series: a Short that fits a series ("Weird Borders") goes out as its next episode,
-"Why is Gambia inside Senegal? | Weird Borders #7".
+"""Borderline Why's numbered series: a Short that fits a series ("Weird Borders", "Shaped Like This") goes out as
+its next episode, "Why is Gambia inside Senegal? | Weird Borders #7".
 
 Which Shorts belong: a topic carries its series (the seeds are tagged by hand, Gemini's and your LLM's proposals
 say it, a topic added by hand is judged by its words); bw_script.finish copies it into the script and make()
@@ -11,7 +11,8 @@ The number is given at the upload, not when the video is made: a video that fail
 the title, and confirms it once YouTube took the video; a failed upload gives the number back. The counter is
 output/borderlinewhy/series.json (edit "start" there to continue from an older count).
 
-After the upload the channel posts COMMENT under the video; the API can't pin, so Discord asks the owner to.
+After the upload the channel posts the series' comment (COMMENTS, else COMMENT) under the video; the API can't
+pin, so Discord asks the owner to.
 """
 
 from __future__ import annotations
@@ -24,11 +25,24 @@ from pathlib import Path
 from typing import Any
 
 WEIRD_BORDERS = "Weird Borders"
+SHAPED = "Shaped Like This"
 SERIES: dict[str, str] = {
     WEIRD_BORDERS: "an odd border, enclave, exclave, panhandle, strip, cut-off piece of land, disputed or unclaimed "
                    "patch, or a line on the map that splits a place in a strange way",
+    SHAPED: "why a whole country has the outline it has on the map (long and thin, a boot, a hook, a crescent, a "
+            "panhandle), told through the history and geography that drew it",
+}
+# What the writer is told about an episode, beyond the series' subject.
+HINTS: dict[str, str] = {
+    SHAPED: "Open on the whole country highlighted so its odd outline is the first thing viewers see; draw its outline on "
+            "the whiteboard (board_draw with the country); show the neighbours, mountains, rivers or treaties that cut "
+            "each side; end back on the whole outline.",
 }
 COMMENT = "Which weird border should I cover next?"
+COMMENTS: dict[str, str] = {
+    SHAPED: "Which country's shape should I explain next?",
+    "whatif": "Which \"what if\" should I map next?",
+}
 DEFAULT_EVERY = 2  # at least one Short in this many is a series episode, when the topic list has one (BW_SERIES_EVERY)
 TITLE_ROOM = 92  # publish._yt_title adds " #shorts" to a Short's title (100 characters at most)
 
@@ -47,6 +61,8 @@ _BORDER_WORDS = re.compile(
     r"only (?:drive|reach|get) to|can't reach|piece of land|swap(?:ped)? .*land|own(?:s|ed)? (?:a |two |an )?.*(?:in|inside) )",
     re.I)
 
+_SHAPE_WORDS = re.compile(r"\b(shaped like|shape(?:d)? (?:so|this|that)|(?:its|the) shape|outline|so long and thin)\b", re.I)
+
 _lock = threading.Lock()
 
 
@@ -62,6 +78,8 @@ def classify(question: str, article: str = "", tag: str | None = None) -> str:
         return normalize(tag)
     if article in SEED_ARTICLES:
         return WEIRD_BORDERS
+    if _SHAPE_WORDS.search(question or ""):
+        return SHAPED
     return WEIRD_BORDERS if _BORDER_WORDS.search(question or "") else ""
 
 
@@ -77,11 +95,12 @@ def every() -> int:
 
 def due(recent: list[str]) -> str:
     """The series the next topic should come from ("" = any): when none of the last every()-1 Shorts made
-    (newest first) was an episode. every()=1 means always."""
+    (newest first) was an episode, the series made least lately takes its turn. every()=1 means always."""
     window = every() - 1
     if any(recent[:window]):
         return ""
-    return WEIRD_BORDERS
+    last = {name: recent.index(name) if name in recent else len(recent) for name in SERIES}
+    return max(SERIES, key=lambda name: (last[name], -list(SERIES).index(name)))
 
 
 # --------------------------------------------------------------------------- the counter
@@ -202,9 +221,12 @@ def titled(title: str, series: str, number: int) -> str:
 # --------------------------------------------------------------------------- the comment
 
 
-def comment_text() -> str:
+def comment_text(series: str = "", kind: str = "") -> str:
+    """The comment for a video: its series' (or a what-if's), else BW_COMMENT / COMMENT."""
     from modules.scene_images import setting
 
+    if found := COMMENTS.get(kind) or COMMENTS.get(series):
+        return found
     return setting("BW_COMMENT", COMMENT).strip() or COMMENT
 
 

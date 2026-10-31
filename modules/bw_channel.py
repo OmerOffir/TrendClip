@@ -447,7 +447,7 @@ def check_video(info: dict) -> list[str]:
     problems = []
     if not MIN_SECONDS <= seconds <= MAX_SECONDS:
         problems.append(f"{seconds:.0f} s long (wanted {MIN_SECONDS:.0f}-{MAX_SECONDS:.0f})")
-    if len(info.get("sources") or []) < 2:
+    if len(info.get("sources") or []) < 2 and info.get("kind") != "whatif":  # a what-if has none (modules.bw_whatif)
         problems.append("fewer than two sources")
     return problems
 
@@ -500,7 +500,7 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     (render or bw_render.render)(spec, work / "voice.mp3", work / "video.mp4", music_path,
                                  float(setting("BW_MUSIC_VOLUME", "0.10")), lambda f, m: progress(0.2 + 0.75 * (f or 0), m))
     info = {
-        "key": job.key, "title": bw_series.strip(script["title"]), "series": script_series(script), "question": script.get("question", ""), "article": script.get("article", ""),
+        "key": job.key, "title": bw_series.strip(script["title"]), "series": script_series(script), "kind": script.get("kind", ""), "question": script.get("question", ""), "article": script.get("article", ""),
         "origin": origin, "description": with_credits(bw_script.description(script, handle()), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:6],
         "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
@@ -633,7 +633,8 @@ def comment(info: dict, youtube=None, out_dir: Path | None = None) -> dict | Non
         error = "reconnect the Borderline Why YouTube channel once to allow comments (/bw connect)"
     else:
         try:
-            record["comment"] = bw_series.post_comment(youtube or publish._youtube(TOKEN), record["video_id"], bw_series.comment_text())
+            text = bw_series.comment_text(info.get("series") or "", info.get("kind") or "")
+            record["comment"] = bw_series.post_comment(youtube or publish._youtube(TOKEN), record["video_id"], text)
         except Exception as err:  # noqa: BLE001 - the video is up; only the comment failed
             error = publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment") \
                 if err.__class__.__name__ == "HttpError" else str(err) or err.__class__.__name__

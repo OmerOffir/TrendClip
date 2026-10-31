@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -71,6 +72,15 @@ SEEDS: list[tuple[str, str]] = [
     ("Why does the Suez Canal belong to Egypt?", "Suez Crisis"),
     ("Why is Liechtenstein one of the last countries ruled by a prince?", "Liechtenstein"),
     ("Why does the Dominican Republic share an island with Haiti?", "Treaty of Aranjuez (1777)"),
+    # Shaped Like This (bw_series.SHAPED): a whole country's outline
+    ("Why is Chile shaped like this?", "Geography of Chile"),
+    ("Why is Croatia shaped like this?", "Geography of Croatia"),
+    ("Why is Malawi shaped like this?", "Geography of Malawi"),
+    ("Why is Vietnam shaped like this?", "Geography of Vietnam"),
+    ("Why is Norway shaped like this?", "Geography of Norway"),
+    ("Why is Italy shaped like this?", "Geography of Italy"),
+    ("Why is Togo shaped like this?", "Geography of Togo"),
+    ("Why is Laos shaped like this?", "Geography of Laos"),
 ]
 
 
@@ -111,8 +121,7 @@ def save(state: TopicState, out_dir: Path) -> None:
 
 
 def all_topics(state: TopicState) -> list[Topic]:
-    return [Topic(question=q, article=a, series=bw_series.WEIRD_BORDERS if a in bw_series.SEED_ARTICLES else "")
-            for q, a in SEEDS] + list(state.proposed)
+    return [Topic(question=q, article=a, series=bw_series.classify(q, a)) for q, a in SEEDS] + list(state.proposed)
 
 
 def remaining(out_dir: Path) -> list[Topic]:
@@ -132,6 +141,40 @@ def add(out_dir: Path, question: str, article: str) -> Topic:
         state.rejected.pop(topic.article, None)
         save(state, out_dir)
     return topic
+
+
+COUNTRY_ARTICLES = ("Borders of {c}", "Geography of {c}", "History of {c}", "{c}")
+
+
+def country_question(country: str) -> str:
+    return f"Why is {country} shaped like this?"
+
+
+def add_country(out_dir: Path, country: str, check=None, on_map=None) -> Topic:
+    """"Why is <country> shaped like this?" (a Shaped Like This episode), made next. The country must be on the map;
+    its research starts from the first Wikipedia article of COUNTRY_ARTICLES that exists. `check(title)` /
+    `on_map(name)`: the tests' fakes for Wikipedia and the map."""
+    from modules import bw_geo, bw_script
+
+    name = re.sub(r"\s+", " ", country).strip().strip("?.!")
+    if not name:
+        raise ValueError("Type a country's name")
+    if (on_map or (lambda n: bw_geo.resolve(n, ("country",))))(name) is None:
+        raise ValueError(f"{name!r} is not a country on the map (try its usual English name)")
+    name = name[0].upper() + name[1:]
+    check = check or bw_script.article_exists
+    for pattern in COUNTRY_ARTICLES:
+        article = check(pattern.format(c=name))
+        if article:
+            topic = add(out_dir, country_question(name), article)
+            with _lock:
+                state = load(out_dir)
+                for t in state.proposed:
+                    if t.article == topic.article:
+                        t.series = bw_series.SHAPED
+                save(state, out_dir)
+            return topic.model_copy(update={"series": bw_series.SHAPED})
+    raise ValueError(f"No Wikipedia article found for {name}")
 
 
 def listing(out_dir: Path) -> list[dict[str, Any]]:

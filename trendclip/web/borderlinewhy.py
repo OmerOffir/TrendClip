@@ -386,6 +386,73 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
     return bw_topics.add(bw_channel.out_root(), req.question, title).model_dump()
 
 
+class CountryRequest(BaseModel):
+    country: str = Field(min_length=2, max_length=80)
+
+
+@router.post("/topics/country")
+def add_country(req: CountryRequest) -> dict[str, Any]:
+    """"Why is <country> shaped like this?": a Shaped Like This episode, made next."""
+    try:
+        return bw_topics.add_country(bw_channel.out_root(), req.country).model_dump()
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    except Exception as err:  # noqa: BLE001 - Wikipedia or the map download
+        raise HTTPException(status_code=502, detail=f"Wikipedia did not answer: {err}") from err
+
+
+# ---- What if: your LLM writes a "What if ...?" Short (modules/bw_whatif.py)
+
+
+class WhatIfStart(BaseModel):
+    question: str = Field(min_length=4, max_length=140)
+
+
+def _whatif(fn, *args):
+    from modules import bw_whatif
+
+    try:
+        return fn(*args)
+    except bw_whatif.WhatIfError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/whatif")
+def whatif_list() -> dict[str, Any]:
+    from modules import bw_whatif
+
+    return {"sessions": bw_whatif.sessions()}
+
+
+@router.post("/whatif")
+def whatif_start(req: WhatIfStart) -> dict[str, Any]:
+    from modules import bw_whatif
+
+    return _whatif(bw_whatif.start, req.question)
+
+
+@router.get("/whatif/{sid}")
+def whatif_view(sid: str) -> dict[str, Any]:
+    from modules import bw_whatif
+
+    return _whatif(bw_whatif.view, sid)
+
+
+@router.post("/whatif/{sid}/answer")
+def whatif_answer(sid: str, req: ManualText) -> dict[str, Any]:
+    from modules import bw_whatif
+
+    return _whatif(bw_whatif.answer, sid, req.text)
+
+
+@router.post("/whatif/{sid}/queue")
+def whatif_queue(sid: str) -> dict[str, Any]:
+    """The checked what-if goes to the queue: the next slot makes it."""
+    from modules import bw_whatif
+
+    return _whatif(bw_whatif.queue, sid)
+
+
 @router.get("/llm-topics")
 def llm_topics_prompt() -> dict[str, Any]:
     """Gemini's topic prompt, to paste into any LLM ("New topics from your LLM")."""
