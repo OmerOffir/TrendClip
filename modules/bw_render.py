@@ -144,6 +144,7 @@ class Spec:
     brand: bool = False  # the mascot and the marker hand (modules.bw_brand); needs the satellite look
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
     hold: float = 0.0  # extra seconds at the end (the outro's end card, modules.bw_brand)
+    sfx: bool = False  # mix modules.bw_sfx's sound effects under the voice (Borderline Why turns it on)
 
     @property
     def duration(self) -> float:
@@ -818,10 +819,25 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     if ff.returncode:
         raise RenderError(f"ffmpeg failed while encoding ({ff.returncode})")
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(silent), "-i", str(voice)]
+    chains, mix = ["[1:a]apad[v]"], ["[v]"]
     if music is not None and music.is_file():
-        cmd += ["-stream_loop", "-1", "-i", str(music), "-filter_complex",
-                f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - 1.5):.2f}:d=1.5[m];"
-                "[1:a]apad[v];[v][m]amix=inputs=2:duration=first:normalize=0[a]", "-map", "0:v", "-map", "[a]"]
+        cmd += ["-stream_loop", "-1", "-i", str(music)]
+        chains.append(f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - 1.5):.2f}:d=1.5[m]")
+        mix.append("[m]")
+    sfx = None
+    if spec.sfx:
+        from modules import bw_sfx
+
+        try:
+            sfx = bw_sfx.sfx_track(spec, out.with_name(out.stem + ".sfx.wav"))
+        except Exception as err:  # noqa: BLE001 - the video is fine without them
+            logger.warning("No sound effects: %s", err)
+        if sfx is not None:
+            cmd += ["-i", str(sfx)]
+            mix.append(f"[{len(mix) + 1}:a]")
+    if len(mix) > 1:
+        cmd += ["-filter_complex", ";".join(chains) + ";" + "".join(mix) + f"amix=inputs={len(mix)}:duration=first:normalize=0[a]",
+                "-map", "0:v", "-map", "[a]"]
     else:
         cmd += ["-map", "0:v", "-map", "1:a"]
     cmd += ["-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-t", f"{spec.duration:.2f}", "-movflags", "+faststart", str(out)]
@@ -829,6 +845,8 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     if result.returncode:
         raise RenderError(f"ffmpeg failed while mixing the audio: {result.stderr[-400:]}")
     silent.unlink(missing_ok=True)
+    if sfx is not None:
+        sfx.unlink(missing_ok=True)
     progress(1.0, "Video ready")
     return out
 

@@ -613,6 +613,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
         progress(0.02, "Recording the narration")
         words = bw_channel.record_script(script, f / "voice.mp3", lambda m: progress(None, m))
         spec = spec_for(script, words)
+        spec.sfx = bw_channel.sfx_on()
         progress(0.08, "Placing the maps")
         if missing := bw_render.prepare(spec):
             raise LongError("Places not found on the map: " + ", ".join(missing))
@@ -620,7 +621,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
             from trendclip.config import get_settings
 
             settings = get_settings()
-        track = bw_channel.pick_music(settings, lambda m: progress(None, m))
+        track = bw_channel.pick_music(settings, lambda m: progress(None, m), "long", spec.duration)
         music_path = None
         if track is not None:
             from trendclip import music

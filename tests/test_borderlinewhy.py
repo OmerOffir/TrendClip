@@ -1413,3 +1413,55 @@ def test_the_owner_picks_the_next_video(tmp_path):
     assert script["title"] == "Queued A"  # then the usual order
     with pytest.raises(ValueError):
         bw_topics.pick(root, "topic:Nowhere")
+
+
+# --------------------------------------------------------------------------- music per kind and the sound effects
+
+from modules import bw_sfx  # noqa: E402
+
+
+def test_music_comes_from_the_kind_s_folder(settings, tmp_path, monkeypatch):
+    from trendclip import music
+
+    lib = tmp_path / "music"
+    for folder, names in {"curious": ["Short.mp3", "Long A.mp3", "Long B.mp3"], "whatif": ["Dream.mp3"]}.items():
+        (lib / folder).mkdir(parents=True)
+        for n in names:
+            (lib / folder / n).write_bytes(b"x")
+    monkeypatch.setattr(type(settings), "music_library_dir", property(lambda s: lib), raising=False)
+    lengths = {"Short": 29.0, "Long A": 120.0, "Long B": 117.0, "Dream": 168.0}
+    monkeypatch.setattr(music, "_local_track", lambda s, p, f: music.DownloadedTrack(
+        video_id=p.name, title=p.stem, channel_title=f, url="", filename=f"{f}/{p.name}", duration_seconds=lengths[p.stem], credit="", local=True))
+    monkeypatch.delenv("BW_MUSIC", raising=False)
+    out = tmp_path / "out"
+    picks = {bw_channel.pick_music(settings, kind="", seconds=60, out_dir=out).title for _ in range(30)}
+    assert picks == {"Long A", "Long B"}  # long enough for the video
+    assert bw_channel.pick_music(settings, kind="whatif", seconds=60, out_dir=out).title == "Dream"
+    assert bw_channel.pick_music(settings, kind="long", seconds=600, out_dir=out).channel_title == "curious"  # no music/long: curious
+    monkeypatch.setattr(bw_channel, "videos", lambda out_dir=None, limit=30: [{"music": {"title": "Long A"}}])
+    assert {bw_channel.pick_music(settings, seconds=60, out_dir=out).title for _ in range(20)} == {"Long B"}  # not the last one again
+    monkeypatch.setenv("BW_MUSIC", "none")
+    assert bw_channel.pick_music(settings) is None
+
+
+def test_sound_effects_follow_the_scenes(tmp_path):
+    text = "In 1867 Russia sold Alaska. A stamp. A pin."
+    spec = bw_render.spec_from_dict({"title": "t", "scenes": [
+        {"kind": "map", "narration": "In 1867 Russia sold Alaska.", "elements": [
+            {"kind": "transfer", "place": "Alaska", "from_flag": "Flag of Russia.svg", "flag": "Flag of the United States.svg", "cue": "sold"}]},
+        {"kind": "card", "narration": "A stamp.", "title": "1867", "elements": [{"kind": "stamp", "text": "SOLD", "cue": "stamp"},
+                                                                               {"kind": "pin", "place": "Paris", "cue": "stamp"}]},
+        {"kind": "map", "narration": "A pin.", "elements": [{"kind": "pin", "place": "Paris", "cue": "pin"}]}]}, _words(text))
+    bw_render.align(spec)
+    found = bw_sfx.events(spec)
+    names = [n for _, n, _ in found]
+    assert names.count("whoosh") == 2 and "paper" in names and "stamp" in names  # both flags; the card; the stamp
+    assert names.count("pop") == 1  # the pin on the stamp's word is thinned; the last scene's pin pops
+    assert all(b[0] - a[0] >= bw_sfx.MIN_GAP for a, b in zip(found, found[1:]))
+    out = bw_sfx.sfx_track(spec, tmp_path / "sfx.wav")
+    import wave
+
+    with wave.open(str(out)) as w:
+        assert w.getframerate() == bw_sfx.RATE and w.getnframes() >= int(spec.duration * bw_sfx.RATE)
+    for name in bw_sfx.GAIN:
+        assert 0.5 <= float(np.max(np.abs(bw_sfx.sound(name, 1.0)))) <= 1.0

@@ -382,6 +382,11 @@ def with_credits(description: str, spec: bw_render.Spec) -> str:
     return f"{description}\n\n{credits}" if credits else description
 
 
+def sfx_on() -> bool:
+    """The code-made sound effects under the voice (modules.bw_sfx); BW_SFX=off drops them."""
+    return _on("BW_SFX")
+
+
 def brand_on() -> bool:
     """The signature look (modules.bw_brand: the talking mascot, the marker hand, the whiteboard); BW_BRAND=off drops it."""
     return setting("BW_BRAND", "on").lower() not in ("off", "0", "no", "false")
@@ -459,14 +464,35 @@ def record_script(script: dict, out: Path, progress=lambda m: None) -> list[bw_r
     return words
 
 
-def pick_music(settings, progress=lambda m: None):
+MUSIC_FOLDERS = {"": "curious", "whatif": "whatif", "long": "long"}  # music/<folder> per kind of video (BW_MUSIC=auto)
+RECENT_MUSIC = 4  # a track used in the last few videos is picked again only when nothing else fits
+
+
+def pick_music(settings, progress=lambda m: None, kind: str = "", seconds: float = 0.0, out_dir: Path | None = None):
+    """The video's track: BW_MUSIC=auto (the default) takes music/curious for a Short, music/whatif for a what-if,
+    music/long for a long video (music/curious when that folder is empty), preferring a track at least `seconds`
+    long and not in the last RECENT_MUSIC videos. Any other BW_MUSIC is trendclip.music's source ("folder:dramatic")."""
     from trendclip import music
 
-    source = setting("BW_MUSIC", "folder:dramatic")
+    source = setting("BW_MUSIC", "auto")
     if source.lower() in ("none", "off", "0"):
         return None
     try:
-        return music.pick(settings, source)
+        if source.lower() != "auto":
+            return music.pick(settings, source)
+        tracks = []
+        for folder in dict.fromkeys([MUSIC_FOLDERS.get(kind, "curious"), "curious"]):
+            path = settings.music_library_dir / folder
+            tracks = sorted(p for p in path.glob("*") if p.suffix.lower() in music.AUDIO_EXTENSIONS) if path.is_dir() else []
+            if tracks:
+                break
+        if not tracks:
+            raise music.MusicError("music/curious is empty")
+        found = [music._local_track(settings, p, folder) for p in tracks]
+        recent = {(v.get("music") or {}).get("title") for v in videos(out_dir, RECENT_MUSIC)}
+        fits = [t for t in found if (t.duration_seconds or 0) >= seconds]
+        fresh = [t for t in fits if t.title not in recent]
+        return random.choice(fresh or fits or [t for t in found if t.title not in recent] or found)
     except Exception as err:  # noqa: BLE001 - the voice alone is fine
         progress(f"No music: {err}")
         return None
@@ -518,10 +544,11 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     else:
         words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m))
     spec = bw_render.spec_from_dict(script, words)
+    spec.sfx = sfx_on()
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
-    track = pick_music(settings, lambda m: progress(None, m))
+    track = pick_music(settings, lambda m: progress(None, m), script.get("kind", ""), spec.duration, out_dir)
     music_path = None
     if track is not None:
         from trendclip import music
