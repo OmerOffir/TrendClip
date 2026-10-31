@@ -355,4 +355,9 @@ def write_drop(kind: str, i: int) -> dict[str, Any]:
 
 @router.post("/write/{kind}/queue")
 def write_queue(kind: str) -> dict[str, Any]:
-    return _write(pw_write.queue, kind)
+    """Into the queue, with the slot each script lands on (Plan) so the tab can say when it goes out."""
+    done = _write(pw_write.queue, kind)
+    rows = [r for d in pw_channel.plan_view(_settings())["days"] for r in d["slots"]]
+    done["slots"] = {name: next(({"day": r["day"], "slot": r["slot"], "start": r["start"]} for r in rows
+                                 if (r.get("script") or {}).get("file") == name), None) for name in done["queued"]}
+    return done

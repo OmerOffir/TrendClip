@@ -180,7 +180,8 @@
     els.topics.innerHTML = body.topics.length ? body.topics.map((t) => `<div class="pw-slot">
         ${t.used ? '<span class="pill good">written</span>' : '<span class="pill">next</span>'}
         <span class="pw-what">${esc(t.question)}</span><span class="pill">${esc(t.pillar || "—")}</span>
-        ${t.used ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}
+        ${t.used ? "" : `<button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question">🎬 Make a video</button>
+          <button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}
       </div>`).join("") : '<div class="empty">No topics</div>';
   }
 
@@ -288,11 +289,12 @@
     if (t.id === "pwRefresh") return load();
     if (t.id === "pwYtConnect") return connectYouTube();
     if (t.id === "pwYtLogout") return act(() => post("/api/pricetagwhy/youtube/logout"));
-    if (d.make) { t.disabled = true; return act(() => post("/api/pricetagwhy/make", { file: d.make })); }
+    const fromWriting = ["write", "week"].includes((t.closest("[data-pw-panel]") || { dataset: {} }).dataset.pwPanel);
+    if (d.make) { t.disabled = true; return act(() => post("/api/pricetagwhy/make", { file: d.make }), fromWriting ? () => showSection("videos") : load); }
     if (d.makeslot) {
       const [day, slot] = d.makeslot.split(" ");
       t.disabled = true;
-      return act(() => post("/api/pricetagwhy/make-slot", { day, slot }));
+      return act(() => post("/api/pricetagwhy/make-slot", { day, slot }), fromWriting ? () => showSection("plan") : load);
     }
     if (d.slotRemove) {
       const [day, slot] = d.slotRemove.split(" ");
@@ -313,6 +315,16 @@
       box.innerHTML = same ? "" : `<video controls autoplay style="max-width:260px;aspect-ratio:9/16;border-radius:10px" src="${videoSrc(d.watch, d.t)}"></video>`;
       box.dataset.key = same ? "" : d.watch;
       return;
+    }
+    if (d.topicWrite) {
+      try {
+        const { body: now } = await api("/api/pricetagwhy/write/one");
+        if (now.step !== "none" && !window.confirm("Write it myself already has a script in progress. Drop it and start this one?")) return;
+        await post("/api/pricetagwhy/write/one", { question: d.topicWrite });
+      } catch (err) {
+        return showError(err.message);
+      }
+      return showSection("write");
     }
     if (d.topicRemove) return act(() => post("/api/pricetagwhy/topics/remove", { question: d.topicRemove }), loadTopics);
     if (d.writeStart) {
@@ -338,8 +350,15 @@
       const kind = d.writeQueue;
       try {
         const { body } = await post(`/api/pricetagwhy/write/${kind}/queue`);
-        els.write[kind].innerHTML = `<p>✅ Added to the queue: ${body.queued.map(esc).join(", ")}. ${body.waiting} script(s) wait for their slots (Plan).</p>
-          <button type="button" class="btn-primary" data-write-start="${kind}">Write ${kind === "one" ? "another" : "the next week"}</button>`;
+        const lands = body.queued.map((name) => {
+          const at = (body.slots || {})[name];
+          return `<li>${esc(name)}: ${at ? `goes out <b>${esc(at.day)} ${esc(at.slot)}</b>, made at ${esc(at.start.slice(11, 16))}${at.start.slice(0, 10) !== at.day ? ` (${esc(at.start.slice(5, 10))})` : ""}` : "waits for a free slot"}</li>`;
+        }).join("");
+        const first = body.queued.length === 1 ? (body.slots || {})[body.queued[0]] : null;
+        els.write[kind].innerHTML = `<p>✅ Added to the queue. ${body.waiting} script(s) wait for their slots (Plan).</p><ul>${lands}</ul>
+          <div class="pw-add">${body.queued.length === 1 ? `<button type="button" class="btn-primary" data-make="${esc(body.queued[0])}" title="A sample to watch now; the script keeps its slot">🎬 Make the video now</button>` : ""}
+          ${first ? `<button type="button" class="btn-secondary" data-makeslot="${esc(first.day)} ${esc(first.slot)}" title="Made now for that slot, waiting for Approve">📅 Make it for ${esc(first.day)} ${esc(first.slot)} now</button>` : ""}
+          <button type="button" class="btn-secondary" data-write-start="${kind}">Write ${kind === "one" ? "another" : "the next week"}</button></div>`;
       } catch (err) {
         els.write[kind].insertAdjacentHTML("afterbegin", `<div class="da-note">${esc(err.message)}</div>`);
       }

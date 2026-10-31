@@ -355,7 +355,9 @@ def _save(session: dict[str, Any], out_dir: Path | None = None) -> dict[str, Any
 def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Path | None = None) -> dict[str, Any]:
     """A new session: `question` (or the next topic) for "one", the next `count` topics for "week"."""
     if kind == "one":
-        picked = [{"question": " ".join(question.split()), "pillar": ""}] if question.strip() else next_topics(1, out_dir)
+        asked = " ".join(question.split())
+        known = next((t for t in topics(out_dir) if _norm(t["question"]) == _norm(asked)), None) if asked else None
+        picked = [{"question": asked, "pillar": (known or {}).get("pillar", "")}] if asked else next_topics(1, out_dir)
     else:
         picked = next_topics(max(1, min(14, count)), out_dir)
     if not picked:

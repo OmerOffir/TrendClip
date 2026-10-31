@@ -421,3 +421,10 @@ def test_upcoming_shows_the_designed_thumbnail(tmp_path):
     assert thumbs.paths("pricetagwhy", "2026-10-31_2300", tmp_path)[1].name == "thumbnail.jpg"
     (folder / "thumb.jpg").write_bytes(b"designed")
     assert thumbs.fresh("pricetagwhy", "2026-10-31_2300", tmp_path).read_bytes() == b"designed"
+
+
+def test_a_topic_starts_its_own_script_with_its_pillar(tmp_path):
+    from modules import pw_write
+
+    view = pw_write.start("one", "Why do  prices end in .99?", out_dir=tmp_path)
+    assert view["topics"] == [{"question": "Why do prices end in .99?", "pillar": "everyday prices"}]
