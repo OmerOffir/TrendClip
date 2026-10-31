@@ -88,10 +88,10 @@ def densify(pts: list[tuple[float, float]], step: float = 26.0) -> list[tuple[fl
     return out + pts[-1:]
 
 
-def predraw(board: bw_brand.Board, scene: Scene, late: int) -> None:
-    """Board._time, then the first `late` items already there on the scene's first frame (the hook, and what the
+def predraw(board: bw_brand.Board, scene: Scene, late: int, timer=bw_brand.Board._time) -> None:
+    """timer (the board's own timing), then the first `late` items already there on the scene's first frame (the hook, and what the
     thumbnail shows); the rest is written from a moment in."""
-    bw_brand.Board._time(board, scene)
+    timer(board, scene)
     early, rest = board.items[:late], board.items[late:]
     for it in early:
         it["at"], it["dur"] = scene.start - 10.0, 0.01
@@ -221,7 +221,7 @@ class Drawn(bw_brand.Board):
         self.late = 0  # items drawn before the first frame when this is the opening (the product)
         getattr(self, "draw_" + scene.kind)(o if isinstance(o, dict) else {})
         if first and self.late:
-            predraw(self, scene, self.late)
+            predraw(self, scene, self.late, Drawn._time)
         else:
             self._time(scene)
 
@@ -265,17 +265,21 @@ class Drawn(bw_brand.Board):
             return
         d, k, dx, dy = pw_draw.scaled(name, box)
         at = lambda pts: [(dx + x * k, dy + y * k) for x, y in pts]
+        first = len(self.items)
+        total = sum(bw_brand.length(np.array(at(pts), dtype=float)) for pts, _ in d.strokes) or 1.0
         acc = RED if accent == "red" else GREEN
         width = int(max(9, min(15, k * 4.2)))
         for j, (pts, role) in enumerate(d.strokes):
             rgb = RED if role == "red" else acc if role == "accent" else INK
-            self.put_line(wobble(densify(at(pts)), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)))
+            pts_at = at(pts)
+            cost = max(0.06, 1.5 * bw_brand.length(np.array(pts_at, dtype=float)) / total)  # the whole outline in about 1.5 s
+            self.put_line(wobble(densify(pts_at), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)), cost)
         tint_w = int(width * 2.6)
         for poly, role in d.washes:
             tint = TINT["ink"] if role == "ink_wash" else TINT["red" if accent == "red" else "green"]
             path = pw_draw.hatch(at(poly), tint_w * 0.75, tint_w / 2 + width / 2)
             if len(path) > 1:
-                self.put_line(path, tint, tint_w, min(0.9, 0.25 + len(path) * 0.012))
+                self.put_line(path, tint, tint_w, min(0.6, 0.2 + len(path) * 0.006))
         words = [str(x) for x in (label or []) if str(x).strip()][:3]
         if words and d.label_at:
             lx, ly, lw = d.label_at
@@ -284,7 +288,21 @@ class Drawn(bw_brand.Board):
             lead = px * 1.05
             for j, w in enumerate(words):
                 self.put_text(w, (dx + lx * k, dy + ly * k - lead * (len(words) - 1) / 2 + j * lead), px, INK)
+        for it in self.items[first:]:
+            it["quick"] = True  # one drawing: no pause between its strokes (Drawn._time)
 
+    def _time(self, scene: Scene) -> None:
+        """Board._time, but the strokes of one drawing follow each other without the pause between items, so a
+        picture is finished early in its scene and stays up while it is talked about."""
+        gap = 0.14
+        need = sum(it["cost"] + (0.02 if it.get("quick") else gap) for it in self.items) - gap
+        room = max(0.6, scene.end - scene.start - 1.4)
+        k = min(1.15, room / max(0.1, need))
+        t = scene.start + 0.35
+        for it in self.items:
+            it["at"], it["dur"] = t, it["cost"] * k
+            t += it["dur"] + (0.02 if it.get("quick") else gap) * k
+        self.done = t
     def draw_product(self, o: dict[str, Any]) -> None:
         """The product drawn big on the left, the lines (what it costs, what it should cost) written on the right."""
         lines = [bw_brand.pen_line(x) for x in (o.get("lines") or []) if str(bw_brand.pen_line(x)["text"]).strip()][:4]
