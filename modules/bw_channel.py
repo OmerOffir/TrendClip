@@ -51,6 +51,10 @@ class ChannelError(RuntimeError):
     pass
 
 
+class Stopped(ChannelError):
+    """The owner pressed Stop while the video was being made (request_stop)."""
+
+
 # --------------------------------------------------------------------------- settings
 
 
@@ -553,6 +557,7 @@ def handle() -> str:
 
 
 PROGRESS_STALE = timedelta(minutes=30)  # a progress.json not touched for this long is a make that died
+STOP_FILE = "stop"  # <key>/stop: the make ends at its next step (Progress), wherever it runs (dashboard or bot)
 
 
 class Progress:
@@ -568,6 +573,8 @@ class Progress:
         self.fraction, self.steps = 0.0, 0
 
     def __call__(self, fraction: float | None, message: str) -> None:
+        if (self.path.parent / STOP_FILE).exists():  # the owner pressed Stop: end the make at this step
+            raise Stopped("Stopped on the dashboard; nothing was made for this slot")
         if fraction is not None:
             self.fraction = max(self.fraction, fraction)
         self.progress(fraction, message)
@@ -584,6 +591,7 @@ class Progress:
 
     def done(self) -> None:
         self.path.unlink(missing_ok=True)
+        (self.path.parent / STOP_FILE).unlink(missing_ok=True)
 
 
 def progress_of(key: str, out_dir: Path | None = None, now: datetime | None = None) -> dict | None:
@@ -593,7 +601,18 @@ def progress_of(key: str, out_dir: Path | None = None, now: datetime | None = No
         updated = datetime.fromisoformat(data["updated"])
     except (OSError, ValueError, KeyError):
         return None
-    return data if (now or datetime.now()) - updated < PROGRESS_STALE else None
+    if (now or datetime.now()) - updated >= PROGRESS_STALE:
+        return None
+    return {**data, "stopping": (out_root(out_dir) / key / STOP_FILE).exists()}
+
+
+def request_stop(key: str, out_dir: Path | None = None) -> dict:
+    """Stop the video being made for `key`: it ends at its next step (a Gemini call or a rendered frame may take a
+    moment to finish first). Raises ChannelError when nothing is being made there."""
+    if progress_of(key, out_dir) is None:
+        raise ChannelError("No video is being made for that slot")
+    (out_root(out_dir) / key / STOP_FILE).write_text(datetime.now().replace(microsecond=0).isoformat(), encoding="utf-8")
+    return progress_of(key, out_dir)
 
 
 def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None = None, client=None, script: dict | None = None,

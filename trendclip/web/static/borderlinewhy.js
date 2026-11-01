@@ -260,7 +260,7 @@
     const v = r.video;
     const prog = !v && r.progress;
     const pct = prog ? ` ${Math.round((prog.fraction || 0) * 100)}%` : "";
-    const [cls, label] = (r.key === making || prog) ? ["warn", `🏭 Making now…${pct}`] : planned ? ["", "🔮 Planned"] : (SLOT[r.state] || ["", r.state]);
+    const [cls, label] = prog && prog.stopping ? ["warn", "⏹ Stopping…"] : (r.key === making || prog) ? ["warn", `🏭 Making now…${pct}`] : planned ? ["", "🔮 Planned"] : (SLOT[r.state] || ["", r.state]);
     const up = v && v.youtube;
     const madeAt = `made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}`;
     const change = first && state.next
@@ -290,6 +290,7 @@
     if (v && !sent && r.state === "waiting") btns.push(`<button type="button" class="btn-primary" data-act="approve" data-key="${esc(v.key)}">✅ Approve</button>`);
     if (v && !sent && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
     if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
+    if (prog && !prog.stopping) btns.push(`<button type="button" class="btn-secondary" data-act="stop" data-key="${esc(r.key)}">⏹ Stop</button>`);
     if (!up && !r.extra && r.key !== making && !prog && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
     return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
       <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
@@ -361,6 +362,9 @@
         await post(`/api/borderlinewhy/videos/${encodeURIComponent(key)}/upload`, { privacy: state.status ? state.status.privacy : "public" });
         btn.textContent = "Uploading…";
         setTimeout(loadPlan, 5000);
+      } else if (act === "stop") {
+        if (!confirm("Stop making this video? Nothing will be posted for this slot unless you make it again.")) return;
+        await post("/api/borderlinewhy/make/stop", { key });
       } else if (act === "make") {
         const what = row.querySelector(".bw-what b");
         if (!confirm(`Make a new video for ${day} ${slot} now${what && !what.classList.contains("hint") ? `: ${what.textContent}` : ""}? A video already made for it (not uploaded) is set aside.`)) return;

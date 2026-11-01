@@ -843,11 +843,16 @@ class TrendClipBot(discord.Client):
         out_of_quota = lambda err: getattr(err, "retry_at", None) is not None  # noqa: E731 - a second try now can't help
         try:
             info = await self.run_job(channel, f"🗺️ Borderline Why video for {label}", lambda p: bw_channel.make(settings, job, p),
-                                      self.render_lock, attempts=BW_ATTEMPTS, give_up=late, stop=out_of_quota)
+                                      self.render_lock, attempts=BW_ATTEMPTS, give_up=late,
+                                      stop=lambda err: out_of_quota(err) or isinstance(err, bw_channel.Stopped))
         except JobFailed as failed:
             from modules import bw_script
 
             cause = failed.__cause__
+            if isinstance(cause, bw_channel.Stopped):
+                await channel.send(f"⏹ The {label} video was stopped on the dashboard: nothing will be posted for it.",
+                                   view=view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Make it now", discord.ButtonStyle.success)))
+                return
             try_again = view_of(button("bwrun", f"{job.day.isoformat()} {job.slot}", "🎬 Try again now", discord.ButtonStyle.success))
             now = assistant.now(settings)
             quota_back = getattr(cause, "retry_at", None)

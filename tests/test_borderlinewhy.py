@@ -1547,3 +1547,30 @@ def test_an_icon_cued_late_pops_in_early_enough_to_be_seen():
     late, stamp, early = spec.scenes[0].elements
     assert spec.scenes[0].end - late.at == pytest.approx(bw_render.MIN_ON_SCREEN)  # moved earlier
     assert stamp.at == pytest.approx(2.8) and early.at == pytest.approx(0.4)  # a stamp keeps its word; an early icon too
+
+
+def test_stop_ends_a_make_at_its_next_step(settings, tmp_path, world):
+    job = bw_channel.job_for(settings, Day(2026, 11, 2), "14:30")
+    with pytest.raises(bw_channel.ChannelError, match="No video is being made"):
+        bw_channel.request_stop(job.key, tmp_path)
+    work = tmp_path / job.key
+    work.mkdir(parents=True)
+    p = bw_channel.Progress(work / "progress.json")
+    p(0.3, "Drawing the maps")
+    assert bw_channel.request_stop(job.key, tmp_path)["stopping"]
+    with pytest.raises(bw_channel.Stopped):
+        p(0.31, "Drawing the maps: frame 600")
+    p.done()  # the make's cleanup: nothing left behind, a new make can run
+    assert not (work / "stop").exists() and bw_channel.progress_of(job.key, tmp_path) is None
+
+    def render(spec, voice_path, out, music, volume, progress):
+        bw_channel.request_stop(job.key, tmp_path)  # pressed while the maps are drawn
+        progress(0.5, "Drawing the maps: frame 10")
+
+    def voice(text, out, progress):
+        out.write_bytes(b"mp3")
+        return _words(text)
+
+    with pytest.raises(bw_channel.Stopped):
+        bw_channel.make(settings, job, out_dir=tmp_path, script={**_spec_dict(), **SCRIPT}, voice=voice, render=render)
+    assert bw_channel.load_info(job.key, tmp_path) is None and not (work / "stop").exists()

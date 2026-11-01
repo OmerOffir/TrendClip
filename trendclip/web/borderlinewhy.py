@@ -180,6 +180,19 @@ def make(req: MakeRequest | None = None) -> dict[str, Any]:
     return _start("make", lambda p: bw_channel.make(settings, job, p, announce=True)["key"], key=job.key)
 
 
+class StopRequest(BaseModel):
+    key: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}_\d{4}$")
+
+
+@router.post("/make/stop")
+def stop_make(req: StopRequest) -> dict[str, Any]:
+    """Stop the video being made for a slot (the dashboard's Make now or the bot's own job)."""
+    try:
+        return bw_channel.request_stop(req.key)
+    except bw_channel.ChannelError as err:
+        raise HTTPException(status_code=409, detail=str(err)) from err
+
+
 @router.get("/plan")
 def plan(fresh: bool = False) -> dict[str, Any]:
     """This machine's plan; on the sending machine the Linux machine's (the one that counts), see channel_hub.plan_tab."""
