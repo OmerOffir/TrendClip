@@ -466,34 +466,63 @@ def slug(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "script"
 
 
-def queue(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
-    """The checked scripts into output/pricetagwhy/queue/ (the slots take them by name, so in this order)."""
-    session = load(kind, out_dir)
-    if session is None or session["step"] != "ready":
-        raise WriteError("Both checks must pass first")
-    folder = pw_channel.queue_dir(out_dir)
-    folder.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    saved = []
-    for k, d in enumerate(session["drafts"], 1):
-        flags = (session.get("accepted") or {}).get(str(k), [])
-        how = ("skipped by the owner" if session.get("skipped_facts") else
-               "accepted by the owner with flags" if flags else "pasted fact check")
-        d = {**d, "checked": {"rules": True, "facts": how,
-                              **({"flags": flags} if flags else {}), "at": stamp}}
-        path = folder / f"{stamp}-{k:02d}-{slug(d.get('title', ''))}.json"
-        path.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        saved.append(path.name)
+def _mark_used(asked: list[dict[str, Any]], stamp: str, out_dir: Path | None = None) -> None:
+    """The questions these scripts answer count as used on the list (added to it when they came from elsewhere)."""
     found = topics(out_dir)
-    done = {_norm(t["question"]) for t in session["topics"]}
+    done = {_norm(t["question"]) for t in asked}
     for t in found:
         if _norm(t["question"]) in done:
             t["used"] = True
     listed = {_norm(t["question"]) for t in found}
-    found += [{**t, "used": True, "added": stamp[:8]} for t in session["topics"] if _norm(t["question"]) not in listed]
+    found += [{**t, "used": True, "added": stamp[:8]} for t in asked if _norm(t["question"]) not in listed]
     save_topics(found, out_dir)
+
+
+def save_scripts(drafts: list[dict[str, Any]], asked: list[dict[str, Any]], out_dir: Path | None = None) -> dict[str, Any]:
+    """Checked scripts into output/pricetagwhy/queue/ (the slots take them by name, so in this order), on this
+    machine or, through Discord, on the hub (channel_hub.PriceTagWhy.queue). A script whose title is already
+    in the queue folder is skipped. {"queued": [names], "skipped": [{"title", "why"}], "waiting": n}."""
+    folder = pw_channel.queue_dir(out_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    have = set()  # titles already in the queue folder (a week sent twice)
+    for path in folder.glob("*.json"):
+        try:
+            have.add(_norm(json.loads(path.read_text(encoding="utf-8")).get("title", "")))
+        except (OSError, ValueError):
+            pass
+    saved, skipped = [], []
+    for k, d in enumerate(drafts, 1):
+        if _norm(d.get("title", "")) in have:
+            skipped.append({"title": d.get("title", ""), "why": "a script with this title is already queued"})
+            continue
+        path = folder / f"{stamp}-{k:02d}-{slug(d.get('title', ''))}.json"
+        path.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        saved.append(path.name)
+    _mark_used(asked, stamp, out_dir)
+    return {"queued": saved, "skipped": skipped, "waiting": len(pw_channel.queued(out_dir))}
+
+
+def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any]:
+    """The checked scripts into the queue: this machine's, or the Linux hub's through `deliver(bundle)` on the
+    sending machine (the questions are marked used here too, so this list never offers them again)."""
+    session = load(kind, out_dir)
+    if session is None or session["step"] != "ready":
+        raise WriteError("Both checks must pass first")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    drafts = []
+    for k, d in enumerate(session["drafts"], 1):
+        flags = (session.get("accepted") or {}).get(str(k), [])
+        how = ("skipped by the owner" if session.get("skipped_facts") else
+               "accepted by the owner with flags" if flags else "pasted fact check")
+        drafts.append({**d, "checked": {"rules": True, "facts": how, **({"flags": flags} if flags else {}), "at": stamp}})
+    if deliver is None:
+        done = save_scripts(drafts, session["topics"], out_dir)
+    else:
+        done = {**deliver({"scripts": drafts, "topics": session["topics"]}), "where": "linux"}
+        _mark_used(session["topics"], stamp, out_dir)
     _path(kind, out_dir).unlink(missing_ok=True)
-    return {"queued": saved, "waiting": len(pw_channel.queued(out_dir))}
+    return done
 
 
 def view(kind: str, out_dir: Path | None = None) -> dict[str, Any]:

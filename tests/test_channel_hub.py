@@ -12,6 +12,8 @@ from trendclip import hub
 
 from tests.test_hub import Attachment, FakeDiscord, Message, make
 
+PW_SCRIPT = json.loads((pw_channel.SCRIPTS_DIR / "001-arizona-99c.json").read_text(encoding="utf-8"))
+
 PATHS = ((video_gen, "OUTPUT_DIR", "darkarchives"), (script_gen, "OUTPUT_DIR", "scripts"),
          (bw_channel, "OUTPUT_DIR", "borderlinewhy"), (pw_channel, "OUTPUT_DIR", "pricetagwhy"), (pw_channel, "SCRIPTS_DIR", "pw-scripts"),
          (repository, "DB_PATH", "bank.db"))
@@ -328,3 +330,25 @@ def test_a_topic_typed_on_the_sending_machine_goes_to_the_linux_list(linux, mac,
     with pytest.raises(hub.HubError, match="doesn't take topics typed in"):
         channel_hub.add_one(mac, "sidequestlogic", {"question": "Why?"})
     assert channel_hub.add_one(linux, "pricetagwhy", {"question": "Why is gold priced in dollars?"})["where"] == "here"
+
+
+def test_a_price_tag_why_week_written_on_the_sending_machine_goes_to_the_linux_queue(linux, mac, discord, machines):
+    from modules import pw_write
+
+    script = PW_SCRIPT
+    asked = [{"question": script["question"], "pillar": "everyday prices"}]
+    session = {"kind": "week", "topics": asked, "step": "ready", "drafts": [script], "problems": {}, "flagged": {}, "skipped_facts": True}
+    pw_write._save(session)
+    done = pw_write.queue("week", deliver=lambda bundle: channel_hub.queue_scripts(mac, "pricetagwhy", bundle))
+    assert done["where"] == "linux" and len(done["queued"]) == 1 and done["waiting"] == 1
+    assert pw_channel.queued() == [] and pw_write.load("week") is None  # nothing queued on this machine
+    assert any(t["used"] for t in pw_write.topics() if t["question"] == script["question"])
+    machines.use("linux")
+    assert [p.name for p in pw_channel.queued()] == done["queued"]
+    queued = json.loads(pw_channel.queued()[0].read_text(encoding="utf-8"))
+    assert queued["checked"]["facts"] == "skipped by the owner"
+    machines.use("mac")
+    again = channel_hub.queue_scripts(mac, "pricetagwhy", {"scripts": [script], "topics": asked})
+    assert again["queued"] == [] and "already queued" in again["skipped"][0]["why"]
+    with pytest.raises(hub.HubError, match="rule check refused"):
+        channel_hub.queue_scripts(mac, "pricetagwhy", {"scripts": [{**script, "scenes": script["scenes"][:1]}]})

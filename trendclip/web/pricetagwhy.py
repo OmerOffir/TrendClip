@@ -348,7 +348,9 @@ def remove_topic(req: TopicRequest) -> dict[str, Any]:
 
 @router.get("/write/{kind}")
 def write_view(kind: str) -> dict[str, Any]:
-    return _write(pw_write.view, kind)
+    from trendclip import hub
+
+    return {**_write(pw_write.view, kind), "sender": hub.is_sender(_settings())}
 
 
 @router.post("/write/{kind}")
@@ -383,9 +385,16 @@ def write_drop(kind: str, i: int) -> dict[str, Any]:
 
 @router.post("/write/{kind}/queue")
 def write_queue(kind: str) -> dict[str, Any]:
-    """Into the queue, with the slot each script lands on (Plan) so the tab can say when it goes out."""
+    """Into the queue, with the slot each script lands on (Plan) so the tab can say when it goes out. On the sending
+    machine the scripts go to the Linux hub's queue through Discord, and the slots are the hub's."""
+    from modules import channel_hub
+    from trendclip import hub
+
+    settings = _settings()
+    if hub.is_sender(settings):
+        try:
+            return _write(pw_write.queue, kind, None, lambda bundle: channel_hub.queue_scripts(settings, "pricetagwhy", bundle))
+        except hub.HubError as err:
+            raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err
     done = _write(pw_write.queue, kind)
-    rows = [r for d in pw_channel.plan_view(_settings())["days"] for r in d["slots"]]
-    done["slots"] = {name: next(({"day": r["day"], "slot": r["slot"], "start": r["start"]} for r in rows
-                                 if (r.get("script") or {}).get("file") == name), None) for name in done["queued"]}
-    return done
+    return {**done, "slots": pw_channel.landing(settings, done["queued"])}

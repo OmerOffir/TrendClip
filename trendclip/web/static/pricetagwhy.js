@@ -220,7 +220,9 @@
 
   async function loadWrite(kind) {
     try {
-      renderWrite(kind, (await api(`/api/pricetagwhy/write/${kind}`)).body);
+      const { body } = await api(`/api/pricetagwhy/write/${kind}`);
+      state.sender = !!body.sender;  // a sending machine sends the checked scripts to the Linux hub's queue
+      renderWrite(kind, body);
     } catch (err) {
       els.write[kind].innerHTML = `<div class="da-note">${esc(err.message)}</div>`;
     }
@@ -249,7 +251,9 @@
       ${(v.general || []).length ? `<span class="da-note">${esc(v.general.join("; "))}</span>` : ""}
       ${drafts}
       ${v.step === "ready"
-        ? `<p>✅ Both checks passed.</p><button type="button" class="btn-primary" data-write-queue="${kind}">➕ Add to the queue</button>`
+        ? `<p>✅ Both checks passed.</p><button type="button" class="btn-primary" data-write-queue="${kind}">${state.sender
+          ? "📤 Send to Linux</button> <span class=\"hint\">they go to the Linux machine's queue through Discord and fill its free slots</span>"
+          : "➕ Add to the queue</button>"}`
         : `<p class="hint">${esc(STEP_TEXT[v.step === "fix" && v.after_facts ? "flagged" : v.step] || "")}</p>
            ${v.can_accept ? `<div class="pw-add"><button type="button" class="btn-primary" data-write-accept="${kind}">✅ Accept as it is</button>
              <span class="hint">the flags are kept with the script</span></div>` : ""}
@@ -394,18 +398,22 @@
     if (d.writeDrop) return writeAct("week", () => post(`/api/pricetagwhy/write/week/drop/${d.writeDrop}`));
     if (d.writeQueue) {
       const kind = d.writeQueue;
+      t.disabled = true;
       try {
         const { body } = await post(`/api/pricetagwhy/write/${kind}/queue`);
         const lands = body.queued.map((name) => {
           const at = (body.slots || {})[name];
           return `<li>${esc(name)}: ${at ? `goes out <b>${esc(at.day)} ${esc(at.slot)}</b>, made at ${esc(at.start.slice(11, 16))}${at.start.slice(0, 10) !== at.day ? ` (${esc(at.start.slice(5, 10))})` : ""}` : "waits for a free slot"}</li>`;
         }).join("");
-        const first = body.queued.length === 1 ? (body.slots || {})[body.queued[0]] : null;
-        els.write[kind].innerHTML = `<p>✅ Added to the queue. ${body.waiting} script(s) wait for their slots (Plan).</p><ul>${lands}</ul>
-          <div class="pw-add">${body.queued.length === 1 ? `<button type="button" class="btn-primary" data-make="${esc(body.queued[0])}" title="A sample to watch now; the script keeps its slot">🎬 Make the video now</button>` : ""}
+        const linux = body.where === "linux";
+        const first = body.queued.length === 1 && !linux ? (body.slots || {})[body.queued[0]] : null;
+        const skipped = (body.skipped || []).map((x) => `<li>${esc(x.title)}: not taken, ${esc(x.why)}</li>`).join("");
+        els.write[kind].innerHTML = `<p>✅ ${linux ? "Sent to the Linux machine's queue" : "Added to the queue"}. ${body.waiting} script(s) wait for their slots${linux ? " there" : ""} (Plan).</p><ul>${lands}${skipped}</ul>
+          <div class="pw-add">${body.queued.length === 1 && !linux ? `<button type="button" class="btn-primary" data-make="${esc(body.queued[0])}" title="A sample to watch now; the script keeps its slot">🎬 Make the video now</button>` : ""}
           ${first ? `<button type="button" class="btn-secondary" data-makeslot="${esc(first.day)} ${esc(first.slot)}" title="Made now for that slot, waiting for Approve">📅 Make it for ${esc(first.day)} ${esc(first.slot)} now</button>` : ""}
           <button type="button" class="btn-secondary" data-write-start="${kind}">Write ${kind === "one" ? "another" : "the next week"}</button></div>`;
       } catch (err) {
+        t.disabled = false;
         els.write[kind].insertAdjacentHTML("afterbegin", `<div class="da-note">${esc(err.message)}</div>`);
       }
     }

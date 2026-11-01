@@ -535,6 +535,20 @@ class PriceTagWhy:
             raise HubError(str(err), 400) from err
         return {**item, "added": [item["question"]]}
 
+    def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
+        """Scripts written and checked on the sending machine (Write it myself / Write a week) into this hub's
+        queue, with the slot each one lands on."""
+        from modules import pw_channel, pw_write
+
+        scripts = bundle.get("scripts") or []
+        if not isinstance(scripts, list) or not scripts:
+            raise HubError("No scripts in the bundle")
+        bad = [f"{s.get('title', '?')}: {'; '.join(p)}" for s in scripts if (p := pw_channel.check_script(s))]
+        if bad:
+            raise HubError("The hub's rule check refused: " + " | ".join(bad)[:500])
+        done = pw_write.save_scripts(scripts, bundle.get("topics") or [])
+        return {**done, "slots": pw_channel.landing(settings, done["queued"])}
+
 
 CHANNELS = {c.name: c for c in (DarkOutliers(), BorderlineWhy(), GamerIQ(), PriceTagWhy())}
 

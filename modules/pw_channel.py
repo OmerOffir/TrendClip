@@ -169,6 +169,13 @@ def queue_dir(out_dir: Path | None = None) -> Path:
     return out_root(out_dir) / "queue"
 
 
+def landing(settings, names: list[str]) -> dict[str, dict[str, str] | None]:
+    """The slot each queued script lands on in the Plan ({"day", "slot", "start"}), None while no slot is free."""
+    rows = [r for d in plan_view(settings)["days"] for r in d["slots"]]
+    return {name: next(({"day": r["day"], "slot": r["slot"], "start": r["start"]} for r in rows
+                        if (r.get("script") or {}).get("file") == name), None) for name in names}
+
+
 def script_files(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list[Path]:
     """Every script there is: the ones in git first, then the hub's queue, each by name."""
     found = sorted((scripts_dir or SCRIPTS_DIR).glob("*.json"))
