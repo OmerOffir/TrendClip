@@ -260,7 +260,7 @@ class Drawn(bw_brand.Board):
 
     def put_drawing(self, name: str, box: tuple[float, float, float, float], label: list[str] | None = None,
                     accent: str = "green", seed: int = 0) -> None:
-        """One of modules.pw_draw's drawings, as big as fits in box: its outline, its marker colour, then the label."""
+        """One of modules.pw_draw's drawings, as big as fits in box: its outline, its marker colour (under the outline), then the label."""
         if name not in pw_draw.DRAWINGS:
             return
         d, k, dx, dy = pw_draw.scaled(name, box)
@@ -280,6 +280,7 @@ class Drawn(bw_brand.Board):
             path = pw_draw.hatch(at(poly), tint_w * 0.75, tint_w / 2 + width / 2)
             if len(path) > 1:
                 self.put_line(path, tint, tint_w, min(0.6, 0.2 + len(path) * 0.006))
+                self.items[-1]["under"] = True  # the colour goes beneath the outline, so its inner lines stay seen
         words = [str(x) for x in (label or []) if str(x).strip()][:3]
         if words and d.label_at:
             lx, ly, lw = d.label_at

@@ -620,6 +620,7 @@ class Board:
     def frame(self, t: float) -> Image.Image:
         img = board_image()
         ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        under = None  # marker colour that goes beneath the outlines drawn before it ("under" items)
         pen, last = None, None
         for it in self.items:
             u = (t - it["at"]) / max(0.05, it["dur"])
@@ -633,7 +634,9 @@ class Board:
                 head = self.write(ov, it, u, t)
             else:
                 drawn, head = prefix(it["pts"], u)
-                marker(ov, drawn, it["rgb"], it["width"], shade=False)
+                if it.get("under"):
+                    under = under or Image.new("RGBA", img.size, (0, 0, 0, 0))
+                marker(under if it.get("under") else ov, drawn, it["rgb"], it["width"], shade=False)
             last = (head[0], head[1], it["at"] + it["dur"])
             if u < 1:
                 pen = head
@@ -652,6 +655,8 @@ class Board:
                 pen = (away[0] + (s[0] - away[0]) * v, away[1] + (s[1] - away[1]) * v)
         if pen is not None:
             draw_hand(ov, pen, t)
+        if under is not None:
+            img.alpha_composite(under)
         img.alpha_composite(ov)
         return img
 
