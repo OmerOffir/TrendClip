@@ -325,15 +325,20 @@ def next_choices(out_dir: Path | None = None, limit: int = 60) -> dict[str, Any]
     return {"choice": choice, "options": options}
 
 
-def next_script(progress=lambda m: None, out_dir: Path | None = None, client=None, research=None, write=None) -> tuple[dict, str]:
+def next_script(progress=lambda m: None, out_dir: Path | None = None, client=None, research=None, write=None,
+                choice: str | None = None) -> tuple[dict, str]:
     """(the script, where it came from): a queued script first, else the next topic with two readable sources
     whose script passes the checks. A topic that fails is marked rejected and the next is tried (TOPIC_TRIES);
     Wikipedia or Gemini being busy (TryLater) stops at once and leaves the topic on the list."""
     root = out_root(out_dir)
-    choice = bw_topics.picked(root)  # the owner's pick (the dashboard's "Next video") goes before the queue
+    stored = bw_topics.picked(root)
+    # `choice`: the video the Plan showed on the slot whose Make now was pressed; else the owner's pick (the
+    # dashboard's "Next video"), which goes before the queue
+    choice = choice if choice is not None else stored
     queue = queued_scripts(out_dir)
     if choice.startswith("queue:") and not any(p.name == choice[6:] for p in queue):
-        bw_topics.pick(root, "")  # the picked script left the queue some other way
+        if choice == stored:
+            bw_topics.pick(root, "")  # the picked script left the queue some other way
     elif choice.startswith("queue:"):
         queue = sorted(queue, key=lambda p: p.name != choice[6:])
     elif choice.startswith("topic:") and any(t.article == choice[6:] for t in bw_topics.remaining(root)):
@@ -347,7 +352,7 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
         done = queue_dir(out_dir) / "used"
         done.mkdir(parents=True, exist_ok=True)
         shutil.move(str(path), done / path.name)
-        if choice == f"queue:{path.name}":
+        if stored == f"queue:{path.name}":
             bw_topics.pick(root, "")
         return script, f"queue:{path.name}"
     research = research or bw_script.research
@@ -356,8 +361,9 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
     tried: set[str] = set()
     errors: list[str] = []
     prefer = bw_series.due(recent_series(out_dir))
+    first = choice[6:] if choice.startswith("topic:") else ""
     for _ in range(TOPIC_TRIES):
-        topic = bw_topics.next_topic(root, tried, prefer=prefer)
+        topic = bw_topics.next_topic(root, tried, prefer=prefer, first=first)
         if topic is None:
             break
         tried.add(topic.article)
@@ -633,7 +639,7 @@ def request_stop(key: str, out_dir: Path | None = None) -> dict:
 
 
 def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None = None, client=None, script: dict | None = None,
-         render=None, voice=None, announce: bool = False) -> dict:
+         render=None, voice=None, announce: bool = False, choice: str | None = None) -> dict:
     """The job's video: script, voice, maps, render, check. Raises ChannelError when the check fails (the video
     stays on disk, marked, and is not uploaded). `render` / `voice`: fakes for the tests."""
     work = out_root(out_dir) / job.key
@@ -641,15 +647,16 @@ def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None
     tracker = Progress(work / "progress.json", progress)
     try:
         return _make(settings, job, tracker, work, out_dir=out_dir, client=client, script=script, render=render, voice=voice,
-                     announce=announce)
+                     announce=announce, choice=choice)
     finally:
         tracker.done()
 
 
-def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client, script, render, voice, announce) -> dict:
+def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client, script, render, voice, announce,
+          choice: str | None = None) -> dict:
     if script is None:
         progress(0.0, "Choosing the topic")
-        script, origin = next_script(progress.step, out_dir, client)
+        script, origin = next_script(progress.step, out_dir, client, choice=choice)
     else:
         script = dict(script)
         origin = script.pop("origin", "given")

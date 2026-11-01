@@ -215,11 +215,13 @@ def pick(out_dir: Path, choice: str) -> None:
         save(state, out_dir)
 
 
-def next_topic(out_dir: Path, skip: set[str] | None = None, prefer: str = "") -> Topic | None:
+def next_topic(out_dir: Path, skip: set[str] | None = None, prefer: str = "", first: str = "") -> Topic | None:
     """The first unused topic (seeds in order, then Gemini's), not in `skip`. The owner's pick (pick) comes first;
     with `prefer` (a series, when its next episode is due: bw_series.due) the first topic of that series goes
     next, after the ones added by hand."""
     left = [t for t in remaining(out_dir) if t.article not in (skip or set())]
+    if first and (found := next((t for t in left if t.article == first), None)):  # the slot's own topic (Make now)
+        return found
     if left and picked(out_dir) == f"topic:{left[0].article}":
         return left[0]
     if prefer and left and left[0].source != "manual":

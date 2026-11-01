@@ -166,6 +166,8 @@ def upload_job() -> dict[str, Any]:
 class MakeRequest(BaseModel):
     day: date | None = None  # with slot: that slot (the Plan tab); else the next slot to come
     slot: str | None = Field(None, pattern=r"^\d{2}:\d{2}$")
+    # the video the Plan shows on that slot ("queue:<file>", "topic:<article>"), so Make now makes that one
+    choice: str | None = Field(None, max_length=300, pattern=r"^(queue|topic):.+$")
 
 
 @router.post("/make")
@@ -183,7 +185,8 @@ def make(req: MakeRequest | None = None) -> dict[str, Any]:
         bw_channel.set_aside(job.key)
     except bw_channel.ChannelError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
-    return _start("make", lambda p: bw_channel.make(settings, job, p, announce=True)["key"], key=job.key)
+    choice = req.choice if req else None
+    return _start("make", lambda p: bw_channel.make(settings, job, p, announce=True, choice=choice)["key"], key=job.key)
 
 
 class StopRequest(BaseModel):

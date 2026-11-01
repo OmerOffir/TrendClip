@@ -291,7 +291,7 @@
     if (v && !sent && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
     if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
     if (prog) btns.push(`<button type="button" class="btn-secondary" data-act="stop" data-key="${esc(r.key)}">⏹ Stop</button>`);
-    if (!up && !r.extra && r.key !== making && !prog && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
+    if (!up && !r.extra && r.key !== making && !prog && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}"${!v && planned ? ` data-choice="${esc(planned.value)}"` : ""}>🗺️ ${v ? "Make another" : "Make now"}</button>`);
     return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
       <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
       <span class="bw-btns">${btns.join("")}</span></div>`;
@@ -369,7 +369,7 @@
       } else if (act === "make") {
         const what = row.querySelector(".bw-what b");
         if (!confirm(`Make a new video for ${day} ${slot} now${what && !what.classList.contains("hint") ? `: ${what.textContent}` : ""}? A video already made for it (not uploaded) is set aside.`)) return;
-        await post("/api/borderlinewhy/make", { day, slot });
+        await post("/api/borderlinewhy/make", { day, slot, ...(btn.dataset.choice ? { choice: btn.dataset.choice } : {}) });
       }
       loadPlan();
     } catch (err) {

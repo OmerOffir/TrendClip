@@ -1589,3 +1589,25 @@ def test_messages_say_which_day_a_video_goes_out(settings, tmp_path, world):
     assert bw_channel.when_text("2026-11-03T14:30+02:00", now) == "on Tue 3 Nov at 14:30"
     job, info, _ = _make(settings, tmp_path, world, day=Day(2026, 11, 2))
     assert "It goes out by itself " in bw_channel.video_note(info) and " at 14:30 as public" in bw_channel.video_note(info)
+
+
+def test_make_now_makes_the_video_its_row_shows(tmp_path):
+    root = tmp_path
+    queue = bw_channel.queue_dir(root)
+    queue.mkdir(parents=True)
+    (queue / "001_whatif.json").write_text(json.dumps({**SCRIPT, "title": "What if Israel was in Africa?"}))
+    bw_topics.pick(root, "topic:Oklahoma Panhandle")  # the owner's pick, shown on an earlier open slot
+    seen = []
+    research = lambda topic, p: seen.append(topic.article) or topic  # noqa: E731
+    write = lambda res, client, progress: {"title": res.question}  # noqa: E731
+
+    script, origin = bw_channel.next_script(out_dir=root, research=research, write=write, choice="queue:001_whatif.json")
+    assert script["title"] == "What if Israel was in Africa?" and origin == "queue:001_whatif.json"
+    assert bw_topics.picked(root) == "topic:Oklahoma Panhandle"  # the pick still waits for its own slot
+
+    script, origin = bw_channel.next_script(out_dir=root, research=research, write=write, choice="topic:Lake Constance")
+    assert origin == "topic:Lake Constance" and seen == ["Lake Constance"]
+    assert bw_topics.picked(root) == "topic:Oklahoma Panhandle"
+
+    script, origin = bw_channel.next_script(out_dir=root, research=research, write=write)  # the slot's own time: the pick
+    assert origin == "topic:Oklahoma Panhandle"
