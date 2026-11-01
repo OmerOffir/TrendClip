@@ -288,11 +288,24 @@ ALIASES = {"king": "king_waving", "queen": "queen_curtsying", "soldier": "soldie
            "newspaper": "newspaper_unfolding", "vote": "vote_ballot_cast", "horse": "horse_trotting", "castle": "castle_flags_and_gate",
            "town": "town_life", "surveyor": "surveyor_measuring_line", "border_guard": "border_guard_barrier",
            "customs": "border_guard_barrier", "fisherman": "fisherman_fishing", "letter": "letter_opening",
-           "mapmaker": "mapmaker_drawing", "family": "family_house"}
+           "mapmaker": "mapmaker_drawing", "family": "family_house", "cartographer": "mapmaker_drawing",
+           # the owner's mapmaker figures (2026-11-01)
+           "astronomer": "mapmaker_astronomer", "stars": "mapmaker_astronomer", "builder": "mapmaker_builder",
+           "wall": "mapmaker_builder", "chef": "mapmaker_chef", "food": "mapmaker_chef", "gardener": "mapmaker_gardener",
+           "farmer": "mapmaker_gardener", "librarian": "mapmaker_librarian", "archive": "mapmaker_librarian",
+           "messenger": "mapmaker_messenger", "mail": "mapmaker_messenger", "photographer": "mapmaker_photographer",
+           "camera": "mapmaker_photographer", "route_planner": "mapmaker_route_planner", "planner": "mapmaker_route_planner",
+           "scientist": "mapmaker_scientist", "traveler": "mapmaker_traveler", "tourist": "mapmaker_traveler"}
 
 
-# the mascot and the marker hand (modules.bw_brand): the channel's own pictures, never a script's icons
-BRAND_FILES = frozenset({"explorer_thinking_smooth", "explorer_discovery", "cartoon_hand_gentle_sway"})
+# the mascot and the marker hand (modules.bw_brand): the channel's own pictures, never a script's icons. Every
+# explorer_* file is the red panda's pose except explorer_scanning (a small human explorer, the "explorer" icon).
+BRAND_FILES = frozenset({"cartoon_hand_gentle_sway"})
+ICON_EXPLORERS = frozenset({"explorer_scanning"})
+
+
+def is_brand(stem: str) -> bool:
+    return stem in BRAND_FILES or (stem.startswith("explorer_") and stem not in ICON_EXPLORERS)
 
 
 def _key(name: str) -> str:
@@ -307,7 +320,7 @@ def custom_icons() -> dict[str, Path]:
         return {}
     out: dict[str, Path] = {}
     for path in files:
-        if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith(".") and path.stem not in BRAND_FILES:
+        if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith(".") and not is_brand(path.stem):
             out.setdefault(_key(path.stem), path)
     for short, name in ALIASES.items():
         if name in out:

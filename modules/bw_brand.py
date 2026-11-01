@@ -30,7 +30,11 @@ from modules import bw_fx, bw_geo, bw_render
 from modules.bw_render import Element, Scene, curve, ease
 
 MASCOT = {"thinking": "explorer_thinking_smooth", "discovery": "explorer_discovery", "searching": "explorer_searching",
-          "celebration": "explorer_celebration", "speaking": "explorer_speaking"}
+          "celebration": "explorer_celebration", "speaking": "explorer_speaking",
+          # the owner's poses of 2026-11-01
+          "approval": "explorer_approval", "disagreement": "explorer_disagreement", "explaining": "explorer_explaining",
+          "laughing": "explorer_laughing", "listening": "explorer_listening", "pointing": "explorer_pointing",
+          "surprised": "explorer_surprised", "thanks": "explorer_thanks", "writing": "explorer_writing"}
 PANDA = "panda"  # bw_render.Word.who for the mascot's words
 PANDA_GAP = 0.3  # seconds of silence on each side of a line the mascot says
 HAND = "cartoon_hand_gentle_sway"
@@ -42,6 +46,9 @@ GREEN = (24, 138, 70)
 BOARD = (247, 247, 243)
 PEN_KINDS = ("highlight", "arrow", "line", "sketch")  # what the hand can draw on a map
 THINK_WORDS = re.compile(r"\b(but|why|how|odd|strange|mystery|weird|however|yet|bizarre|puzzle)\b", re.I)
+NO_WORDS = re.compile(r"\b(no|not|never|nobody|none|refused|rejected|wrong|mistake|failed|lost|denied|banned)\b", re.I)
+WOW_WORDS = re.compile(r"\b(wait|what|huh|really|seriously|whoa|wow|hold on|no way)\b", re.I)
+TARGET_KINDS = ("highlight", "ring", "pin", "transfer")  # a scene showing a place: the mascot points at it
 SIZES = {"portrait": dict(mascot=270, hand=330, board_title=124, board_line=104),
          "landscape": dict(mascot=230, hand=280, board_title=110, board_line=84)}
 SIZES["portrait"].update(bubble=66, bubble_w=760)
@@ -193,8 +200,9 @@ def hand_at(t: float, at: float, done: float, head: tuple[float, float], start: 
 
 
 def moods(scenes: list[Scene]) -> list[str]:
-    """Each scene's mascot: searching the map at the opening; thinking on questions and twists; cheering the scene
-    that answers its last question; lit up with its pen otherwise."""
+    """Each scene's mascot while the narrator talks: searching the map at the opening; thinking on questions and
+    twists; cheering the scene that answers its last question; writing along on the whiteboard; shaking its head at
+    a refusal or a mistake; pointing at the place a map scene shows; else listening or lit up, in turn."""
     out = []
     last_ask = max((i for i, s in enumerate(scenes) if s.opts.get("ask")), default=-1)
     for i, s in enumerate(scenes):
@@ -206,10 +214,16 @@ def moods(scenes: list[Scene]) -> list[str]:
                 mood = "searching"
             elif i == last_ask:  # the answer to its last question: the payoff
                 mood = "celebration"
+            elif s.kind == "board":
+                mood = "writing"
             elif "?" in s.narration or THINK_WORDS.search(s.narration):
                 mood = "thinking"
+            elif NO_WORDS.search(s.narration):
+                mood = "disagreement"
+            elif s.kind == "map" and any(e.kind in TARGET_KINDS for e in s.elements):
+                mood = "pointing"
             else:
-                mood = "discovery"
+                mood = ("listening", "discovery", "explaining")[i % 3]
         out.append(mood)
     return out
 
@@ -257,11 +271,26 @@ def dialogue(script: dict) -> list[tuple[str, str]]:
     return parts
 
 
+def line_pose(spec: bw_render.Spec, line: list) -> str:
+    """The pose while it says a line: thanking the viewer in the outro; surprised at a "wait, what?"; laughing at
+    an exclaimed reaction; nodding at a closing remark; else talking."""
+    text = " ".join(w.text for w in line)
+    if spec.scenes and spec.scenes[-1].kind == "end" and line is spec.lines[-1] and line[0].start >= spec.scenes[-1].start - 0.5:
+        return "thanks"
+    if WOW_WORDS.search(text):
+        return "surprised"
+    if text.rstrip().endswith("!"):
+        return "laughing"
+    if not text.rstrip().endswith("?"):
+        return "approval"
+    return "speaking"
+
+
 def mascot_mood(spec: bw_render.Spec, mood_of: list[str], i: int, t: float) -> tuple[str, float]:
     """The pose at `t` and when it began: talking while it says a line, else its scene's mood."""
     line = spec.line_at(t, before=0.15, after=0.1)
     if line:
-        return "speaking", line[0].start - 0.15
+        return line_pose(spec, line), line[0].start - 0.15
     ends = [ln[-1].end + 0.1 for ln in spec.lines if ln[-1].end + 0.1 <= t]
     start = max([spec.scenes[i].start, *ends])
     return mood_of[i], start

@@ -109,3 +109,25 @@ def test_a_portrait_board_keeps_clear_of_the_mascot(lines):
     outline = [it for it in board.items if it["kind"] == "line" and len(it["pts"]) > 31]  # not the title's underline
     assert outline and all(it["pts"][:, 0].min() >= cx + bw_brand.size("mascot") / 2 for it in outline)
     assert all(it["pts"][:, 1].max() <= bw_render.CAPTION_Y - 200 for it in outline)  # above the bubble beside the mascot
+
+
+def test_the_mascot_s_new_poses_follow_the_story():
+    from modules import bw_brand, bw_fx, bw_render
+
+    def scene(kind, narration, elements=()):
+        return bw_render.Scene(kind, narration, elements=list(elements))
+
+    scenes = [scene("map", "A village sits inside Switzerland."), scene("map", "Its border is close.", [bw_render.Element("highlight", "Italy")]),
+              scene("board", "The deal of 1848."), scene("map", "Switzerland refused the offer."), scene("map", "So it stayed Italian."),
+              scene("end", "")]
+    assert bw_brand.moods(scenes) == ["searching", "pointing", "writing", "disagreement", "discovery", "celebration"]  # 4 % 3: in turn
+    assert set(bw_brand.MASCOT) >= {"approval", "laughing", "listening", "surprised", "thanks", "writing"}
+    spec = bw_render.Spec(scenes, [])
+    say = lambda text, at: [bw_render.Word(w, at + k * 0.3, at + k * 0.3 + 0.2, "panda") for k, w in enumerate(text.split())]
+    scenes[-1].start = 20.0
+    spec.lines = [say("Wait, it begged to join?", 3.0), say("Swiss neutrality strikes again!", 9.0), say("So that's the deal.", 12.0),
+                  say("Subscribe for more borders!", 20.1)]
+    assert [bw_brand.line_pose(spec, ln) for ln in spec.lines] == ["surprised", "laughing", "approval", "thanks"]
+    names = bw_fx.icon_names()
+    assert "explorer_approval" not in names and "explorer" in names  # the panda is never a map icon
+    assert {"astronomer", "librarian", "traveler", "route_planner"} <= set(names)
