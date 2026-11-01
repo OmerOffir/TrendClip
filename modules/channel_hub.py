@@ -543,7 +543,7 @@ class PriceTagWhy:
         scripts = bundle.get("scripts") or []
         if not isinstance(scripts, list) or not scripts:
             raise HubError("No scripts in the bundle")
-        bad = [f"{s.get('title', '?')}: {'; '.join(p)}" for s in scripts if (p := pw_channel.check_script(s))]
+        bad = [f"{s.get('title', '?')}: {'; '.join(p)}" for s in scripts if (p := pw_channel.blocking(s))]
         if bad:
             raise HubError("The hub's rule check refused: " + " | ".join(bad)[:500])
         done = pw_write.save_scripts(scripts, bundle.get("topics") or [])

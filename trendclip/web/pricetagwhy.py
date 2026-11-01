@@ -107,7 +107,7 @@ def make(req: MakeRequest) -> dict[str, Any]:
     if path is None:
         raise HTTPException(status_code=404, detail="No such script")
     found = next((s for s in pw_channel.scripts() if s["file"] == req.file), None)
-    if found and found["check"]:
+    if found and found["check"] and not found["rules_skipped"]:
         raise HTTPException(status_code=400, detail="The script breaks the rules: " + "; ".join(found["check"]))
     return _start(path, f"sample-{datetime.now():%Y%m%d-%H%M}-{path.stem}")
 
@@ -371,6 +371,11 @@ def write_facts(kind: str, req: PasteRequest) -> dict[str, Any]:
 @router.post("/write/{kind}/accept")
 def write_accept(kind: str) -> dict[str, Any]:
     return _write(pw_write.accept, kind)
+
+
+@router.post("/write/{kind}/skip-rules")
+def write_skip_rules(kind: str) -> dict[str, Any]:
+    return _write(pw_write.skip_rules, kind)
 
 
 @router.post("/write/{kind}/skip-facts")

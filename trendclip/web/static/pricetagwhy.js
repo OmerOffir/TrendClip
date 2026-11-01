@@ -63,7 +63,7 @@
   // What can be put on a slot: the made samples (rule check passed) and every script still in the queue
   function placeOptions(vids, scripts) {
     const samples = vids.filter((v) => v.state === "sample" && v.has_video && !(v.check && v.check.length));
-    const free = scripts.filter((s) => !s.used && !s.check.length);
+    const free = scripts.filter((s) => !s.used && (!s.check.length || s.rules_skipped));
     return (samples.length ? `<optgroup label="Made videos">${samples.map((v) => `<option value="video:${esc(v.key)}">${esc(v.title)} (${Math.round(v.duration_seconds || 0)} s, ${esc(fmtWhen(v.created_at))})</option>`).join("")}</optgroup>` : "")
       + (free.length ? `<optgroup label="Scripts (made 6 h before)">${free.map((s) => `<option value="script:${esc(s.file)}">${esc(s.title)}${s.removed ? " (removed)" : ""}</option>`).join("")}</optgroup>` : "");
   }
@@ -102,10 +102,10 @@
   }
 
   function scriptCard(s, busy) {
-    const ok = !s.check.length;
+    const ok = !s.check.length || s.rules_skipped;
     return `<article class="da-vcard pw-script"><div class="da-vcard-body">
       <b>${esc(s.title)}</b>
-      <div class="pills"><span class="pill ${ok ? "good" : "warn"}">${ok ? "✅ Rules OK" : "❌ " + esc(s.check.join("; "))}</span>
+      <div class="pills"><span class="pill ${ok ? "good" : "warn"}">${!s.check.length ? "✅ Rules OK" : s.rules_skipped ? "⏭ Rules skipped: " + esc(s.check.join("; ")) : "❌ " + esc(s.check.join("; "))}</span>
         <span class="pill">${s.used ? "made for a slot" : s.removed ? "removed from the plan" : s.pinned ? `📌 ${esc(s.pinned.replace("_", " "))}` : "queued"}</span>
         <span class="pill">${esc(s.words)} words</span><span class="pill">${s.sources.length} sources</span><span class="pill">${esc(s.file)}</span></div>
       <details><summary class="hint">Question, claims and sources</summary><div class="da-yt-text">
@@ -241,7 +241,7 @@
       return;
     }
     const drafts = (v.drafts || []).map((d, i) => `<div class="pw-slot">
-        <span class="pw-time">${i + 1}</span>${d.problems.length ? '<span class="pill warn">❌ rules</span>' : '<span class="pill good">✅ rules</span>'}
+        <span class="pw-time">${i + 1}</span>${d.problems.length ? '<span class="pill warn">❌ rules</span>' : v.skipped_rules ? '<span class="pill warn">⏭ rules skipped</span>' : '<span class="pill good">✅ rules</span>'}
         <span class="pw-what"><b>${esc(d.title)}</b> <span class="hint">${d.words} words · ${d.sources} sources</span>
           ${d.problems.length ? `<span class="da-note">${esc(d.problems.join("; "))}</span>` : ""}</span>
         ${kind === "week" ? `<button type="button" class="btn-secondary" data-write-drop="${i + 1}">Leave out</button>` : ""}
@@ -254,7 +254,7 @@
         ? `<p>✅ Both checks passed.</p><button type="button" class="btn-primary" data-write-queue="${kind}">${state.sender
           ? "📤 Send to Linux</button> <span class=\"hint\">they go to the Linux machine's queue through Discord and fill its free slots</span>"
           : "➕ Add to the queue</button>"}`
-        : `<p class="hint">${esc(STEP_TEXT[v.step === "fix" && v.after_facts ? "flagged" : v.step] || "")}</p>
+        : `<p class="hint">${esc((v.step === "facts" && v.skipped_rules ? STEP_TEXT.facts.replace("The rules pass ✅", "You skipped the rules check ⏭") : STEP_TEXT[v.step === "fix" && v.after_facts ? "flagged" : v.step]) || "")}</p>
            ${v.can_accept ? `<div class="pw-add"><button type="button" class="btn-primary" data-write-accept="${kind}">✅ Accept as it is</button>
              <span class="hint">the flags are kept with the script</span></div>` : ""}
            <div class="pw-add"><button type="button" class="btn-secondary" data-copy="${kind}">📋 Copy the prompt</button>
@@ -262,6 +262,7 @@
            <textarea class="pw-prompt" readonly rows="5" id="pwPrompt-${kind}">${esc(v.prompt || "")}</textarea>
            <textarea class="pw-paste" rows="8" id="pwPaste-${kind}" placeholder="Paste the LLM's JSON answer here"></textarea>
            <button type="button" class="btn-primary" data-write-paste="${kind}" data-to="${pasteTo}">Check it</button>
+           ${v.step === "fix" && !v.after_facts && (v.drafts || []).length ? `<button type="button" class="btn-secondary" data-write-skip-rules="${kind}" title="Keep the scripts as they are; the fact check comes next">⏭ Skip the rules check</button>` : ""}
            ${v.step === "facts" ? `<button type="button" class="btn-secondary" data-write-skip="${kind}" title="The rules check already wants 2 sources for every claim">⏭ Skip the fact check</button>` : ""}`}
       <button type="button" class="btn-secondary" data-write-start="${kind}" data-restart="1">Start over</button>`;
   }
@@ -390,6 +391,10 @@
     if (d.writeAccept) {
       if (!window.confirm("Keep the script as it is, with what the fact checker flagged? Only if you checked those lines yourself.")) return;
       return writeAct(d.writeAccept, () => post(`/api/pricetagwhy/write/${d.writeAccept}/accept`));
+    }
+    if (d.writeSkipRules) {
+      if (!window.confirm("Skip the rules check and keep the script(s) as they are? A script that breaks what the drawing needs can fail when it is made.")) return;
+      return writeAct(d.writeSkipRules, () => post(`/api/pricetagwhy/write/${d.writeSkipRules}/skip-rules`));
     }
     if (d.writeSkip) {
       if (!window.confirm("Skip the fact check and keep the script as it is?")) return;

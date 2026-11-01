@@ -458,6 +458,26 @@ def test_the_owner_can_skip_the_fact_check(tmp_path):
     assert json.loads((pw_channel.queue_dir(tmp_path) / name).read_text())["checked"]["facts"] == "skipped by the owner"
 
 
+def test_the_owner_can_skip_the_rules_check_and_the_slots_still_take_it(tmp_path, monkeypatch):
+    from modules import pw_write
+
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
+    pw_write.start("one", "Why is AriZona Iced Tea still 99 cents?", out_dir=tmp_path)
+    with pytest.raises(pw_write.WriteError):
+        pw_write.skip_rules("one", tmp_path)  # nothing pasted yet
+    broken = {**_script(), "sources": _script()["sources"][:1]}  # one source: the rules check refuses it
+    assert pw_write.answer("one", json.dumps(broken), tmp_path)["step"] == "fix"
+    view = pw_write.skip_rules("one", tmp_path)
+    assert view["step"] == "facts" and view["skipped_rules"]
+    pw_write.skip_facts("one", tmp_path)
+    name = pw_write.queue("one", tmp_path)["queued"][0]
+    queued = json.loads((pw_channel.queue_dir(tmp_path) / name).read_text())
+    assert queued["checked"]["rules"] == "skipped by the owner" and pw_channel.check_script(queued)
+    assert [p.name for p in pw_channel.queued(tmp_path)] == [name]  # a slot still makes it
+    listed = next(s for s in pw_channel.scripts(tmp_path) if s["file"] == name)
+    assert listed["rules_skipped"] and listed["check"]
+
+
 def test_the_thumbnail_says_the_question_and_reads_any_figure():
     from modules import pw_thumb
 

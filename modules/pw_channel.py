@@ -165,6 +165,16 @@ def check_script(script: dict) -> list[str]:
     return problems
 
 
+def rules_skipped(script: dict) -> bool:
+    """The owner kept the script though it broke the rules (Write it myself / Write a week: Skip the rules check)."""
+    return (script.get("checked") or {}).get("rules") == "skipped by the owner"
+
+
+def blocking(script: dict) -> list[str]:
+    """The rule problems that keep a script from being drawn: none when the owner skipped the rules check."""
+    return [] if rules_skipped(script) else check_script(script)
+
+
 def queue_dir(out_dir: Path | None = None) -> Path:
     return out_root(out_dir) / "queue"
 
@@ -230,7 +240,7 @@ def queued(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list
     used = used_scripts(out_dir)
     removed = set(load_plan(out_dir)["removed"])
     return [p for p in script_files(out_dir, scripts_dir)
-            if p.name not in used and p.name not in removed and (s := _read(p)) is not None and not check_script(s)]
+            if p.name not in used and p.name not in removed and (s := _read(p)) is not None and not blocking(s)]
 
 
 def script_for(job: "Job", out_dir: Path | None = None, scripts_dir: Path | None = None) -> Path | None:
@@ -324,7 +334,7 @@ def scripts(out_dir: Path | None = None, scripts_dir: Path | None = None) -> lis
             continue
         out.append({"file": path.name, "title": script.get("title", ""), "question": script.get("question", ""),
                     "words": words(narration(script)), "sources": script.get("sources", []), "claims": script.get("claims", []),
-                    "check": check_script(script), "used": path.name in used, "removed": path.name in plan["removed"],
+                    "check": check_script(script), "rules_skipped": rules_skipped(script), "used": path.name in used, "removed": path.name in plan["removed"],
                     "pinned": next((k for k, v in plan["pins"].items() if v == path.name), "")})
     return out
 
@@ -608,7 +618,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     `job`: the slot it is for ({day, slot, post_at}); `script_file`: the queued script it came from (used up)."""
     from modules import pw_render, pw_thumb
 
-    if problems := check_script(script):
+    if problems := blocking(script):
         raise ChannelError("The script breaks the rules: " + "; ".join(problems))
     pw_render.use_style()
     work = out_root(out_dir) / key

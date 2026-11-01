@@ -438,6 +438,19 @@ def accept(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
     return _save(session, out_dir)
 
 
+def skip_rules(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
+    """The owner keeps the scripts though they break the rules (the fix prompt went round enough); the fact check
+    comes next, and can be skipped too. The script is marked, so the slots still make it; a broken one fails when
+    it is drawn, with the reason on the Plan."""
+    session = load(kind, out_dir)
+    if session is None or session["step"] != "fix" or not session["drafts"]:
+        raise WriteError("Nothing to skip: paste the LLM's answer first")
+    session["skipped_rules"] = True
+    session["flagged"], session["problems"] = {}, {str(k): [] for k in range(1, len(session["drafts"]) + 1)}
+    session["step"] = "facts"
+    return _save(session, out_dir)
+
+
 def skip_facts(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
     """The owner skips the second LLM's fact check (the rules check already wants 2 sources for every claim)."""
     session = load(kind, out_dir)
@@ -515,7 +528,7 @@ def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any
         flags = (session.get("accepted") or {}).get(str(k), [])
         how = ("skipped by the owner" if session.get("skipped_facts") else
                "accepted by the owner with flags" if flags else "pasted fact check")
-        drafts.append({**d, "checked": {"rules": True, "facts": how, **({"flags": flags} if flags else {}), "at": stamp}})
+        drafts.append({**d, "checked": {"rules": "skipped by the owner" if session.get("skipped_rules") else True, "facts": how, **({"flags": flags} if flags else {}), "at": stamp}})
     if deliver is None:
         done = save_scripts(drafts, session["topics"], out_dir)
     else:
@@ -536,4 +549,5 @@ def view(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
                         "sources": len(d.get("sources") or []), "problems": session["problems"].get(str(k), []),
                         "flagged": session["flagged"].get(str(k), [])} for k, d in enumerate(session["drafts"], 1)],
             "general": session["problems"].get("0", []), "started": session.get("started", ""),
-            "can_accept": can_accept(session), "after_facts": bool(session.get("flagged"))}
+            "can_accept": can_accept(session), "after_facts": bool(session.get("flagged")),
+            "skipped_rules": bool(session.get("skipped_rules"))}
