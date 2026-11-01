@@ -535,6 +535,12 @@ class PriceTagWhy:
             raise HubError(str(err), 400) from err
         return {**item, "added": [item["question"]]}
 
+    def view(self, settings) -> dict[str, Any]:
+        """The hub's topic list, so the sending machine writes its scripts from it (op cview)."""
+        from modules import pw_write
+
+        return {"topics": pw_write.topics()}
+
     def add_topics(self, settings, text: str) -> dict[str, Any]:
         """An LLM's pasted questions (the Topics tab's "New topics from your own LLM") into this hub's list."""
         from modules import pw_write

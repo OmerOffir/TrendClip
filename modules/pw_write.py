@@ -79,7 +79,7 @@ def topics(out_dir: Path | None = None) -> list[dict[str, Any]]:
         found = json.loads(path.read_text(encoding="utf-8"))
     else:
         found = [{"question": q, "pillar": p, "used": False, "added": "brief"} for q, p in SEED_TOPICS]
-    answered = {_norm(s.get("title", "")) for s in pw_channel.scripts(out_dir)} | {_norm(s.get("question", "")) for s in pw_channel.scripts(out_dir)}
+    answered = {_norm(s.get(k) or "") for s in pw_channel.scripts(out_dir) for k in ("title", "question", "topic")} - {""}
     for t in found:
         t["used"] = bool(t.get("used")) or _norm(t["question"]) in answered
     return found
@@ -118,10 +118,10 @@ def move_first(question: str, out_dir: Path | None = None) -> None:
     save_topics([item, *(t for t in found if t is not item)], out_dir)
 
 
-def next_topics(count: int, out_dir: Path | None = None) -> list[dict[str, Any]]:
+def next_topics(count: int, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     """The next unused topics, the top one first, then taking the pillars in turn so the channel never looks
     mass-produced."""
-    left = [t for t in topics(out_dir) if not t["used"]]
+    left = [t for t in (topics(out_dir) if found is None else found) if not t["used"]]
     picked: list[dict[str, Any]] = left[:1]
     left = left[1:]
     while left and len(picked) < count:
@@ -373,10 +373,11 @@ Answer with JSON only, no other text:
 The pillar is written exactly as above."""
 
 
-def llm_prompt(count: int = 20, out_dir: Path | None = None) -> str:
-    """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM")."""
+def llm_prompt(count: int = 20, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> str:
+    """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM"); `found`: the list
+    to avoid (the Linux hub's, on the sending machine)."""
     return TOPICS_PROMPT.format(count=count, pillars="\n".join(f"- {p}" for p in PILLARS),
-                                taken="\n".join(t["question"] for t in topics(out_dir)) or "(none yet)")
+                                taken="\n".join(t["question"] for t in (topics(out_dir) if found is None else found)) or "(none yet)")
 
 
 def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
@@ -425,14 +426,17 @@ def _save(session: dict[str, Any], out_dir: Path | None = None) -> dict[str, Any
     return view(session["kind"], out_dir)
 
 
-def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Path | None = None) -> dict[str, Any]:
-    """A new session: `question` (or the next topic) for "one", the next `count` topics for "week"."""
+def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Path | None = None,
+          found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """A new session: `question` (or the next topic) for "one", the next `count` topics for "week". `found`: the
+    topic list to take them from (the Linux hub's, on the sending machine), else this machine's."""
+    found = topics(out_dir) if found is None else found
     if kind == "one":
         asked = " ".join(question.split())
-        known = next((t for t in topics(out_dir) if _norm(t["question"]) == _norm(asked)), None) if asked else None
-        picked = [{"question": asked, "pillar": (known or {}).get("pillar", "")}] if asked else next_topics(1, out_dir)
+        known = next((t for t in found if _norm(t["question"]) == _norm(asked)), None) if asked else None
+        picked = [{"question": asked, "pillar": (known or {}).get("pillar", "")}] if asked else next_topics(1, out_dir, found)
     else:
-        picked = next_topics(max(1, min(14, count)), out_dir)
+        picked = next_topics(max(1, min(14, count)), out_dir, found)
     if not picked:
         raise WriteError("No topics left: add questions in the Topics tab")
     session = {"kind": kind, "topics": picked, "step": "write", "drafts": [], "problems": {}, "flagged": {},
@@ -545,22 +549,25 @@ def _mark_used(asked: list[dict[str, Any]], stamp: str, out_dir: Path | None = N
 
 def save_scripts(drafts: list[dict[str, Any]], asked: list[dict[str, Any]], out_dir: Path | None = None) -> dict[str, Any]:
     """Checked scripts into output/pricetagwhy/queue/ (the slots take them by name, so in this order), on this
-    machine or, through Discord, on the hub (channel_hub.PriceTagWhy.queue). A script whose title is already
-    in the queue folder is skipped. {"queued": [names], "skipped": [{"title", "why"}], "waiting": n}."""
+    machine or, through Discord, on the hub (channel_hub.PriceTagWhy.queue). A script whose title or question
+    is already in the queue folder (waiting or made) is skipped, so one topic never makes two videos. {"queued": [names], "skipped": [{"title", "why"}], "waiting": n}."""
     folder = pw_channel.queue_dir(out_dir)
     folder.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
-    have = set()  # titles already in the queue folder (a week sent twice)
+    have = set()  # titles and questions already in the queue folder (made or waiting): one video per topic
     for path in folder.glob("*.json"):
         try:
-            have.add(_norm(json.loads(path.read_text(encoding="utf-8")).get("title", "")))
+            old = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            pass
+            continue
+        have |= {_norm(old.get(k, "")) for k in ("title", "question", "topic")} - {""}
     saved, skipped = [], []
     for k, d in enumerate(drafts, 1):
-        if _norm(d.get("title", "")) in have:
-            skipped.append({"title": d.get("title", ""), "why": "a script with this title is already queued"})
+        mine = {_norm(d.get(k, "")) for k in ("title", "question", "topic")} - {""}
+        if mine & have:
+            skipped.append({"title": d.get("title", ""), "why": "a script for this question is already queued or made"})
             continue
+        have |= mine
         path = folder / f"{stamp}-{k:02d}-{slug(d.get('title', ''))}.json"
         path.write_text(json.dumps(d, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         saved.append(path.name)
@@ -580,7 +587,8 @@ def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any
         flags = (session.get("accepted") or {}).get(str(k), [])
         how = ("skipped by the owner" if session.get("skipped_facts") else
                "accepted by the owner with flags" if flags else "pasted fact check")
-        drafts.append({**d, "checked": {"rules": "skipped by the owner" if session.get("skipped_rules") else True, "facts": how, **({"flags": flags} if flags else {}), "at": stamp}})
+        asked = session["topics"][k - 1]["question"] if k <= len(session["topics"]) else ""  # the topic it answers
+        drafts.append({**d, **({"topic": asked} if asked else {}), "checked": {"rules": "skipped by the owner" if session.get("skipped_rules") else True, "facts": how, **({"flags": flags} if flags else {}), "at": stamp}})
     if deliver is None:
         done = save_scripts(drafts, session["topics"], out_dir)
     else:
@@ -590,11 +598,11 @@ def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any
     return done
 
 
-def view(kind: str, out_dir: Path | None = None) -> dict[str, Any]:
+def view(kind: str, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The tab's state: the step, the prompt to copy, the drafts with their problems."""
     session = load(kind, out_dir)
     if session is None:
-        return {"kind": kind, "step": "none", "topics": next_topics(1 if kind == "one" else DEFAULT_COUNT, out_dir)}
+        return {"kind": kind, "step": "none", "topics": next_topics(1 if kind == "one" else DEFAULT_COUNT, out_dir, found)}
     prompt = {"write": write_prompt, "fix": fix_prompt, "facts": facts_prompt}.get(session["step"])
     return {"kind": kind, "step": session["step"], "topics": session["topics"], "prompt": prompt(session) if prompt else "",
             "drafts": [{"title": d.get("title", ""), "words": pw_channel.words(pw_channel.narration(d)),

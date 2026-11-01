@@ -332,7 +332,7 @@ def scripts(out_dir: Path | None = None, scripts_dir: Path | None = None) -> lis
             out.append({"file": path.name, "title": path.stem, "question": "", "words": 0, "sources": [], "claims": [],
                         "check": ["not valid JSON"], "used": False})
             continue
-        out.append({"file": path.name, "title": script.get("title", ""), "question": script.get("question", ""),
+        out.append({"file": path.name, "title": script.get("title", ""), "question": script.get("question", ""), "topic": script.get("topic", ""),
                     "words": words(narration(script)), "sources": script.get("sources", []), "claims": script.get("claims", []),
                     "check": check_script(script), "rules_skipped": rules_skipped(script), "used": path.name in used, "removed": path.name in plan["removed"],
                     "pinned": next((k for k, v in plan["pins"].items() if v == path.name), "")})

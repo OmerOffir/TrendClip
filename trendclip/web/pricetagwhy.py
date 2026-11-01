@@ -310,10 +310,30 @@ def _write(fn, *args) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(err)) from err
 
 
+def _hub_topics(strict: bool = False) -> tuple[list[dict[str, Any]] | None, str]:
+    """(the Linux hub's topic list, "") on the sending machine, asked through Discord: the one the scripts are written
+    from, so two machines never write from different lists. (None, "") on the hub itself (this machine's list);
+    (None, the error) when Linux doesn't answer, or HTTP 502 when `strict`."""
+    from modules import channel_hub
+    from trendclip import hub
+
+    if not hub.is_sender(_settings()):
+        return None, ""
+    try:
+        return channel_hub.remote_view(_settings(), "pricetagwhy")["topics"], ""
+    except (hub.HubError, KeyError) as err:
+        if strict:
+            raise HTTPException(status_code=502, detail=f"Couldn't read the Linux machine's topics: {err}") from err
+        return None, str(err)
+
+
 @router.get("/topics")
 def topics() -> dict[str, Any]:
-    found = pw_write.topics()
-    return {"topics": found, "left": sum(1 for t in found if not t["used"]), "pillars": list(pw_write.PILLARS)}
+    """The topic list: the Linux hub's on the sending machine ("source": "linux"), this machine's otherwise."""
+    remote, error = _hub_topics()
+    found = pw_write.topics() if remote is None else remote
+    return {"topics": found, "left": sum(1 for t in found if not t["used"]), "pillars": list(pw_write.PILLARS),
+            "source": "here" if remote is None else "linux", "hub_error": error}
 
 
 @router.post("/topics")
@@ -336,7 +356,7 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
 @router.get("/llm-topics")
 def llm_topics_prompt(count: int = 20) -> dict[str, Any]:
     """The prompt for new topics, to paste into any LLM."""
-    return {"prompt": pw_write.llm_prompt(max(1, min(40, count)))}
+    return {"prompt": pw_write.llm_prompt(max(1, min(40, count)), None, _hub_topics()[0])}
 
 
 class LLMText(BaseModel):
@@ -374,12 +394,14 @@ def remove_topic(req: TopicRequest) -> dict[str, Any]:
 def write_view(kind: str) -> dict[str, Any]:
     from trendclip import hub
 
-    return {**_write(pw_write.view, kind), "sender": hub.is_sender(_settings())}
+    remote = _hub_topics()[0] if pw_write.load(kind) is None else None  # the next topics shown before Start
+    return {**_write(pw_write.view, kind, None, remote), "sender": hub.is_sender(_settings())}
 
 
 @router.post("/write/{kind}")
 def write_start(kind: str, req: StartRequest) -> dict[str, Any]:
-    return _write(pw_write.start, kind, req.question, req.count)
+    """A new writing session, from the Linux hub's topic list on the sending machine."""
+    return _write(pw_write.start, kind, req.question, req.count, None, _hub_topics(strict=True)[0])
 
 
 @router.post("/write/{kind}/answer")

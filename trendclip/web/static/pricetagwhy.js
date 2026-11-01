@@ -195,7 +195,8 @@
   function renderTopics(body) {
     const sel = $("pwAddPillar");
     if (sel.options.length <= 1) sel.insertAdjacentHTML("beforeend", body.pillars.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join(""));
-    els.topicsCount.textContent = `· ${body.left} left`;
+    const linux = body.source === "linux";  // the sending machine shows the Linux list, the one scripts are written from
+    els.topicsCount.textContent = `· ${body.left} left${linux ? " · the Linux machine's list" : ""}${body.hub_error ? ` · ⚠️ Linux didn't answer, this machine's list: ${body.hub_error}` : ""}`;
     setCount(els.navTopics, body.left);
     // the ones still to write first, in the order the writing prompts take them; the written ones after
     const left = inTurn(body.topics.filter((t) => !t.used));
@@ -204,9 +205,9 @@
         <span class="pw-n">${t.used ? "" : i + 1}</span>
         ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
         <span class="pw-what">${esc(t.question)}</span><span class="pill">${esc(t.pillar || "—")}</span>
-        ${t.used ? "" : `${i ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
+        ${t.used ? "" : `${i && !linux ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
           <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
-          <button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}
+          ${linux ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}`}
       </div>`).join("") : '<div class="empty">No topics</div>';
   }
 

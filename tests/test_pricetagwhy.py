@@ -194,7 +194,7 @@ def test_write_a_week_rules_facts_and_queue(tmp_path, monkeypatch):
     assert view["step"] == "facts" and "Open every source link" in view["prompt"]
     view = pw_write.facts("week", json.dumps({"checks": [{"script": 2, "unsupported": ["the year"]}]}), tmp_path)
     assert view["step"] == "fix" and view["drafts"][1]["flagged"] == ["the year"]
-    pw_write.answer("week", json.dumps({"scripts": [good, {**good, "title": "Other"}]}), tmp_path)
+    pw_write.answer("week", json.dumps({"scripts": [good, {**good, "title": "Other", "question": "Why is the other thing cheap?"}]}), tmp_path)
     assert pw_write.facts("week", json.dumps({"checks": [{"script": 1, "unsupported": []}]}), tmp_path)["step"] == "ready"
     done = pw_write.queue("week", tmp_path)
     assert len(done["queued"]) == 2 and done["waiting"] == 2
@@ -536,3 +536,14 @@ def test_new_topics_from_your_own_llm(tmp_path, monkeypatch):
     assert pw_write.topics(tmp_path)[-1] == {**pw_write.topics(tmp_path)[-1], "question": "Why is saffron so expensive?", "pillar": ""}
     with pytest.raises(pw_write.WriteError):
         pw_write.llm_add('{"topics": []}', tmp_path)
+
+
+def test_the_topics_route_answers_with_the_list(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from trendclip.web.app import app
+
+    monkeypatch.setattr(pw_channel, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
+    body = TestClient(app).get("/api/pricetagwhy/topics").json()
+    assert body["source"] == "here" and body["left"] == len(body["topics"]) > 0 and body["pillars"]

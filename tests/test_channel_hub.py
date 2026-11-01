@@ -352,3 +352,31 @@ def test_a_price_tag_why_week_written_on_the_sending_machine_goes_to_the_linux_q
     assert again["queued"] == [] and "already queued" in again["skipped"][0]["why"]
     with pytest.raises(hub.HubError, match="rule check refused"):
         channel_hub.queue_scripts(mac, "pricetagwhy", {"scripts": [{**script, "scenes": script["scenes"][:1]}]})
+
+
+def test_the_sending_machine_writes_from_the_linux_topics_and_one_topic_makes_one_video(linux, mac, discord, machines):
+    from modules import pw_write
+
+    machines.use("linux")
+    pw_write.save_topics([{"question": "Why is saffron so expensive?", "pillar": "everyday prices", "used": False, "added": "x"}])
+    machines.use("mac")
+    pw_write.save_topics([])  # this machine's own list is empty
+    found = channel_hub.remote_view(mac, "pricetagwhy")["topics"]
+    assert [t["question"] for t in found] == ["Why is saffron so expensive?"]
+    with pytest.raises(pw_write.WriteError, match="No topics left"):
+        pw_write.start("week", count=3)  # from this machine's list
+    view = pw_write.start("week", count=3, found=found)
+    assert [t["question"] for t in view["topics"]] == ["Why is saffron so expensive?"]
+
+    script = {**PW_SCRIPT, "title": "Saffron: the red gold", "question": "Why does saffron cost so much?"}  # reworded
+    session = {**pw_write.load("week"), "step": "ready", "drafts": [script], "skipped_facts": True}
+    pw_write._save(session)
+    done = pw_write.queue("week", deliver=lambda bundle: channel_hub.queue_scripts(mac, "pricetagwhy", bundle))
+    assert len(done["queued"]) == 1
+    machines.use("linux")
+    assert all(t["used"] for t in pw_write.topics() if t["question"] == "Why is saffron so expensive?")
+    machines.use("mac")
+    # the same topic written again elsewhere, titled differently: Linux keeps one video per topic
+    again = {**PW_SCRIPT, "title": "Why saffron is pricey", "question": "Why is saffron pricey?", "topic": "Why is saffron so expensive?"}
+    reply = channel_hub.queue_scripts(mac, "pricetagwhy", {"scripts": [again]})
+    assert reply["queued"] == [] and "already queued or made" in reply["skipped"][0]["why"]
