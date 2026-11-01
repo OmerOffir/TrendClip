@@ -1534,3 +1534,16 @@ def test_a_slightly_long_voice_is_sped_up_to_fit(tmp_path):
     assert bw_channel.fit_voice(voice, fitted, 50.0) == fitted  # short enough: untouched
     far = [bw_render.Word("w", 0, 80.0)]
     assert bw_channel.fit_voice(voice, far, 82.4)[0].end == pytest.approx(80.0 / bw_channel.MAX_SPEEDUP, abs=0.01)  # capped
+
+
+def test_an_icon_cued_late_pops_in_early_enough_to_be_seen():
+    text = "One two three four five six seven eight. Nine ten."
+    spec = bw_render.spec_from_dict({"title": "t", "scenes": [
+        {"kind": "map", "narration": "One two three four five six seven eight.", "elements": [
+            {"kind": "icon", "icon": "mountain", "cue": "eight"}, {"kind": "stamp", "text": "NO", "cue": "eight"},
+            {"kind": "icon", "icon": "ship", "cue": "two"}]},
+        {"kind": "map", "narration": "Nine ten."}]}, _words(text))
+    bw_render.align(spec)
+    late, stamp, early = spec.scenes[0].elements
+    assert spec.scenes[0].end - late.at == pytest.approx(bw_render.MIN_ON_SCREEN)  # moved earlier
+    assert stamp.at == pytest.approx(2.8) and early.at == pytest.approx(0.4)  # a stamp keeps its word; an early icon too

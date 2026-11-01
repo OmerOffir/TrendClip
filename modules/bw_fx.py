@@ -76,6 +76,7 @@ CARD_ROW = CARD_ROWS["portrait"]
 ZOOMS = (1.0, 0.45, 0.8, 0.3, 0.65)
 SHIFTS = ((0.0, 0.0), (0.16, -0.06), (-0.16, 0.05), (0.0, 0.08), (0.12, -0.04))
 MOTIONS = ("push", "pan", "pull", "push", "pan_back", "pull")  # what each map scene's camera does while it runs
+HEADLINE_BOTTOM = 360  # an icon moved off a flag stays below a map scene's headline (y on the 1080x1920 frame)
 TINY_PX = 70  # a place smaller than this on screen is marked with a target, and its flag shows as a badge
 GLOBE_MAX_PPD = 30.0  # the opening globe stops at about a continent; the next scene zooms in from there
 
@@ -779,6 +780,7 @@ class FxRenderer(Renderer):
         self.views = vary_views(spec.scenes)
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
         self._badges: dict[tuple[str, int], Image.Image] = {}
+        self._spots: dict[int, tuple[float, float] | None] = {}  # icon_spot: an icon moved off a flag
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s) for i, s in enumerate(spec.scenes) if s.kind == "board"}
@@ -1154,9 +1156,62 @@ class FxRenderer(Renderer):
         ov.alpha_composite(sh.filter(ImageFilter.GaussianBlur(8)), (int(x - px / 2 + 6), int(cy - px / 2 + 9)))
         ov.alpha_composite(disc, (int(x - px / 2), int(cy - px / 2)))
 
+    def flag_zones(self, cam, scene: Scene) -> list[tuple[float, float, float, float]]:
+        """Where the scene's flags are on screen (x0, y0, x1, y1): a filled place's outline box, a small place's
+        round badge above it, a flag pole's flag."""
+        zones = []
+        for e in scene.elements:
+            if e.kind == "pole" and e.opts.get("flag"):
+                x, y = self.anchor(cam, e)
+                hgt, fw = e.opts.get("height", 230), int(e.opts.get("width", 190))
+                zones.append((x - 12, y - hgt, x + fw + 8, y + 10))
+                continue
+            if e.kind != "highlight" or not e.opts.get("flag") or e.feature is None:
+                continue
+            x, y = cam.pt(*e.feature.label_point())
+            if self.tiny(cam, e.feature):
+                r = 92 + 10
+                cy = max(r + 20, y - r - 70)
+                zones.append((x - r, cy - r, x + r, cy + r))
+            else:
+                x0, y0, x1, y1 = e.feature.bbox()
+                pts = [cam.pt(x0, y0), cam.pt(x1, y1), cam.pt(x0, y1), cam.pt(x1, y0)]
+                xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+                zones.append((max(0, min(xs)), max(0, min(ys)), min(W, max(xs)), min(H, max(ys))))
+        return zones
+
+    def icon_spot(self, i: int, scene: Scene, el: Element, xy: tuple[float, float]) -> tuple[float, float]:
+        """Where an icon stands: its place, unless that covers one of the scene's flags; then a free slot on the
+        screen, kept for the rest of the scene. Decided once, with the camera of the moment the last flag is up."""
+        key = id(el)
+        if key not in self._spots:
+            flags = [e for e in scene.elements if e.opts.get("flag") and (e.kind == "pole" or (e.kind == "highlight" and e.feature is not None))]
+            spot = None
+            if flags:
+                ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in flags]]))
+                cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
+                zones = self.flag_zones(cam, scene)
+                half = int(el.opts.get("size", 190)) * 0.6
+                hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
+                xy0 = self.anchor(cam, el)
+                if hits(xy0):
+                    taken = [self._spots[id(e)] for e in scene.elements if self._spots.get(id(e))]
+                    x, y = xy0
+                    near = [z for z in zones if x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3]]
+                    beside = [(min(z[0] for z in near) - half - 12, y), (max(z[2] for z in near) + half + 12, y),
+                              (x, min(z[1] for z in zones) - half - 12)]  # left of the flags, right, above
+                    free = [p for p in [*ICON_SLOTS.get("map", ()), *beside] if not hits(p)
+                            and half + 10 <= p[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= p[1] <= H - half
+                            and all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
+                    spot = free[0] if free else None
+            self._spots[key] = spot
+        return self._spots[key] or xy
+
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
         if el.kind == "icon":
             xy = self.anchor(cam, el)
+            if el.feature is not None:
+                xy = self.icon_spot(next(k for k, s in enumerate(self.spec.scenes) if s is scene), scene, el, xy)
             main, marked = self.main[next(k for k, s in enumerate(self.spec.scenes) if s is scene)]
             if el.feature is None and main is not None and not marked:  # keep a placed-by-layout icon off the target
                 mx, my = cam.pt(*main.label_point())

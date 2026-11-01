@@ -70,6 +70,8 @@ SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "Libe
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
                  "transfer")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+MIN_ON_SCREEN = 2.0  # seconds an icon or a flag pole stays before its scene cuts away (a late cue pops in earlier)
+STAY_KINDS = ("icon", "pole")
 NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
@@ -248,6 +250,8 @@ def align(spec: Spec) -> None:
             cue = _tok(el.cue)
             hit = next((w.start for w in window if cue and (_tok(w.text) == cue or (len(cue) > 3 and _tok(w.text).startswith(cue)))), None)
             el.at = hit if hit is not None else min(scene.start + 0.3 + 0.7 * j, max(scene.start, scene.end - 0.6))
+            if el.kind in STAY_KINDS and scene.end - el.at < MIN_ON_SCREEN:  # cued late: pop in earlier, so it is seen
+                el.at = max(scene.start + 0.2, scene.end - MIN_ON_SCREEN)
 
 
 def fit_view(boxes: list[tuple[float, float, float, float]], pad: float = 0.3, min_span: float = 0.25) -> tuple[float, float, float]:
