@@ -1580,3 +1580,12 @@ def test_stop_ends_a_make_at_its_next_step(settings, tmp_path, world):
     with pytest.raises(bw_channel.Stopped):
         bw_channel.make(settings, job, out_dir=tmp_path, script={**_spec_dict(), **SCRIPT}, voice=voice, render=render)
     assert bw_channel.load_info(job.key, tmp_path) is None and not (work / "stop").exists()
+
+
+def test_messages_say_which_day_a_video_goes_out(settings, tmp_path, world):
+    now = datetime(2026, 11, 1, 13, 0, tzinfo=settings.tz)
+    assert bw_channel.when_text("2026-11-01T14:30+02:00", now) == "today at 14:30"
+    assert bw_channel.when_text("2026-11-02T23:00+02:00", now) == "tomorrow at 23:00"
+    assert bw_channel.when_text("2026-11-03T14:30+02:00", now) == "on Tue 3 Nov at 14:30"
+    job, info, _ = _make(settings, tmp_path, world, day=Day(2026, 11, 2))
+    assert "It goes out by itself " in bw_channel.video_note(info) and " at 14:30 as public" in bw_channel.video_note(info)

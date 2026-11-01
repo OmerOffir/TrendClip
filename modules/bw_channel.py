@@ -920,13 +920,25 @@ def video_line(info: dict) -> str:
             + (f" · 🎵 {info['music']['title']}" if info.get("music") else "") + (f"\nSources: {sources}" if sources else ""))
 
 
+def when_text(post_at: str | datetime, now: datetime | None = None) -> str:
+    """A slot's time as the messages say it: "today at 14:30", "tomorrow at 14:30", "on Tue 3 Nov at 14:30"
+    (a video is often made days before its slot, so the time alone reads as today's)."""
+    if not post_at:
+        return "its slot"
+    at = datetime.fromisoformat(post_at) if isinstance(post_at, str) else post_at
+    today = (now or datetime.now(at.tzinfo)).astimezone(at.tzinfo).date() if at.tzinfo else (now or datetime.now()).date()
+    days = (at.date() - today).days
+    day = "today" if days == 0 else "tomorrow" if days == 1 else f"on {at:%a} {at.day} {at:%b}"
+    return f"{day} at {at:%H:%M}"
+
+
 def video_note(info: dict) -> str:
-    post_at = (info.get("job") or {}).get("post_at", "")[11:16]
+    post_at = when_text((info.get("job") or {}).get("post_at", ""))
     if info.get("check"):
         return "It failed its check and won't go out: " + "; ".join(info["check"])
     if require_approval():
-        return f"Press **Approve** and it goes out at {post_at} as {upload_privacy()}; without it, nothing is posted."
-    return f"It goes out by itself at {post_at} as {upload_privacy()}. Press **Don't post this** to stop it."
+        return f"Press **Approve** and it goes out {post_at} as {upload_privacy()}; without it, nothing is posted."
+    return f"It goes out by itself {post_at} as {upload_privacy()}. Press **Don't post this** to stop it."
 
 
 def announce_text(text: str, settings=None, components: list[dict[str, Any]] | None = None) -> str | None:

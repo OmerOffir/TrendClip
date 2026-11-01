@@ -1743,8 +1743,8 @@ async def act_bw_approve(bot: TrendClipBot, interaction: discord.Interaction, ke
         return await reply(interaction, "That Borderline Why video is gone.")
     if result["record"]:
         return await reply(interaction, f"✅ **{result['title']}** is on YouTube: {result['record'].get('url', '')}")
-    when = result["post_at"].strftime("%H:%M") if result["post_at"] else "its slot"
-    await reply(interaction, f"✅ **{result['title']}** is approved: it goes out at {when} as {bw_channel.upload_privacy()}.")
+    when = bw_channel.when_text(result["post_at"]) if result["post_at"] else "at its slot"
+    await reply(interaction, f"✅ **{result['title']}** is approved: it goes out {when} as {bw_channel.upload_privacy()}.")
 
 
 async def act_bw_veto(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
