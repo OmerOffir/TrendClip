@@ -1821,6 +1821,18 @@ async def act_bw_comment(bot: TrendClipBot, interaction: discord.Interaction, ke
     await reply(interaction, bw_channel.comment_line({"comment": found}))
 
 
+async def act_pw_comment(bot: TrendClipBot, interaction: discord.Interaction, key: str) -> None:
+    """Price Tag Why "Post the comment": the retry when the comment after the upload didn't go through."""
+    from modules import pw_channel
+
+    await interaction.response.defer(thinking=True)
+    try:
+        found = await asyncio.to_thread(pw_channel.comment_again, key)
+    except publish.PublishError as err:
+        return await reply(interaction, f"💬 The comment didn't go through: {err}")
+    await reply(interaction, pw_channel.comment_line({"comment": found}))
+
+
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
@@ -1829,6 +1841,7 @@ ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
     "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload, "bwcm": act_bw_comment,
     "pwok": act_pw_approve, "pwveto": act_pw_veto, "pwrun": act_pw_run, "pwup": act_pw_upload_confirm, "pwupgo": act_pw_upload,
+    "pwcm": act_pw_comment,
 }
 
 

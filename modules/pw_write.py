@@ -288,6 +288,8 @@ Each script is ONE JSON object shaped exactly like the example below:
   scene's lines go in pairs, a label then its figure ("Cost in 1922", "160 marks", "Cost in 1923", "200B marks"):
   the first figure is crossed out and the last one goes in a red starburst, so they must clash.
   "thumbnail": {{"hook": "WAIT, WHAT?"}} adds 1-3 punch words at the bottom ("HOW?!", "WHO PAYS?").
+- "comment": one short question to viewers about the video, posted under it and pinned, that they want to answer
+  ("Would you pay $2.38 for it? 👇", "Did you ever notice there's no clock? 👇"); never advice, never a poll on money moves.
 - the twist must surprise (a number that flips the story, what the owner said), never a letdown.
 - last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
   (the hand draws the opening again, so the Short loops).

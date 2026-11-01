@@ -560,3 +560,42 @@ def test_an_opening_photo_that_is_not_found_is_drawn_with_its_lines():
     assert scene.kind == "product" and scene.opts["product"]["draw"] == "clock"
     assert scene.opts["product"]["lines"] == o["lines"]
     assert pw_render.guess_drawing({"lines": ["Nothing here"]}) == "receipt"
+
+
+class _FakeComments:
+    def __init__(self, fail: bool = False):
+        self.fail, self.comments = fail, []
+
+    def commentThreads(self):
+        return self
+
+    def insert(self, part, body):
+        self.comments.append(body)
+        return self
+
+    def execute(self):
+        if self.fail:
+            raise RuntimeError("comments are off")
+        return {"id": "c1"}
+
+
+def test_an_upload_gets_its_comment_to_pin_once_and_a_retry_when_it_fails(tmp_path, monkeypatch):
+    assert pw_channel.comment_text({}) == pw_channel.COMMENT
+    assert pw_channel.comment_text({"comment": "Would you pay $2.38? 👇"}).startswith("Would you pay $2.38? 👇\n\n")
+    info = {"key": "k1", "title": "T", "comment": "Would you pay $2.38? 👇",
+            "uploads": {"youtube": {"video_id": "v1", "privacy": "public"}}}
+    pw_channel.save_info(info, tmp_path)
+    (tmp_path / "k1" / "video.mp4").write_bytes(b"x")
+    failing = _FakeComments(fail=True)
+    assert pw_channel.comment(pw_channel.load_info("k1", tmp_path), failing, tmp_path) is None
+    record = pw_channel.load_info("k1", tmp_path)["uploads"]["youtube"]
+    assert "comments are off" in pw_channel.comment_line(record)
+    texts = []
+    monkeypatch.setattr(pw_channel, "announce_text", lambda text, settings=None, components=None: texts.append(components))
+    pw_channel.announce_upload({"key": "k1", "title": "T"}, record)
+    assert any(b.get("custom_id") == "tc:pwcm:k1" for row in texts[0] for b in row["components"])
+    yt = _FakeComments()
+    found = pw_channel.comment_again("k1", tmp_path, yt)
+    assert found["url"] == "https://www.youtube.com/watch?v=v1&lc=c1" and "Pin it" in pw_channel.comment_line({"comment": found})
+    assert yt.comments[0]["snippet"]["topLevelComment"]["snippet"]["textOriginal"] == "Would you pay $2.38? 👇"
+    assert pw_channel.comment(pw_channel.load_info("k1", tmp_path), yt, tmp_path) == found and len(yt.comments) == 1  # once

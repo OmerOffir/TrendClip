@@ -641,6 +641,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:6],
         "sources": script.get("sources", []), "claims": script.get("claims", []), "duration_seconds": round(spec.duration, 2),
         "words": words(script["narration"]), "voice": setting("PW_TTS_VOICE", VOICE), "music": music.stem if music else None,
+        "comment": comment_text(script),
         "thumb_at": round(max(0.5, spec.scenes[0].end - 0.2), 2),  # the opening, fully drawn (modules.thumbs)
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
@@ -764,8 +765,79 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
     info.setdefault("uploads", {})["youtube"] = record
     save_info(info, out_dir)
     progress(1.0, "Uploaded")
+    comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
     return record
+
+
+# --------------------------------------------------------------------------- the comment to pin
+
+COMMENT = "Which price tag should we explain next? Name a product below 👇"
+
+
+def comment_text(script: dict) -> str:
+    """The comment posted under the video for the owner to pin: the script's own question to viewers ("comment"),
+    then the ask for the next topic."""
+    own = " ".join(str(script.get("comment") or "").split())[:400]
+    return f"{own}\n\n{COMMENT}" if own else COMMENT
+
+
+def can_comment() -> bool:
+    from trendclip import publish
+
+    return publish.has_scope(publish.COMMENT_SCOPE, TOKEN)
+
+
+def comment(info: dict, youtube=None, out_dir: Path | None = None) -> dict | None:
+    """Post the comment under the uploaded video (once), as Borderline Why does. The result goes in the upload record
+    ("comment", or "comment_error": Discord offers a retry). Never raises."""
+    from modules import bw_series
+    from trendclip import publish
+
+    record = (info.get("uploads") or {}).get("youtube") or {}
+    if not record.get("video_id") or record.get("comment"):
+        return record.get("comment")
+    error = ""
+    if record.get("privacy") == "private":
+        error = "comments only work once the video is public or unlisted"
+    elif youtube is None and not can_comment():
+        error = "reconnect the Price Tag Why YouTube channel once to allow comments"
+    else:
+        try:
+            text = info.get("comment") or COMMENT
+            record["comment"] = bw_series.post_comment(youtube or publish._youtube(TOKEN), record["video_id"], text)
+        except Exception as err:  # noqa: BLE001 - the video is up; only the comment failed
+            error = publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment") \
+                if err.__class__.__name__ == "HttpError" else str(err) or err.__class__.__name__
+    if error:
+        record["comment_error"] = error
+    else:
+        record.pop("comment_error", None)
+    save_info(info, out_dir)
+    return record.get("comment")
+
+
+def comment_again(key: str, out_dir: Path | None = None, youtube=None) -> dict:
+    """The retry (Discord, or the command line for videos uploaded before comments): the comment record. Raises
+    PublishError with the reason when it fails."""
+    from trendclip import publish
+
+    info = load_info(key, out_dir)
+    if info is None or not (info.get("uploads") or {}).get("youtube"):
+        raise publish.PublishError("That Price Tag Why video is not on YouTube")
+    found = comment(info, youtube, out_dir)
+    if found is None:
+        raise publish.PublishError(info["uploads"]["youtube"].get("comment_error") or "the comment didn't go through")
+    return found
+
+
+def comment_line(record: dict) -> str:
+    """The upload message's comment line: the pin reminder (the API can't pin), or why it didn't go through."""
+    if found := record.get("comment"):
+        return f"💬 Comment posted: “{found['text']}”. **Pin it** on YouTube (the comment's ⋮ → Pin); the API can't: <{found['url']}>"
+    if error := record.get("comment_error"):
+        return f"💬 The comment didn't go through: {error}"
+    return ""
 
 
 def publish_if_allowed(key: str, progress=lambda f, m: None, out_dir: Path | None = None, youtube=None, settings=None) -> dict | None:
@@ -880,8 +952,11 @@ def announce_video(info: dict, settings=None, out_dir: Path | None = None) -> st
 def announce_upload(info: dict, found: dict, settings=None) -> str | None:
     lb, b = channel_common.link_button, channel_common.button
     text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({found.get('privacy', '?')}): {found.get('url', '')}"
+    if line := comment_line(found):
+        text += "\n" + line
     return announce_text(text, settings, channel_common.rows(
         lb("▶️ Watch", found.get("url", "")) if found.get("url") else None, b("pwveto", info["key"], "🚫 Make it private", "danger"),
+        b("pwcm", info["key"], "💬 Post the comment", "primary") if found.get("comment_error") else None,
         lb("🎬 YouTube Studio", found.get("studio_url", "")) if found.get("studio_url") else None))
 
 
@@ -920,8 +995,21 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--post-at", default="")
     m.add_argument("--script-file", default="")
     sub.add_parser("check", help="the rule check of every script in the queue")
+    c = sub.add_parser("comment", help="post the comment to pin under uploaded videos that have none yet")
+    c.add_argument("keys", nargs="*", help="video keys (default: every uploaded one)")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+    if args.cmd == "comment":
+        keys = args.keys or sorted(p.parent.name for p in out_root(None).glob("*/info.json"))
+        for key in keys:
+            info = load_info(key)
+            if not info or not (info.get("uploads") or {}).get("youtube"):
+                continue
+            try:
+                print(key, comment_line({"comment": comment_again(key)}))
+            except Exception as err:  # noqa: BLE001
+                print(key, "failed:", err)
+        return 0
     if args.cmd == "check":
         for s in scripts():
             print(f"{s['file']}: {s['words']} words, {len(s['sources'])} sources, " + ("made" if s["used"] else "queued") + ", "
