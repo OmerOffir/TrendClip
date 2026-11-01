@@ -247,15 +247,27 @@
     missed: ["", "— No video"], later: ["", "🕒 Made later"],
   };
 
+  // A video being made: its step, how far (the maps are most of it), and how long ago it started / last moved
+  const minsAgo = (iso) => Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  function makingLine(p) {
+    if (!p) return `<b class="hint">Starting…</b>`;
+    const quiet = minsAgo(p.updated);
+    return `<b>${esc(p.message)}</b><small>started ${minsAgo(p.started)} min ago${quiet >= 3
+      ? ` · no news for ${quiet} min: Gemini is slow or busy (it waits and tries again by itself)` : ""}</small>`;
+  }
+
   function slotRow(r, making, past, planned, first) {
     const v = r.video;
-    const [cls, label] = r.key === making ? ["warn", "🏭 Making now…"] : planned ? ["", "🔮 Planned"] : (SLOT[r.state] || ["", r.state]);
+    const prog = !v && r.progress;
+    const pct = prog ? ` ${Math.round((prog.fraction || 0) * 100)}%` : "";
+    const [cls, label] = (r.key === making || prog) ? ["warn", `🏭 Making now…${pct}`] : planned ? ["", "🔮 Planned"] : (SLOT[r.state] || ["", r.state]);
     const up = v && v.youtube;
     const madeAt = `made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}`;
     const change = first && state.next
       ? ` · <select class="bw-change" data-change aria-label="What this slot makes"><option value="">Change…</option>${state.next.options
         .map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}<option value="">↺ the usual order</option></select>` : "";
-    const what = v
+    const what = !v && (r.key === making || prog) ? makingLine(prog)
+      : v
       ? `<b>${esc(v.title)}</b><small>${Math.round(v.duration_seconds || 0)} s${v.check.length ? ` · ${esc(v.check.join("; "))}` : ""}${r.extra ? " · made for an earlier slot time" : ""}</small>`
       : planned ? `<b>${esc(planned.label)}</b><small>${planned.value === (state.next || {}).choice ? "⭐ your pick" : planned.kind === "queue" ? "📥 your script, waiting in the queue" : "from the topic list"} · ${madeAt}${change}</small>`
       : `<b class="hint">${r.state === "later" ? `Made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}` : r.state === "due" ? "The bot is making it" : "Nothing was made"}</b>`;
@@ -278,7 +290,7 @@
     if (v && !sent && r.state === "waiting") btns.push(`<button type="button" class="btn-primary" data-act="approve" data-key="${esc(v.key)}">✅ Approve</button>`);
     if (v && !sent && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
     if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
-    if (!up && !r.extra && r.key !== making && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
+    if (!up && !r.extra && r.key !== making && !prog && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}">🗺️ ${v ? "Make another" : "Make now"}</button>`);
     return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
       <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
       <span class="bw-btns">${btns.join("")}</span></div>`;
@@ -311,7 +323,8 @@
           }).join("")}
         </div>`).join("");
       plan.error.hidden = true;
-      if (body.making) setTimeout(() => { if (state.section === "plan") loadPlan(); }, 4000);
+      const busy = body.making || body.days.some((d) => d.slots.some((r) => r.progress && !r.video));
+      if (busy) setTimeout(() => { if (state.section === "plan") loadPlan(); }, 4000);
     } catch (err) {
       plan.error.textContent = err.message;
       plan.error.hidden = false;

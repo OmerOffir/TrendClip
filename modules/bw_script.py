@@ -508,14 +508,19 @@ def gemini(client=None):
     return client or genai.Client(api_key=key), script_writer.gemini_model(settings)
 
 
-def _ask(client, model: str, prompt: str, schema: type[BaseModel], temperature: float = 0.7) -> Any:
+def _ask(client, model: str, prompt: str, schema: type[BaseModel], temperature: float = 0.7, progress=lambda m: None) -> Any:
+    """One Gemini call. `progress` hears only when Gemini is busy and the call waits to try again."""
     from google.genai import errors, types
 
     from trendclip import script_writer
 
+    def busy(_fraction, message: str) -> None:
+        if "busy" in message:
+            progress("Gemini is busy: waiting to try again" + message[message.index(" (busy"):])
+
     config = types.GenerateContentConfig(response_mime_type="application/json", response_schema=schema, temperature=temperature)
     try:
-        response, _ = script_writer._generate_with_fallback(client, model, [prompt], config, lambda f, m: None, errors.APIError)
+        response, _ = script_writer._generate_with_fallback(client, model, [prompt], config, busy, errors.APIError)
     except errors.APIError as err:
         explained = script_writer._explain(err, model)
         later = TryLater(str(explained))
@@ -734,8 +739,8 @@ def verify_prompt(draft: Draft, res: Research) -> str:
     return VERIFY_PROMPT.format(question=res.topic.question, narration=narration(draft), claims=claims, sources=sources_block(res))
 
 
-def verify(client, model: str, draft: Draft, res: Research) -> list[str]:
-    found = _ask(client, model, verify_prompt(draft, res), Check, temperature=0.0)
+def verify(client, model: str, draft: Draft, res: Research, progress=lambda m: None) -> list[str]:
+    found = _ask(client, model, verify_prompt(draft, res), Check, temperature=0.0, progress=progress)
     return [u.strip() for u in found.unsupported if u.strip()]
 
 
@@ -836,7 +841,7 @@ def write(res: Research, client=None, today: str = "", progress=lambda m: None, 
         progress("Carrying on with the draft kept from the last try")
     else:
         progress("Writing the script")
-        draft = _ask(client, model, prompt, Draft)
+        draft = _ask(client, model, prompt, Draft, progress=progress)
         _save_draft(kept, draft, fixes)
     try:
         draft = _finish_draft(client, model, prompt, draft, fixes, limits, res, progress, kept)
@@ -859,7 +864,7 @@ def _finish_draft(client, model: str, prompt: str, draft: "Draft", fixes: dict[s
         kind, problems = "rules", check(draft, res)
         if not problems:
             progress("Checking the narration against the sources")
-            problems = verify(client, model, draft, res)
+            problems = verify(client, model, draft, res, progress)
             if not problems:
                 return draft
             kind = "facts"
@@ -874,7 +879,7 @@ def _finish_draft(client, model: str, prompt: str, draft: "Draft", fixes: dict[s
         else:
             progress(f"Fixing the script ({fixes[kind]} of {limits[kind]}): {problems[0][:110]}")
             fix = fix_prompt(problems, draft)
-        draft = _ask(client, model, prompt + "\n\n" + fix, Draft)
+        draft = _ask(client, model, prompt + "\n\n" + fix, Draft, progress=progress)
         _save_draft(kept, draft, fixes)
 
 

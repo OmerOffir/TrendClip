@@ -236,14 +236,14 @@ def scripted(monkeypatch):
     """bw_script.write with the rule check and the fact checker answering from lists, and every prompt kept."""
     calls = {"prompts": [], "rules": [], "facts": []}
 
-    def ask(client, model, prompt, schema, temperature=0.7):
+    def ask(client, model, prompt, schema, temperature=0.7, progress=None):
         calls["prompts"].append(prompt)
         return _draft()
 
     monkeypatch.setattr(bw_script, "gemini", lambda client=None: (None, "m"))
     monkeypatch.setattr(bw_script, "_ask", ask)
     monkeypatch.setattr(bw_script, "check", lambda draft, res: calls["rules"].pop(0) if calls["rules"] else [])
-    monkeypatch.setattr(bw_script, "verify", lambda client, model, draft, res: calls["facts"].pop(0) if calls["facts"] else [])
+    monkeypatch.setattr(bw_script, "verify", lambda client, model, draft, res, progress=None: calls["facts"].pop(0) if calls["facts"] else [])
     return calls
 
 
@@ -1485,3 +1485,23 @@ def test_check_wants_a_quick_opening_and_short_cards(world):
 
     assert bw_long.CHAPTER.first_words == 0 and bw_long.CHAPTER.card_words == 0 and not bw_long.CHAPTER.no_setup
     assert "THE FIRST 5 SECONDS" in bw_script.write_prompt(_research()) and "THE FIRST 5 SECONDS" in bw_whatif.write_prompt("What if?")
+
+
+def test_a_make_shows_its_progress_in_the_plan(settings, tmp_path, world):
+    job = bw_channel.job_for(settings, Day(2026, 11, 2), "14:30")
+    work = tmp_path / job.key
+    work.mkdir(parents=True)
+    heard = []
+    p = bw_channel.Progress(work / "progress.json", lambda f, m: heard.append((f, m)))
+    p(0.0, "Choosing the topic")
+    p.step("Reading Wikipedia")
+    p.step("Writing the script")
+    assert 0 < bw_channel.progress_of(job.key, tmp_path)["fraction"] < bw_channel.Progress.SCRIPT_SHARE
+    p(0.01, "back?")  # never goes back
+    assert bw_channel.progress_of(job.key, tmp_path)["fraction"] == pytest.approx(0.1 * (1 - 0.8 ** 2), abs=1e-3)
+    now = datetime(2026, 11, 2, 7, 0, tzinfo=settings.tz)
+    row = next(r for r in bw_channel.plan_days(settings, now, 0, 0, tmp_path)[0]["slots"] if r["key"] == job.key)
+    assert row["progress"]["message"] == "back?" and heard[1] == (pytest.approx(0.02), "Reading Wikipedia")
+    assert bw_channel.progress_of(job.key, tmp_path, datetime.now() + timedelta(hours=1)) is None  # a make that died
+    _make(settings, tmp_path, world)  # a finished make leaves no progress behind
+    assert not (work / "progress.json").exists() and bw_channel.progress_of(job.key, tmp_path) is None

@@ -189,7 +189,8 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
         for job in jobs_for(settings, day):
             info = load_info(job.key, out_dir)
             keys.add(job.key)
-            rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info, numbers, out_dir)})
+            rows.append({**job.view(), "state": slot_state(job, info, now), "video": _plan_video(info, numbers, out_dir),
+                         "progress": None if info else progress_of(job.key, out_dir)})
         folder = out_root(out_dir)
         if folder.is_dir():
             for extra in sorted(folder.glob(f"{day.isoformat()}_[0-9][0-9][0-9][0-9]")):
@@ -519,15 +520,68 @@ def handle() -> str:
     return channel_common.handle(DIR) or "@BorderlineWhy"
 
 
+PROGRESS_STALE = timedelta(minutes=30)  # a progress.json not touched for this long is a make that died
+
+
+class Progress:
+    """A make's progress: passed on to the caller and kept in <key>/progress.json, so the Plan shows how far a video
+    is wherever it is being made (the dashboard's Make now or the bot's own job). The fraction never goes back;
+    the script steps, which can't know their length (Gemini's answers and fixes), creep up towards SCRIPT_SHARE."""
+
+    SCRIPT_SHARE = 0.1
+
+    def __init__(self, path: Path, progress=lambda f, m: None):
+        self.path, self.progress = path, progress
+        self.started = datetime.now().replace(microsecond=0).isoformat()
+        self.fraction, self.steps = 0.0, 0
+
+    def __call__(self, fraction: float | None, message: str) -> None:
+        if fraction is not None:
+            self.fraction = max(self.fraction, fraction)
+        self.progress(fraction, message)
+        try:
+            self.path.write_text(json.dumps({"message": message, "fraction": round(self.fraction, 3), "started": self.started,
+                                             "updated": datetime.now().replace(microsecond=0).isoformat()}), encoding="utf-8")
+        except OSError:
+            pass
+
+    def step(self, message: str) -> None:
+        """A script step (topic, sources, Gemini writing, checking, fixing)."""
+        self.steps += 1
+        self(self.SCRIPT_SHARE * (1 - 0.8 ** self.steps), message)
+
+    def done(self) -> None:
+        self.path.unlink(missing_ok=True)
+
+
+def progress_of(key: str, out_dir: Path | None = None, now: datetime | None = None) -> dict | None:
+    """A video being made: {message, fraction, started, updated}, or None (none, or it stopped long ago)."""
+    try:
+        data = json.loads((out_root(out_dir) / key / "progress.json").read_text(encoding="utf-8"))
+        updated = datetime.fromisoformat(data["updated"])
+    except (OSError, ValueError, KeyError):
+        return None
+    return data if (now or datetime.now()) - updated < PROGRESS_STALE else None
+
+
 def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None = None, client=None, script: dict | None = None,
          render=None, voice=None, announce: bool = False) -> dict:
     """The job's video: script, voice, maps, render, check. Raises ChannelError when the check fails (the video
     stays on disk, marked, and is not uploaded). `render` / `voice`: fakes for the tests."""
     work = out_root(out_dir) / job.key
     work.mkdir(parents=True, exist_ok=True)
+    tracker = Progress(work / "progress.json", progress)
+    try:
+        return _make(settings, job, tracker, work, out_dir=out_dir, client=client, script=script, render=render, voice=voice,
+                     announce=announce)
+    finally:
+        tracker.done()
+
+
+def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client, script, render, voice, announce) -> dict:
     if script is None:
         progress(0.0, "Choosing the topic")
-        script, origin = next_script(lambda m: progress(None, m), out_dir, client)
+        script, origin = next_script(progress.step, out_dir, client)
     else:
         script = dict(script)
         origin = script.pop("origin", "given")

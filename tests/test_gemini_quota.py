@@ -135,10 +135,10 @@ def test_borderline_why_carries_the_quota_time_and_resumes_the_kept_draft(tmp_pa
     monkeypatch.setattr(bw_script, "gemini", lambda client=None: (None, "m"))
     rules = [["the narration is 188 words"]] * 2  # flagged on both tries: the fix is still owed on the second
     monkeypatch.setattr(bw_script, "check", lambda draft, res: rules.pop(0) if rules else [])
-    monkeypatch.setattr(bw_script, "verify", lambda client, model, draft, res: [])
+    monkeypatch.setattr(bw_script, "verify", lambda client, model, draft, res, progress=None: [])
     asked = []
 
-    def out_of_quota(client, model, prompt, schema, temperature=0.7):
+    def out_of_quota(client, model, prompt, schema, temperature=0.7, progress=None):
         asked.append(prompt)
         if len(asked) == 2:  # the draft came, the rule fix hits the quota
             later = bw_script.TryLater("Gemini's free quota is used up until 09:00")
