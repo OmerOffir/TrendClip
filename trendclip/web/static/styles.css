@@ -870,6 +870,8 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .pw-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 6px; }
 .pw-slot .pw-time { font-weight: 700; min-width: 48px; }
 .pw-slot .pw-what { flex: 1 1 260px; min-width: 0; }
+.pw-topic.next { box-shadow: inset 3px 0 0 #f2c14e; }
+.pw-topic .pw-n { min-width: 22px; color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
 .pw-slot .btn-primary, .pw-slot .btn-secondary { margin: 0; width: auto; padding: 6px 10px; font-size: 12px; }
 .pw-add { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .pw-add input[type=text] { flex: 1 1 320px; min-width: 0; }

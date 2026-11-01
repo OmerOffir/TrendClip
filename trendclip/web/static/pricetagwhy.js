@@ -22,6 +22,18 @@
   const pill = (st) => { const [cls, label] = STATES[st] || ["", st]; return `<span class="pill ${cls}">${label}</span>`; };
   const videoSrc = (key, t) => `/api/pricetagwhy/videos/${encodeURIComponent(key)}/video.mp4?t=${encodeURIComponent(t || "")}`;
   const setCount = (el, n) => { el.textContent = n; el.hidden = !n; };
+  let topics = [];  // the topics still to write, in order (the Plan's empty slots show them)
+  // the order the writing prompts take them (pw_write.next_topics): the top one, then the pillars in turn
+  const inTurn = (left) => {
+    const rest = left.slice(1);
+    const out = left.slice(0, 1);
+    while (rest.length) {
+      const last = out[out.length - 1].pillar;
+      const i = Math.max(0, rest.findIndex((t) => t.pillar !== last));
+      out.push(rest.splice(i, 1)[0]);
+    }
+    return out;
+  };
 
   // ---- sections
   function showSection(name) {
@@ -56,13 +68,14 @@
       + (free.length ? `<optgroup label="Scripts (made 6 h before)">${free.map((s) => `<option value="script:${esc(s.file)}">${esc(s.title)}${s.removed ? " (removed)" : ""}</option>`).join("")}</optgroup>` : "");
   }
 
-  function slotRow(day, r, connected, busy, options) {
+  function slotRow(day, r, connected, busy, options, topic) {
     const v = r.video;
     const yt = v && v.youtube;
     const what = v
       ? `<b>${esc(v.title)}</b> <span class="hint">${Math.round(v.duration_seconds || 0)} s${yt ? ` · <a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a>` : ""}</span>
          ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}`
       : r.script ? `<span class="hint">made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== day ? ` (${esc(r.start.slice(5, 10))})` : ""} from</span> <b>${esc(r.script.title)}</b>${r.script.pinned ? ' <span class="pill">📌 chosen</span>' : ""}`
+      : r.state === "no_script" && topic ? `<span class="hint">no script yet · next topic:</span> <b>${esc(topic.question)}</b>`
       : r.state === "no_script" ? '<span class="hint">empty: put a video or a script here, or ✍️ Write it myself / 📅 Write a week</span>'
       : r.state === "held" ? '<span class="hint">nothing is made or uploaded until the YouTube channel is renamed</span>' : "";
     const actions = [];
@@ -78,6 +91,10 @@
     const open = !yt && r.state !== "missed" && r.state !== "held";
     if (open && v) actions.push(`<button type="button" class="btn-secondary" data-slot-remove="${esc(day)} ${esc(r.slot)}" title="The video is set aside and its script leaves the plan">✕ Remove</button>`);
     else if (open && r.script) actions.push(`<button type="button" class="btn-secondary" data-script-remove="${esc(r.script.file)}" title="The script leaves the plan (it stays in the Scripts list)">✕ Remove</button>`);
+    if (r.state === "no_script" && topic) {
+      actions.push(`<button type="button" class="btn-primary" data-topic-write="${esc(topic.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>`);
+      if (topic === topics[0] && topics.length > 1) actions.push(`<select class="pw-place" data-topic-pick aria-label="Another topic"><option value="">🔁 Another topic…</option>${topics.slice(1).map((t) => `<option value="${esc(t.question)}">${esc(t.question)}</option>`).join("")}</select>`);
+    }
     if (open && !v && options) {
       actions.push(`<select class="pw-place" data-place="${esc(day)} ${esc(r.slot)}"><option value="">📅 Put here…</option>${options}</select>`);
     }
@@ -133,8 +150,11 @@
 
   async function load() {
     try {
-      const [{ body: st }, { body: p }, { body: sc }, { body: vids }] = await Promise.all([api("/api/pricetagwhy/status"),
-        api("/api/pricetagwhy/plan"), api("/api/pricetagwhy/scripts"), api("/api/pricetagwhy/videos")]);
+      const [{ body: st }, { body: p }, { body: sc }, { body: vids }, tp] = await Promise.all([api("/api/pricetagwhy/status"),
+        api("/api/pricetagwhy/plan"), api("/api/pricetagwhy/scripts"), api("/api/pricetagwhy/videos"),
+        api("/api/pricetagwhy/topics").then((r) => r.body).catch(() => null)]);
+      topics = tp ? inTurn(tp.topics.filter((t) => !t.used)) : [];
+      let n = 0;  // each empty slot shows the topic its script would come from, in the list's order
       state.status = st;
       const busy = st.making.length > 0 || st.upload.running;
       els.hint.innerHTML = (st.hold_until ? `<b>⏸ On hold until ${esc(st.hold_until)}</b> (the YouTube channel's new name): no slot videos, no uploads; samples still work · ` : "")
@@ -148,7 +168,7 @@
       renderYouTube(st);
       const options = placeOptions(vids.videos, sc.scripts);
       els.plan.innerHTML = p.days.map((d) => `<div class="pw-day"><h3>${esc(d.weekday)} ${esc(d.day)}${d.today ? " · today" : ""}</h3>
-        ${d.slots.map((r) => slotRow(d.day, r, st.youtube.connected, busy, options)).join("")}<div class="pw-watch"></div></div>`).join("");
+        ${d.slots.map((r) => slotRow(d.day, r, st.youtube.connected, busy, options, r.state === "no_script" ? topics[n++] : null)).join("")}<div class="pw-watch"></div></div>`).join("");
       els.scripts.innerHTML = sc.scripts.length ? sc.scripts.map((s) => scriptCard(s, busy)).join("") : '<div class="empty">No scripts yet</div>';
       els.count.textContent = `· ${vids.videos.length}`;
       els.videos.innerHTML = vids.videos.length ? vids.videos.map(videoCard).join("") : '<div class="empty">No videos yet</div>';
@@ -177,10 +197,15 @@
     if (sel.options.length <= 1) sel.insertAdjacentHTML("beforeend", body.pillars.map((p) => `<option value="${esc(p)}">${esc(p)}</option>`).join(""));
     els.topicsCount.textContent = `· ${body.left} left`;
     setCount(els.navTopics, body.left);
-    els.topics.innerHTML = body.topics.length ? body.topics.map((t) => `<div class="pw-slot">
-        ${t.used ? '<span class="pill good">written</span>' : '<span class="pill">next</span>'}
+    // the ones still to write first, in the order the writing prompts take them; the written ones after
+    const left = inTurn(body.topics.filter((t) => !t.used));
+    const rows = [...left, ...body.topics.filter((t) => t.used)];
+    els.topics.innerHTML = rows.length ? rows.map((t, i) => `<div class="pw-slot pw-topic${i === 0 && !t.used ? " next" : ""}">
+        <span class="pw-n">${t.used ? "" : i + 1}</span>
+        ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
         <span class="pw-what">${esc(t.question)}</span><span class="pill">${esc(t.pillar || "—")}</span>
-        ${t.used ? "" : `<button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question">🎬 Make a video</button>
+        ${t.used ? "" : `${i ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
+          <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
           <button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}
       </div>`).join("") : '<div class="empty">No topics</div>';
   }
@@ -275,6 +300,11 @@
   }
 
   document.addEventListener("change", (e) => {
+    const pick = e.target.closest("select[data-topic-pick]");
+    if (pick && pick.value && document.body.dataset.workspace === "pricetagwhy") {
+      pick.disabled = true;
+      return act(() => post("/api/pricetagwhy/topics/first", { question: pick.value }));
+    }
     const sel = e.target.closest("select[data-place]");
     if (!sel || !sel.value || document.body.dataset.workspace !== "pricetagwhy") return;
     const [day, slot] = sel.dataset.place.split(" ");
@@ -330,6 +360,7 @@
       }
       return showSection("write");
     }
+    if (d.topicFirst) return act(() => post("/api/pricetagwhy/topics/first", { question: d.topicFirst }), loadTopics);
     if (d.topicRemove) return act(() => post("/api/pricetagwhy/topics/remove", { question: d.topicRemove }), loadTopics);
     if (d.writeStart) {
       const kind = d.writeStart;

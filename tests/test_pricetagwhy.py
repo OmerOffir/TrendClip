@@ -483,3 +483,18 @@ def test_encyclopedias_are_not_sources():
     found = [p for p in pw_channel.check_script(bad) if "open encyclopedia" in p]
     assert len(found) == 2 and not pw_channel.check_script(_script())
     assert not pw_channel.WIKI.search("https://commons.wikimedia.org/wiki/File:x.jpg")
+
+
+def test_write_next_puts_a_topic_first_for_the_next_script(tmp_path, monkeypatch):
+    from modules import pw_write
+
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
+    last = pw_write.topics(tmp_path)[-1]["question"]
+    pw_write.move_first(last, tmp_path)
+    assert pw_write.topics(tmp_path)[0]["question"] == last
+    assert pw_write.next_topics(1, tmp_path)[0]["question"] == last
+    assert pw_write.start("one", out_dir=tmp_path)["topics"][0]["question"] == last
+    pillars = [t["pillar"] for t in pw_write.next_topics(4, tmp_path)]
+    assert all(a != b for a, b in zip(pillars, pillars[1:]))  # after it, the pillars still take turns
+    with pytest.raises(pw_write.WriteError):
+        pw_write.move_first("Why is this not on the list?", tmp_path)

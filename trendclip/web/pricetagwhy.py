@@ -322,6 +322,13 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
     return topics()
 
 
+@router.post("/topics/first")
+def first_topic(req: TopicRequest) -> dict[str, Any]:
+    """The topic the next written script takes."""
+    _write(pw_write.move_first, req.question)
+    return topics()
+
+
 @router.post("/topics/remove")
 def remove_topic(req: TopicRequest) -> dict[str, Any]:
     pw_write.remove_topic(req.question)

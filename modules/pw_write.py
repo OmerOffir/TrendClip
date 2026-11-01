@@ -109,10 +109,21 @@ def remove_topic(question: str, out_dir: Path | None = None) -> None:
     save_topics([t for t in topics(out_dir) if _norm(t["question"]) != _norm(question)], out_dir)
 
 
+def move_first(question: str, out_dir: Path | None = None) -> None:
+    """Put a topic at the top of the list, so the next script written takes it (the Topics tab's "Write next")."""
+    found = topics(out_dir)
+    item = next((t for t in found if _norm(t["question"]) == _norm(question)), None)
+    if item is None:
+        raise WriteError("That question is not on the list")
+    save_topics([item, *(t for t in found if t is not item)], out_dir)
+
+
 def next_topics(count: int, out_dir: Path | None = None) -> list[dict[str, Any]]:
-    """The next unused topics, taking the pillars in turn so the channel never looks mass-produced."""
+    """The next unused topics, the top one first, then taking the pillars in turn so the channel never looks
+    mass-produced."""
     left = [t for t in topics(out_dir) if not t["used"]]
-    picked: list[dict[str, Any]] = []
+    picked: list[dict[str, Any]] = left[:1]
+    left = left[1:]
     while left and len(picked) < count:
         last = picked[-1]["pillar"] if picked else ""
         nxt = next((t for t in left if t.get("pillar") != last), left[0])
