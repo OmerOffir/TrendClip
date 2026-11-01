@@ -126,6 +126,14 @@
     }
   }
   nextSel.addEventListener("change", () => pickNext(nextSel.value));
+  // the coming videos in the order the open slots take them: the owner's pick, then the queue, then the topics
+  const lineup = (next) => {
+    const opts = (next && next.options) || [];
+    const pick = opts.find((o) => o.value === next.choice);
+    return pick ? [pick, ...opts.filter((o) => o !== pick)] : opts;
+  };
+  // the first slot still to be made (Make now from the topic list makes that one)
+  const firstOpen = (days, making) => days.flatMap((d) => d.slots).find((r) => !r.video && r.state === "later" && r.key !== making) || null;
 
   els.make.addEventListener("click", async () => {
     if (!confirm("Make the next Borderline Why video now? A video already made for that slot (not uploaded) is set aside.")) return;
@@ -239,12 +247,17 @@
     missed: ["", "— No video"], later: ["", "🕒 Made later"],
   };
 
-  function slotRow(r, making, past) {
+  function slotRow(r, making, past, planned, first) {
     const v = r.video;
-    const [cls, label] = r.key === making ? ["warn", "🏭 Making now…"] : (SLOT[r.state] || ["", r.state]);
+    const [cls, label] = r.key === making ? ["warn", "🏭 Making now…"] : planned ? ["", "🔮 Planned"] : (SLOT[r.state] || ["", r.state]);
     const up = v && v.youtube;
+    const madeAt = `made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}`;
+    const change = first && state.next
+      ? ` · <select class="bw-change" data-change aria-label="What this slot makes"><option value="">Change…</option>${state.next.options
+        .map((o) => `<option value="${esc(o.value)}">${esc(o.label)}</option>`).join("")}<option value="">↺ the usual order</option></select>` : "";
     const what = v
       ? `<b>${esc(v.title)}</b><small>${Math.round(v.duration_seconds || 0)} s${v.check.length ? ` · ${esc(v.check.join("; "))}` : ""}${r.extra ? " · made for an earlier slot time" : ""}</small>`
+      : planned ? `<b>${esc(planned.label)}</b><small>${planned.value === (state.next || {}).choice ? "⭐ your pick" : planned.kind === "queue" ? "📥 your script, waiting in the queue" : "from the topic list"} · ${madeAt}${change}</small>`
       : `<b class="hint">${r.state === "later" ? `Made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== r.day ? ` (${esc(r.start.slice(5, 10))})` : ""}` : r.state === "due" ? "The bot is making it" : "Nothing was made"}</b>`;
     const btns = [];
     if (state.linux) {  // the Linux plan: its videos are handled there (Discord); an open slot takes one from here
@@ -275,9 +288,14 @@
   const linux = channelHub.mount($("bwHub"), "borderlinewhy", () => loadPlan(true));
   async function loadPlan(fresh) {
     try {
-      const [{ body }, sender] = await Promise.all([api(`/api/borderlinewhy/plan${fresh === true ? "?fresh=1" : ""}`), channelHub.sender()]);
+      const [{ body }, sender, next] = await Promise.all([api(`/api/borderlinewhy/plan${fresh === true ? "?fresh=1" : ""}`), channelHub.sender(),
+        api("/api/borderlinewhy/next").then((r) => r.body).catch(() => null)]);
       state.sender = sender;
       state.linux = body.source === "linux";
+      state.next = state.linux ? null : next;  // the Linux plan's line-up lives there
+      state.open = firstOpen(body.days, body.making);
+      const coming = lineup(state.next);
+      let n = 0;
       state.sendable = body.sendable || [];
       linux.refresh();
       plan.hint.innerHTML = channelHub.source(body) + `Slots <b>${esc(body.slots.join(" and "))}</b> (${esc(body.timezone)}). Each video is made ${body.lead_hours} h before its slot and posted in Discord;`
@@ -287,7 +305,10 @@
       const today = body.now.slice(0, 10);
       plan.box.innerHTML = body.days.map((d) => `<div class="bw-day${d.today ? " today" : ""}${d.day < today ? " past" : ""}">
           <h3>${d.today ? "Today" : esc(d.weekday)}<small>${esc(d.day)}</small></h3>
-          ${d.slots.map((r) => slotRow(r, body.making, d.day < today)).join("")}
+          ${d.slots.map((r) => {
+            const open = !r.video && r.state === "later" && r.key !== body.making && d.day >= today;
+            return slotRow(r, body.making, d.day < today, open ? coming[n++] : null, open && r === state.open);
+          }).join("")}
         </div>`).join("");
       plan.error.hidden = true;
       if (body.making) setTimeout(() => { if (state.section === "plan") loadPlan(); }, 4000);
@@ -297,6 +318,12 @@
     }
   }
 
+  plan.box.addEventListener("change", async (e) => {
+    const sel = e.target.closest("select[data-change]");
+    if (!sel) return;
+    await pickNext(sel.value);
+    loadPlan();
+  });
   plan.box.addEventListener("click", async (e) => {
     const here = e.target.closest("button[data-send-here]");
     if (here) {
@@ -322,7 +349,8 @@
         btn.textContent = "Uploading…";
         setTimeout(loadPlan, 5000);
       } else if (act === "make") {
-        if (!confirm(`Make a new video for ${day} ${slot} now? A video already made for it (not uploaded) is set aside.`)) return;
+        const what = row.querySelector(".bw-what b");
+        if (!confirm(`Make a new video for ${day} ${slot} now${what && !what.classList.contains("hint") ? `: ${what.textContent}` : ""}? A video already made for it (not uploaded) is set aside.`)) return;
         await post("/api/borderlinewhy/make", { day, slot });
       }
       loadPlan();
@@ -337,14 +365,26 @@
   const TOPIC = { next: "▶ next", waiting: "", used: "✅ made", dropped: "✖ dropped" };
   async function loadTopics() {
     try {
-      const { body } = await api("/api/borderlinewhy/topics");
+      const [{ body }, next, planBody] = await Promise.all([api("/api/borderlinewhy/topics"), api("/api/borderlinewhy/next").then((r) => r.body).catch(() => null),
+        api("/api/borderlinewhy/plan").then((r) => r.body).catch(() => null)]);
       const s = body.summary;
-      els.topicsCount.textContent = `· ${s.left} left · ${s.used} made · ${s.rejected} dropped`;
-      els.topics.innerHTML = body.topics.map((t) => `<div class="bw-topic ${esc(t.status)}">
+      const open = planBody && planBody.source !== "linux" ? firstOpen(planBody.days, planBody.making) : null;
+      state.open = open;
+      const makeBtn = (value) => open ? ` <button type="button" class="btn-secondary bw-pick" data-make-now="${esc(value)}" title="Make it now for ${esc(open.day)} ${esc(open.slot)}">🗺️ Make now</button>` : "";
+      const choice = (next && next.choice) || "";
+      const queued = ((next && next.options) || []).filter((o) => o.kind === "queue");
+      els.topicsCount.textContent = `· ${queued.length ? `${queued.length} script(s) queued · ` : ""}${s.left} left · ${s.used} made · ${s.rejected} dropped`
+        + (open ? ` · the next open slot is ${open.day} ${open.slot}` : "");
+      els.topics.innerHTML = queued.map((o, i) => `<div class="bw-topic queued${!choice && i === 0 || choice === o.value ? " next" : ""}">
+          <span class="bw-n">📥</span>
+          <span>${esc(o.label.replace(/^📥\s*/, ""))}<small>Your script, waiting in the queue: queued scripts go before every topic</small></span>
+          <span class="pill">${choice === o.value ? "⭐ picked next" : !choice && i === 0 ? "▶ next" : `<button type="button" class="btn-secondary bw-pick" data-pick-value="${esc(o.value)}">⬆ Make next</button>`}${makeBtn(o.value)}</span>
+        </div>`).join("") + body.topics.map((t) => (queued.length && !choice.startsWith("topic:") && t.status === "next" ? { ...t, status: "waiting" } : t))
+        .map((t) => `<div class="bw-topic ${esc(t.status)}">
           <span class="bw-n">${t.order != null ? t.order + 1 : ""}</span>
           <span>${esc(t.question)}<small>Wikipedia: ${esc(t.article)}${t.source !== "seed" ? ` · ${esc(t.source)}` : ""}${t.series ? ` · 📺 ${esc(t.series)}` : ""}${t.note ? ` · ${esc(t.note)}` : ""}</small></span>
           <span class="pill">${t.picked ? "⭐ picked next" : TOPIC[t.status] || esc(t.status)}${["next", "waiting"].includes(t.status) && !t.picked
-            ? ` <button type="button" class="btn-secondary bw-pick" data-pick="${esc(t.article)}">⬆ Make next</button>` : ""}</span>
+            ? ` <button type="button" class="btn-secondary bw-pick" data-pick="${esc(t.article)}">⬆ Make next</button>` : ""}${["next", "waiting"].includes(t.status) ? makeBtn(`topic:${t.article}`) : ""}</span>
         </div>`).join("") || '<div class="empty">No topics.</div>';
       els.topicsError.hidden = true;
     } catch (err) {
@@ -368,9 +408,25 @@
     }
   });
   $("bwTopicsRefresh").addEventListener("click", loadTopics);
-  els.topics.addEventListener("click", (e) => {
+  els.topics.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-pick]");
-    if (btn) pickNext(`topic:${btn.dataset.pick}`);
+    if (btn) return pickNext(`topic:${btn.dataset.pick}`);
+    const q = e.target.closest("[data-pick-value]");
+    if (q) return pickNext(q.dataset.pickValue);
+    const now = e.target.closest("[data-make-now]");
+    if (!now || !state.open) return;
+    const { day, slot } = state.open;
+    const title = now.closest(".bw-topic").querySelector("span:nth-child(2)").firstChild.textContent;
+    if (!confirm(`Make "${title.trim()}" now, for ${day} ${slot}? It posts at that slot like any other video.`)) return;
+    try {
+      await pickNext(now.dataset.makeNow);
+      await post("/api/borderlinewhy/make", { day, slot });
+      els.topicsError.hidden = true;
+      showSection("plan");
+    } catch (err) {
+      els.topicsError.textContent = err.message;
+      els.topicsError.hidden = false;
+    }
   });
   $("bwRefresh").addEventListener("click", () => { loadStatus().then(loadVideos); });
 

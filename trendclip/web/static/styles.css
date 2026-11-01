@@ -896,6 +896,8 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .bw-topic small { display: block; color: var(--muted); }
 .bw-topic.used, .bw-topic.dropped { opacity: 0.6; }
 .bw-topic.next { box-shadow: inset 3px 0 0 #f2c14e; }
+.bw-topic.queued { border-style: dashed; }
+.bw-change { margin-left: 4px; max-width: 260px; padding: 2px 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; font-size: 12px; }
 @media (max-width: 700px) { .bw-add { grid-template-columns: 1fr; } }
 .bw-plan { display: grid; gap: 12px; }
 .bw-day { border: 1px solid var(--border); border-radius: 12px; background: var(--bg-elev); padding: 10px 12px; }
