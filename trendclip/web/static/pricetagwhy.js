@@ -228,6 +228,16 @@
     }
   }
 
+  // No topics left to write: straight to the Topics tab's LLM prompt, already filled in
+  const noTopics = () => `<div class="da-note">No topics left to write. Get new ones from your LLM first.</div>
+    <div class="pw-add"><button type="button" class="btn-primary" data-get-topics>🧠 Get new topics: open the prompt</button></div>`;
+  async function getTopics() {
+    showSection("topics");
+    const card = $("pwLlmTopics");
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    card.querySelector('[data-l="copy"]').click();  // fills the prompt in (and copies it)
+  }
+
   function renderWrite(kind, v) {
     const box = els.write[kind];
     const topicList = (v.topics || []).map((t, i) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
@@ -237,7 +247,7 @@
            <button type="button" class="btn-primary" data-write-start="one">Start</button></div>`
         : `<div class="pw-add"><label class="hint">Scripts <input type="number" id="pwWeekCount" min="1" max="14" value="7" style="width:70px"></label>
            <button type="button" class="btn-primary" data-write-start="week">Start</button></div>
-           <span class="hint">The next topics, pillars in turn:</span><ol>${topicList || "<li>none left: add some in Topics</li>"}</ol>`;
+           ${topicList ? `<span class="hint">The next topics, pillars in turn:</span><ol>${topicList}</ol>` : noTopics()}`;
       return;
     }
     const drafts = (v.drafts || []).map((d, i) => `<div class="pw-slot">
@@ -300,7 +310,7 @@
       renderWrite(kind, (await fn()).body);
     } catch (err) {
       const box = els.write[kind];
-      box.insertAdjacentHTML("afterbegin", `<div class="da-note">${esc(err.message)}</div>`);
+      box.insertAdjacentHTML("afterbegin", /no topics left/i.test(err.message) ? noTopics() : `<div class="da-note">${esc(err.message)}</div>`);
     }
   }
 
@@ -365,6 +375,7 @@
       }
       return showSection("write");
     }
+    if (t.hasAttribute("data-get-topics")) return getTopics();
     if (d.topicFirst) return act(() => post("/api/pricetagwhy/topics/first", { question: d.topicFirst }), loadTopics);
     if (d.topicRemove) return act(() => post("/api/pricetagwhy/topics/remove", { question: d.topicRemove }), loadTopics);
     if (d.writeStart) {
@@ -423,6 +434,7 @@
       }
     }
   });
+  $("pwTopicsRefresh").addEventListener("click", loadTopics);  // the LLM topics card refreshes the list with it
   $("pwAddTopic").addEventListener("submit", (e) => {
     e.preventDefault();
     act(async () => {

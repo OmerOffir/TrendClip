@@ -518,3 +518,21 @@ def test_write_next_puts_a_topic_first_for_the_next_script(tmp_path, monkeypatch
     assert all(a != b for a, b in zip(pillars, pillars[1:]))  # after it, the pillars still take turns
     with pytest.raises(pw_write.WriteError):
         pw_write.move_first("Why is this not on the list?", tmp_path)
+
+
+def test_new_topics_from_your_own_llm(tmp_path, monkeypatch):
+    from modules import pw_write
+
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
+    prompt = pw_write.llm_prompt(20, tmp_path)
+    assert "20 new video questions" in prompt and "Why is AriZona Iced Tea still 99 cents?" in prompt  # what to avoid
+    assert all(p in prompt for p in pw_write.PILLARS)
+    answer = {"topics": [{"question": "Why are movie theater snacks so expensive?", "pillar": "business tricks"},
+                         {"question": "Why is AriZona Iced Tea still 99 cents?", "pillar": "everyday prices"},  # already there
+                         {"question": "not a question", "pillar": "money history"},
+                         {"question": "Why is saffron so expensive?", "pillar": "spices"}]}  # unknown pillar: left empty
+    done = pw_write.llm_add("Here you go:\n```json\n" + json.dumps(answer) + "\n```", tmp_path)
+    assert done == {"added": ["Why are movie theater snacks so expensive?", "Why is saffron so expensive?"], "skipped": 2}
+    assert pw_write.topics(tmp_path)[-1] == {**pw_write.topics(tmp_path)[-1], "question": "Why is saffron so expensive?", "pillar": ""}
+    with pytest.raises(pw_write.WriteError):
+        pw_write.llm_add('{"topics": []}', tmp_path)

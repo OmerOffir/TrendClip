@@ -333,6 +333,30 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
     return topics()
 
 
+@router.get("/llm-topics")
+def llm_topics_prompt(count: int = 20) -> dict[str, Any]:
+    """The prompt for new topics, to paste into any LLM."""
+    return {"prompt": pw_write.llm_prompt(max(1, min(40, count)))}
+
+
+class LLMText(BaseModel):
+    text: str
+
+
+@router.post("/llm-topics")
+def llm_topics_add(req: LLMText) -> dict[str, Any]:
+    """The LLM's topics into the list; on the sending machine into the Linux hub's list through Discord."""
+    from modules import channel_hub
+    from trendclip import hub, llm_json
+
+    try:
+        return channel_hub.add_topics(_settings(), "pricetagwhy", req.text,
+                                      lambda text: llm_json.parse(text, pw_write.Proposals, pw_write.WriteError))
+    except (pw_write.WriteError, hub.HubError) as err:
+        status = getattr(err, "status", 400)
+        raise HTTPException(status_code=status if 400 <= status < 600 else 502, detail=str(err)) from err
+
+
 @router.post("/topics/first")
 def first_topic(req: TopicRequest) -> dict[str, Any]:
     """The topic the next written script takes."""

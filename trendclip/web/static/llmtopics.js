@@ -9,6 +9,7 @@
     const url = card.dataset.llmTopics;
     const el = (name) => card.querySelector(`[data-l="${name}"]`);
     const status = el("status");
+    const skippedWhy = card.dataset.skipped || "already there or no Wikipedia article";
 
     // Fetched on each copy: the list of cases or topics to avoid grows. The clipboard API needs https or
     // localhost; the hub's dashboard is plain http on the LAN, so select-and-copy too.
@@ -37,13 +38,13 @@
       const text = el("answer").value;
       if (!text.trim()) return;
       btn.disabled = true;
-      status.textContent = "Checking Wikipedia (through Discord on Linux when this isn't the hub)…";
+      status.textContent = card.dataset.checking || "Checking Wikipedia (through Discord on Linux when this isn't the hub)…";
       try {
         const { body } = await post(url, { text });
         const where = body.where === "linux" ? " on Linux" : "";
         status.innerHTML = body.added.length
-          ? `✅ Added ${body.added.length}${where}${body.skipped ? ` · ${body.skipped} skipped (already there or no Wikipedia article)` : ""}: ${body.added.map(esc).join(" · ")}`
-          : `Nothing new${where}: all ${body.skipped} were already there or have no Wikipedia article`;
+          ? `✅ Added ${body.added.length}${where}${body.skipped ? ` · ${body.skipped} skipped (${esc(skippedWhy)})` : ""}: ${body.added.map(esc).join(" · ")}`
+          : `Nothing new${where}: all ${body.skipped} were ${esc(skippedWhy)}`;
         if (body.added.length) el("answer").value = "";
         const refresh = document.getElementById(card.dataset.refresh);
         refresh?.dispatchEvent(new Event(refresh.tagName === "SELECT" ? "change" : "click"));

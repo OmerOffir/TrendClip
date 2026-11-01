@@ -535,6 +535,15 @@ class PriceTagWhy:
             raise HubError(str(err), 400) from err
         return {**item, "added": [item["question"]]}
 
+    def add_topics(self, settings, text: str) -> dict[str, Any]:
+        """An LLM's pasted questions (the Topics tab's "New topics from your own LLM") into this hub's list."""
+        from modules import pw_write
+
+        try:
+            return pw_write.llm_add(text)
+        except pw_write.WriteError as err:
+            raise HubError(str(err), 400) from err
+
     def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
         """Scripts written and checked on the sending machine (Write it myself / Write a week) into this hub's
         queue, with the slot each one lands on."""

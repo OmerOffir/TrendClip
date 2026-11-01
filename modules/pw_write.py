@@ -342,6 +342,58 @@ def facts_prompt(session: dict[str, Any]) -> str:
 # --------------------------------------------------------------------------- the session
 
 
+class Proposal(BaseModel):
+    question: str
+    pillar: str = ""
+
+
+class Proposals(BaseModel):
+    topics: list[Proposal] = Field(default_factory=list)
+
+
+TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel (35-50 seconds) that explains why something costs what it
+costs, or how money works, in plain words with simple drawings. The tone is curious and friendly: it explains, it
+never gives financial advice.
+
+Give me {count} new video questions. Each one must:
+- be a short question starting with "Why" and ending with "?" (under 80 characters)
+- have a surprising but true answer, backed by at least two solid sources (news, official, academic; not Wikipedia)
+- fit in 50 seconds: one clear answer with 2-3 reasons and a twist
+- be about something people know: a product, a price, a country, a company trick, a famous moment in money history
+- avoid investing or crypto tips, politics, elections and wars
+
+Spread them evenly across these pillars:
+{pillars}
+
+Don't repeat or rephrase any of these, already made or planned:
+{taken}
+
+Answer with JSON only, no other text:
+{{"topics": [{{"question": "Why are movie theater snacks so expensive?", "pillar": "business tricks"}}]}}
+The pillar is written exactly as above."""
+
+
+def llm_prompt(count: int = 20, out_dir: Path | None = None) -> str:
+    """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM")."""
+    return TOPICS_PROMPT.format(count=count, pillars="\n".join(f"- {p}" for p in PILLARS),
+                                taken="\n".join(t["question"] for t in topics(out_dir)) or "(none yet)")
+
+
+def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
+    """The LLM's pasted topics: each new question ending in ? joins the end of the list (an unknown pillar is
+    left empty). {"added": [questions], "skipped": n}."""
+    found = llm_json.parse(text, Proposals, WriteError).topics
+    if not found:
+        raise WriteError("The answer has no topics")
+    added = []
+    for p in found:
+        try:
+            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir)["question"])
+        except WriteError:
+            continue
+    return {"added": added, "skipped": len(found) - len(added)}
+
+
 class Answer(BaseModel):
     scripts: list[dict[str, Any]] = Field(min_length=1)
 

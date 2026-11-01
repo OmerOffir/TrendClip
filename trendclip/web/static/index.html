@@ -131,6 +131,24 @@
       </form>
       <div id="pwTopics"><div class="empty">Loading…</div></div>
     </section>
+    <section class="card llm-topics" id="pwLlmTopics" data-llm-topics="/api/pricetagwhy/llm-topics" data-refresh="pwTopicsRefresh"
+             data-checking="Adding them (through Discord on Linux when this isn't the hub)…" data-skipped="already on the list or not a question">
+      <div class="card-head">
+        <div>
+          <h2>New topics from your own LLM</h2>
+          <span class="hint">When the list runs out: the prompt asks for 20 new money questions across the four pillars, and lists the ones you already have so it won't repeat them</span>
+        </div>
+        <button type="button" id="pwTopicsRefresh" hidden></button>
+      </div>
+      <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
+        <div class="llm-topics-row"><button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
+        <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
+      </div>
+      <div class="bw-w-step"><b>2 · Paste its answer</b>
+        <textarea class="bw-w-answer" data-l="answer" rows="4" placeholder="Paste the whole answer here (the JSON)"></textarea>
+        <div class="llm-topics-row"><button type="button" class="btn-primary" data-l="add">➕ Add them</button><span class="hint" data-l="status"></span></div>
+      </div>
+    </section>
   </main>
   <main class="container da-view" id="viewPwWrite" data-workspace-panel="pricetagwhy" data-pw-panel="write" hidden>
     <section class="card">
