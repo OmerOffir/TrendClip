@@ -499,6 +499,38 @@ def pick_music(settings, progress=lambda m: None, kind: str = "", seconds: float
         return None
 
 
+FIT_SECONDS = 58.5  # a Short whose voice runs longer is sped up to this (the check stops anything over MAX_SECONDS)
+MAX_SPEEDUP = 1.12  # beyond this the voice sounds rushed: the video stays long and its check stops it
+
+
+def fit_voice(path: Path, words: list[bw_render.Word], duration: float, target: float = FIT_SECONDS) -> list[bw_render.Word]:
+    """Speed the recorded voice up (same pitch, ffmpeg atempo) so the video ends by `target`; the words' times
+    follow. At most MAX_SPEEDUP; returns the words unchanged when it can't help or ffmpeg fails."""
+    import subprocess
+
+    spoken = max((w.end for w in words), default=0.0)
+    tail = duration - spoken  # the end card and the pause after the last word don't change
+    if spoken <= 0 or duration <= target or target - tail <= 0:
+        return words
+    factor = min(MAX_SPEEDUP, spoken / (target - tail))
+    tmp = path.with_name(path.stem + ".fit" + path.suffix)
+    try:
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", str(path), "-filter:a", f"atempo={factor:.4f}",
+                        "-c:a", "libmp3lame", "-b:a", "160k", str(tmp)], check=True, capture_output=True)
+    except (OSError, subprocess.CalledProcessError) as err:
+        logger.warning("Could not speed up %s: %s", path.name, err)
+        tmp.unlink(missing_ok=True)
+        return words
+    tmp.replace(path)
+    out = [bw_render.Word(w.text, round(w.start / factor, 3), round(w.end / factor, 3), w.who) for w in words]
+    timing = path.with_suffix(".words.json")
+    if timing.is_file():
+        timing.write_text(json.dumps([{"word": w.text, "start": w.start, "end": w.end, **({"who": w.who} if w.who else {})}
+                                      for w in out], indent=1), encoding="utf-8")
+    logger.info("Borderline Why voice sped up x%.3f to fit %.0f s", factor, target)
+    return out
+
+
 def check_video(info: dict) -> list[str]:
     seconds = float(info.get("duration_seconds") or 0)
     problems = []
@@ -598,6 +630,10 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     else:
         words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m))
     spec = bw_render.spec_from_dict(script, words)
+    if spec.duration > FIT_SECONDS:
+        progress(0.12, f"The voice runs {spec.duration:.0f} s: speeding it up a little to fit {FIT_SECONDS:.0f} s")
+        words = fit_voice(work / "voice.mp3", words, spec.duration)
+        spec = bw_render.spec_from_dict(script, words)
     spec.sfx = sfx_on()
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):

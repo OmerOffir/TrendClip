@@ -1516,3 +1516,21 @@ def test_the_whole_short_stays_under_a_minute(world):
     problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
     assert "the mascot has 3 lines (at most 2)" in problems and "words together (at most 120" in problems
     assert bw_channel.MAX_SECONDS == 60.0 and bw_channel.check_video({"duration_seconds": 63, "sources": [1, 2]})
+
+
+def test_a_slightly_long_voice_is_sped_up_to_fit(tmp_path):
+    import subprocess
+
+    voice = tmp_path / "voice.mp3"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=60",
+                    "-c:a", "libmp3lame", str(voice)], check=True)
+    words = [bw_render.Word("w", i * 0.6, i * 0.6 + 0.4) for i in range(100)] + [bw_render.Word("end", 59.6, 60.0, "panda")]
+    fitted = bw_channel.fit_voice(voice, words, 62.4)  # 2.4 s of end card after the last word
+    factor = 60.0 / fitted[-1].end
+    assert fitted[-1].end + 2.4 == pytest.approx(bw_channel.FIT_SECONDS, abs=0.05) and fitted[-1].who == "panda"
+    probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", str(voice)],
+                           capture_output=True, text=True).stdout
+    assert float(probe) == pytest.approx(60.0 / factor, abs=0.2)
+    assert bw_channel.fit_voice(voice, fitted, 50.0) == fitted  # short enough: untouched
+    far = [bw_render.Word("w", 0, 80.0)]
+    assert bw_channel.fit_voice(voice, far, 82.4)[0].end == pytest.approx(80.0 / bw_channel.MAX_SPEEDUP, abs=0.01)  # capped
