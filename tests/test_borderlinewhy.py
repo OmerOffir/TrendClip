@@ -1557,11 +1557,17 @@ def test_stop_ends_a_make_at_its_next_step(settings, tmp_path, world):
     work.mkdir(parents=True)
     p = bw_channel.Progress(work / "progress.json")
     p(0.3, "Drawing the maps")
-    assert bw_channel.request_stop(job.key, tmp_path)["stopping"]
+    assert bw_channel.request_stop(job.key, tmp_path)["stopped"]
+    assert bw_channel.progress_of(job.key, tmp_path) is None  # the slot is free at once
+    newer = bw_channel.Progress(work / "progress.json")  # made again before the stopped one has noticed
+    newer(0.05, "Choosing the topic")
     with pytest.raises(bw_channel.Stopped):
         p(0.31, "Drawing the maps: frame 600")
-    p.done()  # the make's cleanup: nothing left behind, a new make can run
-    assert not (work / "stop").exists() and bw_channel.progress_of(job.key, tmp_path) is None
+    p.done()  # the stopped make's cleanup leaves the newer one alone
+    assert bw_channel.progress_of(job.key, tmp_path)["message"] == "Choosing the topic" and not (work / "stop").exists()
+    newer(0.1, "still going")  # the stop was not for it
+    newer.done()
+    assert bw_channel.progress_of(job.key, tmp_path) is None
 
     def render(spec, voice_path, out, music, volume, progress):
         bw_channel.request_stop(job.key, tmp_path)  # pressed while the maps are drawn

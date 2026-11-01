@@ -7,6 +7,7 @@ from __future__ import annotations
 import logging
 import re
 import threading
+import uuid
 from datetime import date
 from typing import Any
 
@@ -40,22 +41,27 @@ def _start(name: str, fn, **meta) -> dict[str, Any]:
     """Run `fn(progress)` on a thread; one job of each kind at a time."""
     with _lock:
         if _jobs[name].get("running"):
-            raise HTTPException(status_code=409, detail=f"A {name} job is already running")
-        _jobs[name] = {"running": True, "message": "Starting", "fraction": None, "error": None, "result": None, **meta}
+            what = f" (the {meta['key'][:10]} {meta['key'][11:13]}:{meta['key'][13:15]} video)" if _jobs[name].get("key") and meta.get("key") else ""
+            raise HTTPException(status_code=409, detail=f"Another video is being made right now{what}: wait for it, or press Stop on it in the Plan"
+                                if name == "make" else f"A {name} job is already running")
+        job_id = uuid.uuid4().hex
+        _jobs[name] = {"running": True, "message": "Starting", "fraction": None, "error": None, "result": None, "id": job_id, **meta}
+
+    def update(**fields):  # a stopped job's thread may still be finishing: it no longer owns the record
+        with _lock:
+            if _jobs[name].get("id") == job_id:
+                _jobs[name].update(**fields)
 
     def progress(fraction, message):
-        with _lock:
-            _jobs[name].update(message=message, **({"fraction": fraction} if fraction is not None else {}))
+        update(message=message, **({"fraction": fraction} if fraction is not None else {}))
 
     def run():
         try:
             result = fn(progress)
-            with _lock:
-                _jobs[name].update(running=False, result=result, message="Done")
+            update(running=False, result=result, message="Done")
         except Exception as err:  # noqa: BLE001 - shown in the tab
             logger.exception("Borderline Why %s job failed", name)
-            with _lock:
-                _jobs[name].update(running=False, error=str(err), message="Failed")
+            update(running=False, error=str(err), message="Failed")
 
     threading.Thread(target=run, daemon=True, name=f"bw-{name}").start()
     return _job(name)
@@ -188,9 +194,13 @@ class StopRequest(BaseModel):
 def stop_make(req: StopRequest) -> dict[str, Any]:
     """Stop the video being made for a slot (the dashboard's Make now or the bot's own job)."""
     try:
-        return bw_channel.request_stop(req.key)
+        result = bw_channel.request_stop(req.key)
     except bw_channel.ChannelError as err:
         raise HTTPException(status_code=409, detail=str(err)) from err
+    with _lock:  # the dashboard's own make: free at once, so another can start
+        if _jobs["make"].get("running") and _jobs["make"].get("key") == req.key:
+            _jobs["make"] = {**_jobs["make"], "running": False, "error": "Stopped", "message": "Stopped", "id": None}
+    return result
 
 
 @router.get("/plan")

@@ -570,16 +570,23 @@ class Progress:
     def __init__(self, path: Path, progress=lambda f, m: None):
         self.path, self.progress = path, progress
         self.started = datetime.now().replace(microsecond=0).isoformat()
+        self.id = f"{self.started}-{random.randrange(1 << 30):x}"  # which make a stop file is for
         self.fraction, self.steps = 0.0, 0
 
+    def stopped(self) -> bool:
+        try:
+            return (self.path.parent / STOP_FILE).read_text(encoding="utf-8").strip() == self.id
+        except OSError:
+            return False
+
     def __call__(self, fraction: float | None, message: str) -> None:
-        if (self.path.parent / STOP_FILE).exists():  # the owner pressed Stop: end the make at this step
+        if self.stopped():  # the owner pressed Stop: end the make at this step
             raise Stopped("Stopped on the dashboard; nothing was made for this slot")
         if fraction is not None:
             self.fraction = max(self.fraction, fraction)
         self.progress(fraction, message)
         try:
-            self.path.write_text(json.dumps({"message": message, "fraction": round(self.fraction, 3), "started": self.started,
+            self.path.write_text(json.dumps({"id": self.id, "message": message, "fraction": round(self.fraction, 3), "started": self.started,
                                              "updated": datetime.now().replace(microsecond=0).isoformat()}), encoding="utf-8")
         except OSError:
             pass
@@ -590,8 +597,14 @@ class Progress:
         self(self.SCRIPT_SHARE * (1 - 0.8 ** self.steps), message)
 
     def done(self) -> None:
-        self.path.unlink(missing_ok=True)
-        (self.path.parent / STOP_FILE).unlink(missing_ok=True)
+        """The make ended: its progress and stop files go (not a newer make's for the same slot)."""
+        try:
+            if json.loads(self.path.read_text(encoding="utf-8")).get("id") == self.id:
+                self.path.unlink(missing_ok=True)
+        except (OSError, ValueError):
+            pass
+        if self.stopped():
+            (self.path.parent / STOP_FILE).unlink(missing_ok=True)
 
 
 def progress_of(key: str, out_dir: Path | None = None, now: datetime | None = None) -> dict | None:
@@ -603,16 +616,20 @@ def progress_of(key: str, out_dir: Path | None = None, now: datetime | None = No
         return None
     if (now or datetime.now()) - updated >= PROGRESS_STALE:
         return None
-    return {**data, "stopping": (out_root(out_dir) / key / STOP_FILE).exists()}
+    return data
 
 
 def request_stop(key: str, out_dir: Path | None = None) -> dict:
-    """Stop the video being made for `key`: it ends at its next step (a Gemini call or a rendered frame may take a
-    moment to finish first). Raises ChannelError when nothing is being made there."""
-    if progress_of(key, out_dir) is None:
+    """Stop the video being made for `key`. The slot is free at once (the Plan shows it open and it can be made
+    again); the stopped make ends at its next step (a Gemini answer or a rendered frame may take a moment) and its
+    work is dropped. Raises ChannelError when nothing is being made there."""
+    progress = progress_of(key, out_dir)
+    if progress is None:
         raise ChannelError("No video is being made for that slot")
-    (out_root(out_dir) / key / STOP_FILE).write_text(datetime.now().replace(microsecond=0).isoformat(), encoding="utf-8")
-    return progress_of(key, out_dir)
+    folder = out_root(out_dir) / key
+    (folder / STOP_FILE).write_text(progress.get("id", ""), encoding="utf-8")
+    (folder / "progress.json").unlink(missing_ok=True)
+    return {"key": key, "stopped": True}
 
 
 def make(settings, job: Job, progress=lambda f, m: None, *, out_dir: Path | None = None, client=None, script: dict | None = None,
