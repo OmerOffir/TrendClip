@@ -547,3 +547,16 @@ def test_the_topics_route_answers_with_the_list(tmp_path, monkeypatch):
     monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
     body = TestClient(app).get("/api/pricetagwhy/topics").json()
     assert body["source"] == "here" and body["left"] == len(body["topics"]) > 0 and body["pillars"]
+
+
+def test_an_opening_photo_that_is_not_found_is_drawn_with_its_lines():
+    o = {"photo": "Las Vegas casino slot machines floor", "lines": ["Clocks, 1931", {"text": "Zero", "color": "red"}]}
+    spec = bw_render.Spec(scenes=[bw_render.Scene(kind="product", narration="x", opts={"product": dict(o)})], words=[])
+    pw_render.restyle(spec)
+    scene = spec.scenes[0]
+    assert scene.kind == "photo"
+    scene.kind, scene.title = "card", o["photo"]  # what bw_render does when the photo can't be found
+    pw_render.restyle(spec)
+    assert scene.kind == "product" and scene.opts["product"]["draw"] == "clock"
+    assert scene.opts["product"]["lines"] == o["lines"]
+    assert pw_render.guess_drawing({"lines": ["Nothing here"]}) == "receipt"

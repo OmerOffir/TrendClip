@@ -503,16 +503,35 @@ class PwRenderer(bw_fx.FxRenderer):
     handle = "@PriceTagWhy"
 
 
+def guess_drawing(o: dict[str, Any]) -> str:
+    """The drawing a product's words name (its lines, label, photo search: "Clocks today" -> clock), else a receipt."""
+    text = " ".join(str(x.get("text") if isinstance(x, dict) else x) for x in
+                    [*(o.get("lines") or []), *(o.get("label") or []), o.get("photo") or ""]).lower()
+    names = {**{n: n for n in pw_draw.DRAWINGS}, **pw_draw.FROM_ICON}
+    for word in re.findall(r"[a-z]+", text):
+        for name, drawing in names.items():
+            if word in (name, name + "s", name + "es"):
+                return drawing
+    return "receipt"
+
+
 def restyle(spec: bw_render.Spec) -> None:
-    """Before the photos are fetched: a product with no drawing becomes a photo scene of it. After: Borderline Why's
+    """Before the photos are fetched: a product with no drawing becomes a photo scene of it (drawn after all, with its
+    lines, if the photo isn't found). After: Borderline Why's
     old-paper card (a photo that couldn't be found) becomes a board, and every board a sketch with a big drawing (its
     picture, else the drawing of the first icon it names; that icon is then not popped in as well)."""
     for scene in spec.scenes:
         o = scene.opts.get("product") if isinstance(scene.opts.get("product"), dict) else None
         if scene.kind == "product" and o is not None and str(o.get("draw") or "") not in pw_draw.DRAWINGS and o.get("photo"):
             scene.kind = "photo"
+            scene.opts["_product"] = o  # drawn after all if the photo can't be found
             scene.opts["photo"] = str(o["photo"])
             scene.opts.setdefault("caption", " ".join(str(x) for x in o.get("label") or []) or str(o["photo"]))
+        if scene.kind == "card" and isinstance(scene.opts.get("_product"), dict):
+            o = scene.opts["_product"]  # the opening's photo wasn't found: draw something it names, with its lines
+            scene.kind = "product"
+            scene.opts["product"] = {**o, "draw": guess_drawing(o)}
+            continue
         if scene.kind == "card":
             lines = [x for x in (scene.title or str(scene.opts.get("caption") or ""), scene.subtitle) if x]
             scene.kind = "board"
