@@ -151,7 +151,7 @@ def _research():
                                                          bw_script.Source(2, "https://www.mnhs.org/angle", "MNHS", SOURCE_2)])
 
 
-def _draft(narration_words: int = 110, quote_ok: bool = True) -> bw_script.Draft:
+def _draft(narration_words: int = 90, quote_ok: bool = True) -> bw_script.Draft:
     filler = " ".join(["The map shows the lake and the border clearly."] * ((narration_words - 20) // 9))
     scenes = [
         bw_script.SceneDraft(kind="map", narration="There is a notch on top of Minnesota.", focus=["Lake of the Woods"],
@@ -1343,7 +1343,7 @@ def _whatif_json(**changes):
     draft = _draft()
     draft.title = "What if Minnesota had no notch?"
     draft.claims = []
-    draft.scenes[4].narration = "So the border might have run straight, and Minnesota would probably have no notch."
+    draft.scenes[4].narration = "So the border might have run straight."
     draft.scenes[4].elements.append(bw_script.ElementDraft(kind="transfer", place="Minnesota", color="b", cue="border"))
     for k, v in changes.items():
         setattr(draft, k, v)
@@ -1505,3 +1505,14 @@ def test_a_make_shows_its_progress_in_the_plan(settings, tmp_path, world):
     assert bw_channel.progress_of(job.key, tmp_path, datetime.now() + timedelta(hours=1)) is None  # a make that died
     _make(settings, tmp_path, world)  # a finished make leaves no progress behind
     assert not (work / "progress.json").exists() and bw_channel.progress_of(job.key, tmp_path) is None
+
+
+def test_the_whole_short_stays_under_a_minute(world):
+    draft = _draft()
+    draft.scenes[2].ask = "Wait, how does a map make a notch like that?"
+    draft.scenes[4].react = "So one wrong lake shape gave Minnesota its notch?"
+    assert bw_script.check(draft, _research(), _find(world)) == []  # 2 lines, within the words
+    draft.scenes[3].ask = "Hold on, why did nobody check the river first?"
+    problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "the mascot has 3 lines (at most 2)" in problems and "words together (at most 120" in problems
+    assert bw_channel.MAX_SECONDS == 60.0 and bw_channel.check_video({"duration_seconds": 63, "sources": [1, 2]})

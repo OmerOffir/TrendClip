@@ -32,7 +32,9 @@ SOURCE_CHARS = 7000
 MIN_SOURCE_CHARS = 1200
 MAX_FETCH = 10  # cited pages tried per topic
 MAX_SOURCES = 4  # outside pages kept besides Wikipedia
-MIN_WORDS, MAX_WORDS = 95, 130  # about 40-55 s with the narrator: the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31)
+MIN_WORDS, MAX_WORDS = 80, 100  # the narrator's part; with the mascot and the end card a Short is 45-55 s (never over 60):
+# the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31); 115-120 words still came out at 60-67 s
+SPOKEN_WORDS = 120  # the narration and the mascot's lines together (about 52 s spoken)
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 1  # a Short's static title cards: the first card lost viewers in 4 of the first 5 Shorts (2026-11-01)
@@ -43,7 +45,7 @@ SETUP = re.compile(r"^\W*(this is|these are|this place is|it is called|it's call
                    r"welcome to|say hello)\b", re.I)
 PHOTO_COUNT = "3-4 in the video, at most 5"
 BOARD_COUNT = "1-2 in the video"
-MASCOT_LINES = "1-2 asks in the video and at most one react"  # the mascot's lines in a Short (modules.bw_brand)
+MASCOT_LINES = "1-2 lines in the video (asks or a react), short ones"  # the mascot's lines in a Short (modules.bw_brand)
 ATTEMPTS = 3  # drafts against the rules (the first one and 2 fixes)
 CHECK_FIXES = 3  # fixes of what the fact checker flags, on top of those
 SKIP_DOMAINS = ("wikipedia.org", "wikimedia.org", "wikidata.org", "books.google", "google.com", "archive.org/details",
@@ -438,7 +440,8 @@ animated maps. Today's question: "{question}"
 Use ONLY the sources below. Do not add facts, numbers, names, dates or quotes that are not in them. If they cannot
 support a clear, true answer, set usable to false and say why.
 
-THE NARRATION ({min_words}-{max_words} words, about 40-55 seconds read aloud: short Shorts get watched to the end and replayed)
+THE NARRATION ({min_words}-{max_words} words, about 35-45 seconds read aloud; with the mascot the Short is 45-55 seconds and never over 60:
+short Shorts get watched to the end and replayed)
 - Start straight away with the specific question or the surprising fact. No greeting, no "Did you know", no "You won't
   believe", no "Let's dive in".
 - Build curiosity: what makes the situation odd, why the obvious answer is wrong; then a clear, satisfying answer
@@ -609,7 +612,8 @@ class Limits:
     no_setup: bool = True  # scene 2 must not open on "This is X"
     first_map: bool = True  # the first scene is the thumbnail
     max_boards: int = 2
-    max_lines: int = 3  # the mascot's asks and reacts
+    max_lines: int = 2  # the mascot's asks and reacts (the outro's line comes on top)
+    spoken_words: int = SPOKEN_WORDS  # the narration and the mascot's lines together (0: no limit)
     max_photos: int = 5
     min_claims: int = 4
     min_cited: int = 2
@@ -651,6 +655,10 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
     lines = [(i, k, getattr(s, k).strip()) for i, s in enumerate(draft.scenes, 1) for k in ("ask", "react") if getattr(s, k).strip()]
     if len(lines) > limits.max_lines:
         problems.append(f"the mascot has {len(lines)} lines (at most {limits.max_lines})")
+    spoken = n + sum(words(line) for _, _, line in lines)
+    if limits.spoken_words and spoken > limits.spoken_words:
+        problems.append(f"the narration and the mascot's lines are {spoken} words together (at most {limits.spoken_words}, "
+                        "so the Short stays under 60 seconds): cut the least needed sentence")
     for i, k, line in lines:
         if not 2 <= words(line) <= 12:
             problems.append(f"scene {i}: the mascot's {k} is {words(line)} words (wanted 3-12)")
