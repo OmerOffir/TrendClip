@@ -413,7 +413,10 @@
   $("pwAddTopic").addEventListener("submit", (e) => {
     e.preventDefault();
     act(async () => {
-      renderTopics((await post("/api/pricetagwhy/topics", { question: $("pwAddQuestion").value, pillar: $("pwAddPillar").value })).body);
+      const question = $("pwAddQuestion").value;
+      const { body } = await post("/api/pricetagwhy/topics", { question, pillar: $("pwAddPillar").value });
+      renderTopics(body);
+      $("pwAddStatus").textContent = body.sent ? `✅ Sent to the Linux machine's list: ${question}` : `✅ Added: ${question}`;
       $("pwAddQuestion").value = "";
     }, () => {});
   });

@@ -369,6 +369,21 @@ class BorderlineWhy:
         except bw_topics.LLMTopicsError as err:
             raise HubError(str(err), 400) from err
 
+    def add_one(self, settings, topic: dict[str, Any]) -> dict[str, Any]:
+        """A question typed in with its Wikipedia article (the Topics tab's Add): made next, like on the hub."""
+        from modules import bw_channel, bw_script, bw_topics
+
+        question, article = str(topic.get("question", "")).strip(), str(topic.get("article", "")).strip()
+        if len(question) < 8 or not article:
+            raise HubError("A topic needs a question and its Wikipedia article", 400)
+        try:
+            title = bw_script.article_exists(article)
+        except Exception as err:  # noqa: BLE001
+            raise HubError(f"Wikipedia did not answer: {err}", 502) from err
+        if not title:
+            raise HubError(f"English Wikipedia has no article called {article!r}", 400)
+        return {**bw_topics.add(bw_channel.out_root(), question, title).model_dump(), "added": [question]}
+
     def queue(self, settings, bundle: dict[str, Any], now: datetime | None = None) -> dict[str, Any]:
         """Scripts written for later (modules.bw_week) into the queue the daily job drains oldest first, one per
         slot. A script whose topic this hub already used or has queued is skipped. {"queued": [{"name",
@@ -504,7 +519,24 @@ class GamerIQ:
         return result
 
 
-CHANNELS = {c.name: c for c in (DarkOutliers(), BorderlineWhy(), GamerIQ())}
+class PriceTagWhy:
+    """Price Tag Why's part of the hub: only the topics typed in on the sending machine (its scripts are written by
+    hand on the hub's dashboard)."""
+
+    name = "pricetagwhy"
+    label = "Price Tag Why"
+
+    def add_one(self, settings, topic: dict[str, Any]) -> dict[str, Any]:
+        from modules import pw_write
+
+        try:
+            item = pw_write.add_topic(str(topic.get("question", "")), str(topic.get("pillar", "")))
+        except pw_write.WriteError as err:
+            raise HubError(str(err), 400) from err
+        return {**item, "added": [item["question"]]}
+
+
+CHANNELS = {c.name: c for c in (DarkOutliers(), BorderlineWhy(), GamerIQ(), PriceTagWhy())}
 
 
 def channel(name: str):
@@ -536,10 +568,16 @@ async def handle(settings, words: list[str], message: Any, discord_channel: Any)
             scripts = json.loads(await message.attachments[0].read())
             return hub._reply("done", nonce, await asyncio.to_thread(ch.queue, settings, scripts)), None
         if op == "ctopics":
-            if not message.attachments or not hasattr(ch, "add_topics"):
-                raise HubError(f"{ch.label} doesn't take topics" if not hasattr(ch, "add_topics") else "No answer attached")
-            text = json.loads(await message.attachments[0].read()).get("text", "")
-            return hub._reply("done", nonce, await asyncio.to_thread(ch.add_topics, settings, text)), None
+            if not message.attachments:
+                raise HubError("No answer attached")
+            data = json.loads(await message.attachments[0].read())
+            if data.get("one"):  # a topic typed into the Topics tab on the sending machine
+                if not hasattr(ch, "add_one"):
+                    raise HubError(f"{ch.label} doesn't take topics typed in")
+                return hub._reply("done", nonce, await asyncio.to_thread(ch.add_one, settings, data["one"])), None
+            if not hasattr(ch, "add_topics"):
+                raise HubError(f"{ch.label} doesn't take topics")
+            return hub._reply("done", nonce, await asyncio.to_thread(ch.add_topics, settings, data.get("text", ""))), None
         if len(words) != 7 or not message.attachments:
             raise HubError("The send message is incomplete")
         day, slot, ids = Day.fromisoformat(words[4]), words[5], words[6].split(",")
@@ -674,6 +712,23 @@ def add_topics(settings, name: str, text: str, check=None) -> dict[str, Any]:
     if op != "done":
         raise HubError(reply.get("message") or "The hub refused the answer", 400)
     logger.info("Sent %s topics to the hub: %d added", name, len(reply.get("added", [])))
+    return {**reply, "where": "linux"}
+
+
+def add_one(settings, name: str, topic: dict[str, Any]) -> dict[str, Any]:
+    """A topic typed into the Topics tab: on the hub straight into its list, from the sending machine to the hub's
+    list through Discord (op ctopics with "one"), since the hub's list is the one the videos are made from. The
+    hub's answer, with "where": "here" or "linux"."""
+    ch = channel(name)
+    if not hasattr(ch, "add_one"):
+        raise HubError(f"{ch.label} doesn't take topics typed in", 400)
+    if not hub.is_sender(settings):
+        return {**ch.add_one(settings, topic), "where": "here"}
+    op, reply = hub.send_parts(settings, b"", f"{hub.PREFIX} ctopics {{nonce}} {name}",
+                               ("topics.json", json.dumps({"one": topic}, ensure_ascii=False).encode("utf-8")))
+    if op != "done":
+        raise HubError(reply.get("message") or "The hub refused the topic", 400)
+    logger.info("Sent a %s topic to the hub: %s", name, topic.get("question"))
     return {**reply, "where": "linux"}
 
 

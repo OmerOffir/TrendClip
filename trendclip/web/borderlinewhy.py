@@ -383,7 +383,14 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Wikipedia did not answer: {err}") from err
     if not title:
         raise HTTPException(status_code=400, detail=f"English Wikipedia has no article called {req.article!r}")
-    return bw_topics.add(bw_channel.out_root(), req.question, title).model_dump()
+    if hub.is_sender(_settings()):  # the hub's list is the one the videos are made from: it goes there through Discord
+        from modules import channel_hub
+
+        try:
+            return channel_hub.add_one(_settings(), "borderlinewhy", {"question": req.question, "article": title})
+        except hub.HubError as err:
+            raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err
+    return {**bw_topics.add(bw_channel.out_root(), req.question, title).model_dump(), "where": "here"}
 
 
 @router.get("/next")

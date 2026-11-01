@@ -318,6 +318,17 @@ def topics() -> dict[str, Any]:
 
 @router.post("/topics")
 def add_topic(req: TopicRequest) -> dict[str, Any]:
+    """A question for the list; on the sending machine it goes to the Linux hub's list through Discord, the one the
+    scripts are written from there."""
+    from modules import channel_hub
+    from trendclip import hub
+
+    if hub.is_sender(_settings()):
+        try:
+            sent = channel_hub.add_one(_settings(), "pricetagwhy", {"question": req.question, "pillar": req.pillar})
+        except hub.HubError as err:
+            raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err
+        return {**topics(), "sent": sent}
     _write(pw_write.add_topic, req.question, req.pillar)
     return topics()
 

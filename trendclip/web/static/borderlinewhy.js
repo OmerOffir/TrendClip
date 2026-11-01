@@ -399,7 +399,8 @@
     status.textContent = "Checking Wikipedia…";
     try {
       const { body } = await post("/api/borderlinewhy/topics", { question: $("bwAddQuestion").value, article: $("bwAddArticle").value });
-      status.textContent = `✅ Added (Wikipedia: ${body.article}); it is made next`;
+      status.textContent = body.where === "linux" ? `✅ Sent to the Linux machine's list (Wikipedia: ${body.article}); it is made next there`
+        : `✅ Added (Wikipedia: ${body.article}); it is made next`;
       $("bwAddQuestion").value = "";
       $("bwAddArticle").value = "";
       loadTopics();

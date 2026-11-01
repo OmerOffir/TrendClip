@@ -7,13 +7,14 @@ from datetime import datetime, timedelta
 import pytest
 
 from db import repository
-from modules import bw_channel, channel_hub, da_channel, da_plan, script_gen, video_gen
+from modules import bw_channel, channel_hub, da_channel, da_plan, pw_channel, script_gen, video_gen
 from trendclip import hub
 
 from tests.test_hub import Attachment, FakeDiscord, Message, make
 
 PATHS = ((video_gen, "OUTPUT_DIR", "darkarchives"), (script_gen, "OUTPUT_DIR", "scripts"),
-         (bw_channel, "OUTPUT_DIR", "borderlinewhy"), (repository, "DB_PATH", "bank.db"))
+         (bw_channel, "OUTPUT_DIR", "borderlinewhy"), (pw_channel, "OUTPUT_DIR", "pricetagwhy"), (pw_channel, "SCRIPTS_DIR", "pw-scripts"),
+         (repository, "DB_PATH", "bank.db"))
 
 
 class Machines:
@@ -303,3 +304,27 @@ def test_stories_and_topics_from_your_own_llm_go_to_linux(linux, mac, discord, m
         channel_hub.add_topics(mac, "borderlinewhy", "hello", lambda t: __import__("trendclip.llm_json").llm_json.parse(t, bw_topics.Proposals, bw_topics.LLMTopicsError))
     with pytest.raises(hub.HubError, match="doesn't take topics"):
         channel_hub.add_topics(mac, "sidequestlogic", "{}")
+
+
+def test_a_topic_typed_on_the_sending_machine_goes_to_the_linux_list(linux, mac, discord, machines, monkeypatch):
+    from modules import bw_topics, pw_write
+
+    monkeypatch.setattr("modules.bw_script.article_exists", lambda article: article.title())
+    reply = channel_hub.add_one(mac, "borderlinewhy", {"question": "Why is Point Roberts cut off?", "article": "point roberts"})
+    assert reply["where"] == "linux" and reply["article"] == "Point Roberts"
+    assert not bw_topics.load(bw_channel.out_root()).proposed  # not in this machine's list
+    machines.use("linux")
+    assert bw_topics.remaining(bw_channel.out_root())[0].question == "Why is Point Roberts cut off?"  # made next there
+    machines.use("mac")
+
+    reply = channel_hub.add_one(mac, "pricetagwhy", {"question": "Why is saffron so expensive?", "pillar": "everyday prices"})
+    assert reply["where"] == "linux" and reply["added"] == ["Why is saffron so expensive?"]
+    assert all(t["question"] != "Why is saffron so expensive?" for t in pw_write.topics())
+    machines.use("linux")
+    assert pw_write.topics()[-1]["question"] == "Why is saffron so expensive?"
+    machines.use("mac")
+    with pytest.raises(hub.HubError, match="ending in"):  # the hub's refusal comes back
+        channel_hub.add_one(mac, "pricetagwhy", {"question": "not a question"})
+    with pytest.raises(hub.HubError, match="doesn't take topics typed in"):
+        channel_hub.add_one(mac, "sidequestlogic", {"question": "Why?"})
+    assert channel_hub.add_one(linux, "pricetagwhy", {"question": "Why is gold priced in dollars?"})["where"] == "here"
