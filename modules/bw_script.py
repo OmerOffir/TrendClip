@@ -387,6 +387,14 @@ must be the whole narration.
   the whole line with {{n}} where the number goes ("Day {{n}}", "{{n}}+ ships"); 2-3 counters in one scene stack into a
   tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
+- Wars and conflicts (an invasion, a battle, a border war, a siege, a rebellion) are told on the war map: give the
+  story's armies and fights as elements and the video switches to it (each side lightly tinted, color "a" the
+  attacker and "b" the defender, the same all video). army: troops marching from "place" to "to" (cities or
+  states/provinces near the front), with "flag" for whose army it is (a block of little flags led by a flag-bearer)
+  or no flag (marching soldiers); "count" 3-9. battle: a clash at a place, the attacker's "flag" against the
+  defender's "from_flag", with explosions and smoke; "text" can name it. A map scene can also have "year" ("1812")
+  when the story jumps to a new date: it slams in big, then stays as a small tag. Not for a peaceful story: a sale,
+  a treaty or a survey keeps the usual flags, arrows and transfers.
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
   flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
   flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name of
@@ -614,6 +622,8 @@ def to_spec_dict(draft: Draft) -> dict[str, Any]:
             scene["board"] = {"write": [w.strip() for w in s.board_write if w.strip()], "draw": [n for n in s.board_draw if n.strip()][:2]}
         scenes.append(scene)
     out = {"title": draft.title.strip(), "cover_text": draft.cover_text.strip(), "scenes": scenes}
+    if any(e["kind"] in ("army", "battle") for sc in scenes for e in sc["elements"]):  # a war or conflict: the war map
+        out["style"] = "war"
     if 1 < draft.hook_scene <= len(scenes) and draft.hook_after.strip():
         out["hook"] = {"scene": draft.hook_scene - 1, "before": draft.hook_before.strip(), "after": draft.hook_after.strip()}
     return out

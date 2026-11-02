@@ -1892,3 +1892,12 @@ def test_the_war_map_draws_sides_armies_battles_and_years(world, fx_offline):
     spec.scenes[0].opts["year"] = "1812"
     sounds = [name for t, name, _ in bw_sfx.events(spec) if t < spec.scenes[0].end]
     assert "stamp" in sounds and "whoosh" in sounds  # the battle's thud, the army's whoosh
+
+
+def test_any_war_story_goes_on_the_war_map_and_a_peaceful_one_does_not(world):
+    draft = _draft()
+    assert "style" not in bw_script.to_spec_dict(draft)  # a border "why": our usual flags, arrows and transfers
+    draft.scenes[3].elements.append(bw_script.ElementDraft(kind="battle", place="Minnesota", flag="Flag of Canada.svg"))
+    assert bw_script.to_spec_dict(draft)["style"] == "war"
+    assert bw_script.finish(draft, _research())["style"] == "war"
+    assert "war map" in bw_script.SCENE_RULES and "army" in bw_script.SCENE_RULES
