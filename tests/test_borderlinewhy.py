@@ -488,6 +488,7 @@ def test_tab_endpoints(tmp_path, monkeypatch, settings, world):
     from trendclip.web.app import app
 
     monkeypatch.setattr(bw_channel, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(bw_channel, "auto_post", lambda: False)  # Approve after the slot would start a real upload
     job, info, _ = _make(settings, tmp_path, world)
     client = TestClient(app)
     body = client.get("/api/borderlinewhy/videos").json()

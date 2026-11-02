@@ -23,3 +23,17 @@ def own_gemini_ledger(tmp_path, monkeypatch):
 
     monkeypatch.setattr(gemini_quota, "LEDGER", tmp_path / "gemini_quota.json")
     monkeypatch.setattr(gemini_quota, "_setting", lambda name, default: default)
+
+
+@pytest.fixture(autouse=True)
+def no_real_youtube(monkeypatch):
+    """Tests never reach YouTube with the owner's login. On 2026-11-02 the tab test approved a fake video whose
+    slot had passed, the background upload ran with the real token, and every test run put a broken
+    "Minnesota | Weird Borders #1" Short on the channel. Tests that need a client pass a fake one."""
+    from trendclip import publish
+
+    def offline(*args, **kwargs):
+        raise publish.PublishError("tests never reach YouTube")
+
+    monkeypatch.setattr(publish, "_youtube", offline)
+    monkeypatch.setattr(publish, "_credentials", offline)
