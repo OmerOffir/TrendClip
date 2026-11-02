@@ -120,7 +120,7 @@ def test_the_mascot_s_new_poses_follow_the_story():
     scenes = [scene("map", "A village sits inside Switzerland."), scene("map", "Its border is close.", [bw_render.Element("highlight", "Italy")]),
               scene("board", "The deal of 1848."), scene("map", "Switzerland refused the offer."), scene("map", "So it stayed Italian."),
               scene("end", "")]
-    assert bw_brand.moods(scenes) == ["searching", "pointing", "writing", "disagreement", "discovery", "celebration"]  # 4 % 3: in turn
+    assert bw_brand.moods(scenes) == ["searching", "pointing", "writing", "disagreement", "discovery", "greeting"]  # 4 % 3: in turn; bye on the end card
     assert set(bw_brand.MASCOT) >= {"approval", "laughing", "listening", "surprised", "thanks", "writing"}
     spec = bw_render.Spec(scenes, [])
     say = lambda text, at: [bw_render.Word(w, at + k * 0.3, at + k * 0.3 + 0.2, "panda") for k, w in enumerate(text.split())]
@@ -129,5 +129,14 @@ def test_the_mascot_s_new_poses_follow_the_story():
                   say("Subscribe for more borders!", 20.1)]
     assert [bw_brand.line_pose(spec, ln) for ln in spec.lines] == ["surprised", "laughing", "approval", "thanks"]
     names = bw_fx.icon_names()
-    assert "explorer_approval" not in names and "explorer" in names  # the panda is never a map icon
-    assert {"astronomer", "librarian", "traveler", "route_planner"} <= set(names)
+    assert not {"explorer_nodding", "explorer_greeting"} & set(names) and "explorer" in names  # the panda is never a map icon
+    assert {"astronomer", "librarian", "traveler", "route_planner", "politician", "sailor", "merchant", "queen"} <= set(names)
+    assert "queen_curtsying" not in names and bw_fx.custom_icons()["queen_curtsying"].stem == "queen_waving"  # older scripts still draw
+    assert all((bw_fx.CUSTOM_DIR / f"{f}.gif").is_file() for f in bw_brand.MASCOT.values())
+
+
+def test_the_mascot_walks_along_a_route():
+    from modules import bw_brand, bw_render
+
+    scenes = [bw_render.Scene("map", "Look."), bw_render.Scene("map", "They sailed south.", elements=[bw_render.Element("arrow", "Spain")])]
+    assert bw_brand.moods(scenes) == ["searching", "walking"]

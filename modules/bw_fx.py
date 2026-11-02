@@ -283,20 +283,29 @@ CUSTOM_EXT = (".gif", ".webp", ".png", ".apng")
 
 
 # Short names for the owner's files named after what they do (king_waving.gif): a script writes "king"
-ALIASES = {"king": "king_waving", "queen": "queen_curtsying", "soldier": "soldier_marching", "soldiers": "blue_and_red_soldiers_marching",
+ALIASES = {"king": "king_waving", "queen": "queen_waving", "soldier": "soldier_marching", "soldiers": "blue_and_red_soldiers_marching",
            "army": "blue_and_red_soldiers_marching", "explorer": "explorer_scanning", "diplomats": "diplomats_handshake",
            "handshake": "diplomats_handshake", "judge": "judge_gavel", "court": "judge_gavel", "crowd": "crowd_waving",
            "newspaper": "newspaper_unfolding", "vote": "vote_ballot_cast", "horse": "horse_trotting", "castle": "castle_flags_and_gate",
            "town": "town_life", "surveyor": "surveyor_measuring_line", "border_guard": "border_guard_barrier",
            "customs": "border_guard_barrier", "fisherman": "fisherman_fishing", "letter": "letter_opening",
-           "mapmaker": "mapmaker_drawing", "family": "family_house", "cartographer": "mapmaker_drawing",
-           # the owner's mapmaker figures (2026-11-01)
+           "mapmaker": "mapmaker_route_planner", "family": "family_house", "cartographer": "mapmaker_route_planner",
+           # the owner's mapmaker figures (2026-11-01, redrawn chibi 2026-11-02)
            "astronomer": "mapmaker_astronomer", "stars": "mapmaker_astronomer", "builder": "mapmaker_builder",
            "wall": "mapmaker_builder", "chef": "mapmaker_chef", "food": "mapmaker_chef", "gardener": "mapmaker_gardener",
-           "farmer": "mapmaker_gardener", "librarian": "mapmaker_librarian", "archive": "mapmaker_librarian",
-           "messenger": "mapmaker_messenger", "mail": "mapmaker_messenger", "photographer": "mapmaker_photographer",
+           "librarian": "mapmaker_librarian", "archive": "mapmaker_librarian",
+           "messenger": "messenger_delivering_letter", "mail": "mapmaker_messenger", "photographer": "mapmaker_photographer",
            "camera": "mapmaker_photographer", "route_planner": "mapmaker_route_planner", "planner": "mapmaker_route_planner",
-           "scientist": "mapmaker_scientist", "traveler": "mapmaker_traveler", "tourist": "mapmaker_traveler"}
+           "scientist": "scientist_explaining", "lab": "mapmaker_scientist", "traveler": "mapmaker_traveler", "tourist": "mapmaker_traveler",
+           # the owner's chibi people (2026-11-02)
+           "politician": "speaker_talking", "president": "speaker_talking", "prime_minister": "speaker_talking",
+           "officer": "officer_gesturing", "general": "officer_gesturing", "salute": "officer_saluting",
+           "guard": "guard_saluting", "leader": "leader_pointing", "farmer": "farmer_working", "blacksmith": "blacksmith_hammering",
+           "merchant": "merchant_counting_coins", "trade": "merchant_counting_coins", "sailor": "sailor_waving",
+           "scholar": "scholar_writing", "historian": "scholar_writing", "citizen": "citizen_walking", "migrant": "citizen_walking",
+           "cheering": "citizen_cheering", "celebration": "citizen_cheering", "worker": "worker_building", "hello": "hand_wave"}
+# Names older scripts used for files the owner has since redrawn under another name: they still draw, never offered.
+OLD_NAMES = {"queen_curtsying": "queen_waving", "mapmaker_drawing": "mapmaker_route_planner"}
 
 
 # the mascot and the marker hand (modules.bw_brand): the channel's own pictures, never a script's icons. Every
@@ -323,7 +332,7 @@ def custom_icons() -> dict[str, Path]:
     for path in files:
         if path.suffix.lower() in CUSTOM_EXT and not path.name.startswith(".") and not is_brand(path.stem):
             out.setdefault(_key(path.stem), path)
-    for short, name in ALIASES.items():
+    for short, name in (*ALIASES.items(), *OLD_NAMES.items()):
         if name in out:
             out.setdefault(short, out[name])
     return out
@@ -332,7 +341,8 @@ def custom_icons() -> dict[str, Path]:
 def icon_names() -> list[str]:
     """Every icon name a script may use: the Noto ones, then the owner's own."""
     long_names = set(ALIASES.values())
-    return list(ICONS) + [name for name in custom_icons() if name not in ICONS and not (name in long_names and name not in ALIASES)]
+    return list(ICONS) + [name for name in custom_icons()
+                          if name not in ICONS and name not in OLD_NAMES and not (name in long_names and name not in ALIASES)]
 
 
 def _custom_frames(path: Path, size: int) -> tuple[list[Image.Image], list[float]]:

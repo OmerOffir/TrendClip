@@ -29,12 +29,13 @@ from PIL import Image, ImageDraw, ImageFilter
 from modules import bw_fx, bw_geo, bw_render
 from modules.bw_render import Element, Scene, curve, ease
 
-MASCOT = {"thinking": "explorer_thinking_smooth", "discovery": "explorer_discovery", "searching": "explorer_searching",
-          "celebration": "explorer_celebration", "speaking": "explorer_speaking",
-          # the owner's poses of 2026-11-01
-          "approval": "explorer_approval", "disagreement": "explorer_disagreement", "explaining": "explorer_explaining",
-          "laughing": "explorer_laughing", "listening": "explorer_listening", "pointing": "explorer_pointing",
-          "surprised": "explorer_surprised", "thanks": "explorer_thanks", "writing": "explorer_writing"}
+MASCOT = {"thinking": "explorer_thinking", "discovery": "explorer_reading_map", "searching": "explorer_searching",
+          "celebration": "explorer_celebrating", "speaking": "explorer_speaking", "approval": "explorer_nodding",
+          "disagreement": "explorer_thinking", "explaining": "explorer_explaining", "laughing": "explorer_laughing",
+          "listening": "explorer_listening", "pointing": "explorer_pointing", "surprised": "explorer_surprised",
+          "thanks": "explorer_thanks", "writing": "explorer_writing",
+          # the owner's redrawn chibi panda (2026-11-02) brought these
+          "greeting": "explorer_greeting", "walking": "explorer_walking", "idle": "explorer_idle"}
 PANDA = "panda"  # bw_render.Word.who for the mascot's words
 PANDA_GAP = 0.3  # seconds of silence on each side of a line the mascot says
 HAND = "cartoon_hand_gentle_sway"
@@ -201,15 +202,16 @@ def hand_at(t: float, at: float, done: float, head: tuple[float, float], start: 
 
 def moods(scenes: list[Scene]) -> list[str]:
     """Each scene's mascot while the narrator talks: searching the map at the opening; thinking on questions and
-    twists; cheering the scene that answers its last question; writing along on the whiteboard; shaking its head at
-    a refusal or a mistake; pointing at the place a map scene shows; else listening or lit up, in turn."""
+    twists; cheering the scene that answers its last question; writing along on the whiteboard; frowning at a
+    refusal or a mistake; pointing at the place a map scene shows; walking along a route or an arrow; waving goodbye
+    on the end card; else listening, reading its map or explaining, in turn."""
     out = []
     last_ask = max((i for i, s in enumerate(scenes) if s.opts.get("ask")), default=-1)
     for i, s in enumerate(scenes):
         mood = s.opts.get("mascot")
         if mood not in MASCOT or mood == "speaking":
             if s.kind == "end":
-                mood = "celebration"
+                mood = "greeting"
             elif i == 0:
                 mood = "searching"
             elif i == last_ask:  # the answer to its last question: the payoff
@@ -222,6 +224,8 @@ def moods(scenes: list[Scene]) -> list[str]:
                 mood = "disagreement"
             elif s.kind == "map" and any(e.kind in TARGET_KINDS for e in s.elements):
                 mood = "pointing"
+            elif s.kind == "map" and any(e.kind in ("route", "arrow") for e in s.elements):
+                mood = "walking"
             else:
                 mood = ("listening", "discovery", "explaining")[i % 3]
         out.append(mood)
