@@ -503,6 +503,7 @@ def push(img, t: float, start: float, end: float):
 class PwRenderer(bw_fx.FxRenderer):
     SAID = SAID
     LIVELY = False  # Borderline Why's opening, map beats and characters stay on that channel
+    PHOTO = {"lively": True, "guest": False, "circle": True}  # flash, push-in, the hand underlines and rings it: never a still
 
     question = ""  # the script's question: the header when there is no tag scene
 

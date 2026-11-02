@@ -149,9 +149,9 @@ class PhotoScene:
     print's corner (something new every second or so: a still picture lost viewers, 2026-11-02)."""
 
     ZOOM = 0.22  # how far the picture pushes in over the scene
-    UNDERLINE_AT, GUEST_AT = 0.9, 1.6  # seconds after the scene starts
+    UNDERLINE_AT, GUEST_AT, CIRCLE_AT = 0.9, 1.6, 1.8  # seconds after the scene starts
 
-    def __init__(self, scene, photo: Photo, k: int = 0, lively: bool = True):
+    def __init__(self, scene, photo: Photo, k: int = 0, lively: bool = True, guest: bool = True, circle: bool = False):
         from PIL import Image, ImageFilter
 
         from modules import bw_render
@@ -175,7 +175,8 @@ class PhotoScene:
         from modules import bw_fx
 
         self.lively = lively  # the flash, the underline and the character (Borderline Why)
-        guest = bw_fx.character_for(" ".join([scene.narration, self.caption])) if lively else ""
+        self.circle = circle  # the marker hand rings the middle of the picture in red (Price Tag Why)
+        guest = bw_fx.character_for(" ".join([scene.narration, self.caption])) if lively and guest else ""
         self.guest = bw_fx.icon_code(guest) if guest else ""
 
     def frame(self, t: float):
@@ -213,6 +214,15 @@ class PhotoScene:
                 bw_brand.marker(card, drawn, bw_brand.RED, 9, shade=False)
                 if v < 1.25:
                     line_at = tip
+        v = (t - sc.start - self.CIRCLE_AT) / 0.8
+        if self.circle and v > 0 and line_at is None:
+            cx, cy, rx, ry = border + self.size[0] / 2, border + self.size[1] * 0.48, self.size[0] * 0.36, self.size[1] * 0.34
+            ring = np.array([(cx + rx * math.cos(a) * (1 + 0.03 * math.sin(3 * a)), cy + ry * math.sin(a) * (1 + 0.03 * math.cos(2 * a)))
+                             for a in np.linspace(math.radians(200), math.radians(580), 70)])
+            drawn, tip = bw_brand.prefix(ring, min(1.0, v))
+            bw_brand.marker(card, drawn, bw_brand.RED, 12, shade=False)
+            if v < 1.25:
+                line_at = tip
         for x in (card.width * 0.12, card.width * 0.88):  # two strips of tape on the top corners
             tape = Image.new("RGBA", (150, 46), (236, 226, 190, 170))
             tape = tape.rotate(-28 if x < card.width / 2 else 28, expand=True, resample=Image.BICUBIC)
