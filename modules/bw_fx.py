@@ -310,7 +310,11 @@ ALIASES = {"king": "king_waving", "queen": "queen_waving", "soldier": "soldier_m
            "merchant": "merchant_counting_coins", "trade": "merchant_counting_coins", "sailor": "sailor_waving",
            "scholar": "scholar_writing", "historian": "scholar_writing", "citizen": "citizen_walking", "migrant": "citizen_walking",
            "cheering": "citizen_cheering", "celebration": "citizen_cheering", "worker": "worker_building", "hello": "hand_wave",
-           "migration": "people", "exodus": "people"}
+           "migration": "people", "exodus": "people",
+           # the owner's 2026-11-02 set: emoji redrawn under their own names, plus four new characters
+           "river": "river", "colonist": "colonist", "independence": "independence", "split_map": "split_map",
+           "cash": "coin", "colony": "colonist", "colonial": "colonist", "colonizer": "colonist", "freedom": "independence",
+           "split": "split_map", "divided": "split_map", "partition": "split_map", "stream": "river"}
 # Names older scripts used for files the owner has since redrawn under another name: they still draw, never offered.
 OLD_NAMES = {"queen_curtsying": "queen_waving", "mapmaker_drawing": "mapmaker_route_planner"}
 
@@ -564,7 +568,9 @@ CHARACTERS = (
     (r"\b(president|government|minister|parliament|congress|politicians?)\b", "politician"),
     (r"\b(soldiers?|officers?|generals?|troops)\b", "officer"), (r"\b(castle|fort|fortress)\b", "castle"),
     (r"\b(news|newspapers?)\b", "newspaper"), (r"\b(banned|forbidden|illegal)\b", "forbidden"),
-    (r"\b(explor\w*|discover\w*)\b", "explorer"), (r"\b(town|village|city)\b", "town"),
+    (r"\b(explor\w*|discover\w*)\b", "explorer"), (r"\bcolon(y|ies|ial|i[sz]\w*)\b", "colonist"),
+    (r"\b(independen\w*|freedom)\b", "independence"), (r"\b(split|divided|partition\w*)\b", "split_map"),
+    (r"\b(town|village|city)\b", "town"), (r"\b(rivers?|streams?)\b", "river"),
 )
 
 
