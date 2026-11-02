@@ -876,7 +876,13 @@ def test_owner_icon_draws_wide_on_the_frame(monkeypatch, tmp_path):
 
 def _chapter_json(words: int = 210) -> str:
     d = _draft(narration_words=words)
-    return json.dumps({"scenes": [s.model_dump() for s in d.scenes], "claims": [c.model_dump() for c in d.claims]})
+    scenes = []
+    for s in d.scenes:  # a long video's scenes are short (bw_long.SCENE_WORDS): the long one split into several
+        said = s.narration.split()
+        for k in range(0, len(said), 30):
+            part = s.model_dump() if k == 0 else {**s.model_dump(), "elements": [], "headline": ""}
+            scenes.append({**part, "narration": " ".join(said[k:k + 30])})
+    return json.dumps({"scenes": scenes, "claims": [c.model_dump() for c in d.claims]})
 
 
 def _outline(n: int = 5) -> str:
@@ -930,7 +936,7 @@ def test_long_video_goes_from_research_to_a_full_script(tmp_path, world, monkeyp
 
     script = bw_long.full_script(s["id"], tmp_path)
     marks = [(k, sc["chapter"]["n"]) for k, sc in enumerate(script["scenes"]) if "chapter" in sc]
-    assert marks == [(0, 1), (5, 2), (10, 3), (15, 4), (20, 5)] and script["layout"] == "landscape"
+    assert marks == [(0, 1), (11, 2), (22, 3), (33, 4), (44, 5)] and script["layout"] == "landscape"
     s = bw_long.reopen(s["id"], 2, tmp_path)
     assert s["step"] == "chapter" and s["current"] == 2
     with pytest.raises(bw_long.LongError):
@@ -970,10 +976,34 @@ def test_long_video_draws_landscape_with_banners_and_a_thumbnail(world, fx_offli
     assert with_banner.shape == (1080, 1920, 3)
     y = bw_render.CAPTION_Y - 120 - 100
     assert with_banner[y, 200].mean() < 60  # the dark banner over the paper
+    assert "globe" not in spec.scenes[0].opts  # a long video opens tight too, not on a slow globe
+    bar = np.asarray(r.frame(card.start + 0.5 * (card.end - card.start)))[20]
+    gold = np.array(fx_offline.FIXED["gold"])
+    assert np.abs(bar[60] - gold).max() < 30 and np.abs(bar[1880] - gold).max() > 60  # chapter 1 done, the last not yet
     out = bw_long.thumbnail(spec, tmp_path / "thumb.jpg")
     assert Image.open(out).size == (1280, 720)
     bw_render.use_layout("portrait")
     assert (bw_render.W, bw_render.H, fx_offline.W) == (1080, 1920, 1080)
+
+
+def test_a_long_chapter_keeps_its_pictures_short_and_never_asks_twice():
+    from modules import bw_long
+
+    def chapter(*scenes):
+        return bw_long.Chapter(scenes=[bw_script.SceneDraft(kind=k, narration=t) for k, t in scenes])
+
+    words = lambda n: " ".join(["word"] * n) + "."  # noqa: E731
+    good = chapter(("map", words(30)), ("photo", words(10)), ("board", words(20)), ("photo", words(12)))
+    assert bw_long.pacing(good) == []
+    bad = chapter(("photo", words(18)), ("photo", words(8)), ("board", words(30)), ("map", words(50)))
+    found = bw_long.pacing(bad)
+    assert len(found) == 4 and "both photos" in found[3] and "scene 1 (photo) has 18" in found[0]
+    before = chapter(("map", "The line was impossible. So how did diplomats try to fix the impossible line?"))
+    again = chapter(("map", "How did surveyors and diplomats try to correct the error? In 1814 they met."))
+    assert "closing question again" in bw_long.pacing(again, before)[0]
+    answer = chapter(("map", "In 1814 the Treaty of Ghent tried to fix it."))
+    assert bw_long.pacing(answer, before) == []
+    assert "opens on a photo" in bw_long.pacing(chapter(("photo", words(5))), chapter(("photo", words(5))))[0]
 
 
 def test_long_video_make_runs_in_its_own_process(tmp_path, world, monkeypatch):

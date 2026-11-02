@@ -51,6 +51,12 @@ PACK_PAGES = 14  # pages read from the research answer's links
 PAGE_CHARS = 9000
 SESSIONS_SHOWN = 10
 BANNER = 3.2  # seconds a chapter's banner stays up
+# The first long video (2026-10-31) lost viewers at a slow globe opening and wherever a picture stood still: three
+# photos in a row, a 12-second photo, 10-second boards; its best parts came after 5:50, when 94% had left. So a
+# chapter's scenes are short, photos never come two in a row, and chapter 1 opens on the payoffs.
+PHOTO_WORDS = 12  # a photo's narration at most (about 4 seconds)
+BOARD_WORDS = 24  # a board's (about 9 seconds; the hand keeps writing)
+SCENE_WORDS = 36  # any scene's (about 14 seconds; a map gets a beat every 2-3 seconds)
 
 JSON_TAIL = """
 Answer with ONLY one JSON object (no text before or after it, no code fence)."""
@@ -108,10 +114,12 @@ Use ONLY the sources below. If they cannot carry a story of {minutes} minutes wi
 false and say why.
 
 THE STORY
-- {min_ch}-{max_ch} chapters. Chapter 1 is the hook (30-60 seconds): the most surprising fact and the big question,
-  and why it is stranger than it looks. Each middle chapter is one step of the story in time order; it opens with its
-  own small question and ends on what makes the viewer want the next chapter. The last chapter gives the full
-  answer and what the place is like today.
+- {min_ch}-{max_ch} chapters. Chapter 1 is the hook (40-70 seconds) and opens cold on the payoffs: in its first 15
+  seconds it teases the 2-3 most dramatic or surprising moments from LATER chapters (a fight, a threat, a strange
+  rule people live with today), then asks the big question; most viewers decide in those seconds, so the best
+  material must not wait until the end. Each middle chapter is one step of the story in time order; it opens with its
+  own small question and ends on a tease of what the next chapter reveals. The last chapter gives the full answer
+  and what the place is like today.
 - Never pad: every chapter must have real facts from the sources. Fewer, fuller chapters beat thin ones.
 - title: the YouTube title, the question in under 70 characters. cover_text: 2-5 words for the video's first frame.
 - thumb_text: 2-4 words in huge letters on the thumbnail, a short question or shock that makes people click and is
@@ -148,6 +156,12 @@ THE NARRATION ({min_words}-{max_words} words)
 - Simple, natural, spoken English. Short connected sentences (at most {max_sentence} words). Every sentence adds
   something to the story; no filler, no exaggeration, no "subscribe", no "Did you know", no "Let's dive in".
 - Don't repeat what earlier chapters said. Keep uncertainty where the sources are uncertain. Numbers as digits.
+
+THE PACING (viewers leave wherever the picture stands still)
+- Short scenes: a photo's narration at most {photo_words} words (about 4 seconds), a board's at most {board_words},
+  any scene's at most {scene_words}. A long step of the story is several scenes, not one long one.
+- Never two photo scenes in a row: put a map or a board between them. A map scene gets an element (highlight,
+  label, pin, arrow, line, icon, counter) on a cue every sentence or so.
 
 """ + bw_script.SCENE_RULES + """THE CLAIMS
 List every fact the narration states. For each, the id of the source that supports it and an EXACT quote copied
@@ -406,6 +420,37 @@ def as_draft(ch: Chapter, title: str) -> Draft:
     return Draft(usable=True, title=title, cover_text=title, scenes=ch.scenes, claims=ch.claims)
 
 
+def _first_sentence(text: str) -> str:
+    return next(iter(bw_script.sentences(text)), "")
+
+
+def _content_words(text: str) -> set[str]:
+    return {w for w in re.findall(r"[a-z']+", text.lower()) if len(w) > 3}
+
+
+def pacing(ch: Chapter, before: Chapter | None = None) -> list[str]:
+    """A chapter's pacing problems: long photos, boards and scenes, two photos in a row, and an opening that asks
+    the previous chapter's closing question again."""
+    problems = []
+    kinds = [s.kind.strip().lower() for s in ch.scenes]
+    for n, (s, kind) in enumerate(zip(ch.scenes, kinds), 1):
+        most = {"photo": PHOTO_WORDS, "board": BOARD_WORDS}.get(kind, SCENE_WORDS)
+        if (count := bw_script.words(s.narration)) > most + 2:  # a near miss doesn't cost a fix round
+            problems.append(f"scene {n} ({kind}) has {count} words (at most {most}: split it into more scenes)")
+    last = before.scenes[-1].kind.strip().lower() if before and before.scenes else ""
+    for n, (a, b) in enumerate(zip([last, *kinds], kinds), 1):
+        if a == b == "photo":
+            problems.append(f"scenes {n - 1 or 'before'} and {n} are both photos (put a map or a board between them)"
+                            if n > 1 else "the chapter opens on a photo right after the last chapter's photo")
+    if before and before.scenes and ch.scenes:
+        tail = bw_script.sentences(before.scenes[-1].narration)
+        prev, first = _content_words(tail[-1] if tail else ""), _content_words(_first_sentence(ch.scenes[0].narration))
+        asks = tail and tail[-1].rstrip().endswith("?") and _first_sentence(ch.scenes[0].narration).rstrip().endswith("?")
+        if asks or (prev and first and len(prev & first) / len(prev | first) >= 0.4):
+            problems.append("the first sentence asks the previous chapter's closing question again (open on its answer)")
+    return problems
+
+
 def answer_chapter(sid: str, i: int, text: str, out_dir: Path | None = None, find=None) -> dict[str, Any]:
     """A chapter's draft: the rules check; a pass moves on to its fact check."""
     f = folder(sid, out_dir)
@@ -414,7 +459,9 @@ def answer_chapter(sid: str, i: int, text: str, out_dir: Path | None = None, fin
         raise LongError("Paste the outline first")
     ch = _parse(text, Chapter)
     title = state["outline"]["chapters"][i]["title"]
+    before = state["chapters"][i - 1].get("draft") if i > 0 else None
     problems = bw_script.check(as_draft(ch, title), _research(f), **({"find": find} if find else {}), limits=CHAPTER)
+    problems += pacing(ch, Chapter.model_validate(before) if before else None)
     state["chapters"][i].update(step="fix" if problems else "facts", draft=ch.model_dump(), problems=problems, flagged=[])
     _save(f, "state.json", state)
     return view(sid, out_dir)
@@ -461,17 +508,21 @@ def chapter_prompt(res: Research, outline: dict[str, Any], chapters: list[dict[s
         so_far = "THE STORY SO FAR (the narration of the chapters before yours)\n" + "\n\n".join(
             bw_script.narration(as_draft(c, "")) for c in done) + "\n\n"
     first, last = i == 0, i == len(outline["chapters"]) - 1
-    opening = ("This is the video's hook: start straight away with the most surprising fact or the question itself, then "
-               "say why it is stranger than it looks; end on the promise of the story." if first else
+    opening = ("This is the video's hook and it opens cold on the payoffs: the first 3-4 scenes (about 15 seconds) tease "
+               "the 2-3 most dramatic or surprising moments from the later chapters (see the outline), one short sentence "
+               "each, with no dates or background; then the big question and why it is stranger than it looks; end on "
+               "the promise of the story. Never start with \"This is\" or a definition." if first else
                "This is the last chapter: give the clear, full answer, then what the place is like today; the last "
                "scene is a closing line that ties the whole story back to the video's question in a few memorable words "
                "(\"And that's how one bad map left a piece of Minnesota stuck in Canada.\"), never a new fact." if last else
-               "Open on this chapter's own question; tell its step of the story in time order; end on what makes the "
-               "viewer want the next chapter.")
+               "The previous chapter ended on a tease or a question: never ask it again; open straight on its answer or "
+               "on this chapter's first event. Tell this step of the story in time order. The last scene is one short "
+               "sentence that teases what the next chapter reveals (\"But the real fight was still 150 years away.\").")
     return CHAPTER_PROMPT.format(
         n=i + 1, total=len(outline["chapters"]), title=outline["title"], question=res.topic.question,
         outline=_outline_text(outline), so_far=so_far, chapter_title=plan["title"], chapter_question=plan["question"],
         beats="; ".join(plan["beats"]), opening=opening, min_words=CHAPTER.min_words, max_words=CHAPTER.max_words,
+        photo_words=PHOTO_WORDS, board_words=BOARD_WORDS, scene_words=SCENE_WORDS,
         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=CHAPTER.min_scenes, max_scenes=CHAPTER.max_scenes,
         max_cards=CHAPTER.max_cards, icons=", ".join(bw_fx.icon_names()), icon_count="3-6 in this chapter",
         stamp_count="one in the whole video", mascot_lines="1-3 asks in this chapter (a react only after the last chapter's last scene)",

@@ -774,8 +774,8 @@ def dress(spec, short_globe: bool = False) -> list[str]:
             card_row(row)
         scene.elements = keep
     first = spec.scenes[0] if spec.scenes else None
-    if (first is not None and first.kind == "map" and first.view and (bw_render.LAYOUT == "landscape" or short_globe)
-            and not any("globe" in s.opts for s in spec.scenes)):  # a long video opens on the globe; a Short starts tight
+    if (first is not None and first.kind == "map" and first.view and short_globe
+            and not any("globe" in s.opts for s in spec.scenes)):  # Borderline Why starts tight (Shorts and long videos)
         first.opts["globe"] = True
         lon, lat, ppd = first.view
         first.view = (lon, lat, min(ppd, GLOBE_MAX_PPD))
@@ -891,11 +891,11 @@ class FxRenderer(Renderer):
         return cam if k == 1.0 else Cam(cam.lon, cam.lat, cam.ppd * k)
 
     def opening_view(self) -> tuple[float, float, float] | None:
-        """A Short's first camera: tight on the smallest place its first scene points at (the weird one: the enclave,
+        """A video's first camera: tight on the smallest place its first scene points at (the weird one: the enclave,
         not the country round it), when that is closer than the scene's own view. That place's marker (ring, pin,
         highlight) shows at once, so the first frame already points at something."""
         scenes = self.spec.scenes
-        if bw_render.LAYOUT != "portrait" or not scenes or scenes[0].kind != "map" or scenes[0].opts.get("globe") or not scenes[0].view:
+        if not scenes or scenes[0].kind != "map" or scenes[0].opts.get("globe") or not scenes[0].view:
             return None
         first = scenes[0]
         marks = [el for el in first.elements if el.feature is not None and el.kind in ("ring", "pin", "highlight", "label", "transfer")]
@@ -1725,13 +1725,38 @@ class FxRenderer(Renderer):
         d.rectangle([0, 0, 14, height - 1], fill=FIXED["gold"] + (255,))
         d.text((50, 52), top, font=f_small, fill=FIXED["gold"] + (255,), anchor="lm")
         d.text((50, 125), title.upper(), font=f_big, fill=(255, 255, 255, 255), anchor="lm")
-        left = 330 if self.moods else 70  # right of the mascot (it stands bottom left, in front of the banner)
-        x = int(-width + (width + left) * u)
         y = int(bw_render.CAPTION_Y - 120 - height)
+        if self.moods:  # the mascot stands bottom left: the banner fades in beside it (sliding, it went under the mascot)
+            u = min(1.0, max(0.0, u))
+            band.putalpha(band.getchannel("A").point(lambda a: int(a * u)))
+            img.alpha_composite(band, (330 - int(60 * (1 - u)), y))
+            return
+        x = int(-width + (width + 70) * u)
         if x + width > 0:  # off the left edge: paste only the part on screen
             img.alpha_composite(band.crop((max(0, -x), 0, width, height)), (max(0, x), y))
 
+    def chapter_bar(self, img: Image.Image, t: float) -> None:
+        """A long video's chapter progress along the top edge: a segment per chapter, filling gold as it plays (so
+        the viewer always sees how far the story has come and that the next part is close)."""
+        starts = [s.start if n else 0.0 for n, s in enumerate(s for s in self.spec.scenes if isinstance(s.opts.get("chapter"), dict))]
+        if len(starts) < 2:
+            return
+        ends = [*starts[1:], self.spec.duration]
+        gap, x0, x1, y, h = 8, 40, W - 40, 16, 9
+        seg = (x1 - x0 - gap * (len(starts) - 1)) / len(starts)
+        layer = Image.new("RGBA", (W, y + h + 1), (0, 0, 0, 0))
+        d = ImageDraw.Draw(layer)
+        for n, (a, b) in enumerate(zip(starts, ends)):
+            left = x0 + n * (seg + gap)
+            d.rounded_rectangle([left, y, left + seg, y + h], radius=4, fill=(255, 255, 255, 90))
+            u = min(1.0, max(0.0, (t - a) / max(0.1, b - a)))
+            if u > 0:
+                d.rounded_rectangle([left, y, left + max(h, seg * u), y + h], radius=4, fill=FIXED["gold"] + (255,))
+        img.paste(layer, (0, 0), layer)
+
     def overlay(self, img: Image.Image, t: float) -> None:
+        if self.LIVELY:
+            self.chapter_bar(img, t)
         if self.moods:
             bw_brand.draw_mascot(img, self.spec, self.moods, self.scene_at, t)
             bw_brand.draw_bubble(img, self.spec, t, self.scene_at)
