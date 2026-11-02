@@ -290,7 +290,7 @@ def bank() -> Drawing:
 
 def sun() -> Drawing:
     d = Drawing(200, 200)
-    d.washes.append((ellipse(100, 100, 48, 48), "accent"))
+    d.washes.append((ellipse(100, 100, 48, 48), "yellow"))  # a sun is yellow whatever the scene's colour
     d.strokes.append((ellipse(100, 100, 48, 48), "ink"))
     for k in range(10):
         a = math.radians(k * 36 + 8)

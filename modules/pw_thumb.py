@@ -30,7 +30,7 @@ GREEN = (20, 150, 74)
 RED = (222, 34, 38)
 YELLOW = (255, 214, 40)
 WHITE = (255, 255, 255)
-TINT = {"green": (150, 222, 170), "red": (250, 170, 170), "ink": (200, 200, 208)}
+TINT = {"green": (150, 222, 170), "red": (250, 170, 170), "ink": (200, 200, 208), "yellow": (255, 214, 80)}
 STYLES = ("shock", "versus", "tag")
 DIGIT = re.compile(r"^[$€£¥~≈]?\s?\d")  # a line that IS a figure ("160 marks", "$2.38"), not one with a year in it
 
@@ -123,7 +123,7 @@ def product(img: Image.Image, name: str, box, label: list[str], accent: str = "g
     if d.body:
         g.polygon(at(d.body), fill=WHITE + (255,))
     for poly, role in d.washes:
-        g.polygon(at(poly), fill=(TINT["ink"] if role == "ink_wash" else TINT[accent]) + (255,))
+        g.polygon(at(poly), fill=(TINT["ink"] if role == "ink_wash" else TINT.get(role) or TINT[accent]) + (255,))
     for pts, role in d.strokes:
         rgb = RED if role == "red" else INK
         g.line(at(pts), fill=rgb + (255,), width=width if role != "thin" else max(6, width // 2), joint="curve")
