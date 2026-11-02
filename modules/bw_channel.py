@@ -802,6 +802,7 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
     if youtube is None and not connected():
         raise publish.PublishError("Connect the Borderline Why YouTube channel first (/bw connect)")
     client = youtube or publish._youtube(TOKEN)
+    thumb = thumbnail(key, out_dir)  # drawn before the upload, so the Short has it from its first minute
     series = "" if info.get("episode") else series_of(info)
     number = bw_series.reserve(out_root(out_dir), series, key) if series else None
     try:
@@ -814,12 +815,41 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
         bw_series.confirm(out_root(out_dir), series, key, record.get("video_id", ""))
         info.update(base_title=info["title"], title=bw_series.titled(info["title"], series, number),
                     episode={"series": series, "number": number})
+    progress(0.99, "Setting the thumbnail")
+    record["thumbnail"] = set_thumbnail(client, record["video_id"], thumb) if thumb else "not set: it couldn't be drawn"
     info.setdefault("uploads", {})["youtube"] = record
     save_info(info, out_dir)
     progress(1.0, "Uploaded")
     comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
     return record
+
+
+def thumbnail(key: str, out_dir: Path | None = None) -> Path | None:
+    """The video's thumbnail (the dashboard's, modules.thumbs: drawn now when missing), or None when it can't be drawn."""
+    from modules import thumbs
+
+    root = out_root(out_dir)
+    if root.name != CHANNEL:  # thumbs draws only inside output/borderlinewhy/: elsewhere (the tests) a ready one or none
+        made = root / key / "thumbnail.jpg"
+        return made if made.is_file() else None
+    try:
+        return thumbs.ensure(CHANNEL, key, root.parent)
+    except Exception:  # noqa: BLE001 - the video goes out without it
+        logger.warning("Borderline Why thumbnail for %s couldn't be drawn", key, exc_info=True)
+        return None
+
+
+def set_thumbnail(client, video_id: str, path: Path) -> str:
+    """Give the uploaded Short its thumbnail: "set", or why YouTube refused (the channel needs phone verification)."""
+    from googleapiclient.http import MediaFileUpload
+
+    try:
+        client.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(path), mimetype="image/jpeg")).execute()
+        return "set"
+    except Exception as err:  # noqa: BLE001 - the video is up either way
+        logger.warning("Borderline Why thumbnail for %s not set: %s", video_id, err)
+        return f"not set: {str(err)[:200]}"
 
 
 def can_comment() -> bool:
@@ -1008,6 +1038,8 @@ def announce_upload(info: dict, record: dict, settings=None) -> str | None:
     text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({record.get('privacy', '?')}): {record.get('url', '')}"
     if line := comment_line(record):
         text += "\n" + line
+    if str(record.get("thumbnail") or "").startswith("not set"):
+        text += "\n🖼️ The thumbnail didn't go up: set it in YouTube Studio (" + record["thumbnail"].removeprefix("not set: ")[:120] + ")"
     return announce_text(text, settings, channel_common.rows(
         lb("▶️ Watch", record.get("url", "")) if record.get("url") else None,
         b("bwcm", info["key"], "💬 Post the comment", "primary") if record.get("comment_error") else None,

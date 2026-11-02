@@ -1279,6 +1279,40 @@ def test_the_comment_is_posted_after_the_upload(settings, tmp_path, world, monke
     assert bw_channel.comment(bw_channel.load_info(job.key, tmp_path), yt, tmp_path) == saved["comment"] and len(yt.comments) == 1  # once
 
 
+class FakeThumbs(FakeComments):
+    def __init__(self, refuse=False):
+        super().__init__()
+        self.thumbs, self.refuse = [], refuse
+
+    def thumbnails(self):
+        return self
+
+    def set(self, videoId, media_body):
+        if self.refuse:
+            raise RuntimeError("The authenticated user doesn't have permissions to upload and set custom video thumbnails")
+        self.thumbs.append((videoId, media_body))
+        return self
+
+
+def test_the_thumbnail_goes_up_with_the_video(settings, tmp_path, world, monkeypatch):
+    """The dashboard's thumbnail is set on YouTube right after the upload; a refusal leaves the video up and says so."""
+    job, _, _ = _make(settings, tmp_path, world)
+    texts = []
+    monkeypatch.setattr(bw_channel, "announce_text", lambda text, settings=None, components=None: texts.append(text))
+    (tmp_path / job.key / "thumbnail.jpg").write_bytes(b"\xff\xd8 a jpeg")
+    _fake_upload(monkeypatch, [])
+    yt = FakeThumbs()
+    record = bw_channel.upload(job.key, youtube=yt, out_dir=tmp_path)
+    assert record["thumbnail"] == "set" and yt.thumbs[0][0] == "v1" and "thumbnail" not in texts[-1]
+    assert bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]["thumbnail"] == "set"
+
+    again, _, _ = _make(settings, tmp_path, world, slot="23:00")
+    (tmp_path / again.key / "thumbnail.jpg").write_bytes(b"\xff\xd8 a jpeg")
+    record = bw_channel.upload(again.key, youtube=FakeThumbs(refuse=True), out_dir=tmp_path)
+    assert record["video_id"] and record["thumbnail"].startswith("not set: The authenticated user")
+    assert "The thumbnail didn't go up: set it in YouTube Studio" in texts[-1]
+
+
 def test_a_failed_comment_is_reported_and_can_be_retried(settings, tmp_path, world, monkeypatch):
     job, _, _ = _make(settings, tmp_path, world)
     texts = []
