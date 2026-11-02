@@ -876,6 +876,7 @@ class FxRenderer(Renderer):
         return inside_world(lon + dx * W / (p * max(0.2, math.cos(math.radians(lat)))), lat, p)
 
     def camera(self, i: int, t: float) -> Cam:
+        t = self.cam_time(i, t)
         scenes = self.spec.scenes
         scene = scenes[i]
         here = self.moved(i, min(1.0, max(0.0, (t - scene.start) / max(1.0, scene.end - scene.start))))

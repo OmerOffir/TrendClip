@@ -61,7 +61,8 @@ FADE = 0.4
 TAIL = 1.2  # seconds after the last word
 POP = 0.16  # seconds a caption word stays bigger as it is said
 COUNT_UP = 1.0  # seconds a counter takes to count up to its number
-HOOK_FLIP, HOOK_END = 0.9, 1.8  # the opening flash-forward: the first map until HOOK_FLIP, then the outcome until HOOK_END
+HOOK_FLIP, HOOK_END, HOOK_FADE = 0.9, 1.8, 0.35  # the opening flash-forward: the outcome scene before its change until
+# HOOK_FLIP, after it until HOOK_END, on one held camera; then it fades into the first scene, whose camera starts its move
 
 FONTS_DIR = bw_geo.PROJECT_ROOT / "assets" / "fonts"
 FONT_DIRS = (str(FONTS_DIR), "/System/Library/Fonts/Supplemental", "/usr/share/fonts/truetype/msttcorefonts",
@@ -472,6 +473,7 @@ class Renderer:
 
     def __init__(self, spec: Spec):
         self.spec = spec
+        self.cam_clock: float | None = None  # while the flash-forward draws: the camera holds at this time
         self.pal = {**THEMES.get(spec.theme, THEMES["atlas"]), **FIXED}
         self.layers = layers()
         rng = np.random.default_rng(spec.seed or 7)
@@ -501,7 +503,22 @@ class Renderer:
                 return i
         return len(self.spec.scenes) - 1
 
+    def hook_scene(self) -> int | None:
+        k = self.spec.hook.get("scene") if self.spec.hook else None
+        return k if isinstance(k, int) and 0 < k < len(self.spec.scenes) else None
+
+    def cam_time(self, i: int, t: float) -> float:
+        """The camera's clock: held during the flash-forward; the first scene's move starts once the flash-forward
+        is over (squeezed into the rest of the scene, so it still ends where the next scene's flight begins)."""
+        if self.cam_clock is not None:
+            return self.cam_clock
+        scene = self.spec.scenes[i]
+        if i == 0 and self.hook_scene() is not None and scene.end > HOOK_END + 0.5:
+            return scene.start + max(0.0, t - HOOK_END) * (scene.end - scene.start) / (scene.end - HOOK_END)
+        return t
+
     def camera(self, i: int, t: float) -> Cam:
+        t = self.cam_time(i, t)
         scenes = self.spec.scenes
         scene = scenes[i]
         prev = next((scenes[j].view for j in range(i - 1, -1, -1) if scenes[j].kind == "map"), None)
@@ -706,26 +723,32 @@ class Renderer:
         d = ImageDraw.Draw(band)
         d.rounded_rectangle([0, 0, width - 1, size + 69], radius=26, fill=(12, 16, 26, 225))
         d.text((width / 2, (size + 70) / 2), s.upper(), font=f, fill=FIXED["gold"] + (255,), anchor="mm")
-        sc = 1.35 - 0.35 * u
+        sc = 1.12 - 0.12 * ease(u)
         band = band.resize((max(1, int(band.width * sc)), max(1, int(band.height * sc))))
         band.putalpha(band.getchannel("A").point(lambda v: int(v * u)))
         img.alpha_composite(band, (int(W / 2 - band.width / 2), int(HEAD_Y + 230 - band.height / 2)))
 
     def hook_frame(self, t: float) -> Image.Image | None:
-        """The opening flash-forward (spec.hook): the first map with the "before" words, then the later scene's
-        finished frame (the outcome) with the "after" words; None outside it."""
-        hook, scenes = self.spec.hook, self.spec.scenes
-        k = hook.get("scene") if hook else None
-        if not isinstance(k, int) or not 0 < k < len(scenes) or t >= HOOK_END:
+        """The opening flash-forward (spec.hook): the outcome scene on one held camera (its finished view), first as it
+        starts with the "before" words, then finished with the "after" words; None after it."""
+        k = self.hook_scene()
+        if k is None or t >= HOOK_END:
             return None
+        hook, scene = self.spec.hook, self.spec.scenes[k]
         before = str(hook.get("before") or "")
         flip = HOOK_FLIP if before else 0.0
-        if t < flip:
-            img = self.scene_frame(0, t)
-            self.hook_text(img, before, 1.0)  # up from the first frame (the thumbnail)
-        else:
-            img = self.scene_frame(k, max(scenes[k].start, scenes[k].end - 0.05))
-            self.hook_text(img, str(hook.get("after") or ""), t - flip)
+        self.cam_clock = scene.end - 0.05
+        try:
+            if t < flip:
+                img = self.scene_frame(k, scene.start)
+                self.hook_text(img, before, 1.0)  # up from the first frame (the thumbnail)
+            else:
+                img = self.scene_frame(k, scene.end - 0.05)
+                if before and t < flip + 0.15:  # the map changes in place
+                    img = Image.blend(self.scene_frame(k, scene.start).convert(img.mode), img, (t - flip) / 0.15)
+                self.hook_text(img, str(hook.get("after") or ""), t - flip)
+        finally:
+            self.cam_clock = None
         return img
 
     def stamp(self, ov: Image.Image, s: str, at: float, t: float, rgb) -> None:
@@ -827,6 +850,9 @@ class Renderer:
         scene = self.spec.scenes[i]
         hooked = self.hook_frame(t) if i == 0 else None
         img = hooked or self.scene_frame(i, t)
+        if hooked is None and i == 0 and self.hook_scene() is not None and t < HOOK_END + HOOK_FADE:
+            last = self.hook_frame(HOOK_END - 0.01)  # the flash-forward fades into the story
+            img = Image.blend(last.convert(img.mode), img, ramp(t, HOOK_END, HOOK_FADE))
         if hooked is None and i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
             img = Image.blend(self.scene_frame(i - 1, t), img, ramp(t, scene.start, FADE))
         self.overlay(img, t)
