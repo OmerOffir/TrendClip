@@ -393,7 +393,8 @@ must be the whole narration.
   states/provinces near the front), with "flag" for whose army it is (a block of little flags led by a flag-bearer)
   or no flag (marching soldiers); "count" 3-9. battle: a clash at a place, the attacker's "flag" against the
   defender's "from_flag", with explosions and smoke; "text" can name it. A map scene can also have "year" ("1812")
-  when the story jumps to a new date: it slams in big, then stays as a small tag. Not for a peaceful story: a sale,
+  when the story jumps to a new date: it slams in big, then stays as a small tag. The marker hand draws a war scene's
+  "line" or "arrow" (the front, the new border, the push), else it circles the battle just before it starts. Not for a peaceful story: a sale,
   a treaty or a survey keeps the usual flags, arrows and transfers.
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
   flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the

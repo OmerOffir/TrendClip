@@ -1878,7 +1878,13 @@ def test_the_war_map_draws_sides_armies_battles_and_years(world, fx_offline):
     spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
     assert spec.style == "war" and bw_render.prepare(spec) == []
     r = fx_offline.FxRenderer(spec)
-    assert r.war and r.pens == {} and r.color("a") == fx_offline.WAR["a"]
+    assert r.war and r.color("a") == fx_offline.WAR["a"]
+    assert r.war_pen(spec.scenes[0]).kind == "arrow"  # the hand draws the front (never round the tinted sides)
+    battle_only = bw_render.Scene(kind="map", narration="x", elements=[
+        bw_render.Element(kind="highlight", place="Canada", at=0.5, feature=bw_geo.resolve("Canada") or spec.scenes[0].elements[0].feature),
+        bw_render.Element(kind="battle", place="Minnesota", at=2.0, feature=spec.scenes[0].elements[0].feature)], start=0.0, end=4.0)
+    circle = r.war_pen(battle_only)
+    assert circle.kind == "circle" and circle.at == 1.1 and circle in battle_only.elements  # ringed just before the fight
     battle = next(e for e in spec.scenes[0].elements if e.kind == "battle")
     assert battle.opts["from_flag"] == "Flag of Canada.svg" and battle.feature is not None
     army = next(e for e in spec.scenes[0].elements if e.kind == "army")

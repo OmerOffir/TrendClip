@@ -901,8 +901,8 @@ class FxRenderer(Renderer):
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
-        self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)  # a war map's sides are filled, not drawn round
-                     if spec.brand and s.kind == "map" and not s.opts.get("globe") and not self.war}
+        self.pens = {i: (self.war_pen(s) if self.war else bw_brand.pen_target(s)) for i, s in enumerate(spec.scenes)
+                     if spec.brand and s.kind == "map" and not s.opts.get("globe")}
         self._pen_time: dict[int, tuple[float, float]] = {}
         self.ends: dict[int, Any] = {}  # the outro's end card, built on its first frame
         self.photos: dict[int, Any] = {}  # photo scenes (modules.bw_photos), built on their first frame
@@ -1184,8 +1184,24 @@ class FxRenderer(Renderer):
 
     # -- the marker hand (modules.bw_brand) --
 
+    def war_pen(self, scene: Scene) -> Element | None:
+        """What the hand draws on a war map (the sides are already tinted, so never their outlines): the scene's front
+        or border line or arrow, else a red circle round its battle just before the fighting starts."""
+        for el in sorted(scene.elements, key=lambda e: e.at):
+            if el.kind in ("arrow", "line") and el.feature is not None and el.feature_to is not None:
+                return el
+        battle = next((el for el in sorted(scene.elements, key=lambda e: e.at) if el.kind == "battle" and el.feature is not None), None)
+        if battle is None:
+            return None
+        circle = Element(kind="circle", place=battle.place, at=max(scene.start + 0.1, battle.at - 0.9), feature=battle.feature)
+        scene.elements.append(circle)
+        return circle
+
     def pen_points(self, cam, el: Element) -> tuple[np.ndarray, tuple[int, int, int]]:
         """The screen line the hand draws for an element, and its marker colour."""
+        if el.kind == "circle":  # a war map's battle site, ringed in marker
+            x, y = cam.pt(*el.feature.label_point())
+            return np.array(self.egg(x, y, 150, 125, seed=3, corner=False), dtype=float), bw_brand.RED
         if el.kind == "highlight":
             step = cam.step()
             parts = [p for p in (cam.xy(p.at(step)[0]) for p in el.feature.parts) if len(p) > 1]
