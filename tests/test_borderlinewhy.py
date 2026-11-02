@@ -1611,3 +1611,24 @@ def test_make_now_makes_the_video_its_row_shows(tmp_path):
 
     script, origin = bw_channel.next_script(out_dir=root, research=research, write=write)  # the slot's own time: the pick
     assert origin == "topic:Oklahoma Panhandle"
+
+
+def test_an_icon_never_stands_on_words(world, fx_offline):
+    """An icon on a place moves off the place's pin name and label and off a stamp (the guard stood on "ENCLAVE"
+    and the town's name on 2026-11-02)."""
+    data = _fx_dict()
+    data["scenes"][0]["elements"] = [{"kind": "pin", "place": "Minnesota", "text": "Minnesota"},
+                                     {"kind": "label", "place": "Minnesota", "text": "Enclave"},
+                                     {"kind": "icon", "icon": "car", "place": "Minnesota"}]
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    bw_render.prepare(spec)
+    r = fx_offline.FxRenderer(spec)
+    scene = spec.scenes[0]
+    r.frame(scene.end - 0.1)
+    cam = r.camera(0, scene.end - 0.1)
+    zones = r.text_zones(cam, 0, scene)
+    car = next(e for e in scene.elements if e.kind == "icon")
+    x, y = r.icon_spot(0, scene, car, r.anchor(cam, car))
+    half = car.opts.get("size", 190) * 0.6
+    assert (x, y) != r.anchor(cam, car)
+    assert not any(x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3] for z in zones), ((x, y), zones)

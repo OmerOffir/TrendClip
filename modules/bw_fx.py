@@ -791,7 +791,7 @@ class FxRenderer(Renderer):
         self.views = vary_views(spec.scenes)
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
         self._badges: dict[tuple[str, int], Image.Image] = {}
-        self._spots: dict[int, tuple[float, float] | None] = {}  # icon_spot: an icon moved off a flag
+        self._spots: dict[int, tuple[float, float] | None] = {}  # icon_spot: an icon moved off a flag or words
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s) for i, s in enumerate(spec.scenes) if s.kind == "board"}
@@ -1191,44 +1191,82 @@ class FxRenderer(Renderer):
                 zones.append((max(0, min(xs)), max(0, min(ys)), min(W, max(xs)), min(H, max(ys))))
         return zones
 
+    def text_zones(self, cam, i: int, scene: Scene) -> list[tuple[float, float, float, float]]:
+        """Where the scene's words are on screen (x0, y0, x1, y1), as bw_render and element() draw them: the place
+        names, labels, pin and ring names, arrow captions, a stamp, a flag badge's name, the captions band, and
+        the mascot's speech bubble while it talks in this scene."""
+        zones: list[tuple[float, float, float, float]] = []
+
+        def words(xy, s: str, size: int) -> None:
+            w = min(bw_render.font(size).getlength(s.upper()), W - 80)
+            zones.append((xy[0] - w / 2 - 14, xy[1] - size * 0.6 - 14, xy[0] + w / 2 + 14, xy[1] + size * 0.6 + 14))
+
+        for e in scene.elements:
+            f = e.feature
+            if e.kind == "stamp" and e.text:
+                zones.append((W / 2 - 520, CY + 60 - 230, W / 2 + 520, CY + 60 + 230))
+            if f is None:
+                continue
+            x, y = cam.pt(*f.label_point())
+            if e.kind == "label":
+                words((x, y), e.text or f.name, 52)
+            elif e.kind == "pin":
+                words((x, y - 95), e.text or f.name, 48)
+            elif e.kind == "ring" and e.text:
+                words((x, y - 90), e.text, 50)
+            elif e.kind == "highlight" and e.text:
+                if e.opts.get("flag") and self.tiny(cam, f):
+                    words((x, y - 300), e.text, 50)
+                else:
+                    words((x, y), e.text, 54)
+            elif e.kind in ("line", "arrow") and e.text and e.feature_to is not None:
+                x1, y1 = cam.pt(*e.feature_to.label_point())
+                words(((x + x1) / 2, (y + y1) / 2 - 50), e.text, 46)
+        if not scene.opts.get("globe"):  # the captions (off while the mascot talks, but its bubble sits there then)
+            zones.append((0, bw_render.CAPTION_Y - 80, W, bw_render.CAPTION_Y + 80))
+        if self.spec.brand and any(ln and ln[0].who == bw_brand.PANDA and ln[-1].end > scene.start and ln[0].start < scene.end
+                                   for ln in self.spec.lines):
+            cx, feet = bw_brand.mascot_spot()
+            head = feet - bw_brand.size("mascot")
+            zones.append((max(0, cx - 110), head - 330, min(W, cx - 70 + bw_brand.size("bubble_w") + 40), head + 10))
+        return zones
+
     def icon_spot(self, i: int, scene: Scene, el: Element, xy: tuple[float, float]) -> tuple[float, float]:
-        """Where an icon stands: its place, unless that covers one of the scene's flags; then a free slot on the
-        screen, kept for the rest of the scene. Decided once, with the camera of the moment the last flag is up."""
+        """Where an icon stands: its place (or its slot), unless that covers one of the scene's flags or words (a
+        name, a label, a stamp, the captions, the mascot's bubble); then a free slot on the screen, kept for the
+        rest of the scene. Decided once, with the camera of the moment the last flag or word is up."""
         key = id(el)
         if key not in self._spots:
-            flags = [e for e in scene.elements if e.opts.get("flag") and (e.kind == "pole" or (e.kind == "highlight" and e.feature is not None))]
-            spot = None
-            if flags:
-                ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in flags]]))
-                cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
-                zones = self.flag_zones(cam, scene)
-                half = int(el.opts.get("size", 190)) * 0.6
-                hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
-                xy0 = self.anchor(cam, el)
-                if hits(xy0):
-                    taken = [self._spots[id(e)] for e in scene.elements if self._spots.get(id(e))]
-                    x, y = xy0
-                    near = [z for z in zones if x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3]]
-                    beside = [(min(z[0] for z in near) - half - 12, y), (max(z[2] for z in near) + half + 12, y),
-                              (x, min(z[1] for z in zones) - half - 12)]  # left of the flags, right, above
-                    free = [p for p in [*ICON_SLOTS.get("map", ()), *beside] if not hits(p)
-                            and half + 10 <= p[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= p[1] <= H - half
-                            and all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
-                    spot = free[0] if free else None
-            self._spots[key] = spot
+            self._spots[key] = None
+            busy = [e for e in scene.elements if e is not el and e.kind != "icon"]
+            ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in busy]]))
+            cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
+            zones = self.flag_zones(cam, scene) + self.text_zones(cam, i, scene)
+            half = int(el.opts.get("size", 190)) * 0.65
+            hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
+            xy0 = self.anchor(cam, el) if el.feature is not None else xy
+            if hits(xy0):
+                taken = [self._spots[id(e)] for e in scene.elements if self._spots.get(id(e))]
+                x, y = xy0
+                near = [z for z in zones if x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3]]
+                beside = [(min(z[0] for z in near) - half - 12, y), (max(z[2] for z in near) + half + 12, y),
+                          (x, min(z[1] for z in near) - half - 12), (x, max(z[3] for z in near) + half + 12)]
+                free = [p for p in [*beside, *ICON_SLOTS.get("map", ())] if not hits(p)
+                        and half + 10 <= p[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= p[1] <= H - half
+                        and all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
+                self._spots[key] = min(free, key=lambda p: math.hypot(p[0] - x, p[1] - y)) if free else None
         return self._spots[key] or xy
 
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
         if el.kind == "icon":
+            i = next(k for k, s in enumerate(self.spec.scenes) if s is scene)
             xy = self.anchor(cam, el)
-            if el.feature is not None:
-                xy = self.icon_spot(next(k for k, s in enumerate(self.spec.scenes) if s is scene), scene, el, xy)
-            main, marked = self.main[next(k for k, s in enumerate(self.spec.scenes) if s is scene)]
+            main, marked = self.main[i]
             if el.feature is None and main is not None and not marked:  # keep a placed-by-layout icon off the target
                 mx, my = cam.pt(*main.label_point())
                 if math.hypot(xy[0] - mx, xy[1] - my) < 260:
                     xy = (mx + 300 if mx < W / 2 else mx - 300, min(xy[1], my - 120))
-            self.icon(ov, el, xy, t)
+            self.icon(ov, el, self.icon_spot(i, scene, el, xy), t)
         elif el.kind == "pole":
             self.pole(ov, el, self.anchor(cam, el), t)
         elif el.kind == "route":
