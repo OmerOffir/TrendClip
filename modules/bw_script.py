@@ -298,10 +298,10 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
     to: str = Field("", description="line / arrow: where it ends.")
-    value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W).")
+    value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W); counter: the number.")
     text: str = Field("", description="A short label, 1-4 words (stamp: 1-2 words).")
     color: str = Field("a", description="a | b | c | gold | red | white")
     cue: str = Field("", description="The word of this scene's narration it appears on.")
@@ -349,6 +349,10 @@ class Draft(BaseModel):
     title: str = Field("", description="The YouTube title: a short question under 45 characters that names the place "
                                        "(\"Why Does Kentucky Own This Island?\"); the feed cuts longer ones.")
     cover_text: str = Field("", description="3-7 words for the first frame (the thumbnail), not a copy of the title.")
+    hook_scene: int = Field(0, description="The number of the later map scene whose finished map is flashed in the first "
+                                           "2 seconds: the outcome (0: no flash-forward).")
+    hook_before: str = Field("", description="1-3 words stamped on the first map during the flash-forward (\"Day 0\").")
+    hook_after: str = Field("", description="1-3 words stamped on the flashed outcome (\"Day 85\").")
     scenes: list[SceneDraft] = Field(default_factory=list)
     claims: list[ClaimDraft] = Field(default_factory=list)
     description: str = Field("", description="2-3 sentences for the YouTube description: the answer in short.")
@@ -375,7 +379,11 @@ must be the whole narration.
   along it, like car, ship, canoe, horse, train), transfer (a place changing hands: it shows in the old owner's
   "from_flag" from the scene's start, then on the cue word the new owner's "flag" wipes over it; "color" is the new
   owner's letter, "text" an optional 1-3 word label like "SOLD 1867". Use it whenever the narration says a place was
-  sold, swapped, ceded, conquered or handed over; give both flags or neither).
+  sold, swapped, ceded, conquered or handed over; give both flags or neither), counter (a number that counts up big
+  under the headline as it is said: "value" is the number, "text" its label ("pirate ships", "km", "soldiers"), or
+  the whole line with {{n}} where the number goes ("Day {{n}}", "{{n}}+ ships"); 2-3 counters in one scene stack into a
+  tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
+  story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
 - Flags: a highlight with "flag" fills a country or state/province with its waving flag instead of a color. Use
   flags in 2-4 scenes for the countries the story is about. On a place too small to fill (an island, a town) the
   flag shows as a round badge over it, which is a good way to say who owns it. "flag" is the Wikimedia Commons file name of
@@ -428,6 +436,11 @@ HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
   "This is Point Roberts." or "It is called Pheasant Island." (the map already shows its name).
 - The title is a short question under 45 characters that names the place ("Why Does Kentucky Own This Island?"):
   the feed cuts longer ones. cover_text is the hook in 3-6 big words on the first frame, not the title again.
+- The flash-forward: in the first 2 seconds the video shows where the story ends, then goes back to the start.
+  hook_scene is the number of a later map scene whose finished map shows the outcome (the pirates gone, the border
+  drawn, the land in its new owner's flag, the what-if's new map); hook_after is 1-3 words stamped on it ("Day 85",
+  "SOLD", "1867"); hook_before is 1-3 words stamped on the opening map ("Day 0", "1803"), or empty. Scene 1's line is
+  the question that outcome answers ("How did Rome clear the sea in 3 months?").
 
 HISTORY ON THE MAP, NOT ON CARDS
 - Tell the history while the map moves: the treaty or border line drawing itself across the map (line, route,
@@ -590,14 +603,17 @@ def to_spec_dict(draft: Draft) -> dict[str, Any]:
         els = []
         for e in s.elements:
             el = e.model_dump()
-            if el["kind"] not in ("parallel", "meridian"):
+            if el["kind"] not in ("parallel", "meridian", "counter"):
                 el["value"] = None
             els.append(el)
         scene = {**s.model_dump(exclude={"elements", "board_write", "board_draw"}), "kind": s.kind.strip().lower(), "elements": els}
         if scene["kind"] == "board":
             scene["board"] = {"write": [w.strip() for w in s.board_write if w.strip()], "draw": [n for n in s.board_draw if n.strip()][:2]}
         scenes.append(scene)
-    return {"title": draft.title.strip(), "cover_text": draft.cover_text.strip(), "scenes": scenes}
+    out = {"title": draft.title.strip(), "cover_text": draft.cover_text.strip(), "scenes": scenes}
+    if 1 < draft.hook_scene <= len(scenes) and draft.hook_after.strip():
+        out["hook"] = {"scene": draft.hook_scene - 1, "before": draft.hook_before.strip(), "after": draft.hook_after.strip()}
+    return out
 
 
 @dataclass(frozen=True)
@@ -722,6 +738,26 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a transfer needs a place and both flags (from_flag and flag) or neither")
     if stamps > 1:
         problems.append(f"{stamps} stamps (at most one)")
+    counters = [(i, s, e) for i, s in enumerate(draft.scenes, 1) for e in s.elements if e.kind == "counter"]
+    for i, s, e in counters:
+        if s.kind.strip().lower() != "map":
+            problems.append(f"scene {i}: a counter goes on a map scene")
+        if not e.value or e.value <= 0:
+            problems.append(f"scene {i}: a counter needs its number in value")
+        elif 1000 <= e.value <= 2100 and e.value == int(e.value) and not e.text.strip():
+            problems.append(f"scene {i}: counter {e.value:g} looks like a year (a year goes in the headline)")
+    if len(counters) > 4:
+        problems.append(f"{len(counters)} counters (at most 4)")
+    if any(sum(e.kind == "counter" for e in s.elements) > 3 for s in draft.scenes):
+        problems.append("more than 3 counters in one scene")
+    if draft.hook_scene:
+        k = draft.hook_scene
+        if not 1 < k <= len(draft.scenes) or draft.scenes[k - 1].kind.strip().lower() != "map":
+            problems.append(f"hook_scene {k} must be the number of a later map scene (the outcome)")
+        elif not draft.hook_after.strip():
+            problems.append("the flash-forward needs hook_after (1-3 words stamped on the outcome)")
+        if words(draft.hook_before) > 3 or words(draft.hook_after) > 3:
+            problems.append("hook_before and hook_after are 1-3 words each")
     spec = bw_render.spec_from_dict(to_spec_dict(draft), [])
     if missing := bw_render.resolve(spec, find):
         problems.append("places not on the map (use a country, state/province, lake, river, city or a small place's exact "

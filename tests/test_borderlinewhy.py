@@ -1664,3 +1664,78 @@ def test_a_what_if_is_due_every_third_short(monkeypatch, tmp_path):
     made[1] = {"kind": ""}
     monkeypatch.setattr(bw_channel, "queued_scripts", lambda out_dir=None: [tmp_path / "20261102-1200_whatif-x.json"])
     assert not bw_channel.whatif_due()  # one already waits in the queue
+
+
+# --------------------------------------------------------------------------- counters and the flash-forward
+
+
+def test_counter_counts_up_to_its_number():
+    el = bw_render.Element("counter", value=85, text="Day {n}")
+    assert bw_render.Renderer.counted(el, 0.0) == ("DAY 0", "") and bw_render.Renderer.counted(el, 1.0) == ("DAY 85", "")
+    tally = bw_render.Element("counter", value=120000, text="soldiers")
+    assert bw_render.Renderer.counted(tally, 1.0) == ("120,000", "SOLDIERS")
+    assert bw_render.Renderer.counted(tally, 2.0) == ("120,000", "SOLDIERS")  # it stops at its number
+    assert bw_render.Renderer.counted(bw_render.Element("counter", value=3, text="{n} months"), 0.0) == ("3 MONTHS", "")
+    assert bw_render.Renderer.counter_y(1) > bw_render.Renderer.counter_y(0) > bw_render.HEAD_Y
+
+
+def _hook_dict():
+    data = _spec_dict()
+    data["scenes"][0]["elements"].append({"kind": "counter", "value": 994, "text": "{n}+ ships", "cue": "notch"})
+    data["scenes"][2]["elements"].append({"kind": "counter", "value": 500, "text": "ships"})
+    data["hook"] = {"scene": 2, "before": "Day 0", "after": "Day 85"}
+    return data
+
+
+def test_flash_forward_opens_on_the_outcome_then_the_story(world):
+    data = _hook_dict()
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert spec.hook == {"scene": 2, "before": "Day 0", "after": "Day 85"}
+    assert bw_render.prepare(spec) == []
+    counter = spec.scenes[0].elements[-1]
+    assert counter.kind == "counter" and counter.value == 994
+    r = bw_render.Renderer(spec)
+    outcome = np.asarray(r.scene_frame(2, spec.scenes[2].end - 0.05).convert("RGB")).astype(int)
+    flashed = np.asarray(r.frame(1.5)).astype(int)
+    band = slice(bw_render.HEAD_Y + 120, bw_render.HEAD_Y + 340)
+    assert np.abs(flashed[band] - outcome[band]).mean() > 5  # the "after" words are stamped on the outcome
+    assert np.abs(flashed[900:1300] - outcome[900:1300]).mean() < 3  # the rest of the frame is the outcome
+    assert r.hook_frame(0.3) is not None and r.hook_frame(bw_render.HOOK_END) is None
+    gold = lambda a: ((a[..., 0] > 200) & (a[..., 1] > 150) & (a[..., 2] < 120)).sum()
+    assert gold(np.asarray(r.frame(0.3))[band]) > 2000  # "DAY 0" on the first map
+    # after the flash the story starts from scene 1 as before, and no script without a hook changes
+    plain = bw_render.spec_from_dict(_spec_dict(), _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert plain.hook == {} and bw_render.Renderer(plain).hook_frame(0.3) is None
+    from modules import bw_sfx
+
+    assert (bw_render.HOOK_FLIP, "whoosh", 0.0) in bw_sfx.events(spec)
+
+
+def test_counters_and_flash_forward_on_the_satellite_look(world, fx_offline):
+    data = _hook_dict()
+    data["look"] = "satellite"
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    for t in (0.0, 0.5, 1.2, 2.0, spec.scenes[2].start + 0.8):
+        assert r.frame(t).size == (bw_render.W, bw_render.H)
+    zones = r.text_zones(r.camera(0, 1.0), 0, spec.scenes[0])
+    y = r.counter_y(0)
+    assert any(z[1] < y < z[3] and z[0] < bw_render.W / 2 < z[2] for z in zones)  # icons keep off the counter
+
+
+def test_check_counters_and_the_flash_forward(world):
+    draft = _draft()
+    draft.scenes[3].elements.append(bw_script.ElementDraft(kind="counter", value=123, text="square miles", cue="line"))
+    draft.hook_scene, draft.hook_before, draft.hook_after = 5, "1783", "Patched"
+    assert bw_script.check(draft, _research(), _find(world)) == []
+    script = bw_script.to_spec_dict(draft)
+    assert script["hook"] == {"scene": 4, "before": "1783", "after": "Patched"}
+    assert script["scenes"][3]["elements"][-1]["value"] == 123
+    draft.scenes[1].elements.append(bw_script.ElementDraft(kind="counter", value=1783))
+    draft.hook_scene = 2
+    problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "a counter goes on a map scene" in problems and "looks like a year" in problems
+    assert "hook_scene 2 must be the number of a later map scene" in problems
+    draft.hook_scene, draft.hook_after = 4, ""
+    assert "needs hook_after" in " | ".join(bw_script.check(draft, _research(), _find(world)))

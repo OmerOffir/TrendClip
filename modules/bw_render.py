@@ -60,6 +60,8 @@ MOVE = 0.9  # seconds the camera takes from one scene's view to the next
 FADE = 0.4
 TAIL = 1.2  # seconds after the last word
 POP = 0.16  # seconds a caption word stays bigger as it is said
+COUNT_UP = 1.0  # seconds a counter takes to count up to its number
+HOOK_FLIP, HOOK_END = 0.9, 1.8  # the opening flash-forward: the first map until HOOK_FLIP, then the outcome until HOOK_END
 
 FONTS_DIR = bw_geo.PROJECT_ROOT / "assets" / "fonts"
 FONT_DIRS = (str(FONTS_DIR), "/System/Library/Fonts/Supplemental", "/usr/share/fonts/truetype/msttcorefonts",
@@ -69,10 +71,10 @@ ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.tt
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
-                 "transfer")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+                 "transfer", "counter")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
 MIN_ON_SCREEN = 2.0  # seconds an icon or a flag pole stays before its scene cuts away (a late cue pops in earlier)
 STAY_KINDS = ("icon", "pole")
-NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole")  # their place, if any, is optional
+NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
 THEMES: dict[str, dict[str, tuple[int, int, int]]] = {
@@ -147,6 +149,9 @@ class Spec:
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
     hold: float = 0.0  # extra seconds at the end (the outro's end card, modules.bw_brand)
     sfx: bool = False  # mix modules.bw_sfx's sound effects under the voice (Borderline Why turns it on)
+    # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
+    # "before": the words stamped on the first map, "after": the words stamped on the outcome}
+    hook: dict[str, Any] = field(default_factory=dict)
 
     @property
     def duration(self) -> float:
@@ -638,12 +643,90 @@ class Renderer:
             text(ov, (x, MAP_TOP - 110), label.upper(), 44, fill=rgb, a=a * ramp(t, el.at + 0.6), max_width=W - 80)
         elif kind == "stamp" and el.text:
             self.stamp(ov, el.text, el.at, t, self.color(el.color if el.color != "a" else "red"))
+        elif kind == "counter" and el.value:
+            row = [e for e in scene.elements if e.kind == "counter" and e.value].index(el)
+            self.counter(ov, el, row, t)
 
     def ring(self, d, cam: Cam, feat: bw_geo.Feature, rgb, al: int, t: float) -> None:
         x, y = cam.pt(*feat.label_point())
         r = 34 + 8 * math.sin(t * 5)
         d.ellipse([x - r, y - r, x + r, y + r], outline=rgb + (al,), width=8)
         d.ellipse([x - 9, y - 9, x + 9, y + 9], fill=rgb + (al,))
+
+    @staticmethod
+    def counter_y(row: int) -> float:
+        """The middle of a counter's row: under the headline, a scene's counters stacked into a tally."""
+        return HEAD_Y + 175 + row * (140 if LAYOUT == "portrait" else 115)
+
+    @staticmethod
+    def counted(el: Element, u: float) -> tuple[str, str]:
+        """A counter's (big line, small label) `u` of the way through counting up: "Day {n}" is one big line,
+        else the number is big and the text is its label."""
+        value = float(el.value or 0)
+        n = value if value < 10 else value * ease(min(1.0, max(0.0, u)))  # "3 months" pops in; it doesn't count 1, 2
+        shown = f"{n:,.0f}" if value >= 10 or value == int(value) else f"{n:,.1f}"
+        if "{n}" in el.text:
+            return el.text.replace("{n}", shown).upper(), ""
+        return shown, el.text.upper()
+
+    def counter(self, ov: Image.Image, el: Element, row: int, t: float) -> None:
+        """A number that pops in on its cue and counts up from 0, gold on a dark pill under the headline."""
+        u = ramp(t, el.at, 0.25)
+        if u <= 0:
+            return
+        big, label = self.counted(el, (t - el.at) / COUNT_UP)
+        final, _ = self.counted(el, 1.0)  # the pill is sized for the last number, so it never jumps
+        fb, fl = font(104), font(50)
+        gap = 26 if label else 0
+        width = int(min(W - 60, fb.getlength(final) + gap + (fl.getlength(label) if label else 0) + 90))
+        pill = Image.new("RGBA", (width, 136), (0, 0, 0, 0))
+        d = ImageDraw.Draw(pill)
+        d.rounded_rectangle([0, 0, width - 1, 135], radius=30, fill=(12, 16, 26, 215), outline=FIXED["gold"] + (255,), width=5)
+        x = 45 + fb.getlength(final)
+        d.text((x, 70), big, font=fb, fill=FIXED["gold"] + (255,), anchor="rm")
+        if label:
+            d.text((x + gap, 74), label, font=fl, fill=FIXED["white"] + (255,), anchor="lm")
+        sc = 0.6 + 0.4 * u
+        pill = pill.resize((max(1, int(width * sc)), max(1, int(136 * sc))))
+        pill.putalpha(pill.getchannel("A").point(lambda v: int(v * u)))
+        ov.alpha_composite(pill, (int(W / 2 - pill.width / 2), int(self.counter_y(row) - pill.height / 2)))
+
+    def hook_text(self, img: Image.Image, s: str, age: float) -> None:
+        """The flash-forward's words: big gold letters on a dark band that slams in under the headline."""
+        if not s:
+            return
+        u = min(1.0, max(0.0, age / 0.18))
+        f = font(150)
+        size = 150
+        while size > 70 and font(size).getlength(s.upper()) > W - 160:
+            size -= 10
+        f = font(size)
+        width = int(f.getlength(s.upper()) + 110)
+        band = Image.new("RGBA", (width, size + 70), (0, 0, 0, 0))
+        d = ImageDraw.Draw(band)
+        d.rounded_rectangle([0, 0, width - 1, size + 69], radius=26, fill=(12, 16, 26, 225))
+        d.text((width / 2, (size + 70) / 2), s.upper(), font=f, fill=FIXED["gold"] + (255,), anchor="mm")
+        sc = 1.35 - 0.35 * u
+        band = band.resize((max(1, int(band.width * sc)), max(1, int(band.height * sc))))
+        band.putalpha(band.getchannel("A").point(lambda v: int(v * u)))
+        img.alpha_composite(band, (int(W / 2 - band.width / 2), int(HEAD_Y + 230 - band.height / 2)))
+
+    def hook_frame(self, t: float) -> Image.Image | None:
+        """The opening flash-forward (spec.hook): the first map with the "before" words, then the later scene's
+        finished frame (the outcome) with the "after" words; None outside it."""
+        hook, scenes = self.spec.hook, self.spec.scenes
+        k = hook.get("scene") if hook else None
+        if not isinstance(k, int) or not 0 < k < len(scenes) or t >= HOOK_END:
+            return None
+        before = str(hook.get("before") or "")
+        flip = HOOK_FLIP if before else 0.0
+        if t < flip:
+            img = self.scene_frame(0, t)
+            self.hook_text(img, before, 1.0)  # up from the first frame (the thumbnail)
+        else:
+            img = self.scene_frame(k, max(scenes[k].start, scenes[k].end - 0.05))
+            self.hook_text(img, str(hook.get("after") or ""), t - flip)
+        return img
 
     def stamp(self, ov: Image.Image, s: str, at: float, t: float, rgb) -> None:
         u = ramp(t, at, 0.25)
@@ -742,8 +825,9 @@ class Renderer:
     def frame(self, t: float) -> Image.Image:
         i = self.scene_at(t)
         scene = self.spec.scenes[i]
-        img = self.scene_frame(i, t)
-        if i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
+        hooked = self.hook_frame(t) if i == 0 else None
+        img = hooked or self.scene_frame(i, t)
+        if hooked is None and i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
             img = Image.blend(self.scene_frame(i - 1, t), img, ramp(t, scene.start, FADE))
         self.overlay(img, t)
         self.captions(img, t)
@@ -909,4 +993,5 @@ def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
             lines[-1].append(w)
     return Spec(scenes, [w for w in words if not w.who], cover=data.get("cover_text", ""), theme=theme, seed=seed,
                 look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines,
-                hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0))
+                hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0),
+                hook=dict(data.get("hook") or {}))

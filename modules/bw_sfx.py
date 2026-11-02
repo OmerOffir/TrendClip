@@ -19,7 +19,7 @@ import numpy as np
 RATE = 44100
 MIN_GAP = 0.22  # seconds between two sounds
 GAIN = {"pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20}
-POP_KINDS = ("pin", "icon", "label", "ring", "pole")
+POP_KINDS = ("pin", "icon", "label", "ring", "pole", "counter")
 LINE_KINDS = ("arrow", "line", "route")
 
 
@@ -96,6 +96,12 @@ def events(spec) -> list[tuple[float, str, float]]:
                 found.append((el.at, "whoosh", 0.0))
             elif el.kind in LINE_KINDS:
                 found.append((el.at, "whoosh", 0.0))
+    hook = getattr(spec, "hook", None) or {}
+    if isinstance(hook.get("scene"), int):  # the opening flash-forward's cut to the outcome comes before anything near it
+        from modules import bw_render
+
+        flip = bw_render.HOOK_FLIP if hook.get("before") else 0.0
+        found = [e for e in found if abs(e[0] - flip) >= MIN_GAP] + [(flip, "whoosh", 0.0)]
     found.sort(key=lambda e: (e[0], e[1] != "stamp"))  # a stamp wins a tie
     kept: list[tuple[float, str, float]] = []
     for e in found:

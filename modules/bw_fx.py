@@ -1347,6 +1347,9 @@ class FxRenderer(Renderer):
             f = e.feature
             if e.kind == "stamp" and e.text:
                 zones.append((W / 2 - 520, CY + 60 - 230, W / 2 + 520, CY + 60 + 230))
+            if e.kind == "counter" and e.value:
+                y = self.counter_y([c for c in scene.elements if c.kind == "counter" and c.value].index(e))
+                zones.append((60, y - 75, W - 60, y + 75))
             if f is None:
                 continue
             x, y = cam.pt(*f.label_point())
