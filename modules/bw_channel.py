@@ -305,6 +305,22 @@ def queued_scripts(out_dir: Path | None = None) -> list[Path]:
     return sorted(folder.glob("*.json")) if folder.is_dir() else []
 
 
+WHATIF_EVERY = 3  # a what-if at least every 3rd Short: "What If Alaska Was Still Russian?" was watched 100% (2026-11-02)
+
+
+def whatif_due(out_dir: Path | None = None) -> bool:
+    """True when the last WHATIF_EVERY - 1 Shorts were not what-ifs and none waits in the queue. What-ifs come from
+    the owner's own LLM (modules.bw_whatif), so the bot can only remind them."""
+    if any("_whatif-" in f.name for f in queued_scripts(out_dir)):
+        return False
+    recent = videos(out_dir, WHATIF_EVERY - 1)
+    return len(recent) == WHATIF_EVERY - 1 and not any(v.get("kind") == "whatif" for v in recent)
+
+
+WHATIF_HINT = ("\n💡 A **What if** is due (they keep viewers best: the Alaska one was watched to the end). "
+               "Write one in the dashboard's What if tab and it goes in the next slot.")
+
+
 def next_choices(out_dir: Path | None = None, limit: int = 60) -> dict[str, Any]:
     """The dashboard's "Next video" picker: the queued scripts and the topics still on the list, in the order they
     would be made, with the owner's pick."""
@@ -970,7 +986,8 @@ def announce_video(info: dict, settings=None, out_dir: Path | None = None) -> st
         if require_approval():
             buttons.insert(0, b("bwok", info["key"], "✅ Approve", "success"))
         components = channel_common.rows(*buttons)
-        return rest.post(video_line(info) + "\n" + video_note(info), (f"{info['key']}.mp4", small.read_bytes()), components)
+        hint = WHATIF_HINT if whatif_due(out_dir) else ""
+        return rest.post(video_line(info) + "\n" + video_note(info) + hint, (f"{info['key']}.mp4", small.read_bytes()), components)
     except Exception as err:  # noqa: BLE001
         logger.warning("Discord post for Borderline Why %s failed: %s", info.get("key"), err)
         return None

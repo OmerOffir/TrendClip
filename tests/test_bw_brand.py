@@ -140,3 +140,24 @@ def test_the_mascot_walks_along_a_route():
 
     scenes = [bw_render.Scene("map", "Look."), bw_render.Scene("map", "They sailed south.", elements=[bw_render.Element("arrow", "Spain")])]
     assert bw_brand.moods(scenes) == ["searching", "walking"]
+
+
+def test_a_board_gets_a_character_while_the_words_are_written():
+    """A board with room left gets one of the owner's characters (one its words call for) right after the title,
+    and an arrow drawn to it after the words when there is time; a board without room or a short one has no arrow."""
+    from modules import bw_fx
+
+    bw_render.use_layout("portrait")
+    scene = Scene("board", "The king signed a treaty.", start=0.0, end=9.0, opts={"board": {"write": ["The deal", "King signs"]}})
+    board = bw_brand.Board(scene)
+    g = board.guest_item
+    assert g is not None and g["code"] == bw_fx.icon_code("scroll")
+    title = board.items[0]
+    assert g["at"] == pytest.approx(title["at"] + title["dur"] + 0.05)
+    arrow = board.items[-1]
+    assert arrow["kind"] == "line" and arrow.get("head") and arrow["at"] > g["at"]
+    assert board.frame(g["at"] + 1.0).size == (bw_render.W, bw_render.H)
+    short = Scene("board", "The king signed a treaty.", start=0.0, end=3.0, opts={"board": {"write": ["The deal", "King signs"]}})
+    quick = bw_brand.Board(short)
+    assert quick.guest_item is not None and not any(it.get("head") for it in quick.items)  # no time for the arrow
+    assert bw_brand.Board(scene, guest=False).guest_item is None  # Price Tag Why's boards stay as they were

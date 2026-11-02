@@ -78,6 +78,12 @@ SHIFTS = ((0.0, 0.0), (0.16, -0.06), (-0.16, 0.05), (0.0, 0.08), (0.12, -0.04))
 MOTIONS = ("push", "pan", "pull", "push", "pan_back", "pull")  # what each map scene's camera does while it runs
 HEADLINE_BOTTOM = 360  # an icon moved off a flag stays below a map scene's headline (y on the 1080x1920 frame)
 TINY_PX = 70  # a place smaller than this on screen is marked with a target, and its flag shows as a badge
+# A Short opens tight on the weird place and pulls back to its first scene's view (no slow globe: 40-52% swiped
+# away in the first seconds, 2026-11-02); a map scene never goes BEAT_GAP seconds without something new (a camera
+# punch and a ring on its place), and a number in the narration gets a punch too
+OPEN_SECONDS = 1.6
+BEAT_GAP = 2.4
+PUNCH = 0.06  # how much a beat zooms in for a moment
 GLOBE_MAX_PPD = 30.0  # the opening globe stops at about a continent; the next scene zooms in from there
 
 WATER = (46, 112, 158)
@@ -545,6 +551,32 @@ def wave(img: Image.Image, t: float, amp: float = 0.03) -> Image.Image:
 # --------------------------------------------------------------------------- the renderer
 
 
+# The owner's character for what a scene talks about (the board and photo scenes get one beside their words)
+CHARACTERS = (
+    (r"\b(treat(y|ies)|deal|agreement|signed|pact|accord)", "scroll"), (r"\b(king|kingdom|royal|crown|emperor|empire)\b", "king"),
+    (r"\bqueen\b", "queen"), (r"\b(war|wars|battle|fought|invad\w*|army|armies|conquer\w*)\b", "army"),
+    (r"\b(bought|sold|paid|price|dollars?|francs?|money|tax\w*|rent|lease\w*)\b", "money_bag"),
+    (r"\b(trade|traders?|merchants?|market)\b", "merchant"), (r"\b(vot\w*|referendum|election)\b", "vote"),
+    (r"\b(customs|passports?|checkpoint|border guards?)\b", "guard"), (r"\b(ships?|sea|sailors?|navy|sailed|port)\b", "ship"),
+    (r"\b(trains?|railway|railroad)\b", "train"), (r"\b(letters?|telegram|message)\b", "letter"),
+    (r"\b(court|judge|ruling|ruled|law|legal)\b", "judge"), (r"\b(surveyors?|surveyed|measured|mapmakers?|cartograph\w*)\b", "surveyor"),
+    (r"\b(settlers?|migrants?|moved|refugees?|people)\b", "migration"), (r"\b(farm\w*|crops?|fields?)\b", "farmer"),
+    (r"\b(president|government|minister|parliament|congress|politicians?)\b", "politician"),
+    (r"\b(soldiers?|officers?|generals?|troops)\b", "officer"), (r"\b(castle|fort|fortress)\b", "castle"),
+    (r"\b(news|newspapers?)\b", "newspaper"), (r"\b(banned|forbidden|illegal)\b", "forbidden"),
+    (r"\b(explor\w*|discover\w*)\b", "explorer"), (r"\b(town|village|city)\b", "town"),
+)
+
+
+def character_for(text: str, avoid: tuple[str, ...] = ()) -> str:
+    """The owner's character (an icon name) that fits the words, else the scholar; empty when it has no file."""
+    names = custom_icons()
+    for pattern, name in CHARACTERS:
+        if name not in avoid and name in names and re.search(pattern, text, re.I):
+            return name
+    return "scholar" if "scholar" in names and "scholar" not in avoid else ""
+
+
 def icon_code(name: str) -> str:
     """A script's icon name (or a code point) to what the renderer draws it from: the name when the owner has
     a file for it (stickers/borderlinewhy), else the Noto code point; empty when unknown."""
@@ -667,7 +699,7 @@ def card_row(row: list) -> None:
         x += w + gap
 
 
-def dress(spec) -> list[str]:
+def dress(spec, short_globe: bool = False) -> list[str]:
     """Get a script's extras ready: flags and icons that exist (the rest dropped, so a bad name never stops a
     video), places for unplaced icons and poles, and the opening globe. Returns what was dropped."""
     dropped: list[str] = []
@@ -725,7 +757,8 @@ def dress(spec) -> list[str]:
             card_row(row)
         scene.elements = keep
     first = spec.scenes[0] if spec.scenes else None
-    if first is not None and first.kind == "map" and first.view and not any("globe" in s.opts for s in spec.scenes):
+    if (first is not None and first.kind == "map" and first.view and (bw_render.LAYOUT == "landscape" or short_globe)
+            and not any("globe" in s.opts for s in spec.scenes)):  # a long video opens on the globe; a Short starts tight
         first.opts["globe"] = True
         lon, lat, ppd = first.view
         first.view = (lon, lat, min(ppd, GLOBE_MAX_PPD))
@@ -783,18 +816,23 @@ def main_place(scene: Scene) -> tuple[bw_geo.Feature | None, bool]:
 
 
 class FxRenderer(Renderer):
+    LIVELY = True  # Borderline Why's opening pull-back, map beats and the characters on boards and photos
+
     def __init__(self, spec):
         super().__init__(spec)
         self.sat = satellite()
-        if dropped := dress(spec):
+        if dropped := dress(spec, short_globe=not self.LIVELY):
             logger.info("Left out of the video: %s", ", ".join(dropped))
         self.views = vary_views(spec.scenes)
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
+        self.open_view = self.opening_view() if self.LIVELY else None
+        self.beats = {i: self.plan_beats(i) for i, s in enumerate(spec.scenes)
+                      if self.LIVELY and s.kind == "map" and not s.opts.get("globe")}
         self._badges: dict[tuple[str, int], Image.Image] = {}
         self._spots: dict[int, tuple[float, float] | None] = {}  # icon_spot: an icon moved off a flag or words
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
-        self.boards = {i: bw_brand.Board(s) for i, s in enumerate(spec.scenes) if s.kind == "board"}
+        self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
         self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)
                      if spec.brand and s.kind == "map" and not s.opts.get("globe")}
@@ -822,8 +860,90 @@ class FxRenderer(Renderer):
         here = self.moved(i, min(1.0, max(0.0, (t - scene.start) / max(1.0, scene.end - scene.start))))
         prev = next((j for j in range(i - 1, -1, -1) if scenes[j].kind == "map"), None)
         if prev is not None and t < scene.start + MOVE:  # fly on from where the last map scene ended
-            return blend_view(self.moved(prev, 1.0), here, (t - scene.start) / MOVE)
-        return Cam(*here)
+            cam = blend_view(self.moved(prev, 1.0), here, (t - scene.start) / MOVE)
+        elif i == 0 and self.open_view is not None and t < scene.start + OPEN_SECONDS:  # pull back from the place
+            cam = blend_view(self.open_view, here, (t - scene.start) / OPEN_SECONDS)
+        else:
+            cam = Cam(*here)
+        k = self.punch(i, t)
+        return cam if k == 1.0 else Cam(cam.lon, cam.lat, cam.ppd * k)
+
+    def opening_view(self) -> tuple[float, float, float] | None:
+        """A Short's first camera: tight on the smallest place its first scene points at (the weird one: the enclave,
+        not the country round it), when that is closer than the scene's own view. That place's marker (ring, pin,
+        highlight) shows at once, so the first frame already points at something."""
+        scenes = self.spec.scenes
+        if bw_render.LAYOUT != "portrait" or not scenes or scenes[0].kind != "map" or scenes[0].opts.get("globe") or not scenes[0].view:
+            return None
+        first = scenes[0]
+        marks = [el for el in first.elements if el.feature is not None and el.kind in ("ring", "pin", "highlight", "label", "transfer")]
+        feats = [el.feature for el in marks] + ([self.main[0][0]] if self.main[0][0] is not None else [])
+        if not feats:
+            return None
+
+        def area(f: bw_geo.Feature) -> float:
+            if not f.parts:
+                return 0.0
+            x0, y0, x1, y1 = f.bbox()
+            return (x1 - x0) * (y1 - y0)
+
+        place = min(feats, key=area)
+        if place.parts:
+            box = place.bbox()
+        else:
+            lon, lat = place.label_point()
+            box = (lon - 0.3, lat - 0.3, lon + 0.3, lat + 0.3)
+        view = bw_render.fit_view([box], pad=0.8, min_span=0.5)
+        if view[2] < first.view[2] * 1.25:
+            return None  # the scene already shows the place up close
+        mark = next((el for el in sorted(marks, key=lambda e: e.at) if el.feature is place), None)
+        if mark is not None and mark.at > first.start + 0.25:
+            mark.at = first.start + 0.2
+        return inside_world(*view)
+
+    def plan_beats(self, i: int) -> list[float]:
+        """When a map scene gets a beat: at each number the narration says, and wherever nothing new would appear
+        on screen for BEAT_GAP seconds (an element, the marker, the target)."""
+        scene = self.spec.scenes[i]
+        start, end = scene.start, scene.end
+        nums = [w.start for w in self.spec.words if start + 0.4 <= w.start < end - 0.3 and re.search(r"\d", w.text)]
+        events = sorted({start, *[el.at for el in scene.elements if start <= el.at < end], *nums,
+                         *([start + 0.5] if self.main[i][0] is not None and not self.main[i][1] else [])})
+        beats = list(nums)
+        for a, b in zip(events, [*events[1:], end]):
+            while b - a > BEAT_GAP:
+                a += BEAT_GAP * 0.8
+                if a < end - 0.6:
+                    beats.append(a)
+        out: list[float] = []
+        for b in sorted(beats):
+            if b >= start + 0.4 and (not out or b - out[-1] >= 1.0):
+                out.append(b)
+        return out
+
+    def punch(self, i: int, t: float) -> float:
+        """The camera's zoom for a beat: a quick push in and back."""
+        k = 1.0
+        for b in self.beats.get(i, ()):
+            u = (t - b) / 0.5
+            if 0 <= u < 1:
+                k += PUNCH * math.sin(math.pi * u)
+        return k
+
+    def pulse(self, ov: Image.Image, cam, i: int, t: float) -> None:
+        """A white ring spreading from the scene's place at each beat."""
+        main = self.main[i][0]
+        if main is None:
+            return
+        for b in self.beats.get(i, ()):
+            age = t - b
+            if 0 <= age < 0.8:
+                x, y = cam.pt(*main.label_point())
+                r = 40 + 170 * ease(age / 0.8)
+                a = int(220 * (1 - age / 0.8))
+                d = ImageDraw.Draw(ov)
+                d.ellipse([x - r, y - r, x + r, y + r], outline=(0, 0, 0, a // 3), width=12)
+                d.ellipse([x - r, y - r, x + r, y + r], outline=(255, 255, 255, a), width=7)
 
     def globe_cam(self, i: int, t: float) -> GlobeCam:
         """The opening globe turns from the Atlantic to the scene's place and grows until it matches the flat map."""
@@ -987,6 +1107,7 @@ class FxRenderer(Renderer):
         self._hand = None
         if not globe:
             self.attention(ov, cam, i, t)
+            self.pulse(ov, cam, i, t)
         pen = None if globe else self.pens.get(i)
         for el in scene.elements:
             if el is pen:
@@ -1076,7 +1197,7 @@ class FxRenderer(Renderer):
         scene = self.spec.scenes[i]
         if main is None or marked:
             return
-        at = scene.start + 0.5
+        at = scene.start + (0.15 if i == 0 and self.LIVELY else 0.5)  # the opening points at once
         if self.tiny(cam, main):
             self.target(ov, cam.pt(*main.label_point()), t, at, "" if scene.headline else main.name)
         elif not any(el.kind == "highlight" for el in scene.elements):
@@ -1554,7 +1675,8 @@ class FxRenderer(Renderer):
             return self.ends[i].frame(t)
         if scene.kind == "photo" and scene.opts.get("_photo"):
             if i not in self.photos:
-                self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]))
+                self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]),
+                                                      lively=self.LIVELY)
             img = self.photos[i].frame(t)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)

@@ -454,6 +454,7 @@ def header(question: str, size: tuple[int, int]):
 
 class PwRenderer(bw_fx.FxRenderer):
     SAID = SAID
+    LIVELY = False  # Borderline Why's opening, map beats and characters stay on that channel
 
     question = ""  # the script's question: the header when there is no tag scene
 

@@ -543,7 +543,7 @@ def pen_color(name: str | None, default):
 class Board:
     """A board scene's plan: what the hand writes and draws, where, and when."""
 
-    def __init__(self, scene: Scene):
+    def __init__(self, scene: Scene, guest: bool = True):
         o = scene.opts.get("board") if isinstance(scene.opts.get("board"), dict) else {}
         W, H = bw_render.W, bw_render.H
         portrait = bw_render.LAYOUT == "portrait"
@@ -553,6 +553,7 @@ class Board:
         if feats and not feats[0].parts:
             feats = []  # the drawing needs an outline to fit the others into
         self.items: list[dict[str, Any]] = []
+        self.guest_item: dict[str, Any] | None = None  # the character that pops up on the board (_guest)
         title_size, line_size = size("board_title"), size("board_line")
         top = bw_render.MAP_TOP + (60 if portrait else 70)
         if writes:
@@ -586,7 +587,36 @@ class Board:
         elif not portrait:
             for k, s in enumerate(lines):
                 self._write(s, (W * 0.75, top + 260 + k * (line_size + 40)), line_size, BLUE if k % 2 == 0 else RED)
+        if guest and portrait and not feats:
+            bottom = max(it["y"] + it["px"] / 2 for it in self.items if it["kind"] == "write") if writes else top
+            self._guest(scene, writes, (360, bottom + 40, W - 60, bw_render.CAPTION_Y - 230))
         self._time(scene)
+
+    def _guest(self, scene: Scene, writes: list[dict[str, Any]], box: tuple[float, float, float, float]) -> None:
+        """A character for what the scene is about (an icon the scene names, else one its words call for) pops up on
+        the empty part of the board once the title is written, while the hand goes on writing; when there is time
+        left after the words, the hand draws an arrow from them down to it."""
+        side = min(box[2] - box[0], box[3] - box[1])
+        if side < 200:
+            return  # no room on the board
+        named = [el.opts.get("icon") for el in scene.elements if el.kind == "icon" and el.opts.get("icon")]
+        code = bw_fx.icon_code(str(named[0])) if named else ""
+        if not code or code not in bw_fx.custom_icons():
+            code = bw_fx.icon_code(bw_fx.character_for(" ".join([scene.narration, *[w["text"] for w in writes]])) or "")
+        if not code:
+            return
+        px = int(min(300, side * 0.9))
+        cx, cy = (box[0] + box[2]) / 2 + 60, (box[1] + box[3]) / 2
+        room = scene.end - scene.start - 0.9
+        need = sum(it["cost"] for it in self.items) + 0.14 * len(self.items) + 0.6
+        last = next((it for it in reversed(self.items) if it["kind"] == "write"), None)
+        arrow = room >= need and last is not None
+        if arrow:  # time to draw the arrow after the words
+            sx, sy = last["x0"] + last["width"] * 0.3, last["y"] + last["px"] * 0.7
+            ex, ey = cx - px * 0.62, cy - px * 0.1
+            pts = [(sx + (ex - sx) * k / 24 + 26 * math.sin(math.pi * k / 24), sy + (ey - sy) * k / 24) for k in range(25)]
+            self.items.append(dict(kind="line", pts=np.array(pts), rgb=RED, width=12, cost=0.45, head=True))
+        self.guest_item = dict(kind="guest", code=code, xy=(cx, cy), px=px, after=1)  # pops up once the title is written
 
     def _write(self, line: dict[str, Any], center: tuple[float, float], px: int, rgb) -> None:
         """Write a line (pen_line) centred on `center`, in its own colour when it names one, else `rgb`."""
@@ -649,6 +679,10 @@ class Board:
             it["at"], it["dur"] = t, it["cost"] * k
             t += it["dur"] + gap * k
         self.done = t - gap * k
+        g = getattr(self, "guest_item", None)  # (Price Tag Why's boards build without Board.__init__)
+        if g is not None:
+            before = self.items[min(g["after"], len(self.items)) - 1] if self.items else None
+            g["at"] = (before["at"] + before["dur"] + 0.05) if before is not None else scene.start + 0.4
 
     def frame(self, t: float) -> Image.Image:
         img = board_image()
@@ -670,6 +704,8 @@ class Board:
                 if it.get("under"):
                     under = under or Image.new("RGBA", img.size, (0, 0, 0, 0))
                 marker(under if it.get("under") else ov, drawn, it["rgb"], it["width"], shade=False)
+                if it.get("head") and u >= 1:
+                    chevron(ov, it["pts"], it["rgb"], it["width"])
             last = (head[0], head[1], it["at"] + it["dur"])
             if u < 1:
                 pen = head
@@ -686,6 +722,8 @@ class Board:
                 away, s = (bw_render.W * 0.92, bw_render.H + 60), self.start_of(first)
                 v = ease(v)
                 pen = (away[0] + (s[0] - away[0]) * v, away[1] + (s[1] - away[1]) * v)
+        if getattr(self, "guest_item", None) is not None and t > self.guest_item["at"]:
+            self.guest(ov, self.guest_item, t)
         if pen is not None:
             draw_hand(ov, pen, t)
         if under is not None:
@@ -696,6 +734,20 @@ class Board:
     @staticmethod
     def start_of(it: dict[str, Any]) -> tuple[float, float]:
         return (it["x0"], it["y"]) if it["kind"] == "write" else tuple(it["pts"][0])
+
+    @staticmethod
+    def guest(ov: Image.Image, it: dict[str, Any], t: float) -> None:
+        """The character popping up where the arrow points, then playing its loop and bobbing."""
+        age = t - it["at"]
+        im, _ = bw_fx.icon_frame(it["code"], it["px"], age)
+        s = bw_fx.backout(age / 0.45)
+        if s <= 0.02:
+            return
+        im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))), Image.BILINEAR)
+        x, y = it["xy"]
+        y += 5 * math.sin(2.4 * t)
+        paste(ov, shadow(im, 8, 0.25), int(x - im.width / 2 + 6), int(y - im.height / 2 + 10))
+        paste(ov, im, int(x - im.width / 2), int(y - im.height / 2))
 
     @staticmethod
     def write(ov: Image.Image, it: dict[str, Any], u: float, t: float) -> tuple[float, float]:

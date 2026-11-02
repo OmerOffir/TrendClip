@@ -85,6 +85,8 @@ def events(spec) -> list[tuple[float, str, float]]:
             found.append((scene.start + 0.3, "marker", min(1.8, max(0.4, (scene.end - scene.start) * 0.5))))
         elif scene.kind == "end":
             found.append((scene.start + 0.2, "ding", 0.0))
+        elif scene.kind == "photo":  # the print popping in with its flash, then the character (bw_photos.PhotoScene)
+            found += [(scene.start, "paper", 0.0), (scene.start + 1.6, "pop", 0.0)]
         for el in scene.elements:
             if el.kind == "stamp":
                 found.append((el.at, "stamp", 0.0))

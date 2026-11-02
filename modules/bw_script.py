@@ -346,7 +346,8 @@ class ClaimDraft(BaseModel):
 class Draft(BaseModel):
     usable: bool = Field(description="False when the sources cannot support a clear, true answer.")
     reject_reason: str = ""
-    title: str = Field("", description="The YouTube title: the question, under 70 characters.")
+    title: str = Field("", description="The YouTube title: a short question under 45 characters that names the place "
+                                       "(\"Why Does Kentucky Own This Island?\"); the feed cuts longer ones.")
     cover_text: str = Field("", description="3-7 words for the first frame (the thumbnail), not a copy of the title.")
     scenes: list[SceneDraft] = Field(default_factory=list)
     claims: list[ClaimDraft] = Field(default_factory=list)
@@ -425,6 +426,8 @@ HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
   question or the surprise.
 - Scene 2 already pays something off: the strangest fact or the first part of the answer. Never a setup line like
   "This is Point Roberts." or "It is called Pheasant Island." (the map already shows its name).
+- The title is a short question under 45 characters that names the place ("Why Does Kentucky Own This Island?"):
+  the feed cuts longer ones. cover_text is the hook in 3-6 big words on the first frame, not the title again.
 
 HISTORY ON THE MAP, NOT ON CARDS
 - Tell the history while the map moves: the treaty or border line drawing itself across the map (line, route,

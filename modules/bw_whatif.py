@@ -56,7 +56,8 @@ short Shorts get watched to the end and replayed)
   can't be told that way, set usable to false and say why.
 - Simple, natural, spoken English. Short connected sentences (at most {max_sentence} words). Numbers as digits.
 
-THE TITLE: the what-if question, under 70 characters, starting with "What if" ("What If Alaska Was Still Russian?").
+THE TITLE: the what-if question, under 45 characters (the feed cuts longer ones), starting with "What if" ("What If
+Alaska Was Still Russian?").
 cover_text: 3-7 words for the first frame. description: 2-3 sentences saying what really happened and what the
 video imagines. "claims": leave it an empty list (a what-if has no sources to quote).
 

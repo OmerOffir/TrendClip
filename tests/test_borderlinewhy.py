@@ -655,7 +655,7 @@ def test_satellite_look_dresses_and_draws_frames(world, fx_offline):
     money = next(e for e in spec.scenes[0].elements if e.opts.get("icon") == "1f4b0")
     car = next(e for e in spec.scenes[0].elements if e.kind == "icon" and e.opts.get("icon") == "1f697")
     assert (money.opts["x"], money.opts["y"]) == fx_offline.ICON_SLOTS["map"][0] and car.opts["dy"] < 0
-    assert spec.scenes[0].opts["globe"] is True and spec.scenes[0].view[2] <= fx_offline.GLOBE_MAX_PPD
+    assert "globe" not in spec.scenes[0].opts  # a Short opens tight on its place, not on a slow globe
     for t in (0.0, 1.0, 2.0, 2.9, 3.2, 4.5, spec.duration - 0.1):
         assert r.frame(t).size == (bw_render.W, bw_render.H)
 
@@ -1632,3 +1632,35 @@ def test_an_icon_never_stands_on_words(world, fx_offline):
     half = car.opts.get("size", 190) * 0.6
     assert (x, y) != r.anchor(cam, car)
     assert not any(x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3] for z in zones), ((x, y), zones)
+
+
+def test_a_short_opens_tight_and_its_maps_never_sit_still(world, fx_offline):
+    """The first frame is close on the place and pulls back to the scene's view in OPEN_SECONDS; a long quiet map
+    scene gets beats (a camera punch) at most BEAT_GAP apart, and one on a number the narration says."""
+    data = {"title": "Why?", "cover_text": "Paris", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "Paris sits far from Minnesota.", "focus": ["Paris", "Minnesota"]},
+        {"kind": "map", "narration": "In 1783 a treaty drew a line that nobody checked for many many years on the ground at all.",
+         "focus": ["Minnesota"]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"]), step=0.5))
+    bw_render.prepare(spec)
+    r = fx_offline.FxRenderer(spec)
+    first = spec.scenes[0]
+    assert r.open_view is not None and r.camera(0, 0.0).ppd > 1.5 * r.camera(0, first.start + fx_offline.OPEN_SECONDS + 0.01).ppd
+    second = spec.scenes[1]
+    beats = r.beats[1]
+    marks = sorted({second.start, *beats, second.end})
+    assert all(b - a <= fx_offline.BEAT_GAP + 0.01 for a, b in zip(marks, marks[1:])), marks
+    year = next(w.start for w in spec.words if w.text.startswith("1783"))
+    assert year in beats and r.punch(1, year + 0.25) > 1.0 and r.punch(1, year + 0.6) == 1.0
+
+
+def test_a_what_if_is_due_every_third_short(monkeypatch, tmp_path):
+    made = [{"kind": ""}, {"kind": ""}]
+    monkeypatch.setattr(bw_channel, "videos", lambda out_dir=None, limit=30: made[:limit])
+    monkeypatch.setattr(bw_channel, "queued_scripts", lambda out_dir=None: [])
+    assert bw_channel.whatif_due()
+    made[1] = {"kind": "whatif"}
+    assert not bw_channel.whatif_due()
+    made[1] = {"kind": ""}
+    monkeypatch.setattr(bw_channel, "queued_scripts", lambda out_dir=None: [tmp_path / "20261102-1200_whatif-x.json"])
+    assert not bw_channel.whatif_due()  # one already waits in the queue

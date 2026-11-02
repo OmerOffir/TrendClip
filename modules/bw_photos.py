@@ -144,9 +144,14 @@ def credits(photos: list[Photo]) -> str:
 
 class PhotoScene:
     """A photo scene's frames: the picture blurred to fill the frame, and the picture itself as a taped print with a
-    slow push-in (a pan along a long side), popping in at the scene's start, its caption written under it."""
+    push-in (a pan along a long side), popping in with a camera flash at the scene's start, its caption written
+    under it; then the marker hand underlines the caption and one of the owner's characters pops up on the
+    print's corner (something new every second or so: a still picture lost viewers, 2026-11-02)."""
 
-    def __init__(self, scene, photo: Photo, k: int = 0):
+    ZOOM = 0.22  # how far the picture pushes in over the scene
+    UNDERLINE_AT, GUEST_AT = 0.9, 1.6  # seconds after the scene starts
+
+    def __init__(self, scene, photo: Photo, k: int = 0, lively: bool = True):
         from PIL import Image, ImageFilter
 
         from modules import bw_render
@@ -167,16 +172,26 @@ class PhotoScene:
         self.size = (int(iw * f), int(ih * f))
         self.angle = (-2.2, 1.8, -1.4, 2.4)[k % 4]
         self.caption = str(scene.opts.get("caption") or "").strip()
+        from modules import bw_fx
+
+        self.lively = lively  # the flash, the underline and the character (Borderline Why)
+        guest = bw_fx.character_for(" ".join([scene.narration, self.caption])) if lively else ""
+        self.guest = bw_fx.icon_code(guest) if guest else ""
 
     def frame(self, t: float):
         from PIL import Image, ImageDraw
 
         from modules import bw_brand, bw_fx, bw_render
 
+        import math
+
+        import numpy as np
+
         img = self.bg.copy()
         sc = self.scene
+        portrait = bw_render.LAYOUT == "portrait"
         u = max(0.0, min(1.0, (t - sc.start) / max(0.5, sc.end - sc.start)))
-        zoom = 1.0 + 0.12 * bw_render.ease(u)
+        zoom = 1.0 + (self.ZOOM if self.lively else 0.12) * bw_render.ease(u)
         iw, ih = self.img.size
         cw, ch = iw / zoom, ih / zoom
         dx = (iw - cw) * (0.5 + 0.35 * (u - 0.5) * (1 if self.k % 2 else -1))
@@ -185,9 +200,19 @@ class PhotoScene:
         card = Image.new("RGBA", (self.size[0] + 2 * border, self.size[1] + border + strip), (250, 248, 242, 255))
         card.paste(crop, (border, border))
         d = ImageDraw.Draw(card)
+        line_at = None  # the underline's tip on the card while the hand draws it
         if self.caption:
             f = bw_fx.hand_font(56)
-            d.text((card.width / 2, self.size[1] + border + strip / 2), self.caption, font=f, fill=bw_brand.INK + (255,), anchor="mm")
+            cy = self.size[1] + border + strip / 2
+            d.text((card.width / 2, cy), self.caption, font=f, fill=bw_brand.INK + (255,), anchor="mm")
+            v = (t - sc.start - self.UNDERLINE_AT) / 0.6
+            if v > 0 and self.lively:
+                half = min(card.width / 2 - 30, f.getlength(self.caption) / 2 + 12)
+                pts = [(card.width / 2 - half + 2 * half * k / 20, cy + 34 + 3 * math.sin(k / 3)) for k in range(21)]
+                drawn, tip = bw_brand.prefix(np.array(pts), min(1.0, v))
+                bw_brand.marker(card, drawn, bw_brand.RED, 9, shade=False)
+                if v < 1.25:
+                    line_at = tip
         for x in (card.width * 0.12, card.width * 0.88):  # two strips of tape on the top corners
             tape = Image.new("RGBA", (150, 46), (236, 226, 190, 170))
             tape = tape.rotate(-28 if x < card.width / 2 else 28, expand=True, resample=Image.BICUBIC)
@@ -201,6 +226,27 @@ class PhotoScene:
         bw_brand.paste(img, bw_brand.shadow(card, 16, 0.55), x - 32 + 10, y - 32 + 18)
         bw_brand.paste(img, card, x, y)
         ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        if self.guest:  # a character pops up on the print's top right corner (on the picture, never on words)
+            age = t - sc.start - self.GUEST_AT
+            gs = bw_fx.backout(age / 0.45)
+            if gs > 0.02:
+                px = 220 if portrait else 180
+                im, _ = bw_fx.icon_frame(self.guest, px, age)
+                im = im.resize((max(1, int(im.width * gs)), max(1, int(im.height * gs))), Image.BILINEAR)
+                gx = min(bw_render.W - px / 2 - 16, x + card.width - px * 0.45)
+                gy = max(y + px * 0.3, (bw_fx.HEADLINE_BOTTOM + px / 2) if sc.headline else px / 2 + 20) + 4 * math.sin(2.4 * t)
+                bw_brand.paste(ov, bw_brand.shadow(im, 8, 0.4), int(gx - im.width / 2 + 6), int(gy - im.height / 2 + 10))
+                bw_brand.paste(ov, im, int(gx - im.width / 2), int(gy - im.height / 2))
+        if line_at is not None and pop >= 1:  # the hand on the underline's tip (the print is turned by its angle)
+            th = math.radians(self.angle)
+            cx0, cy0 = (self.size[0] + 2 * border) / 2, (self.size[1] + border + strip) / 2
+            rx, ry = line_at[0] - cx0, line_at[1] - cy0
+            hx = x + card.width / 2 + rx * math.cos(th) + ry * math.sin(th)
+            hy = y + card.height / 2 - rx * math.sin(th) + ry * math.cos(th)
+            bw_brand.draw_hand(ov, (hx, hy), t)
+        flash = 1 - (t - sc.start) / 0.2 if self.lively else 0
+        if flash > 0:  # the camera's flash as the print pops in
+            ov.alpha_composite(Image.new("RGBA", img.size, (255, 255, 255, int(200 * min(1.0, flash)))))
         if sc.headline:
             bw_render.headline(ov, sc.headline, bw_render.ramp(t, sc.start + 0.15), color=bw_render.FIXED["gold"])
         d = ImageDraw.Draw(ov)
