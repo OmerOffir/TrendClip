@@ -20,6 +20,7 @@ import bisect
 import logging
 import math
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -91,12 +92,20 @@ WATER_LINE = (150, 205, 235)
 SPACE = ((4, 8, 20), (16, 32, 60))
 
 
-def _get(url: str, params: dict[str, Any] | None = None) -> bytes:
+def _get(url: str, params: dict[str, Any] | None = None, tries: int = 3) -> bytes:
+    """NASA's picture server sometimes takes minutes over a picture it hasn't made lately: ask again, and longer."""
     import requests
 
-    r = requests.get(url, params=params, timeout=60, headers={"User-Agent": bw_geo.USER_AGENT})
-    r.raise_for_status()
-    return r.content
+    for attempt in range(tries):
+        try:
+            r = requests.get(url, params=params, timeout=60 + 60 * attempt, headers={"User-Agent": bw_geo.USER_AGENT})
+            r.raise_for_status()
+            return r.content
+        except requests.RequestException:
+            if attempt == tries - 1:
+                raise
+            time.sleep(5 * (attempt + 1))
+    raise AssertionError("unreachable")
 
 
 def _cached(path: Path, url: str, params: dict[str, Any] | None = None) -> Path:
@@ -143,8 +152,14 @@ class Satellite:
             px, deg = LEVELS[level]
             x0, y1 = -180 + i * deg, 90 - j * deg
             n = int(round(px * deg))
-            path = _cached(FX_DIR / "sat" / str(px) / f"{i}_{j}.jpg", GIBS, self._wms(x0, y1 - deg, x0 + deg, y1, n, n))
-            self.tiles[key] = grade(Image.open(path))
+            try:
+                path = _cached(FX_DIR / "sat" / str(px) / f"{i}_{j}.jpg", GIBS, self._wms(x0, y1 - deg, x0 + deg, y1, n, n))
+                self.tiles[key] = grade(Image.open(path))
+            except Exception:  # noqa: BLE001 - a blurrier patch beats a failed video; the next render asks NASA again
+                logger.warning("Satellite tile %s won't download; using the world picture there", key, exc_info=True)
+                g = GLOBAL_PX / 360
+                box = ((x0 + 180) * g, (90 - y1) * g, (x0 + deg + 180) * g, (90 - y1 + deg) * g)
+                self.tiles[key] = self.world.resize((n, n), Image.BICUBIC, box=box)
         return self.tiles[key]
 
     def frame(self, cam: Cam) -> Image.Image:

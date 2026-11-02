@@ -690,6 +690,25 @@ def test_satellite_look_keeps_the_screen_moving(world, fx_offline):
     assert calls == ["flag_badge", "target", "trace"]
 
 
+def test_a_satellite_tile_nasa_wont_send_comes_from_the_world_picture(monkeypatch, tmp_path):
+    from PIL import Image
+
+    from modules import bw_fx
+
+    def slow(url, params=None, tries=3):
+        raise OSError("read timed out")
+
+    monkeypatch.setattr(bw_fx, "_get", slow)
+    monkeypatch.setattr(bw_fx, "FX_DIR", tmp_path)
+    sat = bw_fx.Satellite.__new__(bw_fx.Satellite)
+    sat.world, sat.tiles = Image.new("RGB", (bw_fx.GLOBAL_PX, bw_fx.GLOBAL_PX // 2), (10, 90, 30)), {}
+    tile = sat.tile(0, 40, 6)
+    px, deg = bw_fx.LEVELS[0]
+    assert tile.size == (px * deg, px * deg) and tile.getpixel((5, 5)) == (10, 90, 30)
+    assert not (tmp_path / "sat" / str(px) / "40_6.jpg").exists()  # not saved: the next render asks NASA again
+
+
+
 def test_satellite_look_falls_back_to_flat_when_nasa_is_down(world, monkeypatch, tmp_path):
     from modules import bw_fx
 
