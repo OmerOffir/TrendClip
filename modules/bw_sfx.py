@@ -87,9 +87,13 @@ def events(spec) -> list[tuple[float, str, float]]:
             found.append((scene.start + 0.2, "ding", 0.0))
         elif scene.kind == "photo":  # the print popping in with its flash, then the character (bw_photos.PhotoScene)
             found += [(scene.start, "paper", 0.0), (scene.start + 1.6, "pop", 0.0)]
+        if scene.opts.get("year"):  # the year slamming in (bw_fx.FxRenderer.year)
+            found.append((scene.start + 0.05, "stamp", 0.0))
         for el in scene.elements:
-            if el.kind == "stamp":
+            if el.kind in ("stamp", "battle"):
                 found.append((el.at, "stamp", 0.0))
+            elif el.kind == "army":
+                found.append((el.at + 0.3, "whoosh", 0.0))
             elif el.kind in POP_KINDS:
                 found.append((el.at, "pop", 0.0))
             elif el.kind == "highlight" and (el.opts.get("flag") or el.opts.get("_side") == "to"):

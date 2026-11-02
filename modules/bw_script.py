@@ -298,16 +298,17 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter | army | battle")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
-    to: str = Field("", description="line / arrow: where it ends.")
+    to: str = Field("", description="line / arrow / army: where it ends.")
     value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W); counter: the number.")
     text: str = Field("", description="A short label, 1-4 words (stamp: 1-2 words).")
     color: str = Field("a", description="a | b | c | gold | red | white")
     cue: str = Field("", description="The word of this scene's narration it appears on.")
     flag: str = Field("", description="highlight / pole: the flag's Wikimedia Commons file, e.g. 'Flag of Canada.svg'; "
-                                       "transfer: the new owner's flag.")
-    from_flag: str = Field("", description="transfer: the old owner's flag (give both flags or neither).")
+                                       "transfer: the new owner's flag; army: the flag its units carry; battle: the attacker's flag.")
+    from_flag: str = Field("", description="transfer: the old owner's flag (give both flags or neither); battle: the defender's flag.")
+    count: int = Field(0, description="army: how many units march (3-9; 0: 5).")
     icon: str = Field("", description="icon / route: one name from the icon list.")
     points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
 
@@ -333,6 +334,8 @@ class SceneDraft(BaseModel):
     board_draw: list[str] = Field(default_factory=list, description="board: 0-2 places whose outline the hand sketches; the last is circled.")
     photo: str = Field("", description="photo: the English Wikipedia article whose main picture to show.")
     caption: str = Field("", description="photo: 1-5 words written under the picture.")
+    year: str = Field("", description="map: a year or span (\"1812\", \"1838-39\") that slams in big as the scene starts, "
+                                      "then stays as a small tag (a new step of the story; the war-map format).")
     ask: str = Field("", description="The mascot's short question, said just before this scene (optional).")
     react: str = Field("", description="The mascot's short reaction, said just after this scene (optional).")
 
@@ -734,6 +737,10 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: unknown icon {e.icon!r} (use a name from the icon list)")
             if e.kind == "pole" and not e.flag.strip():
                 problems.append(f"scene {i}: a pole needs a flag")
+            if e.kind == "army" and not (e.place.strip() and e.to.strip()):
+                problems.append(f"scene {i}: an army needs a place it starts from and a place it marches \"to\"")
+            if e.kind == "battle" and not e.place.strip():
+                problems.append(f"scene {i}: a battle needs its place")
             if e.kind == "transfer" and (not e.place.strip() or bool(e.flag.strip()) != bool(e.from_flag.strip())):
                 problems.append(f"scene {i}: a transfer needs a place and both flags (from_flag and flag) or neither")
     if stamps > 1:
@@ -937,6 +944,8 @@ def description(script: dict[str, Any], handle: str = "") -> str:
     if script.get("kind") == "whatif":  # modules.bw_whatif: no sources to list, and it says it is a guess
         lines += ["", "A what-if: the real history up to the turning point, then one possible guess at what might have "
                   "happened. Nobody knows for sure."]
+    elif script.get("kind") == "attempts":  # modules.bw_whatif's attempts format: no source list
+        pass
     else:
         lines += ["", "Sources:"] + [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
     if script.get("look", "satellite") == "satellite":

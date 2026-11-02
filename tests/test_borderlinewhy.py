@@ -1827,3 +1827,68 @@ def test_check_counters_and_the_flash_forward(world):
     assert "hook_scene 2 must be the number of a later map scene" in problems
     draft.hook_scene, draft.hook_after = 4, ""
     assert "needs hook_after" in " | ".join(bw_script.check(draft, _research(), _find(world)))
+
+
+# --------------------------------------------------------------------------- the attempts format on the war map
+
+
+def _attempts_json(armies: bool = True) -> str:
+    E = bw_script.ElementDraft
+    sides = [E(kind="highlight", place="Minnesota", color="a"), E(kind="highlight", place="Canada", color="b")]
+    line = "The army marched north across the lake and the border in the cold."
+    scenes = [bw_script.SceneDraft(kind="map", narration="Minnesota tried to take Canada 3 times.", focus=["Minnesota"], elements=sides)]
+    for year in ("1775", "1812", "1838"):
+        scenes.append(bw_script.SceneDraft(
+            kind="map", narration=f"In {year} the first plan began on the lake.", focus=["Lake of the Woods"], year=year,
+            elements=sides + ([E(kind="army", place="Minnesota", to="Canada", flag="Flag of Canada.svg", cue="plan")] if armies else [])))
+        scenes += [bw_script.SceneDraft(kind="map", narration=line, focus=["Minnesota"], elements=sides),
+                   bw_script.SceneDraft(kind="map", narration=line + " " + line, focus=["Canada"],
+                                        elements=sides + [E(kind="battle", place="Lake of the Woods", cue="border")])]
+    scenes.append(bw_script.SceneDraft(kind="map", narration="3 tries, and the border never moved.", focus=["Canada"], elements=sides))
+    return bw_script.Draft(usable=True, title="3 Times Minnesota Tried to Take Canada", cover_text="3 tries, 0 wins",
+                           scenes=scenes, description="Three attempts.", hashtags=["maps"]).model_dump_json()
+
+
+def test_an_attempts_short_goes_to_the_queue_on_the_war_map(settings, tmp_path, world):
+    s = bw_whatif.start("3 times Minnesota tried to take Canada", tmp_path, fmt="attempts")
+    assert s["question"] == "3 times Minnesota tried to take Canada" and s["format"] == "attempts"
+    assert "ATTEMPTS episode" in s["prompt"] and '"army"' in s["prompt"] and "WHAT IF" not in s["prompt"]
+    bad = bw_whatif.answer(s["id"], _attempts_json(armies=False), tmp_path, find=_find(world))
+    assert bad["step"] == "fix" and any("army elements" in p for p in bad["problems"])
+    good = bw_whatif.answer(s["id"], _attempts_json(), tmp_path, find=_find(world))
+    assert good["step"] == "ready", good["problems"]
+    assert good["preview"]["armies"] == 3 and good["preview"]["battles"] == 3
+    bw_whatif.queue(s["id"], tmp_path)
+    script = json.loads(bw_channel.queued_scripts(tmp_path)[0].read_text())
+    assert script["kind"] == "attempts" and script["style"] == "war" and script["question"] == "3 Times Minnesota Tried to Take Canada"
+    assert [sc.get("year") for sc in script["scenes"] if sc.get("year")] == ["1775", "1812", "1838"]
+    assert bw_channel.check_video({"kind": "attempts", "duration_seconds": 84}) == []  # 70-90 s, no sources
+    assert bw_channel.check_video({"kind": "whatif", "duration_seconds": 84})  # a what-if stays under 60
+    assert "Sources:" not in bw_script.description(script)
+
+
+def test_the_war_map_draws_sides_armies_battles_and_years(world, fx_offline):
+    data = _fx_dict()
+    data["style"] = "war"
+    data["scenes"][0]["year"] = "1812"
+    data["scenes"][0]["elements"] += [
+        {"kind": "army", "place": "Minnesota", "to": "Lake of the Woods", "flag": "Flag of Canada.svg", "cue": "notch"},
+        {"kind": "army", "place": "Minnesota", "to": "Canada", "color": "b", "count": 7},
+        {"kind": "battle", "place": "Minnesota", "flag": "Flag of Canada.svg", "from_flag": "Flag of Canada.svg", "text": "Clash"}]
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert spec.style == "war" and bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    assert r.war and r.pens == {} and r.color("a") == fx_offline.WAR["a"]
+    battle = next(e for e in spec.scenes[0].elements if e.kind == "battle")
+    assert battle.opts["from_flag"] == "Flag of Canada.svg" and battle.feature is not None
+    army = next(e for e in spec.scenes[0].elements if e.kind == "army")
+    assert army.feature_to is not None
+    for t in (0.1, 0.5, 1.5, 2.5, spec.scenes[0].end - 0.1):
+        assert r.frame(t).size == (bw_render.W, bw_render.H)
+    with_year = np.asarray(r.frame(0.5)).astype(int)
+    spec.scenes[0].opts.pop("year")
+    plain = np.asarray(r.frame(0.5)).astype(int)
+    assert with_year[bw_render.CY - 400, 40].sum() < plain[bw_render.CY - 400, 40].sum()  # the map darkens under the big year
+    spec.scenes[0].opts["year"] = "1812"
+    sounds = [name for t, name, _ in bw_sfx.events(spec) if t < spec.scenes[0].end]
+    assert "stamp" in sounds and "whoosh" in sounds  # the battle's thud, the army's whoosh

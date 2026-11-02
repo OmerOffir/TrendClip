@@ -26,8 +26,14 @@ from modules.bw_script import Draft, Limits, Research
 from trendclip import llm_json
 
 KIND = "whatif"
+ATTEMPTS = "attempts"  # the "N times X tried Y" format on the war map (a 6M-view Short, 2026-11-02)
+FORMATS = (KIND, ATTEMPTS)
 SESSIONS_SHOWN = 10
 LIMITS = Limits(min_claims=0, min_cited=0)
+# an attempts Short runs about 75-90 s: each attempt is a fresh mini-story, so viewers stay for the next one
+ATTEMPT_WORDS = (150, 195)
+ATTEMPT_LIMITS = Limits(min_words=ATTEMPT_WORDS[0], max_words=ATTEMPT_WORDS[1], min_scenes=8, max_scenes=24, max_cards=0,
+                        spoken_words=215, max_photos=4, max_boards=1, min_claims=0, min_cited=0)
 FORMAT = bw_manual.JSON_FORMAT.replace(
     '  "claims": [{"claim": "One fact the narration states.", "source_id": 1, "quote": "the exact words copied from source 1"}],',
     '  "claims": [],')
@@ -65,6 +71,47 @@ video imagines. "claims": leave it an empty list (a what-if has no sources to qu
 """
 
 
+ATTEMPTS_PROMPT = """You write a YouTube Short for Borderline Why: geography and history told with animated maps. This one is
+an ATTEMPTS episode on a war map: "{question}"
+
+The format: a list of real attempts (invasions, purchases, plots, failed plans), each one a fast mini-story on the
+map, told in time order and counted ("Attempt 1...", "The second try...", "Then, in 1838..."). Each one ends on why it
+failed, in a short dry punchline ("Winter did the rest.", "Nobody showed up."). Viewers stay for the next attempt.
+
+THE NARRATION ({min_words}-{max_words} words, about 70-85 seconds; with the mascot never over 90 seconds)
+- Scene 1 names the count and the surprise at once ("The US tried to take Canada 4 times."). No greeting, no "Did
+  you know", no "Let's dive in".
+- Then 3-5 attempts, about 15-20 seconds each: when, who, the plan, what happened on the ground, why it failed.
+- Only well-known facts you are sure of: real dates, real battles, real people. Never invent a number, a name or a
+  quote; when unsure, leave it out. The last attempt can be the strangest or the closest call.
+- The last sentence closes the list in a few memorable words ("4 tries, and the border never moved."). No call to
+  action, no "subscribe".
+- Respectful: no jokes about real peoples, no cheering for a side in today's disputes or wars.
+- Simple, natural, spoken English. Short connected sentences (at most {max_sentence} words). Numbers as digits.
+
+THE WAR MAP (this Short is drawn on it: a pale paper map, each side in one solid colour)
+- Color "a" is the attacking side, "b" the defending side, the same all video. Every map scene fills both sides with
+  highlights (a whole country, or the states/provinces that side held then) so who owns what reads at a glance.
+- Each attempt opens on a map scene with "year" ("1775", "1812", "1838-39"): it slams in big, then stays as a tag.
+- The armies move: an "army" element marches from its "place" to "to" (cities or states/provinces near the front)
+  with a block of little flags ("flag", e.g. "Flag of the United States.svg") or, with no flag, round tokens in the
+  side's colour; "count" 3-9 units. Use 1-3 armies per attempt (two at once for a two-pronged attack).
+- A "battle" element at a place (a city or the battle's town) is the clash: the attacker's "flag" and the defender's
+  "from_flag" shove at each other while bursts go off; "text" can name it ("QUEENSTON HEIGHTS"). One per attempt.
+- A "transfer" for land that really changed hands, a "label" or "pin" for a city the story names, an "icon" where it
+  helps (fire for a burned city, ship, horse, cannon if listed).
+- Keep the camera on the front: "focus" is the 1-3 states/provinces or cities where the fighting is, not whole
+  continents.
+- No cards. Photos only for a famous face or place (0-3), a board only for a plan worth writing out (0-1).
+
+THE TITLE: under 50 characters, the count and the surprise ("4 Times the US Tried to Take Canada").
+cover_text: 3-6 words for the first frame. description: 2-3 sentences saying what the attempts were. "claims": leave
+it an empty list.
+
+""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + """Today is {today}. Write in English.
+"""
+
+
 def root(out_dir: Path | None = None) -> Path:
     return bw_channel.out_root(out_dir) / "whatif"
 
@@ -92,21 +139,47 @@ def _research(question: str) -> Research:
     return Research(bw_topics.Topic(question=question, article="", source="whatif", series=""), "", [])
 
 
-def clean_question(text: str) -> str:
+def clean_question(text: str, fmt: str = KIND) -> str:
     q = re.sub(r"\s+", " ", text).strip()
     if not q:
         raise WhatIfError("Type the what-if question")
+    if fmt == ATTEMPTS:
+        return q.rstrip(".")
     if not re.match(r"what if\b", q, re.I):
         q = "What if " + q
     return q if q.endswith("?") else q.rstrip(".!") + "?"
 
 
-def write_prompt(question: str, today: str = "") -> str:
-    return PROMPT.format(question=question, min_words=bw_script.MIN_WORDS, max_words=bw_script.MAX_WORDS,
-                         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=bw_script.MIN_SCENES, max_scenes=bw_script.MAX_SCENES,
-                         max_cards=bw_script.MAX_CARDS, icons=", ".join(bw_fx.icon_names()), icon_count="6-10 in the video",
+def write_prompt(question: str, today: str = "", fmt: str = KIND) -> str:
+    attempts = fmt == ATTEMPTS
+    return (ATTEMPTS_PROMPT if attempts else PROMPT).format(
+        question=question, min_words=ATTEMPT_WORDS[0] if attempts else bw_script.MIN_WORDS,
+        max_words=ATTEMPT_WORDS[1] if attempts else bw_script.MAX_WORDS,
+                         max_sentence=bw_script.MAX_SENTENCE_WORDS, min_scenes=ATTEMPT_LIMITS.min_scenes if attempts else bw_script.MIN_SCENES,
+                         max_scenes=ATTEMPT_LIMITS.max_scenes if attempts else bw_script.MAX_SCENES,
+                         max_cards=0 if attempts else bw_script.MAX_CARDS, icons=", ".join(bw_fx.icon_names()), icon_count="6-10 in the video",
                          stamp_count="one in the video", mascot_lines=bw_script.MASCOT_LINES, photo_count=bw_script.PHOTO_COUNT,
                          board_count=bw_script.BOARD_COUNT, today=today or datetime.now().date().isoformat())
+
+
+def check_attempts(draft: Draft, question: str, find=None) -> list[str]:
+    """The channel's rules (no claims or sources) and the attempts format's own: years, armies and battles."""
+    problems = bw_script.check(draft, _research(question), **({"find": find} if find else {}), limits=ATTEMPT_LIMITS)
+    if not draft.title.strip() or len(draft.title) > 55:
+        problems.append("the title is missing or over 50 characters")
+    maps = [s for s in draft.scenes if s.kind.strip().lower() == "map"]
+    years = [s.year for s in maps if s.year.strip()]
+    if len(years) < 3:
+        problems.append(f"only {len(years)} map scenes have a \"year\" (each attempt opens on one: 3-5 in the video)")
+    els = [e for s in maps for e in s.elements]
+    if sum(e.kind == "army" for e in els) < 3:
+        problems.append("fewer than 3 army elements (the armies must march on the map: 1-3 per attempt)")
+    if not any(e.kind == "battle" for e in els):
+        problems.append("no battle element (one clash per attempt)")
+    sides = {e.color for e in els if e.kind == "highlight"}
+    if not {"a", "b"} <= sides:
+        problems.append('fill both sides with highlights: color "a" for the attacker, "b" for the defender')
+    return problems
 
 
 def check(draft: Draft, question: str, find=None) -> list[str]:
@@ -125,10 +198,12 @@ def check(draft: Draft, question: str, find=None) -> list[str]:
 # --------------------------------------------------------------------------- the steps
 
 
-def start(question: str, out_dir: Path | None = None) -> dict[str, Any]:
-    q = clean_question(question)
+def start(question: str, out_dir: Path | None = None, fmt: str = KIND) -> dict[str, Any]:
+    if fmt not in FORMATS:
+        raise WhatIfError(f"Unknown format {fmt!r}")
+    q = clean_question(question, fmt)
     sid = re.sub(r"[^a-z0-9]+", "-", q.lower()).strip("-")[:60] or "what-if"
-    _save(sid, {"question": q, "step": "write", "draft": None, "problems": [],
+    _save(sid, {"question": q, "format": fmt, "step": "write", "draft": None, "problems": [],
                 "created_at": datetime.now().replace(microsecond=0).isoformat()}, out_dir)
     return view(sid, out_dir)
 
@@ -139,7 +214,7 @@ def answer(sid: str, text: str, out_dir: Path | None = None, find=None) -> dict[
     if not draft.usable:
         state.update(step="rejected", draft=draft.model_dump(), problems=[draft.reject_reason.strip() or "no reason given"])
     else:
-        problems = check(draft, state["question"], find)
+        problems = (check_attempts if state.get("format") == ATTEMPTS else check)(draft, state["question"], find)
         state.update(step="fix" if problems else "ready", draft=draft.model_dump(), problems=problems)
     _save(sid, state, out_dir)
     return view(sid, out_dir)
@@ -152,6 +227,9 @@ def script(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
         raise WhatIfError("The script hasn't passed the check yet")
     draft = Draft.model_validate(state["draft"])
     out = bw_script.finish(draft, _research(state["question"]))
+    if state.get("format") == ATTEMPTS:  # the war map; the description leads with the title
+        return {**out, "question": draft.title.strip(), "kind": ATTEMPTS, "style": "war", "series": "", "origin": "whatif",
+                "claims": [], "sources": []}
     return {**out, "kind": KIND, "series": "", "origin": "whatif", "claims": [], "sources": []}
 
 
@@ -160,7 +238,7 @@ def queue(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
     data = script(sid, out_dir)
     folder = bw_channel.queue_dir(out_dir)
     folder.mkdir(parents=True, exist_ok=True)
-    name = f"{datetime.now():%Y%m%d-%H%M%S}_whatif-{sid[:40]}.json"
+    name = f"{datetime.now():%Y%m%d-%H%M%S}_{data['kind']}-{sid[:40]}.json"
     (folder / name).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     state = _load(sid, out_dir)
     state.update(step="queued", queued={"at": datetime.now().replace(microsecond=0).isoformat(), "name": name})
@@ -172,7 +250,7 @@ def queue(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
 
 
 def _prompt(state: dict[str, Any]) -> str:
-    write = write_prompt(state["question"])
+    write = write_prompt(state["question"], fmt=state.get("format") or KIND)
     if state["step"] == "fix" and state.get("draft"):
         return write + "\n\n" + bw_script.fix_prompt(state["problems"], Draft.model_validate(state["draft"])) + "\n" + FORMAT
     if state["step"] in ("write", "rejected", "fix"):
@@ -187,8 +265,10 @@ def view(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
         draft = Draft.model_validate(state["draft"])
         text = bw_script.narration(draft)
         preview = {"title": draft.title, "cover_text": draft.cover_text, "words": bw_script.words(text), "narration": text,
-                   "scenes": len(draft.scenes), "transfers": sum(e.kind == "transfer" for s in draft.scenes for e in s.elements)}
-    return {"id": sid, "question": state["question"], "step": state["step"], "problems": state.get("problems") or [],
+                   "scenes": len(draft.scenes), "transfers": sum(e.kind == "transfer" for s in draft.scenes for e in s.elements),
+                   "armies": sum(e.kind == "army" for s in draft.scenes for e in s.elements),
+                   "battles": sum(e.kind == "battle" for s in draft.scenes for e in s.elements)}
+    return {"id": sid, "question": state["question"], "format": state.get("format") or KIND, "step": state["step"], "problems": state.get("problems") or [],
             "prompt": _prompt(state), "preview": preview, "queued": state.get("queued"), "created_at": state.get("created_at", "")}
 
 

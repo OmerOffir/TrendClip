@@ -41,6 +41,8 @@ DEFAULT_SLOTS = "14:30,23:00"  # two a day, like the other channels (BW_SLOTS, i
 DEFAULT_LEAD = 8  # hours before the slot the video is made, so there is time to approve it (BW_LEAD)
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
 MIN_SECONDS, MAX_SECONDS = 30.0, 60.0  # aimed at 45-55 s (bw_script.MAX_WORDS, SPOKEN_WORDS); longer ones lost half their viewers
+# an attempts Short (modules.bw_whatif, the war map) is a list of fast mini-stories: 70-90 s, like the 6M-view one
+LONGER = {"attempts": (50.0, 95.0)}
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
 DEFAULT_VOICE = "am_michael"
 PANDA_VOICE = "af_bella"  # the mascot (BW_PANDA_VOICE), pitched up by BW_PANDA_PITCH
@@ -526,6 +528,7 @@ def pick_music(settings, progress=lambda m: None, kind: str = "", seconds: float
 
 
 FIT_SECONDS = 58.5  # a Short whose voice runs longer is sped up to this (the check stops anything over MAX_SECONDS)
+FIT_LONGER = {"attempts": 92.0}
 MAX_SPEEDUP = 1.12  # beyond this the voice sounds rushed: the video stays long and its check stops it
 
 
@@ -560,9 +563,10 @@ def fit_voice(path: Path, words: list[bw_render.Word], duration: float, target: 
 def check_video(info: dict) -> list[str]:
     seconds = float(info.get("duration_seconds") or 0)
     problems = []
-    if not MIN_SECONDS <= seconds <= MAX_SECONDS:
-        problems.append(f"{seconds:.0f} s long (wanted {MIN_SECONDS:.0f}-{MAX_SECONDS:.0f})")
-    if len(info.get("sources") or []) < 2 and info.get("kind") != "whatif":  # a what-if has none (modules.bw_whatif)
+    low, high = LONGER.get(info.get("kind") or "", (MIN_SECONDS, MAX_SECONDS))
+    if not low <= seconds <= high:
+        problems.append(f"{seconds:.0f} s long (wanted {low:.0f}-{high:.0f})")
+    if len(info.get("sources") or []) < 2 and info.get("kind") not in ("whatif", "attempts"):  # written by the owner's LLM (modules.bw_whatif)
         problems.append("fewer than two sources")
     return problems
 
@@ -689,9 +693,10 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     else:
         words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m))
     spec = bw_render.spec_from_dict(script, words)
-    if spec.duration > FIT_SECONDS:
-        progress(0.12, f"The voice runs {spec.duration:.0f} s: speeding it up a little to fit {FIT_SECONDS:.0f} s")
-        words = fit_voice(work / "voice.mp3", words, spec.duration)
+    fit = FIT_LONGER.get(script.get("kind") or "", FIT_SECONDS)
+    if spec.duration > fit:
+        progress(0.12, f"The voice runs {spec.duration:.0f} s: speeding it up a little to fit {fit:.0f} s")
+        words = fit_voice(work / "voice.mp3", words, spec.duration, fit)
         spec = bw_render.spec_from_dict(script, words)
     spec.sfx = sfx_on()
     progress(0.15, "Placing the maps")

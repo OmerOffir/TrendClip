@@ -29,7 +29,7 @@
     const p = s.preview;
     const problems = s.problems.length ? `<div class="da-note"><b>${s.step === "rejected" ? "The LLM turned it down" : "The draft missed the rules"}:</b><ul>${s.problems.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>${s.step === "fix" ? "The prompt below asks the LLM to fix them." : ""}</div>` : "";
     const preview = p ? `<div class="bw-w-step"><b>${esc(p.title)}</b>
-        <span class="hint">${p.words} words · ${p.scenes} scenes · ${p.transfers} transfer${p.transfers === 1 ? "" : "s"} · cover: ${esc(p.cover_text)}</span>
+        <span class="hint">${p.words} words · ${p.scenes} scenes · ${s.format === "attempts" ? `${p.armies} armies · ${p.battles} battles` : `${p.transfers} transfer${p.transfers === 1 ? "" : "s"}`} · cover: ${esc(p.cover_text)}</span>
         <p class="hint">${esc(p.narration)}</p></div>` : "";
     const prompt = s.prompt ? `<div class="bw-w-step"><b>1 · Copy this prompt into any LLM${s.step === "fix" ? " (it carries the problems to fix)" : ""}</b>
         <textarea class="bw-w-prompt" readonly rows="6">${esc(s.prompt)}</textarea>
@@ -65,7 +65,7 @@
   $("bwWhatIfStart").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
-      const { body } = await post("/api/borderlinewhy/whatif", { question: $("bwWhatIfQuestion").value });
+      const { body } = await post("/api/borderlinewhy/whatif", { question: $("bwWhatIfQuestion").value, format: $("bwWhatIfFormat").value });
       showError("");
       render(body);
       loadSessions();
@@ -74,6 +74,9 @@
     }
   });
   $("bwWhatIfSessions").addEventListener("change", (e) => open(e.target.value));
+  $("bwWhatIfFormat").addEventListener("change", (e) => {
+    $("bwWhatIfQuestion").placeholder = e.target.value === "attempts" ? "4 times the US tried to take Canada" : "What if Alaska was still Russian?";
+  });
 
   box.addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-x]");

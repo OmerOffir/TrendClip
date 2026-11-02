@@ -343,11 +343,12 @@
       <div class="card-head">
         <div>
           <h2>🔮 What if…? (your own LLM)</h2>
-          <span class="hint">Type a what-if, copy the prompt into any LLM, paste its JSON back. A script that passes the check goes to the queue, so the next slot makes it. The real history is told straight, the rest as a guess; the description says so</span>
+          <span class="hint">Type a what-if (or pick ⚔️ N attempts and type "4 times the US tried to take Canada"), copy the prompt into any LLM, paste its JSON back. A script that passes the check goes to the queue, so the next slot makes it. The real history is told straight, the rest as a guess; the description says so</span>
         </div>
       </div>
       <div id="bwWhatIfError" class="banner banner-error" hidden></div>
       <form class="bw-add" id="bwWhatIfStart">
+        <select id="bwWhatIfFormat" aria-label="Format"><option value="whatif">🔮 What if…?</option><option value="attempts">⚔️ N attempts (war map, 70-90 s)</option></select>
         <input type="text" id="bwWhatIfQuestion" placeholder="What if Alaska was still Russian?" required minlength="4" maxlength="140" aria-label="What-if question" />
         <button type="submit" class="btn-primary">Get the prompt</button>
         <select id="bwWhatIfSessions" aria-label="Earlier what-ifs"><option value="">Earlier what-ifs…</option></select>

@@ -21,6 +21,7 @@ import logging
 import math
 import re
 import time
+import zlib
 from pathlib import Path
 from typing import Any
 
@@ -88,6 +89,12 @@ BEAT_GAP = 2.4
 GLOBE_MAX_PPD = 30.0  # the opening globe stops at about a continent; the next scene zooms in from there
 
 WATER = (46, 112, 158)
+# The war-map look (spec.style "war", 2026-11-02, after a 6M-view Short drew each side in one solid colour): our
+# satellite map with each side coloured in strongly (the owner kept our map over a plain paper one), and armies of
+# little flags and the owner's marching squads clashing across it.
+WAR = dict(a=(74, 136, 240), b=(214, 52, 44), c=(70, 160, 84), gold=(240, 176, 40))  # a light blue, so it never reads as sea
+WAR_FILL = 55  # a side's fill (out of 255): a very light tint over the satellite map (the owner, 2026-11-02; normal highlights are 95)
+YEAR_BIG, YEAR_TAG = 0.9, 1.3  # a scene's year: big in the middle until YEAR_BIG s, a small tag in the corner from YEAR_TAG s
 WATER_LINE = (150, 205, 235)
 SPACE = ((4, 8, 20), (16, 32, 60))
 
@@ -333,14 +340,17 @@ ALIASES = {"king": "king_waving", "queen": "queen_waving", "soldier": "soldier_m
            # the owner's ancient-world set (2026-11-02): the plain coin, scroll, ship and swords stay the modern ones
            "pharaoh": "pyramid", "drachma": "ancient_coin", "denarius": "ancient_coin", "hieroglyphs": "papyrus",
            "roman": "helmet", "spartan": "helmet", "legion": "helmet", "flame": "torch", "laurel": "wreath",
-           "olympics": "wreath", "temple": "column", "ruins": "column", "trireme": "galley", "gladius": "ancient_swords"}
+           "olympics": "wreath", "temple": "column", "ruins": "column", "trireme": "galley", "gladius": "ancient_swords",
+           # the owner's war set (2026-11-02): the war map's battles and armies use them too
+           "blast": "explosion", "smoke_puff": "smoke", "squad": "marching_squad", "troops": "marching_squad",
+           "infantry": "marching_squad"}
 # Names older scripts used for files the owner has since redrawn under another name: they still draw, never offered.
 OLD_NAMES = {"queen_curtsying": "queen_waving", "mapmaker_drawing": "mapmaker_route_planner"}
 
 
 # the mascot and the marker hand (modules.bw_brand): the channel's own pictures, never a script's icons. Every
 # explorer_* file is the red panda's pose except explorer_scanning (a small human explorer, the "explorer" icon).
-BRAND_FILES = frozenset({"cartoon_hand_gentle_sway"})
+BRAND_FILES = frozenset({"cartoon_hand_gentle_sway", "flag_with_eyes"})  # flag_with_eyes: an army's flag-bearer (FxRenderer.bearer)
 ICON_EXPLORERS = frozenset({"explorer_scanning"})
 
 
@@ -749,6 +759,11 @@ def dress(spec, short_globe: bool = False) -> list[str]:
                         continue
                 else:
                     el.opts["flag"] = ok
+            if el.opts.get("from_flag"):  # a battle's other side
+                if ok := usable_flag(str(el.opts["from_flag"])):
+                    el.opts["from_flag"] = ok
+                else:
+                    dropped.append(f"flag {el.opts.pop('from_flag')!r}")
             if el.kind == "pole" and not el.opts.get("flag"):
                 continue
             if el.kind == "icon" or (el.kind == "route" and el.opts.get("icon")):
@@ -857,9 +872,25 @@ class FxRenderer(Renderer):
     def __init__(self, spec):
         super().__init__(spec)
         self.sat = satellite()
+        self.war = spec.style == "war"
+        self._counters: dict[tuple[str, int], Image.Image] = {}
+        self._bearers: dict[tuple[str, int], tuple[list[Image.Image], list[float]]] = {}
         if dropped := dress(spec, short_globe=not self.LIVELY):
             logger.info("Left out of the video: %s", ", ".join(dropped))
-        self.views = vary_views(spec.scenes)
+        self.views = [s.view for s in spec.scenes] if self.war else vary_views(spec.scenes)  # a war map stays on the front
+        if self.war:  # a side already on the map stays filled into the next scene (fading in again, the map flickered)
+            held: set[tuple[str, str]] = set()
+            for s in spec.scenes:
+                if s.kind != "map":
+                    continue
+                now = set()
+                for el in s.elements:
+                    if el.kind == "highlight" and not el.opts.get("flag"):
+                        key = (el.place, el.color)
+                        if key in held:
+                            el.at = s.start - 5.0
+                        now.add(key)
+                held = now
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
         self.open_view = self.opening_view() if self.LIVELY else None
         self.beats = {i: self.plan_beats(i) for i, s in enumerate(spec.scenes)
@@ -870,8 +901,8 @@ class FxRenderer(Renderer):
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
-        self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)
-                     if spec.brand and s.kind == "map" and not s.opts.get("globe")}
+        self.pens = {i: bw_brand.pen_target(s) for i, s in enumerate(spec.scenes)  # a war map's sides are filled, not drawn round
+                     if spec.brand and s.kind == "map" and not s.opts.get("globe") and not self.war}
         self._pen_time: dict[int, tuple[float, float]] = {}
         self.ends: dict[int, Any] = {}  # the outro's end card, built on its first frame
         self.photos: dict[int, Any] = {}  # photo scenes (modules.bw_photos), built on their first frame
@@ -986,6 +1017,11 @@ class FxRenderer(Renderer):
 
     # -- map --
 
+    def color(self, role: str) -> tuple[int, int, int]:
+        if self.war and role in WAR:
+            return WAR[role]
+        return super().color(role)
+
     def base(self, cam: Cam, fills: dict[int, tuple[tuple[int, int, int], float]]) -> Image.Image:
         img = self.sat.frame(cam).convert("RGBA")
         self.vectors(img, cam, fills)
@@ -1003,7 +1039,7 @@ class FxRenderer(Renderer):
                     rgb, a = fills[id(feat)]
                     pts = cam.xy(part.at(step)[0])
                     if len(pts) > 2:
-                        od.polygon(flat(pts), fill=rgb + (int(95 * a),))
+                        od.polygon(flat(pts), fill=rgb + (int((WAR_FILL if self.war else 95) * a),))
         img.alpha_composite(ov)
         if not globe:
             water = Image.new("L", (W, H), 0)
@@ -1422,6 +1458,12 @@ class FxRenderer(Renderer):
             self.pole(ov, el, self.anchor(cam, el), t)
         elif el.kind == "route":
             self.route(ov, cam, el, t)
+        elif el.kind == "army" and el.feature is not None and el.feature_to is not None:
+            self.army(ov, cam, el, t)
+        elif el.kind == "battle" and el.feature is not None:
+            self.battle(ov, cam, el, t)
+        elif el.kind in ("army", "battle"):
+            return
         elif el.kind == "sketch":
             self.sketch_on_map(ov, cam, el, t)
         elif el.kind == "highlight" and el.opts.get("flag"):
@@ -1546,6 +1588,211 @@ class FxRenderer(Renderer):
         if el.text and u >= 1:
             text(ov, (pts[-1][0], pts[-1][1] - 120), el.text.upper(), 46, fill=rgb, a=ramp(t, el.at + el.opts.get("dur", 2.0)),
                  max_width=W - 80)
+
+    # -- the war map: armies, battles --
+
+    def flag_unit(self, flag: str, w: int = 88) -> Image.Image:
+        """A little flag on a white edge with a shadow: one unit of an army."""
+        key = (flag, w)
+        if key not in self._counters:
+            h = int(w * 0.64)
+            src = flag_image(flag).convert("RGBA").resize((w, h), Image.LANCZOS)
+            img = Image.new("RGBA", (w + 14, h + 16), (0, 0, 0, 0))
+            sh = Image.new("RGBA", img.size, (0, 0, 0, 0))
+            ImageDraw.Draw(sh).rounded_rectangle([5, 8, w + 9, h + 13], radius=5, fill=(0, 0, 0, 110))
+            img.alpha_composite(sh.filter(ImageFilter.GaussianBlur(3)))
+            ImageDraw.Draw(img).rounded_rectangle([2, 2, w + 8, h + 8], radius=5, fill=(255, 255, 255, 255))
+            img.alpha_composite(src, (5, 5))
+            self._counters[key] = img
+        return self._counters[key]
+
+    def unit(self, ov: Image.Image, el: Element, xy: tuple[float, float], scale: float, flag: str = "") -> None:
+        """One unit: a flag counter, or a soldier token in the side's colour when the element has no flag."""
+        if scale <= 0.05:
+            return
+        x, y = xy
+        flag = flag or str(el.opts.get("flag") or "")
+        if flag:
+            c = self.flag_unit(flag)
+            c = c.resize((max(2, int(c.width * scale)), max(2, int(c.height * scale))), Image.BILINEAR)
+            ov.alpha_composite(c, (int(x - c.width / 2), int(y - c.height / 2)))
+            return
+        r = 21 * scale  # a token: the side's colour in a white ring with a dark edge, readable on its own side's fill
+        rgb = self.color(el.color)
+        d = ImageDraw.Draw(ov)
+        d.ellipse([x - r + 3, y - r + 5, x + r + 3, y + r + 5], fill=(0, 0, 0, 100))
+        d.ellipse([x - r, y - r, x + r, y + r], fill=(20, 20, 24, 255))
+        if r < 5:
+            return
+        d.ellipse([x - r + 3, y - r + 3, x + r - 3, y + r - 3], fill=(255, 255, 255, 255))
+        d.ellipse([x - r * 0.62, y - r * 0.62, x + r * 0.62, y + r * 0.62], fill=rgb + (255,))
+
+    def gif(self, ov: Image.Image, name: str, xy: tuple[float, float], size: int, age: float, a: float = 1.0) -> None:
+        """One of the owner's GIFs (stickers/borderlinewhy) centred on xy, `age` seconds into its animation."""
+        code = icon_code(name)
+        if not code or age < 0:
+            return
+        img, _ = icon_frame(code, size, age)
+        if a < 1:
+            img = img.copy()
+            img.putalpha(img.getchannel("A").point(lambda v: int(v * a)))
+        ov.alpha_composite(img, (int(xy[0] - img.width / 2), int(xy[1] - img.height / 2)))
+
+    def bearer(self, flag: str, size: int, age: float) -> Image.Image:
+        """The owner's flag with eyes, its cloth painted with a country's flag: an army's flag-bearer."""
+        key = (flag, size)
+        if key not in self._bearers:
+            frames, ends = _custom_frames(CUSTOM_DIR / "flag_with_eyes.gif", size)
+            tex = np.asarray(flag_image(flag).convert("RGB"), dtype=np.float32)
+            out = []
+            for f in frames:
+                a = np.asarray(f, dtype=np.float32).copy()
+                r, g, b, al = a[..., 0], a[..., 1], a[..., 2], a[..., 3]
+                cream = (al > 0) & (r > 150) & (g > 135) & (r - b >= 18)  # the cloth and the eyes' whites, not the pole
+                ys, xs = np.nonzero(cream)
+                if len(ys):  # the cloth is the biggest patch of cream; the eyes' whites sit apart, inside their outlines
+                    fill = Image.fromarray(cream.astype(np.uint8) * 255).copy()  # (floodfill needs its own pixels)
+                    label = 0
+                    for yy in range(0, fill.height, 5):
+                        for xx in range(0, fill.width, 5):
+                            if fill.getpixel((xx, yy)) == 255 and label < 250:
+                                label += 1
+                                ImageDraw.floodfill(fill, (xx, yy), label)
+                    labels = np.asarray(fill)
+                    sizes = np.bincount(labels.ravel(), minlength=256)[1:251]
+                    cloth = labels == int(np.argmax(sizes)) + 1 if label else cream
+                    ys, xs = np.nonzero(cloth)
+                else:
+                    cloth = cream
+                if len(ys):
+                    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+                    paint = np.asarray(Image.fromarray(tex.astype(np.uint8)).resize((x1 - x0, y1 - y0), Image.BILINEAR), dtype=np.float32)
+                    shade = np.clip((r[y0:y1, x0:x1] + g[y0:y1, x0:x1] + b[y0:y1, x0:x1]) / (3 * 222.0), 0.55, 1.08)[..., None]
+                    box = cloth[y0:y1, x0:x1]
+                    a[y0:y1, x0:x1, :3][box] = np.clip(paint * shade, 0, 255)[box]
+                out.append(Image.fromarray(a.astype(np.uint8)))
+            self._bearers[key] = (out, ends)
+        frames, ends = self._bearers[key]
+        return frames[min(len(frames) - 1, bisect.bisect_right(ends, age % ends[-1]))]
+
+    def army(self, ov: Image.Image, cam, el: Element, t: float) -> None:
+        """An army marching from its place to "to": a dashed trail drawing behind it, then an arrowhead at the target.
+        With a flag: a block of little flags led by the owner's flag with eyes in that flag; without one: the owner's
+        marching squads in a column."""
+        if t < el.at:
+            return
+        dur = float(el.opts.get("dur", 2.4))
+        u = ease((t - el.at - 0.3) / dur)
+        p0, p1 = cam.pt(*el.feature.label_point()), cam.pt(*el.feature_to.label_point())
+        path = np.array(curve(p0, p1, bend=0.12, n=60), dtype=float)
+        k = max(1, int(round(u * (len(path) - 1))))
+        trail = path[:k + 1]
+        rgb = self.color(el.color)
+        if len(trail) > 1:  # the trail, dashed, in the side's colour
+            d = ImageDraw.Draw(ov)
+            for n, (a, b) in enumerate(zip(trail[:-1], trail[1:])):
+                if n % 3 != 2:
+                    d.line([*a, *b], fill=(0, 0, 0, 90), width=16)
+                    d.line([*a, *b], fill=rgb + (235,), width=10)
+        if u >= 1:
+            bw_brand.chevron(ov, path, rgb)
+        head = path[k]
+        back = path[max(0, k - 3)]
+        dx, dy = head - back if k > 2 else path[3] - path[0]
+        n = math.hypot(dx, dy) or 1.0
+        fx, fy = dx / n, dy / n  # forward
+        px, py = -fy, fx  # across
+        age = t - el.at
+        count = max(1, min(9, int(el.opts.get("count") or 5)))
+        flag = str(el.opts.get("flag") or "")
+        if not flag and icon_code("marching_squad"):
+            for j in range(max(1, min(3, round(count / 3)))):  # a squad per 3 soldiers, one behind the other
+                bob = 4 * math.sin(t * 11 + j) if 0 < u < 1 else 0.0
+                xy = (head[0] - fx * (j * 120 + 20), head[1] - fy * (j * 120 + 20) + bob)
+                self.gif(ov, "marching_squad", xy, 120, age, min(1.0, (age - 0.08 * j) / 0.3))
+        else:
+            gap = 84 if flag else 50
+            for j in range(count):
+                row, col = divmod(j, 3)
+                width = min(3, count - row * 3)
+                off = col - (width - 1) / 2
+                bob = 4 * math.sin(t * 11 + j) if 0 < u < 1 else 0.0
+                x = head[0] - fx * (row * gap * 0.8 + 70) + px * off * gap
+                y = head[1] - fy * (row * gap * 0.8 + 70) + py * off * gap + bob
+                self.unit(ov, el, (x, y), backout((t - el.at - 0.05 * j) / 0.35))
+            if flag and (CUSTOM_DIR / "flag_with_eyes.gif").is_file():  # the flag-bearer in front
+                s = backout(age / 0.35)
+                if s > 0.05:
+                    img = self.bearer(flag, 200, age)
+                    img = img.resize((max(2, int(img.width * s)), max(2, int(img.height * s))), Image.BILINEAR)
+                    if fx < -0.2:  # marching left: the cloth flies behind
+                        img = img.transpose(Image.FLIP_LEFT_RIGHT)
+                    ov.alpha_composite(img, (int(head[0] - img.width / 2), int(head[1] - img.height * 0.85)))
+        if el.text and u >= 1:
+            text(ov, (p1[0], p1[1] - 130), el.text.upper(), 46, fill=rgb, a=ramp(t, el.at + 0.3 + dur), max_width=W - 80)
+
+    def battle(self, ov: Image.Image, cam, el: Element, t: float) -> None:
+        """A clash at a place: the two sides' flags shove at each other while the owner's explosions go off between
+        them, then the smoke clears."""
+        age = t - el.at
+        dur = float(el.opts.get("dur", 2.6))
+        if age < 0:
+            return
+        x, y = cam.pt(*el.feature.label_point())
+        sides = [str(el.opts.get("flag") or ""), str(el.opts.get("from_flag") or "")]
+        if age < dur:
+            for side, sign in zip(sides, (-1, 1)):
+                for j in range(3):
+                    push = 105 + 30 * (1 - abs(math.sin(age * 7 + j)))
+                    s = backout((age - 0.06 * j) / 0.3)
+                    pos = (x + sign * (push + 60 * (j % 2)), y + (j - 1) * 72)
+                    if side:
+                        self.unit(ov, el, pos, s, side)
+                    else:
+                        self.unit(ov, Element(kind="army", color="a" if sign < 0 else "b"), pos, s)
+        rng = np.random.default_rng(zlib.crc32(f"{el.place}{el.at:.2f}".encode()))
+        offsets = rng.uniform(-55, 55, (6, 2))
+        for b in range(6):  # an explosion every 0.45 s while the sides clash, each played for 1.2 s
+            start = b * 0.45
+            if start > dur - 0.6 or not 0 <= age - start < 1.2:
+                continue
+            fade = min(1.0, (1.2 - (age - start)) / 0.3)
+            name = "explosion" if b % 2 == 0 else "burst"
+            self.gif(ov, name, (x + offsets[b, 0] * 0.6, y + offsets[b, 1]), 190 if name == "explosion" else 150, age - start, fade)
+        if dur - 0.4 <= age < dur + 1.6:  # the smoke drifting up as it ends
+            u = (age - dur + 0.4) / 2.0
+            self.gif(ov, "smoke", (x, y - 40 - 50 * u), 200, age - dur + 0.4, min(1.0, (1 - u) / 0.3))
+        if el.text:
+            text(ov, (x, y - 190), el.text.upper(), 50, a=ramp(t, el.at + 0.2), max_width=W - 80)
+
+    def year(self, img: Image.Image, scene: Scene, t: float) -> None:
+        """A scene's year: it slams in big over the map, holds, then shrinks into a tag in the top corner."""
+        label = str(scene.opts.get("year") or "").strip()
+        age = t - scene.start
+        if not label or age < 0:
+            return
+        f_big, f_tag = font(230, serif=True), font(64, serif=True)
+        if age < YEAR_BIG:
+            s = 1 + 1.3 * (1 - ease(min(1.0, age / 0.22)))
+            dark = Image.new("RGBA", (W, H), (0, 0, 0, int(90 * min(1.0, age / 0.15))))
+            img.alpha_composite(dark)
+            ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            ImageDraw.Draw(ov).text((W / 2, CY), label, font=font(int(230 * s), serif=True), fill=(255, 255, 255, int(255 * min(1.0, age / 0.12))),
+                                    stroke_width=10, stroke_fill=(0, 0, 0, 220), anchor="mm")
+            img.alpha_composite(ov)
+            return
+        u = ease(min(1.0, (age - YEAR_BIG) / (YEAR_TAG - YEAR_BIG)))
+        size = int(230 + (64 - 230) * u)
+        tag_w = f_tag.getlength(label)
+        x = W / 2 + (60 + tag_w / 2 - W / 2) * u
+        y = CY + (bw_render.HEAD_Y - 150 - CY) * u
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        if u >= 1:
+            d.rounded_rectangle([x - tag_w / 2 - 20, y - 46, x + tag_w / 2 + 20, y + 46], radius=14, fill=(12, 16, 26, 200))
+        d.text((x, y), label, font=font(size, serif=True) if u < 1 else f_tag, fill=(255, 255, 255, 255),
+               stroke_width=8 if u < 1 else 0, stroke_fill=(0, 0, 0, 220), anchor="mm")
+        img.alpha_composite(ov)
 
     @staticmethod
     def egg(cx: float, cy: float, rx: float, ry: float, seed: int = 1, corner: bool = True) -> list[tuple[float, float]]:
@@ -1710,6 +1957,8 @@ class FxRenderer(Renderer):
             img = self.photos[i].frame(t)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
+        if scene.opts.get("year"):
+            self.year(img, scene, t)
         chapter = self.spec.scenes[i].opts.get("chapter")
         if isinstance(chapter, dict) and chapter.get("title"):
             self.banner(img, int(chapter.get("n") or 0), str(chapter["title"]), t - self.spec.scenes[i].start)

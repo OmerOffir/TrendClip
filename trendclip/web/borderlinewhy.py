@@ -461,6 +461,7 @@ def add_country(req: CountryRequest) -> dict[str, Any]:
 
 class WhatIfStart(BaseModel):
     question: str = Field(min_length=4, max_length=140)
+    format: str = "whatif"  # or "attempts": "N times X tried Y" on the war map
 
 
 def _whatif(fn, *args):
@@ -483,7 +484,7 @@ def whatif_list() -> dict[str, Any]:
 def whatif_start(req: WhatIfStart) -> dict[str, Any]:
     from modules import bw_whatif
 
-    return _whatif(bw_whatif.start, req.question)
+    return _whatif(bw_whatif.start, req.question, None, req.format)
 
 
 @router.get("/whatif/{sid}")

@@ -72,7 +72,7 @@ ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.tt
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
-                 "transfer", "counter")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+                 "transfer", "counter", "army", "battle")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
 MIN_ON_SCREEN = 2.0  # seconds an icon or a flag pole stays before its scene cuts away (a late cue pops in earlier)
 STAY_KINDS = ("icon", "pole")
 NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter")  # their place, if any, is optional
@@ -153,6 +153,7 @@ class Spec:
     # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
     # "before": the words stamped on the first map, "after": the words stamped on the outcome}
     hook: dict[str, Any] = field(default_factory=dict)
+    style: str = ""  # "war": the war-map look (modules.bw_fx): a paper map, each side in one solid colour
 
     @property
     def duration(self) -> float:
@@ -193,7 +194,7 @@ def resolve(spec: Spec, find: Callable[[str], bw_geo.Feature | None] = bw_geo.re
             el.feature = find(el.place) if el.place else None
             if el.feature is None:
                 missing.append(el.place or f"({el.kind} without a place)")
-            if el.kind in ("line", "arrow"):
+            if el.kind in ("line", "arrow", "army"):
                 el.feature_to = find(el.to) if el.to else None
                 if el.feature_to is None:
                     missing.append(el.to or f"({el.kind} without an end)")
@@ -992,7 +993,8 @@ def _elements(raw: list[dict[str, Any]], el_keys: set[str]) -> list[Element]:
                           opts={**opts, **({"flag": new_flag} if new_flag else {}), "_handover": n, "_side": "to"})
             out += [old, new]
             continue
-        opts.pop("from_flag", None)
+        if e["kind"] != "battle":  # a battle's other side (modules.bw_fx)
+            opts.pop("from_flag", None)
         out.append(Element(kind=e["kind"], place=e.get("place", ""), to=e.get("to", ""), value=e.get("value"), text=e.get("text", ""),
                            color=color, cue=e.get("cue", ""), opts=opts))
     return out
@@ -1020,4 +1022,4 @@ def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
     return Spec(scenes, [w for w in words if not w.who], cover=data.get("cover_text", ""), theme=theme, seed=seed,
                 look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines,
                 hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0),
-                hook=dict(data.get("hook") or {}))
+                hook=dict(data.get("hook") or {}), style=str(data.get("style") or ""))
