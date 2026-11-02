@@ -80,11 +80,11 @@ MOTIONS = ("push", "pan", "pull", "push", "pan_back", "pull")  # what each map s
 HEADLINE_BOTTOM = 360  # an icon moved off a flag stays below a map scene's headline (y on the 1080x1920 frame)
 TINY_PX = 70  # a place smaller than this on screen is marked with a target, and its flag shows as a badge
 # A Short opens tight on the weird place and pulls back to its first scene's view (no slow globe: 40-52% swiped
-# away in the first seconds, 2026-11-02); a map scene never goes BEAT_GAP seconds without something new (a camera
-# punch and a ring on its place), and a number in the narration gets a punch too
+# away in the first seconds, 2026-11-02); a map scene never goes BEAT_GAP seconds without something new (a ring on
+# its place), and a number in the narration gets a ring too. No quick zoom in and out on a beat: the owner found it
+# hard on the eyes (2026-11-02); the camera only drifts slowly
 OPEN_SECONDS = 1.6
 BEAT_GAP = 2.4
-PUNCH = 0.06  # how much a beat zooms in for a moment
 GLOBE_MAX_PPD = 30.0  # the opening globe stops at about a continent; the next scene zooms in from there
 
 WATER = (46, 112, 158)
@@ -902,8 +902,7 @@ class FxRenderer(Renderer):
             cam = blend_view(self.open_view, here, (t - scene.start) / OPEN_SECONDS)
         else:
             cam = Cam(*here)
-        k = self.punch(i, t)
-        return cam if k == 1.0 else Cam(cam.lon, cam.lat, cam.ppd * k)
+        return cam
 
     def opening_view(self) -> tuple[float, float, float] | None:
         """A video's first camera: tight on the smallest place its first scene points at (the weird one: the enclave,
@@ -957,15 +956,6 @@ class FxRenderer(Renderer):
             if b >= start + 0.4 and (not out or b - out[-1] >= 1.0):
                 out.append(b)
         return out
-
-    def punch(self, i: int, t: float) -> float:
-        """The camera's zoom for a beat: a quick push in and back."""
-        k = 1.0
-        for b in self.beats.get(i, ()):
-            u = (t - b) / 0.5
-            if 0 <= u < 1:
-                k += PUNCH * math.sin(math.pi * u)
-        return k
 
     def pulse(self, ov: Image.Image, cam, i: int, t: float) -> None:
         """A white ring spreading from the scene's place at each beat."""

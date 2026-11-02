@@ -1686,7 +1686,7 @@ def test_an_icon_never_stands_on_words(world, fx_offline):
 
 def test_a_short_opens_tight_and_its_maps_never_sit_still(world, fx_offline):
     """The first frame is close on the place and pulls back to the scene's view in OPEN_SECONDS; a long quiet map
-    scene gets beats (a camera punch) at most BEAT_GAP apart, and one on a number the narration says."""
+    scene gets beats (a ring, no zoom) at most BEAT_GAP apart, and one on a number the narration says."""
     data = {"title": "Why?", "cover_text": "Paris", "seed": 1, "look": "satellite", "scenes": [
         {"kind": "map", "narration": "Paris sits far from Minnesota.", "focus": ["Paris", "Minnesota"]},
         {"kind": "map", "narration": "In 1783 a treaty drew a line that nobody checked for many many years on the ground at all.",
@@ -1701,7 +1701,11 @@ def test_a_short_opens_tight_and_its_maps_never_sit_still(world, fx_offline):
     marks = sorted({second.start, *beats, second.end})
     assert all(b - a <= fx_offline.BEAT_GAP + 0.01 for a, b in zip(marks, marks[1:])), marks
     year = next(w.start for w in spec.words if w.text.startswith("1783"))
-    assert year in beats and r.punch(1, year + 0.25) > 1.0 and r.punch(1, year + 0.6) == 1.0
+    assert year in beats
+    late = max(beats)  # after the flight from the last scene: only the slow drift moves the camera
+    assert late > second.start + bw_render.MOVE
+    calm = r.camera(1, late + 0.25).ppd / r.camera(1, late - 0.05).ppd
+    assert abs(calm - 1) < 0.01  # the camera doesn't jump in on the beat
 
 
 def test_a_what_if_is_due_every_third_short(monkeypatch, tmp_path):
