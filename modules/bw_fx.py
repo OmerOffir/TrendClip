@@ -303,7 +303,8 @@ ALIASES = {"king": "king_waving", "queen": "queen_waving", "soldier": "soldier_m
            "guard": "guard_saluting", "leader": "leader_pointing", "farmer": "farmer_working", "blacksmith": "blacksmith_hammering",
            "merchant": "merchant_counting_coins", "trade": "merchant_counting_coins", "sailor": "sailor_waving",
            "scholar": "scholar_writing", "historian": "scholar_writing", "citizen": "citizen_walking", "migrant": "citizen_walking",
-           "cheering": "citizen_cheering", "celebration": "citizen_cheering", "worker": "worker_building", "hello": "hand_wave"}
+           "cheering": "citizen_cheering", "celebration": "citizen_cheering", "worker": "worker_building", "hello": "hand_wave",
+           "migration": "people", "exodus": "people"}
 # Names older scripts used for files the owner has since redrawn under another name: they still draw, never offered.
 OLD_NAMES = {"queen_curtsying": "queen_waving", "mapmaker_drawing": "mapmaker_route_planner"}
 
