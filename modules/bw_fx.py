@@ -314,7 +314,11 @@ ALIASES = {"king": "king_waving", "queen": "queen_waving", "soldier": "soldier_m
            # the owner's 2026-11-02 set: emoji redrawn under their own names, plus four new characters
            "river": "river", "colonist": "colonist", "independence": "independence", "split_map": "split_map",
            "cash": "coin", "colony": "colonist", "colonial": "colonist", "colonizer": "colonist", "freedom": "independence",
-           "split": "split_map", "divided": "split_map", "partition": "split_map", "stream": "river"}
+           "split": "split_map", "divided": "split_map", "partition": "split_map", "stream": "river",
+           # the owner's ancient-world set (2026-11-02): the plain coin, scroll, ship and swords stay the modern ones
+           "pharaoh": "pyramid", "drachma": "ancient_coin", "denarius": "ancient_coin", "hieroglyphs": "papyrus",
+           "roman": "helmet", "spartan": "helmet", "legion": "helmet", "flame": "torch", "laurel": "wreath",
+           "olympics": "wreath", "temple": "column", "ruins": "column", "trireme": "galley", "gladius": "ancient_swords"}
 # Names older scripts used for files the owner has since redrawn under another name: they still draw, never offered.
 OLD_NAMES = {"queen_curtsying": "queen_waving", "mapmaker_drawing": "mapmaker_route_planner"}
 
@@ -557,6 +561,13 @@ def wave(img: Image.Image, t: float, amp: float = 0.03) -> Image.Image:
 
 # The owner's character for what a scene talks about (the board and photo scenes get one beside their words)
 CHARACTERS = (
+    # the ancient world first: its words are rare and name the picture exactly
+    (r"\b(pyramids?|pharaohs?)\b", "pyramid"), (r"\b(papyrus|hieroglyph\w*)\b", "papyrus"),
+    (r"\b(drachmas?|denarii|denarius|ancient coins?)\b", "ancient_coin"), (r"\b(galleys?|triremes?|phoenicians?)\b", "galley"),
+    (r"\b(romans?|legions?|legionar\w*|centurions?|spartans?|hoplites?|gladiators?)\b", "helmet"),
+    (r"\b(gladius|xiphos)\b", "ancient_swords"), (r"\b(amphora[es]?|olive oil)\b", "amphora"),
+    (r"\b(torch\w*|olympic flame)\b", "torch"), (r"\b(laurels?|olympics?|olympic games)\b", "wreath"),
+    (r"\b(temples?|ruins|ancient (greece|rome|greek city))\b", "column"),
     (r"\b(treat(y|ies)|deal|agreement|signed|pact|accord)", "scroll"), (r"\b(king|kingdom|royal|crown|emperor|empire)\b", "king"),
     (r"\bqueen\b", "queen"), (r"\b(war|wars|battle|fought|invad\w*|army|armies|conquer\w*)\b", "army"),
     (r"\b(bought|sold|paid|price|dollars?|francs?|money|tax\w*|rent|lease\w*)\b", "money_bag"),
