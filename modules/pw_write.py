@@ -246,6 +246,9 @@ def scene_problems(s: dict) -> list[str]:
             out.append(f"product.draw is one of {', '.join(pw_draw.DRAWINGS)}, or product.photo names a Wikimedia Commons picture of it")
         if not all(_short(x, 10) for x in o.get("label") or []) or len(o.get("label") or []) > 3:
             out.append("product.label is 1-3 words of 10 characters at most (our own words, never the brand's logo)")
+        if o.get("label") and o.get("draw") not in pw_draw.PACKAGED:
+            out.append(f"product.label only goes on a package, card or note ({', '.join(pw_draw.PACKAGED)}): a {o.get('draw')} is drawn as itself, "
+                       "with no word on it; never write one thing on a drawing of another")
         lines = o.get("lines") or []
         if len(lines) > 4 or not all(_short(x.get("text") if isinstance(x, dict) else x, 12) for x in lines):
             out.append("product.lines is up to 4 lines of 12 characters at most")
@@ -288,16 +291,19 @@ Each script is ONE JSON object shaped exactly like the example below:
   the one you think."), so they stay for it. Scene 1 is kind "product", drawn (never a photo): the drawing and the
   question in big letters are on the first frame, so a scroller recognises it at once. {{"kind": "product", "narration": ..., "product": {{"draw":
   "can", "label": ["ICED", "TEA"], "lines": ["Should cost", {{"text": "$2.38", "color": "red"}}, "Costs",
-  {{"text": "99¢", "color": "green"}}]}}}}. product.draw is one of {", ".join(pw_draw.PRODUCTS)}, or for a place or
-  an idea one of {", ".join(d for d in pw_draw.DRAWINGS if d not in pw_draw.PRODUCTS)} (our own drawing: label is 1-3
-  plain words, never the brand's name or logo).
+  {{"text": "99¢", "color": "green"}}]}}}}.
+- THE DRAWING IS THE THING THE NARRATION NAMES. Every draw, picture and mark is one of these, used only for what it
+  shows: {"; ".join(f"{k} = {v}" for k, v in pw_draw.LOOKS.items())}. Never write one thing on a drawing of another (a
+  "DRESS" label on a chip bag is wrong: there is a dress drawing). If nothing here is the thing, open with a drawing of
+  what the hook is about instead (a receipt for a price, a card for a payment), or ask for a new drawing. label is
+  only for a package, card or note ({", ".join(pw_draw.PACKAGED)}): what is printed on it, never the brand's name or logo.
 - then 3-4 scenes: 2 reasons, each drawn on the whiteboard, then the twist by about 20 seconds in (it is what they
   stayed for). Mix the kinds so no two videos look
   alike, and use at least one that isn't a board:
   * "board": a big drawing that explains, with a few words over it. board.write is 2-3 lines, the first a short
     title ("Reason 1: ..."), each at most 26 characters. A line may be {{"text": ..., "color": "green" | "red",
     "strike": true}}: green for money in, red for cost, strike crosses it out. board.picture is the drawing, one of
-    {", ".join(pw_draw.DRAWINGS)}; board.color "red" washes it red (a cost).
+    the drawings above, the one that shows what the board says; board.color "red" washes it red (a cost).
   * "number": a big figure that counts up as it is said. {{"kind": "number", "narration": ..., "number": {{"label":
     "If it rose with inflation", "from": "99¢", "to": "$2.38", "note": "BLS inflation calculator"}}}} ("from" may be
     left out; figures at most 10 characters, so "$100T" not "100 trillion dollars").

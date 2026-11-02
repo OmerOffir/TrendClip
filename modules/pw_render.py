@@ -276,7 +276,7 @@ class Drawn(bw_brand.Board):
             self.put_line(wobble(densify(pts_at), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)), cost)
         tint_w = int(width * 2.6)
         for poly, role in d.washes:
-            tint = TINT["ink"] if role == "ink_wash" else TINT["yellow"] if role == "yellow" else TINT["red" if accent == "red" else "green"]
+            tint = TINT["ink"] if role == "ink_wash" else TINT[role] if role in ("yellow", "red") else TINT["red" if accent == "red" else "green"]
             path = pw_draw.hatch(at(poly), tint_w * 0.75, tint_w / 2 + width / 2)
             if len(path) > 1:
                 self.put_line(path, tint, tint_w, min(0.6, 0.2 + len(path) * 0.006))
@@ -531,7 +531,7 @@ class PhotoMark:
         for poly, role in d.washes:  # the colour first, under the outline (it is quick on a small note)
             path = pw_draw.hatch(at(poly), width * 1.6, width * 1.4)
             if len(path) > 1 and s > 0.25:
-                bw_brand.marker(sticky, np.array(path), TINT["yellow" if role == "yellow" else "green"], int(width * 2.2), shade=False)
+                bw_brand.marker(sticky, np.array(path), TINT[role if role in ("yellow", "red") else "green"], int(width * 2.2), shade=False)
         total = sum(bw_brand.length(np.array(at(pts))) for pts, _ in d.strokes) or 1.0
         u = (s - 0.25) / 1.0 * total  # the outline in a second
         tip = None

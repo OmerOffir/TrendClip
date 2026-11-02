@@ -634,3 +634,14 @@ def test_a_photo_mark_draws_what_the_narration_says_on_a_note_with_an_arrow():
     assert mark(done, (18, 18, 882, 600), 3.0) is None  # finished: no hand
     assert done.getpixel((600, 120)) != (250, 248, 242, 255)  # the note in the top right corner
     assert pw_render.PhotoMark({"draw": "nothing"})(card, (18, 18, 882, 600), 1.0) is None
+
+
+def test_a_drawing_is_only_ever_the_thing_it_shows():
+    from modules import pw_draw, pw_write
+
+    assert set(pw_draw.LOOKS) == set(pw_draw.DRAWINGS)  # the prompt says what every drawing looks like
+    wrong = {"kind": "product", "product": {"draw": "house", "label": ["TULIP"], "lines": []}}
+    assert any("never write one thing on a drawing of another" in p for p in pw_write.scene_problems(wrong))
+    assert not pw_write.scene_problems({"kind": "product", "product": {"draw": "flower", "lines": []}})
+    assert not pw_write.scene_problems({"kind": "product", "product": {"draw": "can", "label": ["ICED", "TEA"], "lines": []}})
+    assert "dress = a dress on a hanger" in pw_write.rules()

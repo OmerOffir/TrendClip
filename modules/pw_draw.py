@@ -338,16 +338,51 @@ def book() -> Drawing:
     return d
 
 
+def dress() -> Drawing:
+    d = Drawing(170, 250)
+    shape = [(62, 52), (54, 84), (60, 124), (16, 236), (154, 236), (110, 124), (116, 84), (108, 52)]
+    d.body = shape + [shape[0]]
+    d.washes.append((poly((60, 124), (16, 236), (154, 236), (110, 124)), "accent"))
+    d.strokes += [(ellipse(85, 16, 10, 10, 180, 450, 14), "ink"), (poly((85, 26), (85, 34)), "ink"),
+                  (poly((85, 34), (24, 54), (146, 54), (85, 34)), "ink"),
+                  (poly((62, 52), (54, 84), (60, 124), (16, 236), (154, 236), (110, 124), (116, 84), (108, 52)), "ink"),
+                  (ellipse(85, 52, 23, 18, 0, 180, 10), "ink"), (poly((60, 124), (110, 124)), "ink"),
+                  (poly((70, 140), (52, 226)), "thin"), (poly((100, 140), (118, 226)), "thin")]
+    return d
+
+
+def flower() -> Drawing:
+    d = Drawing(160, 250)
+    bloom = [(40, 52), (56, 22), (80, 46), (104, 22), (120, 52), (116, 100), (80, 124), (44, 100), (40, 52)]
+    d.body = bloom
+    d.washes.append((bloom, "red"))
+    d.strokes += [(bloom, "ink"), (poly((80, 46), (80, 112)), "thin"), (poly((80, 124), (80, 246)), "ink"),
+                  (poly((80, 210), (40, 170), (36, 150), (60, 166), (80, 196)), "ink"),
+                  (poly((80, 190), (124, 156), (130, 136), (104, 150), (80, 176)), "ink")]
+    return d
+
+
 DRAWINGS = dict(can=can, bottle=bottle, box=box, bag=bag, cup=cup, phone=phone, jar=jar, card=card, money=money,
                 truck=truck, factory=factory, store=store, family=family, sheet=sheet, megaphone=megaphone, tv=tv,
                 coins=coins, house=house, calendar=calendar, receipt=receipt, cart=cart, globe=globe, clock=clock, bank=bank,
-                sun=sun, eye=eye, bulb=bulb, virus=virus, book=book)
-PRODUCTS = ("can", "bottle", "box", "bag", "cup", "phone", "jar", "card", "money")  # what a product scene can draw
+                sun=sun, eye=eye, bulb=bulb, virus=virus, book=book, dress=dress, flower=flower)
+# what each drawing looks like, for the script prompt: a drawing is only ever used for the thing it shows
+LOOKS = dict(can="a drink can", bottle="a drink bottle", box="a cereal/food box", bag="a crisp/chip bag (snacks only)",
+             cup="a takeaway coffee cup", phone="a smartphone", jar="a jar", card="a plastic card (credit, loyalty, gift)",
+             money="a banknote", dress="a dress on a hanger (clothes)", flower="a tulip/flower", truck="a lorry/truck",
+             factory="a factory", store="a shop front", family="a family of people", sheet="a metal sheet/roll",
+             megaphone="a megaphone (ads, announcing, demands)", tv="a TV (ads, shows)", coins="a stack of coins",
+             house="a house", calendar="a calendar (dates, months)", receipt="a till receipt (prices, a bill)",
+             cart="a shopping cart", globe="the globe (the world, countries)", clock="a clock (time)",
+             bank="a bank building (banks, a central bank)", sun="the sun (sunlight, heat)", eye="an eye (attention, seeing)",
+             bulb="a light bulb (an idea, lighting)", virus="a virus (a disease)", book="an open book (a story, a name from a book)")
+PACKAGED = ("can", "bottle", "box", "bag", "cup", "jar", "card", "money")  # a label is what is printed on these
+PRODUCTS = ("can", "bottle", "box", "bag", "cup", "phone", "jar", "card", "money", "dress", "flower")  # what a product scene can draw
 # an icon (modules.pw_write.ICONS) a board names, drawn big instead when there is a drawing of it
 FROM_ICON = dict(tv="tv", family="family", truck="truck", factory="factory", store="store", megaphone="megaphone",
                  calendar="calendar", house="house", receipt="receipt", shopping_cart="cart", globe="globe", clock="clock",
                  bank="bank", coin="coins", money_bag="coins", cash="money", dollar="money", credit_card="card",
-                 mobile="phone", tea="cup", cup_straw="cup", eyes="eye", scroll="book")
+                 mobile="phone", tea="cup", cup_straw="cup", eyes="eye", scroll="book", tulip="flower")
 
 
 def scaled(name: str, box: tuple[float, float, float, float]) -> tuple[Drawing, float, float, float]:
