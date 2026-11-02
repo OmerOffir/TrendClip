@@ -500,10 +500,88 @@ def push(img, t: float, start: float, end: float):
     return img.resize((W, H), Image.BILINEAR, box=(x0, y0, x0 + w, y0 + h))
 
 
+class PhotoMark:
+    """What the hand draws on a photo, from the scene's mark: {"draw": "sun", "note": "Glare"}: a white note stuck on
+    the print's top corner, the drawing on it (modules.pw_draw), the note written under it in red, then a red arrow
+    from the note into the picture. So the picture keeps moving and the drawing says what the narration says."""
+
+    def __init__(self, mark: dict, right: bool = True):
+        self.name = str(mark.get("draw") or "")
+        self.note = str(mark.get("note") or "").strip()[:16]
+        self.right = right
+
+    def __call__(self, card, box: tuple[float, float, float, float], s: float):
+        from PIL import Image, ImageDraw
+
+        if self.name not in pw_draw.DRAWINGS:
+            return None
+        bx0, by0, bx1, by1 = box
+        side = min((bx1 - bx0) * 0.36, (by1 - by0) * 0.62)
+        strip = side * 0.3 if self.note else 0
+        x0 = bx1 - side - 22 if self.right else bx0 + 22
+        y0 = by0 + 22
+        pop = bw_fx.backout(s / 0.25)
+        if pop <= 0.02:
+            return None
+        sticky = Image.new("RGBA", (int(side), int(side + strip)), (255, 253, 245, 245))
+        ImageDraw.Draw(sticky).rectangle([0, 0, sticky.width - 1, sticky.height - 1], outline=(200, 196, 180, 255), width=3)
+        d, k, dx, dy = pw_draw.scaled(self.name, (side * 0.12, side * 0.1, side * 0.88, side * 0.9))
+        at = lambda pts: [(dx + x * k, dy + y * k) for x, y in pts]
+        width = int(max(6, min(11, k * 4)))
+        for poly, role in d.washes:  # the colour first, under the outline (it is quick on a small note)
+            path = pw_draw.hatch(at(poly), width * 1.6, width * 1.4)
+            if len(path) > 1 and s > 0.25:
+                bw_brand.marker(sticky, np.array(path), TINT["green"], int(width * 2.2), shade=False)
+        total = sum(bw_brand.length(np.array(at(pts))) for pts, _ in d.strokes) or 1.0
+        u = (s - 0.25) / 1.0 * total  # the outline in a second
+        tip = None
+        for pts, role in d.strokes:
+            if u <= 0:
+                break
+            line = np.array(densify(at(pts), 10))
+            n = bw_brand.length(line) or 1.0
+            drawn, tip = bw_brand.prefix(line, min(1.0, u / n))
+            rgb = RED if role == "red" else INK
+            bw_brand.marker(sticky, drawn, rgb, width if role != "thin" else max(4, int(width * 0.6)), shade=False)
+            u -= n
+        tip = (x0 + tip[0], y0 + tip[1]) if tip is not None and s < 1.25 else None
+        v = (s - 1.25) / 0.35
+        if self.note and v > 0:
+            px = fit(self.note, int(strip * 0.8), side * 0.9)
+            layer = Image.new("RGBA", sticky.size, (0, 0, 0, 0))
+            ImageDraw.Draw(layer).text((side / 2, side + strip * 0.4), self.note, font=bw_fx.hand_font(px), fill=RED + (255,), anchor="mm")
+            reveal = int(sticky.width * min(1.0, v))
+            sticky.alpha_composite(layer.crop((0, 0, reveal, sticky.height)), (0, 0))
+            if v < 1:
+                tip = (x0 + reveal, y0 + side + strip * 0.4)
+        if pop < 1:
+            sticky = sticky.resize((max(1, int(sticky.width * pop)), max(1, int(sticky.height * pop))), Image.BILINEAR)
+        card.alpha_composite(sticky, (int(x0 + side / 2 - sticky.width / 2), int(y0 + (side + strip) / 2 - sticky.height / 2)))
+        w = (s - 1.7) / 0.35
+        if w > 0:  # the arrow from the note into the picture
+            ax, ay = (x0 + side * 0.1, y0 + side + strip) if self.right else (x0 + side * 0.9, y0 + side + strip)
+            ex, ey = (bx0 + bx1) / 2 + (-1 if self.right else 1) * (bx1 - bx0) * 0.08, by0 + (by1 - by0) * 0.62
+            shaft = np.array([(ax + (ex - ax) * q, ay + (ey - ay) * q - 30 * math.sin(math.pi * q)) for q in np.linspace(0, 1, 30)])
+            drawn, head = bw_brand.prefix(shaft, min(1.0, w))
+            bw_brand.marker(card, drawn, RED, 11, shade=False)
+            if w >= 1:
+                ang = math.atan2(ey - shaft[-3][1], ex - shaft[-3][0])
+                for side_a in (2.6, -2.6):
+                    bw_brand.marker(card, np.array([(ex, ey), (ex + 36 * math.cos(ang + side_a), ey + 36 * math.sin(ang + side_a))]), RED, 11, shade=False)
+            elif tip is None:
+                tip = head
+        return tip
+
+
 class PwRenderer(bw_fx.FxRenderer):
     SAID = SAID
     LIVELY = False  # Borderline Why's opening, map beats and characters stay on that channel
-    PHOTO = {"lively": True, "guest": False, "circle": True}  # flash, push-in, the hand underlines and rings it: never a still
+    PHOTO = {"lively": True, "guest": False}  # flash, push-in, the hand underlines the caption and draws its mark
+
+    def photo_options(self, scene: Scene) -> dict:
+        mark = scene.opts.get("mark")
+        k = sum(s.kind == "photo" for s in self.spec.scenes[:self.spec.scenes.index(scene)])
+        return {**self.PHOTO, **({"mark": PhotoMark(mark, right=k % 2 == 0)} if isinstance(mark, dict) else {})}
 
     question = ""  # the script's question: the header when there is no tag scene
 

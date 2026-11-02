@@ -819,6 +819,9 @@ class FxRenderer(Renderer):
     LIVELY = True  # Borderline Why's opening pull-back, map beats and the characters on boards and photos
     PHOTO: dict = {}  # how photo scenes are drawn (modules.bw_photos.PhotoScene's options)
 
+    def photo_options(self, scene) -> dict:
+        return dict(self.PHOTO)
+
     def __init__(self, spec):
         super().__init__(spec)
         self.sat = satellite()
@@ -1677,7 +1680,7 @@ class FxRenderer(Renderer):
         if scene.kind == "photo" and scene.opts.get("_photo"):
             if i not in self.photos:
                 self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]),
-                                                      **{"lively": self.LIVELY, **self.PHOTO})
+                                                      **{"lively": self.LIVELY, **self.photo_options(scene)})
             img = self.photos[i].frame(t)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)

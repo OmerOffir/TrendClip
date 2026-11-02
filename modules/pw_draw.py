@@ -288,15 +288,66 @@ def bank() -> Drawing:
     return d
 
 
+def sun() -> Drawing:
+    d = Drawing(200, 200)
+    d.washes.append((ellipse(100, 100, 48, 48), "accent"))
+    d.strokes.append((ellipse(100, 100, 48, 48), "ink"))
+    for k in range(10):
+        a = math.radians(k * 36 + 8)
+        d.strokes.append((poly((100 + 62 * math.cos(a), 100 + 62 * math.sin(a)), (100 + 94 * math.cos(a), 100 + 94 * math.sin(a))), "ink"))
+    return d
+
+
+def eye() -> Drawing:
+    d = Drawing(220, 120)
+    lid = ellipse(110, 135, 125, 125, 216.87, 323.13, 16)  # two arcs meeting at the corners (10, 60) and (210, 60)
+    low = ellipse(110, -15, 125, 125, 36.87, 143.13, 16)
+    d.washes.append((ellipse(110, 60, 30, 30), "accent"))
+    d.strokes += [(lid, "ink"), (low, "ink"), (ellipse(110, 60, 30, 30), "ink"), (ellipse(110, 60, 11, 11), "ink")]
+    return d
+
+
+def bulb() -> Drawing:
+    d = Drawing(140, 210)
+    glass = ellipse(70, 70, 62, 62, 140, 400, 30) + [(46, 140), (94, 140)]
+    d.washes.append((ellipse(70, 70, 56, 56), "accent"))
+    d.strokes += [(ellipse(70, 70, 62, 62, 140, 400, 30), "ink"), (poly((22, 110), (46, 140), (46, 170)), "ink"),
+                  (poly((118, 110), (94, 140), (94, 170)), "ink"), (rect(46, 170, 94, 200), "ink"),
+                  (poly((46, 182), (94, 182)), "thin"), (poly((56, 140), (62, 90), (70, 104), (78, 90), (84, 140)), "thin")]
+    return d
+
+
+def virus() -> Drawing:
+    d = Drawing(200, 200)
+    d.washes.append((ellipse(100, 100, 52, 52), "accent"))
+    d.strokes.append((ellipse(100, 100, 52, 52), "ink"))
+    for k in range(9):
+        a = math.radians(k * 40)
+        d.strokes += [(poly((100 + 52 * math.cos(a), 100 + 52 * math.sin(a)), (100 + 82 * math.cos(a), 100 + 82 * math.sin(a))), "ink"),
+                      (ellipse(100 + 88 * math.cos(a), 100 + 88 * math.sin(a), 8, 8), "ink")]
+    d.strokes += [(ellipse(84, 88, 9, 9), "thin"), (ellipse(116, 112, 7, 7), "thin")]
+    return d
+
+
+def book() -> Drawing:
+    d = Drawing(240, 160)
+    d.washes.append((poly((10, 20), (116, 34), (116, 150), (10, 136)), "accent"))
+    d.strokes += [(poly((120, 34), (10, 20), (10, 136), (120, 150), (230, 136), (230, 20), (120, 34), (120, 150)), "ink")]
+    for y in (52, 76, 100):
+        d.strokes += [(poly((30, y - 10), (100, y)), "thin"), (poly((140, y), (210, y - 10)), "thin")]
+    return d
+
+
 DRAWINGS = dict(can=can, bottle=bottle, box=box, bag=bag, cup=cup, phone=phone, jar=jar, card=card, money=money,
                 truck=truck, factory=factory, store=store, family=family, sheet=sheet, megaphone=megaphone, tv=tv,
-                coins=coins, house=house, calendar=calendar, receipt=receipt, cart=cart, globe=globe, clock=clock, bank=bank)
+                coins=coins, house=house, calendar=calendar, receipt=receipt, cart=cart, globe=globe, clock=clock, bank=bank,
+                sun=sun, eye=eye, bulb=bulb, virus=virus, book=book)
 PRODUCTS = ("can", "bottle", "box", "bag", "cup", "phone", "jar", "card", "money")  # what a product scene can draw
 # an icon (modules.pw_write.ICONS) a board names, drawn big instead when there is a drawing of it
 FROM_ICON = dict(tv="tv", family="family", truck="truck", factory="factory", store="store", megaphone="megaphone",
                  calendar="calendar", house="house", receipt="receipt", shopping_cart="cart", globe="globe", clock="clock",
                  bank="bank", coin="coins", money_bag="coins", cash="money", dollar="money", credit_card="card",
-                 mobile="phone", tea="cup", cup_straw="cup")
+                 mobile="phone", tea="cup", cup_straw="cup", eyes="eye", scroll="book")
 
 
 def scaled(name: str, box: tuple[float, float, float, float]) -> tuple[Drawing, float, float, float]:

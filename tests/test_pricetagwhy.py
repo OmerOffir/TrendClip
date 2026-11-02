@@ -280,7 +280,7 @@ def test_a_missing_photo_becomes_a_whiteboard_and_the_rules_check_the_scenes():
     assert pw_write.scene_problems({"kind": "number", "number": {"to": "100 trillion dollars"}})
     assert pw_write.scene_problems({"kind": "compare", "compare": {"left": {"label": "a", "price": "1"}, "right": {}}})
     assert pw_write.scene_problems({"kind": "chart", "chart": {"lines": [{"points": [["1992", "x"]]}]}})
-    assert pw_write.scene_problems({"kind": "photo"}) and not pw_write.scene_problems({"kind": "photo", "photo": "Monaco"})
+    assert pw_write.scene_problems({"kind": "photo"}) and not pw_write.scene_problems({"kind": "photo", "photo": "Monaco", "mark": {"draw": "bank", "note": "Banks"}})
     only_boards = {**_script(), "scenes": [s for s in _script()["scenes"] if s["kind"] in ("tag", "board", "follow")]}
     assert any("vary the pictures" in p for p in pw_write.format_problems(only_boards))
 
@@ -617,3 +617,20 @@ def test_the_hook_is_a_short_drawn_claim_and_the_first_frame_shows_the_question_
     bw_render.use_layout("portrait")
     banner = pw_render.hook_banner("Why is AriZona still 99¢?", (bw_render.W, bw_render.H))
     assert banner.getpixel((bw_render.W // 2, 140))[3] == 255 and banner.getpixel((bw_render.W // 2, 900))[3] == 0
+
+
+def test_a_photo_mark_draws_what_the_narration_says_on_a_note_with_an_arrow():
+    from PIL import Image
+
+    from modules import pw_write
+
+    assert any("mark" in p for p in pw_write.scene_problems({"kind": "photo", "photo": "Slot machine"}))
+    pw_render.use_style()
+    mark = pw_render.PhotoMark({"draw": "sun", "note": "Glare!"})
+    card = Image.new("RGBA", (900, 700), (250, 248, 242, 255))
+    assert mark(card, (18, 18, 882, 600), 0.0) is None  # not there yet
+    assert mark(card, (18, 18, 882, 600), 0.8) is not None  # the hand is drawing the sun
+    done = Image.new("RGBA", (900, 700), (250, 248, 242, 255))
+    assert mark(done, (18, 18, 882, 600), 3.0) is None  # finished: no hand
+    assert done.getpixel((600, 120)) != (250, 248, 242, 255)  # the note in the top right corner
+    assert pw_render.PhotoMark({"draw": "nothing"})(card, (18, 18, 882, 600), 1.0) is None

@@ -252,6 +252,10 @@ def scene_problems(s: dict) -> list[str]:
     elif kind == "photo":
         if not str(s.get("photo") or "").strip():
             out.append("a photo scene names the English Wikipedia article whose picture it shows (photo)")
+        mark = s.get("mark") or {}
+        if mark.get("draw") not in pw_draw.DRAWINGS or not _short(mark.get("note"), 14):
+            out.append(f"a photo scene has mark: {{\"draw\": one of {', '.join(pw_draw.DRAWINGS)}, \"note\": 1-3 words}}, "
+                       "what the hand draws on the picture: it must show what the narration says (glare -> sun)")
     return out
 
 
@@ -306,7 +310,10 @@ Each script is ONE JSON object shaped exactly like the example below:
   * "map": a satellite map of real places. {{"kind": "map", "narration": ..., "focus": ["Monaco"], "headline":
     "Smaller than Central Park", "elements": [{{"kind": "highlight", "place": "Monaco", "cue": "Monaco"}}]}}.
   * "photo": the lead picture of an English Wikipedia article (free licence, credited automatically).
-    {{"kind": "photo", "narration": ..., "photo": "Monte Carlo Casino", "caption": "Monte Carlo Casino"}}.
+    {{"kind": "photo", "narration": ..., "photo": "Slot machine", "caption": "No sun, no glare", "mark": {{"draw":
+    "sun", "note": "Glare!"}}}}. mark is what the hand draws on a note stuck on the picture, with an arrow into it:
+    a drawing that says what the narration says (glare -> sun, attention -> eye, a virus -> virus, a book's name
+    -> book), never a random one; note is 1-3 words (14 characters at most).
 - the thumbnail is made from the script, so write for it: "question" is the video's question in at most 6 words
   ("Why is AriZona still 99¢?"), shown big at the top so the thumbnail says what the video is about; the product
   scene's lines go in pairs, a label then its figure ("Cost in 1922", "160 marks", "Cost in 1923", "200B marks"):
