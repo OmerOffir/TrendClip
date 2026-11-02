@@ -26,7 +26,9 @@ from trendclip import llm_json
 
 KINDS = ("one", "week")
 DEFAULT_COUNT = 7
-MIN_WORDS, MAX_WORDS = 90, 135  # about 35-50 s with the channel's voice
+MIN_WORDS, MAX_WORDS = 70, 100  # about 30-38 s with the channel's voice (1.1x): 45-50 s ones lost most viewers
+HOOK_WORDS = 10  # the first sentence, said before a scroller decides
+SLOW_START = re.compile(r"^(when|in \d|back in|once|since|most people|have you|did you|ever|today|so|imagine)\b", re.I)
 SCENE_KINDS = ("product", "tag", "board", "number", "compare", "chart", "map", "photo", "follow")
 MIDDLE = ("product", "board", "number", "compare", "chart", "map", "photo")  # what goes between the opening and the follow line
 PILLARS = ("everyday prices", "countries and money", "business tricks", "money history")
@@ -141,7 +143,8 @@ def format_problems(script: dict) -> list[str]:
     scenes = script.get("scenes") or []
     n = pw_channel.words(pw_channel.narration(script))
     if not MIN_WORDS <= n <= MAX_WORDS:
-        problems.append(f"{n} words of narration (wanted {MIN_WORDS}-{MAX_WORDS}, about 35-50 s)")
+        problems.append(f"{n} words of narration (wanted {MIN_WORDS}-{MAX_WORDS}, about 30-38 s)")
+    problems += hook_problems(script)
     for k, s in enumerate(scenes, 1):
         if s.get("kind") not in SCENE_KINDS:
             problems.append(f"scene {k}: kind must be one of {', '.join(SCENE_KINDS)}")
@@ -171,14 +174,32 @@ def format_problems(script: dict) -> list[str]:
     if not any(s.get("kind") == "product" for s in scenes):
         problems.append("show the product: a scene of kind product (drawn, or a free photo when it can't be drawn)")
     middle = [s.get("kind") for s in scenes[1:-1]]
-    if len(middle) < 3:
-        problems.append("2-3 reasons and a twist need at least 3 scenes between the opening and the follow line")
+    if not 3 <= len(middle) <= 4:
+        problems.append("2 reasons and a twist: 3-4 scenes between the opening and the follow line")
     if middle and all(k == "board" for k in middle):
         problems.append("vary the pictures: at least one number, compare, chart, map or photo scene, not only boards")
     for src in script.get("sources") or []:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
     return problems
+
+
+def hook_problems(script: dict) -> list[str]:
+    """The first sentence is said before a scroller decides: a short claim that clashes, drawn on the first frame."""
+    scenes = script.get("scenes") or []
+    if not scenes:
+        return []
+    out = []
+    said = str(scenes[0].get("narration") or "").strip()
+    first = re.split(r"(?<=[.!?])\s", said, maxsplit=1)[0]
+    if len(first.split()) > HOOK_WORDS:
+        out.append(f"the hook's first sentence is {len(first.split())} words; make it {HOOK_WORDS} at most, a claim that "
+                   f"clashes (\"This can should cost $2.38.\"), not background: {first!r}")
+    elif SLOW_START.match(first):
+        out.append(f"the hook opens on background ({first!r}); open on the surprising claim itself, the background after")
+    if scenes[0].get("kind") == "product" and (scenes[0].get("product") or {}).get("draw") not in pw_draw.DRAWINGS:
+        out.append(f"the opening product is drawn (product.draw, one of {', '.join(pw_draw.DRAWINGS)}): a photo can't be the first frame")
+    return out
 
 
 def _short(text: Any, most: int) -> bool:
@@ -221,8 +242,8 @@ def scene_problems(s: dict) -> list[str]:
             except Exception:  # noqa: BLE001 - no map data here: the hub checks it when it draws
                 pass
     elif kind == "product":
-        if o.get("draw") not in pw_draw.PRODUCTS and not str(o.get("photo") or "").strip():
-            out.append(f"product.draw is one of {', '.join(pw_draw.PRODUCTS)}, or product.photo names a Wikimedia Commons picture of it")
+        if o.get("draw") not in pw_draw.DRAWINGS and not str(o.get("photo") or "").strip():
+            out.append(f"product.draw is one of {', '.join(pw_draw.DRAWINGS)}, or product.photo names a Wikimedia Commons picture of it")
         if not all(_short(x, 10) for x in o.get("label") or []) or len(o.get("label") or []) > 3:
             out.append("product.label is 1-3 words of 10 characters at most (our own words, never the brand's logo)")
         lines = o.get("lines") or []
@@ -254,17 +275,20 @@ wonders about, for curious adults (18-45, US/UK/CA/AU) who are not finance exper
 you'll finally understand why money works the way it does."
 
 Each script is ONE JSON object shaped exactly like the example below:
-- {MIN_WORDS}-{MAX_WORDS} words of narration in all (35-50 seconds), short spoken sentences, numbers written as a
-  narrator says them ("99 cents", "1992").
-- scene 1 is the HOOK, and it must SHOCK, not just ask: open on a surprising fact ("This can should cost $2.38
-  today."), then the price that contradicts it, then "Why?". Best as kind "product": the product drawn big on the
-  first frame, so a scroller recognises it at once. {{"kind": "product", "narration": ..., "product": {{"draw":
+- {MIN_WORDS}-{MAX_WORDS} words of narration in all (30-38 seconds), short spoken sentences, numbers written as a
+  narrator says them ("99 cents", "1992"). Shorter wins: most viewers decide in the first second and leave at 20 s.
+- scene 1 is the HOOK, and it must SHOCK, not just ask. Its FIRST sentence is at most {HOOK_WORDS} words and is the
+  surprising claim itself ("This can should cost $2.38.", "Casinos removed every clock. Gamblers asked."), never
+  background ("When Nevada made gambling legal in 1931...", "Monaco has no natural resources..."): the background
+  comes after, if at all. Then the clash and "Why?". Then tease the twist in a few words ("And the real reason isn't
+  the one you think."), so they stay for it. Scene 1 is kind "product", drawn (never a photo): the drawing and the
+  question in big letters are on the first frame, so a scroller recognises it at once. {{"kind": "product", "narration": ..., "product": {{"draw":
   "can", "label": ["ICED", "TEA"], "lines": ["Should cost", {{"text": "$2.38", "color": "red"}}, "Costs",
-  {{"text": "99¢", "color": "green"}}]}}}}. product.draw is one of {", ".join(pw_draw.PRODUCTS)} (our own drawing:
-  label is 1-3 plain words, never the brand's name or logo); when no drawing fits, leave draw out and give
-  product.photo, a Wikimedia Commons search for a free-licensed picture of it (credited automatically). Every
-  script shows its product. (Kind "tag" is the older opening: the question on a hand-drawn price tag.)
-- then 3-5 scenes: 2-3 reasons, each drawn on the whiteboard, then the twist. Mix the kinds so no two videos look
+  {{"text": "99¢", "color": "green"}}]}}}}. product.draw is one of {", ".join(pw_draw.PRODUCTS)}, or for a place or
+  an idea one of {", ".join(d for d in pw_draw.DRAWINGS if d not in pw_draw.PRODUCTS)} (our own drawing: label is 1-3
+  plain words, never the brand's name or logo).
+- then 3-4 scenes: 2 reasons, each drawn on the whiteboard, then the twist by about 20 seconds in (it is what they
+  stayed for). Mix the kinds so no two videos look
   alike, and use at least one that isn't a board:
   * "board": a big drawing that explains, with a few words over it. board.write is 2-3 lines, the first a short
     title ("Reason 1: ..."), each at most 26 characters. A line may be {{"text": ..., "color": "green" | "red",
@@ -353,15 +377,17 @@ class Proposals(BaseModel):
     topics: list[Proposal] = Field(default_factory=list)
 
 
-TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel (35-50 seconds) that explains why something costs what it
+TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel (30-38 seconds) that explains why something costs what it
 costs, or how money works, in plain words with simple drawings. The tone is curious and friendly: it explains, it
 never gives financial advice.
 
 Give me {count} new video questions. Each one must:
 - be a short question starting with "Why" and ending with "?" (under 80 characters)
 - have a surprising but true answer, backed by at least two solid sources (news, official, academic; not Wikipedia)
-- fit in 50 seconds: one clear answer with 2-3 reasons and a twist
-- be about something people know: a product, a price, a country, a company trick, a famous moment in money history
+- fit in 35 seconds: one clear answer with 2 reasons and a twist
+- be about something the viewer buys, pays or sees every week (a snack, a phone, a ticket, a subscription, a price
+  ending in .99, a store trick): most of them; at most 1 in 4 about a country or money history. A scroller must feel
+  "I've wondered that" in one second ("Why is the Costco hot dog still $1.50?" beats "Why is Monaco rich?")
 - avoid investing or crypto tips, politics, elections and wars
 
 Spread them evenly across these pillars:

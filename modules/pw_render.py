@@ -295,10 +295,10 @@ class Drawn(bw_brand.Board):
     def _time(self, scene: Scene) -> None:
         """Board._time, but the strokes of one drawing follow each other without the pause between items, so a
         picture is finished early in its scene and stays up while it is talked about."""
-        gap = 0.14
+        gap = 0.1
         need = sum(it["cost"] + (0.02 if it.get("quick") else gap) for it in self.items) - gap
         room = max(0.6, scene.end - scene.start - 1.4)
-        k = min(1.15, room / max(0.1, need))
+        k = min(0.8, room / max(0.1, need))  # a quick hand: the scene keeps moving
         t = scene.start + 0.35
         for it in self.items:
             it["at"], it["dur"] = t, it["cost"] * k
@@ -452,6 +452,54 @@ def header(question: str, size: tuple[int, int]):
     return img
 
 
+YELLOW = (255, 214, 40)  # the hook's band, the thumbnail's yellow
+
+
+def hook_banner(question: str, size: tuple[int, int]):
+    """The opening's question, big: heavy black letters on a yellow marker band across the top, so the first frame
+    reads like the thumbnail (the small tag header takes over from the second scene)."""
+    from PIL import Image, ImageDraw
+
+    W = size[0]
+    portrait = bw_render.LAYOUT == "portrait"
+    y0, y1 = (135, 385) if portrait else (20, 150)
+    img = Image.new("RGBA", size, (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    words, best = question.upper().split(), None
+    for n in (1, 2, 3):  # the biggest size at which it fits the band in 1-3 lines
+        rows = [" ".join(words[round(k * len(words) / n):round((k + 1) * len(words) / n)]) for k in range(n)]
+        rows = [r for r in rows if r]
+        px = int((y1 - y0 - 30) / (len(rows) * 1.05))
+        while px > 40 and max(bw_render.font(px).getlength(r) for r in rows) > W - 140:
+            px -= 4
+        if best is None or px > best[1]:
+            best = (rows, px)
+    rows, px = best
+    rng = np.random.default_rng(7)  # a marker band: a slightly uneven yellow stroke, not a box
+    band = [(40 + k * (W - 80) / 12, y0 + rng.uniform(-6, 6)) for k in range(13)] + \
+           [(W - 40 - k * (W - 80) / 12, y1 + rng.uniform(-6, 6)) for k in range(13)]
+    d.polygon(band, fill=YELLOW + (255,))
+    lead = px * 1.05
+    cy = (y0 + y1) / 2
+    for k, r in enumerate(rows):
+        d.text((W / 2, cy - lead * (len(rows) - 1) / 2 + k * lead), r, font=bw_render.font(px), fill=INK + (255,), anchor="mm")
+    return img
+
+
+def push(img, t: float, start: float, end: float):
+    """The camera on a drawn scene: a quick punch-in as it starts, then a slow push in, so no frame stands still."""
+    from PIL import Image
+
+    u = max(0.0, t - start)
+    k = 1.0 + 0.03 * min(1.0, u / max(1.0, end - start)) + 0.035 * max(0.0, 1 - u / 0.3) ** 2
+    if k <= 1.001:
+        return img
+    W, H = img.size
+    w, h = W / k, H / k
+    x0, y0 = (W - w) / 2, (H - h) * 0.45
+    return img.resize((W, H), Image.BILINEAR, box=(x0, y0, x0 + w, y0 + h))
+
+
 class PwRenderer(bw_fx.FxRenderer):
     SAID = SAID
     LIVELY = False  # Borderline Why's opening, map beats and characters stay on that channel
@@ -466,6 +514,7 @@ class PwRenderer(bw_fx.FxRenderer):
         tag = next((s.opts.get("tag") for s in spec.scenes if s.kind == "tag" and isinstance(s.opts.get("tag"), dict)), {})
         question = " ".join(str(bw_brand.pen_line(q)["text"]) for q in tag.get("question") or []) or self.question
         self.header = header(question, (bw_render.W, bw_render.H)) if question else None
+        self.banner = hook_banner(question, (bw_render.W, bw_render.H)) if question else None
         self.replays: dict[int, Replay] = {}
 
     def with_header(self, i: int) -> bool:
@@ -481,7 +530,7 @@ class PwRenderer(bw_fx.FxRenderer):
                 self.replays[i] = Replay(opening, scene.start + 0.2, self.spec.duration - 0.75)
             img = self.replays[i].frame(t)
             if self.with_header(0):
-                img.alpha_composite(self.header)
+                img.alpha_composite(self.banner)  # the last frame is the first one: the Short loops
             return img
         if i in self.tags:
             img = self.tags[i].frame(t)
@@ -489,8 +538,10 @@ class PwRenderer(bw_fx.FxRenderer):
             img = self.drawn[i].frame(t)
         else:
             img = super().scene_frame(i, t)
+        if i in self.tags or i in self.drawn:
+            img = push(img, t, scene.start, scene.end)
         if self.with_header(i):
-            img.alpha_composite(self.header)
+            img.alpha_composite(self.banner if i == 0 else self.header)
         if scene.kind in ("tag", "board", *DRAWN) and scene.elements and not scene.opts.get("_drawn_icons"):
             from PIL import Image
 

@@ -19,7 +19,7 @@ def _script() -> dict:
 def test_the_first_script_meets_the_rules():
     script = _script()
     assert pw_channel.check_script(script) == []
-    assert 90 <= pw_channel.words(pw_channel.narration(script)) <= 135  # about 35-50 s
+    assert 70 <= pw_channel.words(pw_channel.narration(script)) <= 100  # about 30-38 s
     desc = pw_channel.description(script)
     assert "Not financial advice" in desc and desc.count("https://") == len(script["sources"])
 
@@ -599,3 +599,21 @@ def test_an_upload_gets_its_comment_to_pin_once_and_a_retry_when_it_fails(tmp_pa
     assert found["url"] == "https://www.youtube.com/watch?v=v1&lc=c1" and "Pin it" in pw_channel.comment_line({"comment": found})
     assert yt.comments[0]["snippet"]["topLevelComment"]["snippet"]["textOriginal"] == "Would you pay $2.38? 👇"
     assert pw_channel.comment(pw_channel.load_info("k1", tmp_path), yt, tmp_path) == found and len(yt.comments) == 1  # once
+
+
+def test_the_hook_is_a_short_drawn_claim_and_the_first_frame_shows_the_question_big():
+    from modules import pw_write
+
+    script = _script()
+    assert pw_write.hook_problems(script) == []
+    slow = json.loads(json.dumps(script))
+    slow["scenes"][0]["narration"] = "When Nevada made gambling legal in 1931, its casinos had clocks on the wall. Why?"
+    assert any("words" in p for p in pw_write.hook_problems(slow))
+    slow["scenes"][0]["narration"] = "When Nevada made gambling legal. Why?"
+    assert any("background" in p for p in pw_write.hook_problems(slow))
+    slow["scenes"][0]["product"] = {"photo": "Las Vegas casino"}
+    assert any("photo can't be the first frame" in p for p in pw_write.hook_problems(slow))
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    banner = pw_render.hook_banner("Why is AriZona still 99¢?", (bw_render.W, bw_render.H))
+    assert banner.getpixel((bw_render.W // 2, 140))[3] == 255 and banner.getpixel((bw_render.W // 2, 900))[3] == 0

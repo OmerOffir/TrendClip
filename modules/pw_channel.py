@@ -43,7 +43,7 @@ TOKEN = channel_common.token_path(CHANNEL)
 OUTPUT_DIR = PROJECT_ROOT / "output" / CHANNEL
 SCRIPTS_DIR = PROJECT_ROOT / "content" / CHANNEL / "scripts"  # hand-checked scripts, kept in git
 CATEGORY = "27"  # Education
-MIN_SECONDS, MAX_SECONDS = 30.0, 60.0  # the brief asks 35-50 s
+MIN_SECONDS, MAX_SECONDS = 22.0, 45.0  # the brief asks 30-38 s: viewers swiped away from 45-50 s ones
 VOICE = "af_heart"  # Kokoro-82M (Apache 2.0, commercial use allowed): warm and curious, unlike Borderline Why's voices
 MUSIC = "funny"  # a music/ folder; PW_MUSIC=none for the voice alone
 DISCLAIMER = "Not financial advice, just the fascinating reasons behind the prices."
@@ -593,7 +593,7 @@ def record(text: str, out: Path, progress=lambda m: None) -> list[bw_render.Word
     if kokoro_voice.available() and setting("PW_TTS_ENGINE", "kokoro").lower() == "kokoro":
         voice = setting("PW_TTS_VOICE", VOICE)
         progress(f"Recording the narration (Kokoro {voice})")
-        got = kokoro_voice.synthesize(text, out, voice, float(setting("PW_TTS_SPEED", "1.0")))
+        got = kokoro_voice.synthesize(text, out, voice, float(setting("PW_TTS_SPEED", "1.1")))
         kokoro_voice.unload()
     else:
         from trendclip import voiceover

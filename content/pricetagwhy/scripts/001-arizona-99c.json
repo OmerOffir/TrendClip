@@ -12,7 +12,7 @@
   "scenes": [
     {
       "kind": "product",
-      "narration": "This can of iced tea should cost about two dollars and thirty-eight cents today. It still costs 99 cents. Why?",
+      "narration": "This can should cost two dollars and thirty-eight cents. It costs 99 cents. Why? The real reason isn't what you think.",
       "product": {
         "draw": "can",
         "label": [
@@ -91,7 +91,7 @@
     },
     {
       "kind": "board",
-      "narration": "Reason one: almost no ads. Big brands pay millions for TV ads. AriZona lets word of mouth do the selling.",
+      "narration": "Reason one: almost no ads. AriZona lets word of mouth do the selling.",
       "board": {
         "write": [
           "Reason 1: no big ads",
@@ -107,24 +107,10 @@
     },
     {
       "kind": "board",
-      "narration": "Reason two: cheaper cans. The founder says the cans got thinner, so each one uses less aluminum.",
+      "narration": "Reason two: a family owns it with no debt, so it sells more cans, not pricier ones.",
       "board": {
         "write": [
-          "Reason 2: thinner cans",
-          {
-            "text": "Less aluminum",
-            "color": "green"
-          }
-        ],
-        "picture": "sheet"
-      }
-    },
-    {
-      "kind": "board",
-      "narration": "Reason three: no one to pay back. A family owns it, with no debt, so it sells more cans instead of charging more per can.",
-      "board": {
-        "write": [
-          "Reason 3: no debt",
+          "Reason 2: no debt",
           {
             "text": "Family owned",
             "color": "green"
@@ -135,7 +121,7 @@
     },
     {
       "kind": "number",
-      "narration": "And the twist: adjusted for inflation, this can now costs less than half of what it did in 1992. The founder says he has no plan to raise it.",
+      "narration": "The twist: counting inflation, this can costs less than half its 1992 price. And the founder says it stays 99 cents.",
       "number": {
         "label": "Its real price vs 1992",
         "from": "100%",
@@ -221,13 +207,6 @@
       ]
     },
     {
-      "claim": "The founder says the cans were made thinner, using less aluminum.",
-      "sources": [
-        3,
-        4
-      ]
-    },
-    {
       "claim": "AriZona is family owned and has no debt, and sells more cans rather than raising the price.",
       "sources": [
         3,
@@ -243,7 +222,7 @@
       ]
     },
     {
-      "claim": "The founder says he has no plan to raise the price (not in the foreseeable future).",
+      "claim": "The founder says he has no plan to raise the price: it stays 99 cents.",
       "sources": [
         3,
         5,
@@ -253,5 +232,6 @@
   ],
   "thumbnail": {
     "hook": "HOW?!"
-  }
+  },
+  "comment": "Did you know a 99¢ can should cost about $2.38 today? 👇"
 }
