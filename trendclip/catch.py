@@ -82,8 +82,8 @@ def script(settings: Settings, game: str, *, format: str = "short", rng: random.
     text = SCRIPT.format(game=name, next=level + 1)
     if record:
         quiz._remember(settings, "gamer", answer=answer, question="Catch the zombie", game=game, shape=SHAPE, level=str(level))
-    flashes = [quiz.Flash(word="three", text="x3"), quiz.Flash(word="Ready", text="READY?"),
-               quiz.Flash(word="What", text="GOT ALL 3?", color="green")]
+    # No flash while the zombie can appear (a flash would cover it): one before the window, one after.
+    flashes = [quiz.Flash(word="three", text="x3"), quiz.Flash(word="What", text="GOT ALL 3?", color="green")]
     pack = SimpleNamespace(title=TITLE.format(level=level), description=DESCRIPTION, hashtags=HASHTAGS,
                            title_card=CARD.format(level=level))
     out = quiz._script(settings, game, "builtin", "gamer", format, text, HOOK.format(game=name), flashes, answer,
@@ -168,9 +168,9 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
     images = sprites(settings, emojis)
     out = []
     span = (close - begin) / len(emojis)
-    for i, (image, hold) in enumerate(zip(images, POPS)):
+    spots = rng.sample(SPOTS, len(emojis))  # three different places
+    for i, (image, hold, (x, y)) in enumerate(zip(images, POPS, spots)):
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
-        x, y = rng.choice(SPOTS)
         x = min(max(x + rng.randint(-JITTER, JITTER), BOX // 2), WIDTH - BOX // 2 - 120)
         y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 120), HEIGHT // 2 + 260)
         out.append(Overlay(image, round(at, 3), round(at + hold, 3), center=(x, y), box=BOX, style="asis", cut=True))
