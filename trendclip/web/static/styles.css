@@ -1002,3 +1002,4 @@ body[data-workspace]:not([data-workspace="sidequestlogic"]) :is(main.view, #load
 .sq-more[open] { padding-bottom: 12px; }
 .sq-section { margin: 28px 0 4px; }
 .sq-section-hint { margin: 0 0 12px; }
+.pw-flash { outline: 3px solid #3ddc97; outline-offset: 4px; transition: outline-color 1.2s; }

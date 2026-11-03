@@ -346,6 +346,16 @@
     if (!t) return;
     const d = t.dataset;
     if (t.id === "pwRefresh") return load();
+    if (t.id === "pwNoIdea") {  // the "New topics from your own LLM" card: its format follows the Add row's, then copy
+      const card = $("pwLlmTopics");
+      const format = card.querySelector('[data-l="format"]');
+      if (format && $("pwAddFormat")) format.value = $("pwAddFormat").value;
+      card.querySelector('[data-l="copy"]').click();
+      card.scrollIntoView({ behavior: "smooth", block: "start" });
+      card.classList.add("pw-flash");
+      setTimeout(() => card.classList.remove("pw-flash"), 1600);
+      return;
+    }
     if (t.id === "pwYtConnect") return connectYouTube();
     if (t.id === "pwYtLogout") return act(() => post("/api/pricetagwhy/youtube/logout"));
     const fromWriting = ["write", "week"].includes((t.closest("[data-pw-panel]") || { dataset: {} }).dataset.pwPanel);
