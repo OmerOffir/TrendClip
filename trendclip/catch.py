@@ -1,8 +1,9 @@
 """Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up a few
 times in the gameplay (three to six, and the video never says how many, so viewers watch to the end), each time
-holding a different random emoji, for less and less time: 0.4 s, four frames, then two. The video ends by asking
-which emojis it held; all of them right scores on the leaderboard. Viewers pause and replay to catch them, which
-is the point.
+holding a different random emoji, small and anywhere in the upper part of the screen, for four frames and then two.
+Empty-handed decoys pop up too (they don't count), so stepping frame by frame finds more zombies than answers.
+The video ends by asking which emojis it held; all of them right scores on the leaderboard. Viewers pause and
+replay to catch them, which is the point.
 
 The level is picked in quiz._write_gamer: on CATCH_GAME's videos, once no catch level sits in the last
 CATCH_EVERY - 1 levels (or "catch" in the Create tab's notes). It needs no Gemini.
@@ -25,13 +26,19 @@ SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
 COUNT = (3, 6)  # how many times it shows up, random; the script never says (the owner's call, 2026-11-03)
-POPS = (0.4, 0.13, 0.067)  # how long each appearance lasts: quick, four frames, then two frames for all the rest
-BOX = 640  # the sprite's usual height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
-SIZES = (440, 540, 640, 760, 880)  # each pop picks one, so the eye can't settle on a shape (the owner, 2026-11-03)
+# How long each appearance lasts: four frames, then two for all the rest. Bigger and longer (0.4 s, 440-880 px)
+# was caught at once (the owner, 2026-11-03), so they are short, small and spread out, with decoys.
+POPS = (0.133, 0.067)
+BOX = 640  # the sprite's usual height on the 1080 x 1920 canvas
+SIZES = (260, 320, 380, 440, 520)  # each pop picks one; at 260 px the emoji is still about 80 px, readable when paused
+DECOYS = (2, 4)  # empty-handed zombies, two frames each, at other moments: they hold nothing and don't count
+DECOY_HOLD = 0.067
+DECOY_GAP = 0.3  # seconds clear of any other pop
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
-SPOTS = ((340, 520), (640, 520), (340, 700), (640, 700), (340, 880), (640, 880))
-JITTER = 60
+SPOTS = tuple((x, y) for y in (380, 560, 740, 920, 1100) for x in (200, 440, 680, 860))
+JITTER = 70
+CAPTION_TOP = 1340  # a zombie's bottom edge stays above the captions
 # The opening (the Shorts thumbnail is the first frame): the zombie stands below the captions holding a "?"
 # while the banner shows, so the grid already says what the game is.
 CARD_EMOJI = "\u2753"
@@ -39,14 +46,14 @@ CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1620), 600
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
-          "How many times? I won't tell. Ready? Here comes the first. Keep your eyes open. Don't blink. "
+          "Empty hands don't count. How many times? I won't tell. Ready? Here comes the first. Keep your eyes open. Don't blink. "
           "Still watching? Pros only. Catch them all? What emojis did the zombie hold? Comment every one below! "
           "Level {next} drops next. Subscribe so you don't miss it!")
 WINDOW = ("Ready", "Catch")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
 PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
-          "Hint: pause and step frames, the last ones last 2 frames. How many? That's the game.\n"
+          "Hint: pause and step frames, most last 2 frames. Empty hands don't count. How many? That's the game.\n"
           "🏆 All of them = 10 leaderboard points. Level {next} drops next!")
 DESCRIPTION = "A zombie hides a few times in this video, each time with a different emoji. Catch them all and comment them."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#catchthezombie", "#quiz"]
@@ -171,7 +178,7 @@ def card_overlay(settings: Settings) -> Overlay:
 def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "") -> list[Overlay]:
     """The opening zombie with its "?", then the appearances: random moments between the spoken "Ready" and
     the closing "Catch", one in each equal share of that window so they stay apart, each in a different spot
-    and a random size, each shorter than the last."""
+    and a random size, four frames and then two; then the empty-handed decoys at other moments."""
     if not emojis or not words:
         return []
     rng = random.Random(seed or " ".join(emojis))
@@ -188,8 +195,34 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
         hold = POPS[min(i, len(POPS) - 1)]
         box = rng.choice(SIZES)
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
-        x = min(max(x + rng.randint(-JITTER, JITTER), box // 2), WIDTH - box // 2 - 120)
-        y = min(max(y + rng.randint(-JITTER, JITTER), box // 2 + 120), HEIGHT // 2 + 260)
+        x, y = _place(rng, (x, y), box)
         at = round(at, 3)
         out.append(Overlay(image, at, round(at + hold, 3), center=(x, y), box=box, style="asis", cut=True))
+    out += _decoys(settings, rng, out[1:], begin, close)
+    return out
+
+
+def _place(rng: random.Random, spot: tuple[int, int], box: int) -> tuple[int, int]:
+    x, y = spot
+    x = min(max(x + rng.randint(-JITTER, JITTER), box // 2), WIDTH - box // 2 - 120)
+    y = min(max(y + rng.randint(-JITTER, JITTER), box // 2 + 120), CAPTION_TOP - box // 2)
+    return x, y
+
+
+def _decoys(settings: Settings, rng: random.Random, pops: list[Overlay], begin: float, close: float) -> list[Overlay]:
+    """Empty-handed zombies at moments clear of every other pop (fewer when the window has no room)."""
+    empty = draw_zombie(None, settings.assets_dir / "catch" / "zombie-empty.png")
+    taken = [(p.start, p.end) for p in pops]
+    out = []
+    for _ in range(rng.randint(*DECOYS)):
+        for _try in range(40):
+            at = round(rng.uniform(begin, close - DECOY_HOLD), 3)
+            if all(at + DECOY_HOLD + DECOY_GAP <= a or b + DECOY_GAP <= at for a, b in taken):
+                break
+        else:
+            continue
+        box = rng.choice(SIZES)
+        taken.append((at, at + DECOY_HOLD))
+        out.append(Overlay(empty, at, round(at + DECOY_HOLD, 3), center=_place(rng, rng.choice(SPOTS), box), box=box,
+                           style="asis", cut=True))
     return out

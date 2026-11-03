@@ -73,20 +73,27 @@ def test_the_zombie_pops_between_ready_and_catch_them_all_shorter_each_time(tmp_
     ready = next(w.start for w in spoken if w.text == "Ready?")
     ask = next(w.start for w in spoken if w.text == "Catch")
     for emojis in (["👺", "🍕", "🚀"], list("👺🍕🚀🐸🎃👑")):
-        card, *pops = catch.plan(s, emojis, spoken, seed="x")
+        card, *every = catch.plan(s, emojis, spoken, seed="x")
+        pops = [p for p in every if p.image.name != "zombie-empty.png"]
+        decoys = [p for p in every if p.image.name == "zombie-empty.png"]
         assert not card.cut and card.start < 1 and card.end <= 3.0 and card.center == catch.CARD_CENTER  # the opening "?"
         assert card.image.is_file() and card.image.name == "zombie-2753.png"
         assert len(pops) == len(emojis) and all(isinstance(p, Overlay) and p.cut for p in pops)
         holds = [round(p.end - p.start, 3) for p in pops]
-        assert holds == [0.4, 0.13] + [0.067] * (len(emojis) - 2)
+        assert holds == [0.133] + [0.067] * (len(emojis) - 1)
+        assert catch.DECOYS[0] <= len(decoys) <= catch.DECOYS[1] and all(round(d.end - d.start, 3) == 0.067 for d in decoys)
+        assert all(ready <= d.start and d.end <= ask for d in decoys)
+        shown = sorted(every, key=lambda p: p.start)
+        assert all(a.end < b.start for a, b in zip(shown, shown[1:]))  # never two at once
         assert ready <= pops[0].start and pops[-1].end <= ask
         assert all(a.end < b.start for a, b in zip(pops, pops[1:]))  # apart, in order
         assert len({p.center for p in pops}) == len(pops)  # all in different places
         assert len({p.box for p in pops}) > 1  # and not all one size
         for p in pops:
             assert p.image.is_file() and p.box in catch.SIZES
-            assert p.box // 2 <= p.center[0] <= 1080 - p.box // 2 and p.box // 2 <= p.center[1] <= 1920 - p.box // 2
-        assert catch.plan(s, emojis, spoken, seed="x") == [card, *pops]  # the same seed, the same moments
+        for p in every:
+            assert p.box // 2 <= p.center[0] <= 1080 - p.box // 2 and p.box // 2 <= p.center[1] <= catch.CAPTION_TOP - p.box // 2
+        assert catch.plan(s, emojis, spoken, seed="x") == [card, *every]  # the same seed, the same moments
     assert catch.plan(s, [], spoken) == []
 
 

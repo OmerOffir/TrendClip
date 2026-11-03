@@ -282,8 +282,8 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    developer-trivia shape was dropped on 2026-11-03 (its levels drew the fewest comments). **Catch the Zombie**
    (`CATCH_EVERY=3`, `CATCH_GAME=Minecraft`) is a level with no question: a pixel zombie drawn by the code
    pops up three to six times in the gameplay (the video never says how many, so viewers watch to the end)
-   holding a different random emoji each time, in a random spot and size, for 0.4 s, 4 frames, then 2 frames
-   for the rest, and the
+   holding a different random emoji each time, small (260-520 px) in a random spot and size, for 4 frames
+   and then 2 frames each; two to four empty-handed decoys pop up too (they don't count), and the
    voice asks "Catch them all?" and which emojis it held; all of them right scores on the leaderboard. The zombie also stands under the opening banner holding a "?", so the first
    frame (the Shorts thumbnail) shows the game.
    It comes up on a Minecraft video whenever the last two levels had none (or tick **🧟 Catch the Zombie
