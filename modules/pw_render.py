@@ -268,6 +268,7 @@ class Drawn(bw_brand.Board):
         first = len(self.items)
         total = sum(bw_brand.length(np.array(at(pts), dtype=float)) for pts, _ in d.strokes) or 1.0
         acc = RED if accent == "red" else GREEN
+        wash = TINT.get(accent) or TINT["green"]
         width = int(max(9, min(15, k * 4.2)))
         for j, (pts, role) in enumerate(d.strokes):
             rgb = RED if role == "red" else acc if role == "accent" else INK
@@ -276,7 +277,7 @@ class Drawn(bw_brand.Board):
             self.put_line(wobble(densify(pts_at), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)), cost)
         tint_w = int(width * 2.6)
         for poly, role in d.washes:
-            tint = TINT["ink"] if role == "ink_wash" else TINT[role] if role in ("yellow", "red") else TINT["red" if accent == "red" else "green"]
+            tint = TINT["ink"] if role == "ink_wash" else TINT[role] if role in ("yellow", "red") else wash
             path = pw_draw.hatch(at(poly), tint_w * 0.75, tint_w / 2 + width / 2)
             if len(path) > 1:
                 self.put_line(path, tint, tint_w, min(0.6, 0.2 + len(path) * 0.006))
@@ -407,8 +408,177 @@ class Drawn(bw_brand.Board):
             lx = min(self.W - 60 - bw_fx.hand_font(px).getlength(text) / 2, pts[-1][0])
             self.put_text(text, (lx, pts[-1][1] - 52 - 64 * j), px, rgb)
 
+    # ----------------------------------------------------------------- the money-story scenes (modules.pw_write STORY)
 
-DRAWN = ("number", "compare", "chart", "product", "sketch")
+    SHIRTS = ("green", "yellow", "red", "ink")  # one tint per person in a cast, in order
+
+    def put_person(self, k: int, name: str, box: tuple[float, float, float, float], seed: int = 0) -> float:
+        """Person k (from 0) drawn in box with their number on the badge, their name written under; returns the name's y."""
+        self.put_drawing("person", box, [str(k + 1)], self.SHIRTS[k % len(self.SHIRTS)], seed=seed + 7 * k)
+        _, kk, dx, dy = pw_draw.scaled("person", box)
+        y = dy + 260 * kk + 48
+        if name:
+            self.put_text(name.upper(), ((box[0] + box[2]) / 2, y), fit(name.upper(), 54, box[2] - box[0] + 20), INK)
+        return y
+
+    def draw_cast(self, o: dict[str, Any]) -> None:
+        """The hook of a story: the people in a row (a number on each badge, the name under), their starting money
+        written under them as it is said, and a note under all (what happened a year later)."""
+        people = [p if isinstance(p, dict) else {"name": str(p)} for p in (o.get("people") or [])][:4]
+        y = self.put_title(str(o.get("title") or ""))
+        n = max(1, len(people))
+        slot = (self.W - 60) / n
+        h = min(560.0, (self.bottom - y) * 0.55)
+        for k, p in enumerate(people):
+            x0 = 30 + k * slot
+            self.put_person(k, str(p.get("name") or ""), (x0 + 10, y + 20, x0 + slot - 10, y + 20 + h), seed=31)
+        self.late = len(self.items)  # the people are there on the first frame (the hook, the thumbnail)
+        money_y = y + 20 + h + 120
+        for k, p in enumerate(people):
+            money = str(p.get("money") or "")
+            if money:
+                cx = 30 + k * slot + slot / 2
+                self.put_text(money, (cx, money_y), fit(money, 96, slot - 24), GREEN)
+                self.items[-1]["cue"] = money
+        if note := str(o.get("note") or ""):
+            self.put_text(note, (self.W / 2, min(self.bottom - 40, money_y + 150)), fit(note, 72, self.W - 120), RED)
+            self.items[-1]["cue"] = note.split()[0] if note.split() else ""
+
+    def draw_step(self, o: dict[str, Any]) -> None:
+        """One person's move: what they did as the title, the person on the left, the thing they got drawn `count`
+        times on the right (6 at most, "x151" written when there are more), the math line slammed in as it is said
+        (its result counting up), and the idea's name in a green box: "This is called LEASING"."""
+        y = self.put_title(str(o.get("did") or ""))
+        n = max(1, int(o.get("n") or 1))
+        who = str(o.get("who") or "")
+        h = min(430.0, (self.bottom - y) * 0.36)
+        self.put_person(n - 1, who, (40, y + 10, 330, y + 10 + h), seed=41)
+        name, count = str(o.get("draw") or ""), max(1, int(o.get("count") or 1))
+        shown = min(count, 6)
+        cols = 1 if shown == 1 else 2 if shown <= 4 else 3
+        rows = -(-shown // cols)
+        x0, x1 = 370, self.W - 40
+        cw, rh = (x1 - x0) / cols, h / rows
+        for j in range(shown):
+            c, r = j % cols, j // cols
+            self.put_drawing(name, (x0 + c * cw + 8, y + 10 + r * rh + 6, x0 + (c + 1) * cw - 8, y + 10 + (r + 1) * rh - 6), seed=51 + j)
+        if count > shown:
+            self.put_text(f"x{count:,}", ((x0 + x1) / 2, y + 10 + h + 60), 92, RED)
+            self.items[-1]["cue"] = str(count)
+        math_y = y + 10 + h + (150 if count > shown else 110)
+        self.put_math(str(o.get("math") or ""), math_y)
+        if lesson := str(o.get("lesson") or ""):
+            ly = math_y + 200
+            self.put_text("This is called", (self.W / 2, ly), 54, INK)
+            self.items[-1]["cue"] = "called"
+            px = fit(lesson.upper(), 104, self.W - 200)
+            self.put_text(lesson.upper(), (self.W / 2, ly + 100), px, GREEN)
+            half = bw_fx.hand_font(px).getlength(lesson.upper()) / 2 + 36
+            self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, ly + 100 - px * 0.62, self.W / 2 + half, ly + 100 + px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
+
+    def put_math(self, text: str, y: float) -> None:
+        """"5 x 365 x $10 = $18,250": the working in ink, the result in red counting up from 0, boxed; the result's
+        digits are the cue, so it lands when the narrator says the number."""
+        if not text:
+            return
+        left, _, result = text.rpartition("=")
+        left, result = (left.strip() + " =" if left.strip() else ""), result.strip()
+        px = 110
+        f = bw_fx.hand_font(px)
+        while px > 44 and f.getlength(left + " " + result) > self.W - 120:
+            px -= 4
+            f = bw_fx.hand_font(px)
+        wl, wr = f.getlength(left + " ") if left else 0.0, f.getlength(result)
+        x0 = self.W / 2 - (wl + wr) / 2
+        if left:
+            self.put_text(left, (x0 + wl / 2, y), px, INK)
+            self.items[-1]["cue"] = re.sub(r"\D", "", left.split()[0])
+        self.put_text(result, (x0 + wl + wr / 2, y), px, RED, 0.0)
+        self.items[-1]["cue"] = re.sub(r"\D", "", result)
+        self.put_line(wobble(densify(pw_draw.rrect(x0 - 40, y - px * 0.7, x0 + wl + wr + 40, y + px * 0.7, 26)), seed=4), INK, 8, 0.45)
+
+    def draw_bars(self, o: dict[str, Any]) -> None:
+        """The finale: one bar per person, their total written on top counting up, the biggest in green; heights on a
+        square-root scale so the smallest bar is still a bar."""
+        bars = [b for b in (o.get("bars") or []) if isinstance(b, dict)][:4]
+        y = self.put_title(str(o.get("title") or ""))
+        if not bars:
+            return
+        values = [max(0.0, float(b.get("value") or 0)) for b in bars]
+        top = max(values) or 1.0
+        n = len(bars)
+        slot = (self.W - 100) / n
+        base, roof = self.bottom - 90, y + 150
+        for k, (b, v) in enumerate(zip(bars, values)):
+            cx = 50 + k * slot + slot / 2
+            hgt = max(0.08, math.sqrt(v / top)) * (base - roof)
+            w = slot * 0.62
+            box = [(cx - w / 2, base - hgt), (cx + w / 2, base - hgt), (cx + w / 2, base), (cx - w / 2, base)]
+            best = v >= top
+            path = pw_draw.hatch(box, 30, 16)
+            if len(path) > 1:
+                self.put_line(path, TINT["green" if best else "ink"], 40, 0.3)
+                self.items[-1]["under"] = True
+            self.put_line(wobble(densify(box + box[:1]), seed=12 + k), GREEN if best else INK, 12, 0.5)
+            text = str(b.get("text") or f"{v:,.0f}")
+            self.put_text(text, (cx, base - hgt - 50), fit(text, 84, slot - 10), GREEN if best else RED, 0.0)
+            self.items[-1]["cue"] = re.sub(r"\D", "", text)
+            label = str(b.get("label") or "")
+            if label:
+                self.put_text(label.upper(), (cx, base + 50), fit(label.upper(), 48, slot - 10), INK)
+
+    def draw_ask(self, o: dict[str, Any]) -> None:
+        """The question to the viewer ("Which one are you?"), the choices in circles, and the line that asks for a
+        comment or a share."""
+        question = str(o.get("question") or "")
+        y = self.top
+        if question:
+            px = fit(question, 112, self.W - 120)
+            self.put_text(question, (self.W / 2, y + 20), px, INK)
+            y += px + 80
+        options = [str(x) for x in (o.get("options") or []) if str(x).strip()][:5]
+        if options:
+            slot = (self.W - 100) / len(options)
+            r = min(90.0, slot * 0.36)
+            for k, opt in enumerate(options):
+                cx = 50 + k * slot + slot / 2
+                self.put_line(loop(cx, y + 110, r, r), self.SHIRTS_RGB[k % len(self.SHIRTS_RGB)], 12, 0.35)
+                self.put_text(opt, (cx, y + 110), fit(opt, int(r * 1.3), r * 1.6), INK)
+                self.items[-1]["cue"] = opt
+            y += 300
+        if line := str(o.get("line") or ""):
+            self.put_text(line, (self.W / 2, y + 40), fit(line, 76, self.W - 120), GREEN)
+            self.items[-1]["cue"] = line.split()[0]
+
+    SHIRTS_RGB = (GREEN, (214, 160, 0), RED, INK)
+
+    def retime(self, scene: Scene, words_: list) -> None:
+        """After _time: an item with a cue (the digits of a figure, a word) waits for the narrator to say it, and
+        what follows it moves along, so the math lands on the number and never before."""
+        window = [w for w in words_ if scene.start - 0.05 <= w.start < scene.end]
+        if not window:
+            return
+        tok = lambda s: re.sub(r"[^a-z0-9]", "", str(s).lower())
+        digits = lambda s: re.sub(r"\D", "", str(s))
+        shift = 0.0
+        for it in self.items:
+            it["at"] += shift
+            cue = it.get("cue")
+            if not cue:
+                continue
+            want = digits(cue) if digits(cue) else tok(cue)
+            hit = next((w.start for w in window if (digits(w.text) == want if digits(cue) else tok(w.text) == want)), None)
+            if hit is None:
+                continue
+            at = min(hit - 0.15, scene.end - it["dur"] - 0.4)
+            if at > it["at"]:
+                shift += at - it["at"]
+                it["at"] = at
+        self.done = max(self.done, max(it["at"] + it["dur"] for it in self.items)) if self.items else self.done
+
+
+DRAWN = ("number", "compare", "chart", "product", "sketch", "cast", "step", "bars", "ask")
+STORY = ("cast", "step", "bars", "ask")  # the money-story scenes (modules.pw_write.STORY)
 
 
 class Replay(bw_brand.Board):
@@ -590,6 +760,9 @@ class PwRenderer(bw_fx.FxRenderer):
         self.moods = []  # no mascot: it is Borderline Why's
         self.tags = {i: TagBoard(s) for i, s in enumerate(spec.scenes) if s.kind == "tag"}
         self.drawn = {i: Drawn(s, first=i == 0) for i, s in enumerate(spec.scenes) if s.kind in DRAWN}
+        for i, board in self.drawn.items():
+            if spec.scenes[i].kind in STORY:
+                board.retime(spec.scenes[i], spec.words)
         tag = next((s.opts.get("tag") for s in spec.scenes if s.kind == "tag" and isinstance(s.opts.get("tag"), dict)), {})
         question = " ".join(str(bw_brand.pen_line(q)["text"]) for q in tag.get("question") or []) or self.question
         self.header = header(question, (bw_render.W, bw_render.H)) if question else None

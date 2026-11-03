@@ -362,10 +362,67 @@ def flower() -> Drawing:
     return d
 
 
+def person() -> Drawing:
+    """A simple standing person: round head, a shirt with a badge on the chest (the renderer writes a number on it)."""
+    d = Drawing(160, 260)
+    shirt = [(44, 96), (116, 96), (124, 180), (36, 180), (44, 96)]
+    d.body = ellipse(80, 44, 36, 36, 180, 360, 18) + [(88, 80), (116, 96), (124, 180), (114, 250), (46, 250), (36, 180), (44, 96), (72, 80)]
+    d.washes.append((shirt, "accent"))
+    d.strokes += [(ellipse(80, 44, 36, 36), "ink"), (poly((72, 80), (72, 96)), "ink"), (poly((88, 80), (88, 96)), "ink"),
+                  (shirt, "ink"), (poly((44, 100), (14, 160)), "ink"), (poly((116, 100), (146, 160)), "ink"),
+                  (poly((40, 180), (46, 250)), "ink"), (poly((120, 180), (114, 250)), "ink"), (poly((80, 180), (80, 250)), "ink"),
+                  (ellipse(68, 38, 3, 3), "ink"), (ellipse(92, 38, 3, 3), "ink"), (ellipse(80, 48, 14, 10, 20, 160, 8), "thin"),
+                  (ellipse(80, 130, 22, 22), "ink")]
+    d.label_at = (80, 130, 34)
+    return d
+
+
+def stand() -> Drawing:
+    """A market stall / kiosk with a striped awning: a coffee cart, a lemonade stand, a snack kiosk."""
+    d = Drawing(240, 220)
+    awning = [(10, 60), (40, 10), (200, 10), (230, 60), (10, 60)]
+    d.washes.append((awning, "accent"))
+    scallop = [p for k in range(6) for p in ellipse(10 + 18 + k * 37, 60, 18, 12, 180, 0, 8)]
+    d.strokes += [(awning, "ink"), (scallop, "ink"), (poly((28, 60), (28, 130)), "ink"), (poly((212, 60), (212, 130)), "ink"),
+                  (rect(28, 130, 212, 200), "ink"), (poly((60, 200), (54, 218)), "ink"), (poly((180, 200), (186, 218)), "ink"),
+                  (poly((80, 10), (70, 60)), "thin"), (poly((160, 10), (170, 60)), "thin"), (rrect(90, 90, 150, 130, 6), "thin")]
+    d.label_at = (120, 165, 150)
+    return d
+
+
+def machine() -> Drawing:
+    """A vending machine: a tall box with a window of rows, a keypad and the slot at the bottom."""
+    d = Drawing(160, 250)
+    d.washes.append((rect(20, 24, 100, 160), "accent"))
+    d.strokes += [(rrect(6, 6, 154, 244, 10), "ink"), (rect(20, 24, 100, 160), "ink"), (rect(112, 24, 142, 120), "thin"),
+                  (rect(30, 180, 130, 224), "ink")]
+    for y in (60, 96, 132):
+        d.strokes.append((poly((20, y), (100, y)), "thin"))
+    for y in (40, 56, 72):
+        d.strokes.append((poly((118, y), (136, y)), "thin"))
+    d.label_at = (80, 202, 90)
+    return d
+
+
+def contract() -> Drawing:
+    """A signed paper: a page with lines, a signature and a stamp (a deal, a loan, an advance paid)."""
+    d = Drawing(180, 230)
+    page = rect(16, 10, 164, 220)
+    d.body = page
+    d.washes.append((ellipse(124, 180, 26, 26), "red"))
+    d.strokes += [(page, "ink"), (poly((40, 46), (140, 46)), "ink")]
+    for y in (76, 100, 124):
+        d.strokes.append((poly((40, y), (140, y)), "thin"))
+    sig = [(40 + k * 4.2, 176 + 12 * math.sin(k / 1.6) * (1 if k % 2 else 0.6)) for k in range(16)]
+    d.strokes += [(sig, "ink"), (ellipse(124, 180, 26, 26), "red"), (ellipse(124, 180, 18, 18), "thin")]
+    return d
+
+
 DRAWINGS = dict(can=can, bottle=bottle, box=box, bag=bag, cup=cup, phone=phone, jar=jar, card=card, money=money,
                 truck=truck, factory=factory, store=store, family=family, sheet=sheet, megaphone=megaphone, tv=tv,
                 coins=coins, house=house, calendar=calendar, receipt=receipt, cart=cart, globe=globe, clock=clock, bank=bank,
-                sun=sun, eye=eye, bulb=bulb, virus=virus, book=book, dress=dress, flower=flower)
+                sun=sun, eye=eye, bulb=bulb, virus=virus, book=book, dress=dress, flower=flower,
+                person=person, stand=stand, machine=machine, contract=contract)
 # what each drawing looks like, for the script prompt: a drawing is only ever used for the thing it shows
 LOOKS = dict(can="a drink can", bottle="a drink bottle", box="a cereal/food box", bag="a crisp/chip bag (snacks only)",
              cup="a takeaway coffee cup", phone="a smartphone", jar="a jar", card="a plastic card (credit, loyalty, gift)",
@@ -375,7 +432,9 @@ LOOKS = dict(can="a drink can", bottle="a drink bottle", box="a cereal/food box"
              house="a house", calendar="a calendar (dates, months)", receipt="a till receipt (prices, a bill)",
              cart="a shopping cart", globe="the globe (the world, countries)", clock="a clock (time)",
              bank="a bank building (banks, a central bank)", sun="the sun (sunlight, heat)", eye="an eye (attention, seeing)",
-             bulb="a light bulb (an idea, lighting)", virus="a virus (a disease)", book="an open book (a story, a name from a book)")
+             bulb="a light bulb (an idea, lighting)", virus="a virus (a disease)", book="an open book (a story, a name from a book)",
+             person="a person standing (a buyer, a seller, a friend, a son)", stand="a market stall/kiosk (a coffee cart, a lemonade stand)",
+             machine="a vending machine", contract="a signed paper (a deal, a loan, money paid in advance)")
 PACKAGED = ("can", "bottle", "box", "bag", "cup", "jar", "card", "money")  # a label is what is printed on these
 PRODUCTS = ("can", "bottle", "box", "bag", "cup", "phone", "jar", "card", "money", "dress", "flower")  # what a product scene can draw
 # an icon (modules.pw_write.ICONS) a board names, drawn big instead when there is a drawing of it

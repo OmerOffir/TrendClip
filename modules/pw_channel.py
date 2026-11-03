@@ -44,6 +44,18 @@ OUTPUT_DIR = PROJECT_ROOT / "output" / CHANNEL
 SCRIPTS_DIR = PROJECT_ROOT / "content" / CHANNEL / "scripts"  # hand-checked scripts, kept in git
 CATEGORY = "27"  # Education
 MIN_SECONDS, MAX_SECONDS = 22.0, 45.0  # the brief asks 30-38 s: viewers swiped away from 45-50 s ones
+STORY_SECONDS = (55.0, 130.0)  # a money story (modules.pw_write.STORY): a cast, 3-4 moves with their math, the bars, the ask
+STORY_KINDS = ("cast", "step", "bars", "ask")
+
+
+def is_story(script: dict) -> bool:
+    """A money-story script (format "story", or any of its scene kinds): longer, with a cast instead of a product."""
+    return script.get("format") == "story" or any((s.get("kind") in STORY_KINDS) for s in script.get("scenes") or [])
+
+
+def limits(script: dict) -> tuple[float, float]:
+    """(min, max) seconds this script's video may run."""
+    return STORY_SECONDS if is_story(script) else (MIN_SECONDS, MAX_SECONDS)
 VOICE = "af_heart"  # Kokoro-82M (Apache 2.0, commercial use allowed): warm and curious, unlike Borderline Why's voices
 MUSIC = "funny"  # a music/ folder; PW_MUSIC=none for the voice alone
 DISCLAIMER = "Not financial advice, just the fascinating reasons behind the prices."
@@ -141,12 +153,18 @@ def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
     problems = []
     scenes = script.get("scenes") or []
-    if not scenes or scenes[0].get("kind") not in ("tag", "product"):
+    if is_story(script):
+        if not scenes or scenes[0].get("kind") != "cast":
+            problems.append("a story's first scene is its cast (kind cast)")
+    elif not scenes or scenes[0].get("kind") not in ("tag", "product"):
         problems.append("the first scene must be the product (kind product) or the price tag (kind tag)")
     if not scenes or scenes[-1].get("kind") != "follow":
         problems.append("the last scene must be the follow line (kind follow)")
     sources = script.get("sources") or []
-    if len(sources) < 2:
+    parable = bool(script.get("parable"))  # a made-up story that teaches an idea: its math is checked, not its facts
+    if parable and "parable" not in (str(script.get("description") or "") + narration(script)).lower():
+        problems.append("a parable says so: the word parable in the narration or the description")
+    if len(sources) < 2 and not parable:
         problems.append("fewer than two sources")
     for n, src in enumerate(sources, 1):
         if WIKI.search(str(src.get("url") or "")):
@@ -157,7 +175,7 @@ def check_script(script: dict) -> list[str]:
             problems.append(f"claim checked in fewer than two sources: {c.get('claim', '')[:60]}")
         if any(not 1 <= n <= len(sources) for n in c.get("sources") or []):
             problems.append(f"claim cites a source that isn't listed: {c.get('claim', '')[:60]}")
-    if not script.get("claims"):
+    if not script.get("claims") and not parable:
         problems.append("no claims listed with their sources")
     advice = re.compile(r"\b(you should (buy|invest|sell)|buy this|invest in|financial advice)\b", re.I)
     if advice.search(narration(script)):
@@ -652,7 +670,8 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     except Exception:  # noqa: BLE001 - the video is still good without it
         logger.exception("Price Tag Why thumbnail for %s failed", key)
     seconds = info["duration_seconds"]
-    info["check"] = [] if MIN_SECONDS <= seconds <= MAX_SECONDS else [f"{seconds:.0f} s long (wanted {MIN_SECONDS:.0f}-{MAX_SECONDS:.0f})"]
+    low, high = limits(script)
+    info["check"] = [] if low <= seconds <= high else [f"{seconds:.0f} s long (wanted {low:.0f}-{high:.0f})"]
     save_info(info, out_dir)
     progress(1.0, "Video ready")
     return info

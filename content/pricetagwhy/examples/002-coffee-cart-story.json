@@ -1,0 +1,114 @@
+{
+  "title": "Same $500, four friends: one made $3,650, one made $511,000",
+  "question": "Same $500. Four friends.",
+  "format": "story",
+  "parable": true,
+  "description": "A money parable, not a real business and not advice: four friends start with the same $500 and the same coffee. One owns a cart, one rents five, one gets paid a year in advance, one never touches a cup. Four ideas with a name: organic growth, leasing, pre-selling, and a system.",
+  "pillar": "business tricks",
+  "seed": 500,
+  "hashtags": [
+    "moneystory",
+    "business",
+    "leverage"
+  ],
+  "comment": "Which friend are you: 1, 2, 3 or 4? 👇",
+  "scenes": [
+    {
+      "kind": "cast",
+      "narration": "Same $500. Four friends. One made $3,650. Another made $511,000. Same coffee, same year, same town. Each friend got $500 to start. Here is what each one did.",
+      "cast": {
+        "title": "Same $500 each",
+        "people": [
+          {"name": "Friend 1", "money": "$500"},
+          {"name": "Friend 2", "money": "$500"},
+          {"name": "Friend 3", "money": "$500"},
+          {"name": "Friend 4", "money": "$500"}
+        ],
+        "note": "One year later..."
+      }
+    },
+    {
+      "kind": "step",
+      "narration": "Friend one bought one coffee cart for exactly $500. He pushes it himself, every morning. It makes about $10 of profit a day. In a year, 365 times $10, that's $3,650. This is called organic growth. Your own money, your own two hands, one cart.",
+      "step": {
+        "who": "Friend 1",
+        "n": 1,
+        "did": "Bought one cart",
+        "draw": "stand",
+        "count": 1,
+        "math": "365 x $10 = $3,650",
+        "lesson": "Organic growth"
+      }
+    },
+    {
+      "kind": "step",
+      "narration": "Friend two asked around. Renting a cart costs just $100 a year. So she rented five, with her whole $500. Five carts, 365 days, $10 each, that's $18,250. This is called leasing. You don't need to own the cart to earn from the cart.",
+      "step": {
+        "who": "Friend 2",
+        "n": 2,
+        "did": "Rented five carts",
+        "draw": "stand",
+        "count": 5,
+        "math": "5 x 365 x $10 = $18,250",
+        "lesson": "Leasing"
+      }
+    },
+    {
+      "kind": "step",
+      "narration": "Friend three rented five carts too. Then he walked into an office tower and said: buy a year of coffee today, at 80 cents on the dollar, and I deliver every morning. They paid $14,600 up front. With that money he rented 146 more carts. 151 carts, 365 days, $8 each, that's $440,920. This is called pre-selling. The customer's money built the business.",
+      "step": {
+        "who": "Friend 3",
+        "n": 3,
+        "did": "Got paid a year early",
+        "draw": "contract",
+        "count": 151,
+        "math": "151 x 365 x $8 = $440,920",
+        "lesson": "Pre-selling"
+      }
+    },
+    {
+      "kind": "step",
+      "narration": "Friend four never bought a cart. She wrote down the recipe, the prices, the rules, and put her name on it. Seventy people now run carts under her name, 20 cups a day each, and pay her $1 a cup. 70 carts, 365 days, 20 cups, $1, that's $511,000. This is called a system. She sells the way to do it, not the coffee.",
+      "step": {
+        "who": "Friend 4",
+        "n": 4,
+        "did": "Sold the recipe",
+        "draw": "book",
+        "count": 70,
+        "math": "70 x 365 x 20 x $1 = $511,000",
+        "lesson": "A system"
+      }
+    },
+    {
+      "kind": "bars",
+      "narration": "Same $500. $3,650. $18,250. $440,920. $511,000. The money was the same. The idea was different.",
+      "bars": {
+        "title": "Same $500, one year",
+        "bars": [
+          {"label": "Friend 1", "value": 3650, "text": "$3,650"},
+          {"label": "Friend 2", "value": 18250, "text": "$18,250"},
+          {"label": "Friend 3", "value": 440920, "text": "$440,920"},
+          {"label": "Friend 4", "value": 511000, "text": "$511,000"}
+        ]
+      }
+    },
+    {
+      "kind": "ask",
+      "narration": "It's a parable, not a plan. But which friend are you? One, two, three, or four? Tell me below, and send this to a friend who still pushes the cart.",
+      "ask": {
+        "question": "Which friend are you?",
+        "options": ["1", "2", "3", "4"],
+        "line": "Send this to a friend"
+      }
+    },
+    {
+      "kind": "follow",
+      "narration": "Same $500, four very different years. Follow for tomorrow's why."
+    }
+  ],
+  "sources": [],
+  "claims": [],
+  "thumbnail": {
+    "hook": "WHICH ONE ARE YOU?"
+  }
+}

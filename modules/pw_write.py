@@ -25,9 +25,14 @@ from modules import pw_channel, pw_draw
 from trendclip import llm_json
 
 KINDS = ("one", "week")
+FORMATS = ("why", "story")  # a 35 s "why" explainer; a 60-120 s money story (a cast, their moves with the math, the bars, the ask)
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 70, 100  # about 30-38 s with the channel's voice (1.1x): 45-50 s ones lost most viewers
+STORY_WORDS = (170, 320)  # 60-115 s: the stories that get the views run 80-150 s; the viewer stays for the next number
 HOOK_WORDS = 10  # the first sentence, said before a scroller decides
+STORY = ("cast", "step", "bars", "ask")
+STORY_SCENE_KINDS = (*STORY, "board", "number", "compare", "chart", "map", "photo", "follow")
+STORY_HOOK_WORDS = 14
 SLOW_START = re.compile(r"^(when|in \d|back in|once|since|most people|have you|did you|ever|today|so|imagine)\b", re.I)
 SCENE_KINDS = ("product", "tag", "board", "number", "compare", "chart", "map", "photo", "follow")
 MIDDLE = ("product", "board", "number", "compare", "chart", "map", "photo")  # what goes between the opening and the follow line
@@ -93,7 +98,7 @@ def save_topics(found: list[dict[str, Any]], out_dir: Path | None = None) -> Non
     path.write_text(json.dumps(found, indent=1, ensure_ascii=False) + "\n", encoding="utf-8")
 
 
-def add_topic(question: str, pillar: str = "", out_dir: Path | None = None) -> dict[str, Any]:
+def add_topic(question: str, pillar: str = "", out_dir: Path | None = None, format: str = "") -> dict[str, Any]:
     question = " ".join(question.split())
     if len(question) < 8 or not question.endswith("?"):
         raise WriteError("A topic is a question ending in ?")
@@ -102,7 +107,8 @@ def add_topic(question: str, pillar: str = "", out_dir: Path | None = None) -> d
     found = topics(out_dir)
     if any(_norm(t["question"]) == _norm(question) for t in found):
         raise WriteError("That question is already on the list")
-    item = {"question": question, "pillar": pillar, "used": False, "added": datetime.now().strftime("%Y-%m-%d")}
+    item = {"question": question, "pillar": pillar, "used": False, "added": datetime.now().strftime("%Y-%m-%d"),
+            **({"format": "story"} if format == "story" else {})}
     save_topics([*found, item], out_dir)
     return item
 
@@ -139,6 +145,8 @@ def next_topics(count: int, out_dir: Path | None = None, found: list[dict[str, A
 
 def format_problems(script: dict) -> list[str]:
     """What the renderer and the brief need beyond pw_channel.check_script."""
+    if pw_channel.is_story(script):
+        return story_problems(script)
     problems = []
     scenes = script.get("scenes") or []
     n = pw_channel.words(pw_channel.narration(script))
@@ -178,6 +186,105 @@ def format_problems(script: dict) -> list[str]:
         problems.append("2 reasons and a twist: 3-4 scenes between the opening and the follow line")
     if middle and all(k == "board" for k in middle):
         problems.append("vary the pictures: at least one number, compare, chart, map or photo scene, not only boards")
+    for src in script.get("sources") or []:
+        if not str(src.get("url", "")).startswith("http"):
+            problems.append(f"source without a link: {src.get('title', '')[:50]}")
+    return problems
+
+
+MATH_NUMBER = re.compile(r"[$€£]?\s*([\d][\d,]*(?:\.\d+)?)")
+
+
+def math_value(text: str) -> float | None:
+    """"5 x 365 x $10 = $18,250" -> 18250.0 when the working really gives the result, else None (a wrong line,
+    or one that isn't a product of numbers)."""
+    left, eq, right = text.partition("=")
+    if not eq:
+        return None
+    nums = [float(m.group(1).replace(",", "")) for m in MATH_NUMBER.finditer(left)]
+    want = [float(m.group(1).replace(",", "")) for m in MATH_NUMBER.finditer(right)]
+    if not nums or len(want) != 1 or not re.fullmatch(r"[\s\d.,$€£x×*]+", left.strip()):
+        return None
+    got = 1.0
+    for v in nums:
+        got *= v
+    return want[0] if abs(got - want[0]) <= max(1.0, 0.005 * abs(want[0])) else None
+
+
+def story_problems(script: dict) -> list[str]:
+    """A money story: the cast, 3-4 steps whose math adds up, the bars, the ask, the follow line."""
+    problems = []
+    scenes = script.get("scenes") or []
+    n = pw_channel.words(pw_channel.narration(script))
+    lo, hi = STORY_WORDS
+    if not lo <= n <= hi:
+        problems.append(f"{n} words of narration (a story wants {lo}-{hi}, about 60-115 s)")
+    said = str(scenes[0].get("narration") or "").strip() if scenes else ""
+    first = re.split(r"(?<=[.!?])\s", said, maxsplit=1)[0]
+    if scenes and len(first.split()) > STORY_HOOK_WORDS:
+        problems.append(f"the hook's first sentence is {len(first.split())} words; {STORY_HOOK_WORDS} at most, and it holds the clash "
+                        f"(\"Same $500. Four friends. One made $3,650, one made $511,000.\"): {first!r}")
+    if scenes and not re.search(r"\d", said):
+        problems.append("the hook says the numbers that clash (the smallest and the biggest result)")
+    kinds = [s.get("kind") for s in scenes]
+    for k, s in enumerate(scenes, 1):
+        if s.get("kind") not in STORY_SCENE_KINDS:
+            problems.append(f"scene {k}: a story's kinds are {', '.join(STORY_SCENE_KINDS)}")
+        if s.get("kind") != "follow" and not str(s.get("narration") or "").strip():
+            problems.append(f"scene {k}: no narration")
+        o = s.get(s.get("kind") or "") or {}
+        if s.get("kind") == "cast":
+            people = o.get("people") or []
+            if not 2 <= len(people) <= 4 or not all(isinstance(p, dict) and _short(p.get("name"), 12) for p in people):
+                problems.append(f"scene {k}: cast.people is 2-4 of {{name (12 characters at most), money}}")
+            if not _short(o.get("title"), 24):
+                problems.append(f"scene {k}: cast.title is at most 24 characters (\"Same $500 each\")")
+        elif s.get("kind") == "step":
+            people = next((len((x.get("cast") or {}).get("people") or []) for x in scenes if x.get("kind") == "cast"), 4)
+            if not isinstance(o.get("n"), int) or not 1 <= o.get("n") <= people:
+                problems.append(f"scene {k}: step.n is the person's number in the cast (1-{people})")
+            if not _short(o.get("did"), 24):
+                problems.append(f"scene {k}: step.did is what they did, at most 24 characters (\"Rented five carts\")")
+            if o.get("draw") not in pw_draw.DRAWINGS:
+                problems.append(f"scene {k}: step.draw is the thing they got, one of {', '.join(pw_draw.DRAWINGS)}")
+            if not isinstance(o.get("count"), int) or o.get("count") < 1:
+                problems.append(f"scene {k}: step.count is how many of them (a whole number, 1 or more)")
+            math = str(o.get("math") or "")
+            value = math_value(math)
+            if value is None or len(math) > 34:
+                problems.append(f"scene {k}: step.math is a product that adds up, at most 34 characters (\"5 x 365 x $10 = $18,250\"): {math!r}")
+            elif re.sub(r"\D", "", math.rpartition("=")[2]) not in re.sub(r"[^\d ]", "", str(s.get("narration") or "")).split():
+                problems.append(f"scene {k}: the narration says the result in digits exactly as step.math writes it ({math.rpartition('=')[2].strip()}), so it lands on screen as it is said")
+            if not _short(o.get("lesson"), 18):
+                problems.append(f"scene {k}: step.lesson names the idea in 1-3 words (18 characters at most): \"Leasing\"")
+        elif s.get("kind") == "bars":
+            bars = o.get("bars") or []
+            if not 2 <= len(bars) <= 4 or not all(isinstance(b, dict) and _short(b.get("label"), 12) and isinstance(b.get("value"), (int, float)) and _short(b.get("text"), 10) for b in bars):
+                problems.append(f"scene {k}: bars.bars is 2-4 of {{label (12 characters), value (a number), text (10 characters)}}")
+            totals = [math_value(str((x.get("step") or {}).get("math") or "")) for x in scenes if x.get("kind") == "step"]
+            if all(t is not None for t in totals) and len(totals) == len(bars) and any(float(b.get("value") or 0) != t for b, t in zip(bars, totals) if isinstance(b, dict)):
+                problems.append(f"scene {k}: the bars' values are the steps' results, in order")
+        elif s.get("kind") == "ask":
+            if not _short(o.get("question"), 26) or not 2 <= len(o.get("options") or []) <= 5:
+                problems.append(f"scene {k}: ask needs question (26 characters at most) and options (2-5 short choices)")
+        else:
+            problems += [f"scene {k}: {p}" for p in scene_problems(s)]
+            if s.get("kind") == "board":
+                board = s.get("board") or {}
+                if board.get("picture") not in pw_draw.DRAWINGS:
+                    problems.append(f"scene {k}: board.picture is one of {', '.join(pw_draw.DRAWINGS)}")
+    if kinds[:1] != ["cast"]:
+        problems.append("a story opens on its cast (kind cast): the people and what they start with")
+    if not 3 <= kinds.count("step") <= 4:
+        problems.append("3-4 step scenes: one move per person, each with its math and the idea's name")
+    if "bars" not in kinds:
+        problems.append("a bars scene near the end: every result side by side")
+    if "ask" not in kinds:
+        problems.append("an ask scene before the follow line: \"Which one are you?\" and the choices")
+    if kinds[-1:] != ["follow"] or "follow" not in str(scenes[-1].get("narration", "")).lower():
+        problems.append("the last scene says the follow line (\"Follow for tomorrow's why.\")")
+    if not _short(script.get("comment"), 120):
+        problems.append("comment: the question pinned under the video (\"Which friend are you: 1, 2, 3 or 4? 👇\")")
     for src in script.get("sources") or []:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
@@ -270,10 +377,60 @@ def problems_of(script: dict) -> list[str]:
 
 
 EXAMPLE = pw_channel.SCRIPTS_DIR / "001-arizona-99c.json"  # the first, hand-checked script
+STORY_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-story.json"  # the prompt's example only: not in the queue
 
 
-def _example() -> str:
-    return EXAMPLE.read_text(encoding="utf-8").strip() if EXAMPLE.is_file() else "{}"
+def _example(path: Path = EXAMPLE) -> str:
+    return path.read_text(encoding="utf-8").strip() if path.is_file() else "{}"
+
+
+def story_rules() -> str:
+    lo, hi = STORY_WORDS
+    return f"""Price Tag Why is a YouTube Shorts channel: whiteboard-animated money stories for curious adults (18-45,
+US/UK/CA/AU) who are not finance experts. A MONEY STORY is a parable (made up, and it says so) or a true story
+(sourced) in which 3-4 people start with the same money and each does something different with it, the numbers
+growing with every move, so the viewer stays to see the next number. It explains, it never advises.
+
+Each script is ONE JSON object shaped exactly like the example below, with "format": "story":
+- {lo}-{hi} words of narration in all (60-115 seconds), short spoken sentences. Every figure the math shows is
+  said in digits exactly as written ("that's $18,250"), so it lands on screen as it is said.
+- scene 1 is kind "cast": the hook. Its first sentence (at most {STORY_HOOK_WORDS} words) holds the clash: the same start, the
+  smallest and the biggest result ("Same $500. Four friends. One made $3,650. Another made $511,000."). Then the
+  setting in a few words and "Here is what each one did." cast: {{"title": at most 24 characters, "people": 2-4 of
+  {{"name": "Friend 1" (12 characters at most), "money": "$500"}}, "note": "One year later..."}}.
+- then 3-4 scenes of kind "step", one per person, in order, each 45-70 words: what they did, the math said out
+  loud, the result, then the idea's name ("This is called leasing.") and one line of why it worked.
+  step: {{"who": the person's name, "n": their number (1-4), "did": at most 24 characters ("Rented five carts"),
+  "draw": the thing they got, one of the drawings below, "count": how many (a whole number; 6 are drawn, more is
+  written "x151"), "math": a product that adds up, at most 34 characters ("5 x 365 x $10 = $18,250": the numbers
+  multiplied, = , the result; it is checked), "lesson": the idea's name, 1-3 words}}. Each move must beat the one
+  before it, and the last is the biggest.
+- then kind "bars": every result side by side. bars: {{"title": ..., "bars": [{{"label": the name, "value": the
+  result as a number, "text": "$18,250"}}, ...]}} in the cast's order; the narration says them one by one and the
+  moral in one line ("The money was the same. The idea was different.").
+- then kind "ask": {{"question": "Which friend are you?" (26 characters at most), "options": ["1", "2", "3", "4"],
+  "line": "Send this to a friend"}}; the narration asks it, then asks for a comment and a share.
+- last scene, kind "follow": one short line back to the opening, then "Follow for tomorrow's why."
+- THE DRAWING IS THE THING THE NARRATION NAMES. step.draw (and any board.picture, photo mark) is one of these, used
+  only for what it shows: {"; ".join(f"{k} = {v}" for k, v in pw_draw.LOOKS.items())}. Write the story around
+  these things (carts, stands, machines, cups, trucks, contracts, coins, shops): never name a thing there is no
+  drawing of.
+- a parable has "parable": true and says it is one, in the ask scene or the description ("It's a parable, not a
+  plan."); it needs no sources. A true story (a founder, a town, a country) has "parable": false, "sources" (2 or
+  more real pages, never Wikipedia) and "claims" (every figure, each with 2 or more source numbers); its steps may
+  be years instead of people (n still 1-4, who the year or the name).
+- "comment": the question pinned under the video, the one the ask scene asks ("Which friend are you: 1, 2, 3 or 4? 👇").
+- "title": the YouTube title with the numbers in it ("Same $500, four friends: one made $3,650, one made $511,000").
+  "question": the words on the first frame, at most 5 ("Same $500. Four friends."). "description": 2-3 sentences,
+  starting with "A money parable" when it is one. "hashtags": 2-3 without #. "pillar": one of {", ".join(PILLARS)}.
+  "thumbnail": {{"hook": "WHICH ONE ARE YOU?"}}.
+Rules: explain, never advise (no "buy", "invest", "you should"); the math must be right; an original story (never
+the chicken-and-eggs one, never a story already on YouTube); a different trade and a different set of ideas from
+one story to the next (own / rent / pre-sell / a system; stock turnover; sales vs profit; fixed vs variable
+cost; price vs value; one customer vs many; cash now vs cash later...).
+
+The example (a finished script):
+{_example(STORY_EXAMPLE)}"""
 
 
 def rules() -> str:
@@ -343,12 +500,19 @@ The example (a finished script):
 {_example()}"""
 
 
+def session_format(session: dict[str, Any]) -> str:
+    return session.get("format") if session.get("format") in FORMATS else "why"
+
+
 def write_prompt(session: dict[str, Any]) -> str:
     qs = "\n".join(f"{k}. {t['question']}" + (f" (pillar: {t['pillar']})" if t.get("pillar") else "")
                    for k, t in enumerate(session["topics"], 1))
     many = len(session["topics"]) > 1
-    return (f"{rules()}\n\nWrite {'one script for each of these questions' if many else 'the script for this question'}:\n{qs}\n\n"
-            f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per question, in this order' if many else 'one object'}.")
+    story = session_format(session) == "story"
+    what = ("one money story for each of these ideas" if many else "the money story for this idea") if story else \
+           ("one script for each of these questions" if many else "the script for this question")
+    return (f"{story_rules() if story else rules()}\n\nWrite {what}:\n{qs}\n\n"
+            f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per idea, in this order' if many else 'one object'}.")
 
 
 def fix_prompt(session: dict[str, Any]) -> str:
@@ -384,6 +548,7 @@ def facts_prompt(session: dict[str, Any]) -> str:
 class Proposal(BaseModel):
     question: str
     pillar: str = ""
+    format: str = ""
 
 
 class Proposals(BaseModel):
@@ -414,11 +579,34 @@ Answer with JSON only, no other text:
 The pillar is written exactly as above."""
 
 
-def llm_prompt(count: int = 20, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> str:
+STORY_TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel of whiteboard money stories (60-115 seconds): 3-4 people
+start with the same money, each does something different with it, the numbers grow with every move, and each move
+teaches one money idea with a name (leasing, pre-selling, stock turnover, a system, fixed vs variable cost, sales vs
+profit, price vs value, cash now vs cash later...). It explains, it never gives financial advice.
+
+Give me {count} new story ideas. Each one is a short line that names the trade, the start money and the clash of
+results, ending with "?" ("Same $500, four friends with a coffee cart: how did one make $3,650 and one $511,000?").
+Each must:
+- use everyday things that can be drawn: a cart, a stand, a vending machine, a shop, a truck, a cup, a contract, coins
+- teach 3-4 ideas with names, a different set and a different trade from every idea below
+- be a parable that says so, or a true story (a founder, a town, a country) with real sourced numbers
+- avoid investing or crypto tips, politics, elections and wars, and never the chicken-and-eggs parable
+
+Don't repeat or rephrase any of these, already made or planned:
+{taken}
+
+Answer with JSON only, no other text:
+{{"topics": [{{"question": "Same $300, three cousins with a lemonade stand: how did one make $900 and one $90,000?", "pillar": "business tricks", "format": "story"}}]}}
+The pillar is one of: {pillars}, written exactly so."""
+
+
+def llm_prompt(count: int = 20, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None, format: str = "why") -> str:
     """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM"); `found`: the list
-    to avoid (the Linux hub's, on the sending machine)."""
-    return TOPICS_PROMPT.format(count=count, pillars="\n".join(f"- {p}" for p in PILLARS),
-                                taken="\n".join(t["question"] for t in (topics(out_dir) if found is None else found)) or "(none yet)")
+    to avoid (the Linux hub's, on the sending machine); format "story" asks for money-story ideas."""
+    taken = "\n".join(t["question"] for t in (topics(out_dir) if found is None else found)) or "(none yet)"
+    if format == "story":
+        return STORY_TOPICS_PROMPT.format(count=count, pillars=", ".join(PILLARS), taken=taken)
+    return TOPICS_PROMPT.format(count=count, pillars="\n".join(f"- {p}" for p in PILLARS), taken=taken)
 
 
 def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
@@ -430,7 +618,7 @@ def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
     added = []
     for p in found:
         try:
-            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir)["question"])
+            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir, p.format)["question"])
         except WriteError:
             continue
     return {"added": added, "skipped": len(found) - len(added)}
@@ -467,11 +655,19 @@ def _save(session: dict[str, Any], out_dir: Path | None = None) -> dict[str, Any
     return view(session["kind"], out_dir)
 
 
+def of_format(found: list[dict[str, Any]], format: str) -> list[dict[str, Any]]:
+    """The topics written in this format: story ideas, or the "why" questions."""
+    return [t for t in found if (t.get("format") == "story") == (format == "story")]
+
+
 def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Path | None = None,
-          found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """A new session: `question` (or the next topic) for "one", the next `count` topics for "week". `found`: the
-    topic list to take them from (the Linux hub's, on the sending machine), else this machine's."""
-    found = topics(out_dir) if found is None else found
+          found: list[dict[str, Any]] | None = None, format: str = "why") -> dict[str, Any]:
+    """A new session: `question` (or the next topic) for "one", the next `count` topics for "week", all in one
+    `format` (why | story). `found`: the topic list to take them from (the Linux hub's, on the sending machine),
+    else this machine's."""
+    if format not in FORMATS:
+        raise WriteError(f"The format is one of: {', '.join(FORMATS)}")
+    found = of_format(topics(out_dir) if found is None else found, format)
     if kind == "one":
         asked = " ".join(question.split())
         known = next((t for t in found if _norm(t["question"]) == _norm(asked)), None) if asked else None
@@ -479,8 +675,9 @@ def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Pa
     else:
         picked = next_topics(max(1, min(14, count)), out_dir, found)
     if not picked:
-        raise WriteError("No topics left: add questions in the Topics tab")
-    session = {"kind": kind, "topics": picked, "step": "write", "drafts": [], "problems": {}, "flagged": {},
+        raise WriteError("No topics left: add questions in the Topics tab" if format == "why" else
+                         "No story ideas left: add some in the Topics tab (New topics from your own LLM, Stories)")
+    session = {"kind": kind, "format": format, "topics": picked, "step": "write", "drafts": [], "problems": {}, "flagged": {},
                "started": datetime.now().isoformat(timespec="minutes")}
     return _save(session, out_dir)
 
@@ -495,6 +692,9 @@ def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
         stripped = '{"scripts": [' + stripped + "]}"  # one script pasted on its own
     parsed = llm_json.parse(stripped, Answer, WriteError)
     session["drafts"] = parsed.scripts
+    if session_format(session) == "story":
+        for d in parsed.scripts:
+            d["format"] = "story"
     session["problems"] = {str(k): problems_of(d) for k, d in enumerate(parsed.scripts, 1)}
     if len(parsed.scripts) != len(session["topics"]):
         session["problems"]["0"] = [f"{len(parsed.scripts)} scripts for {len(session['topics'])} questions"]
@@ -640,12 +840,16 @@ def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any
 
 
 def view(kind: str, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-    """The tab's state: the step, the prompt to copy, the drafts with their problems."""
+    """The tab's state: the step, the prompt to copy, the drafts with their problems; with no session, the next
+    topics of each format."""
     session = load(kind, out_dir)
     if session is None:
-        return {"kind": kind, "step": "none", "topics": next_topics(1 if kind == "one" else DEFAULT_COUNT, out_dir, found)}
+        all_ = topics(out_dir) if found is None else found
+        n = 1 if kind == "one" else DEFAULT_COUNT
+        return {"kind": kind, "step": "none", "topics": next_topics(n, out_dir, of_format(all_, "why")),
+                "stories": next_topics(n, out_dir, of_format(all_, "story")), "formats": list(FORMATS)}
     prompt = {"write": write_prompt, "fix": fix_prompt, "facts": facts_prompt}.get(session["step"])
-    return {"kind": kind, "step": session["step"], "topics": session["topics"], "prompt": prompt(session) if prompt else "",
+    return {"kind": kind, "format": session_format(session), "step": session["step"], "topics": session["topics"], "prompt": prompt(session) if prompt else "",
             "drafts": [{"title": d.get("title", ""), "words": pw_channel.words(pw_channel.narration(d)),
                         "sources": len(d.get("sources") or []), "problems": session["problems"].get(str(k), []),
                         "flagged": session["flagged"].get(str(k), [])} for k, d in enumerate(session["drafts"], 1)],

@@ -8,7 +8,7 @@
     videos: $("pwVideos"), count: $("pwVideosCount"), topics: $("pwTopics"), topicsCount: $("pwTopicsCount"),
     navWaiting: $("pwNavWaiting"), navQueued: $("pwNavQueued"), navTopics: $("pwNavTopics"), long: $("pwLong"),
     write: { one: $("pwWriteOne"), week: $("pwWriteWeek") } };
-  const state = { poll: null, status: null, section: "videos" };
+  const state = { poll: null, status: null, section: "videos", format: { one: "why", week: "why" } };  // format: the Write tabs' pick (why | story)
   const showError = (msg) => { els.error.textContent = msg || ""; els.error.hidden = !msg; };
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const fmtWhen = (iso) => (iso || "").replace("T", " ").slice(0, 16);
@@ -204,7 +204,7 @@
     els.topics.innerHTML = rows.length ? rows.map((t, i) => `<div class="pw-slot pw-topic${i === 0 && !t.used ? " next" : ""}">
         <span class="pw-n">${t.used ? "" : i + 1}</span>
         ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
-        <span class="pw-what">${esc(t.question)}</span><span class="pill">${esc(t.pillar || "—")}</span>
+        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 60-115 s">📖 story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
         ${t.used ? "" : `${i && !linux ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
           <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
           ${linux ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}`}
@@ -239,16 +239,25 @@
     card.querySelector('[data-l="copy"]').click();  // fills the prompt in (and copies it)
   }
 
+  const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 60-115 s" };
+  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why, or a money story: 60-115 s, a cast of drawn people, one move each with its math, the bars, which one are you?">
+      <option value="why"${state.format[kind] === "story" ? "" : " selected"}>❓ why (35 s)</option><option value="story"${state.format[kind] === "story" ? " selected" : ""}>📖 story (60-115 s)</option></select>`;
+  const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
+
   function renderWrite(kind, v) {
     const box = els.write[kind];
-    const topicList = (v.topics || []).map((t, i) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
+    const topicList = topicItems(v.topics);
     if (v.step === "none") {
+      const story = state.format[kind] === "story";
+      const next = story ? v.stories || [] : v.topics || [];
+      const list = topicItems(next);
       box.innerHTML = kind === "one"
-        ? `<div class="pw-add"><input type="text" id="pwOneQuestion" placeholder="A question, or leave empty for the next topic: ${esc((v.topics[0] || {}).question || "none left")}" maxlength="160">
-           <button type="button" class="btn-primary" data-write-start="one">Start</button></div>`
-        : `<div class="pw-add"><label class="hint">Scripts <input type="number" id="pwWeekCount" min="1" max="14" value="7" style="width:70px"></label>
+        ? `<div class="pw-add">${formatPick(kind)}<input type="text" id="pwOneQuestion" placeholder="${story ? "A story idea" : "A question"}, or leave empty for the next one: ${esc((next[0] || {}).question || "none left")}" maxlength="160">
+           <button type="button" class="btn-primary" data-write-start="one">Start</button></div>
+           ${!next.length && story ? `<div class="da-note">No story ideas yet: get some in the Topics tab (New topics from your own LLM → 📖 money stories), or type one above.</div>` : ""}`
+        : `<div class="pw-add">${formatPick(kind)}<label class="hint">Scripts <input type="number" id="pwWeekCount" min="1" max="14" value="7" style="width:70px"></label>
            <button type="button" class="btn-primary" data-write-start="week">Start</button></div>
-           ${topicList ? `<span class="hint">The next topics, pillars in turn:</span><ol>${topicList}</ol>` : noTopics()}`;
+           ${list ? `<span class="hint">The next ${story ? "story ideas" : "topics, pillars in turn"}:</span><ol>${list}</ol>` : noTopics()}`;
       return;
     }
     const drafts = (v.drafts || []).map((d, i) => `<div class="pw-slot">
@@ -258,7 +267,7 @@
         ${kind === "week" ? `<button type="button" class="btn-secondary" data-write-drop="${i + 1}">Leave out</button>` : ""}
       </div>`).join("");
     const pasteTo = v.step === "facts" ? "facts" : "answer";
-    box.innerHTML = `<ol class="hint">${topicList}</ol>
+    box.innerHTML = `<p class="hint"><span class="pill">${FORMAT_TEXT[v.format] || FORMAT_TEXT.why}</span></p><ol class="hint">${topicList}</ol>
       ${(v.general || []).length ? `<span class="da-note">${esc(v.general.join("; "))}</span>` : ""}
       ${drafts}
       ${v.step === "ready"
@@ -383,6 +392,7 @@
       const kind = d.writeStart;
       if (d.restart && !window.confirm("Start over? The pasted answers of this session are dropped.")) return;
       const body = kind === "one" ? { question: ($("pwOneQuestion") || {}).value || "" } : { count: Number(($("pwWeekCount") || {}).value || 7) };
+      body.format = ($(`pwFormat-${kind}`) || {}).value || state.format[kind] || "why";
       if (d.restart) Object.assign(body, kind === "one" ? { question: "" } : { count: 7 });
       return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}`, body));
     }
@@ -435,12 +445,16 @@
       }
     }
   });
+  document.addEventListener("change", (e) => {
+    const m = /^pwFormat-(one|week)$/.exec(e.target.id || "");
+    if (m) { state.format[m[1]] = e.target.value; loadWrite(m[1]); }
+  });
   $("pwTopicsRefresh").addEventListener("click", loadTopics);  // the LLM topics card refreshes the list with it
   $("pwAddTopic").addEventListener("submit", (e) => {
     e.preventDefault();
     act(async () => {
       const question = $("pwAddQuestion").value;
-      const { body } = await post("/api/pricetagwhy/topics", { question, pillar: $("pwAddPillar").value });
+      const { body } = await post("/api/pricetagwhy/topics", { question, pillar: $("pwAddPillar").value, format: $("pwAddFormat").value });
       renderTopics(body);
       $("pwAddStatus").textContent = body.sent ? `✅ Sent to the Linux machine's list: ${question}` : `✅ Added: ${question}`;
       $("pwAddQuestion").value = "";

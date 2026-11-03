@@ -16,8 +16,10 @@
     el("copy").addEventListener("click", async (e) => {
       const btn = e.currentTarget;
       const count = el("count");
+      const format = el("format");  // a channel with more than one format (Price Tag Why: why | story)
+      const q = [count ? `count=${encodeURIComponent(count.value)}` : "", format ? `format=${encodeURIComponent(format.value)}` : ""].filter(Boolean).join("&");
       try {
-        const { body } = await api(count ? `${url}?count=${encodeURIComponent(count.value)}` : url);
+        const { body } = await api(q ? `${url}?${q}` : url);
         const box = el("prompt");
         box.value = body.prompt;
         try {

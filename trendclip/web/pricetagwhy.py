@@ -292,11 +292,13 @@ def youtube_logout() -> dict[str, Any]:
 class TopicRequest(BaseModel):
     question: str
     pillar: str = ""
+    format: str = ""  # "story" for a money-story idea
 
 
 class StartRequest(BaseModel):
     question: str = ""
     count: int = pw_write.DEFAULT_COUNT
+    format: str = "why"  # why | story (pw_write.FORMATS)
 
 
 class PasteRequest(BaseModel):
@@ -345,18 +347,18 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
 
     if hub.is_sender(_settings()):
         try:
-            sent = channel_hub.add_one(_settings(), "pricetagwhy", {"question": req.question, "pillar": req.pillar})
+            sent = channel_hub.add_one(_settings(), "pricetagwhy", {"question": req.question, "pillar": req.pillar, "format": req.format})
         except hub.HubError as err:
             raise HTTPException(status_code=err.status if 400 <= err.status < 600 else 502, detail=str(err)) from err
         return {**topics(), "sent": sent}
-    _write(pw_write.add_topic, req.question, req.pillar)
+    _write(pw_write.add_topic, req.question, req.pillar, None, req.format)
     return topics()
 
 
 @router.get("/llm-topics")
-def llm_topics_prompt(count: int = 20) -> dict[str, Any]:
-    """The prompt for new topics, to paste into any LLM."""
-    return {"prompt": pw_write.llm_prompt(max(1, min(40, count)), None, _hub_topics()[0])}
+def llm_topics_prompt(count: int = 20, format: str = "why") -> dict[str, Any]:
+    """The prompt for new topics (or, format=story, new money-story ideas), to paste into any LLM."""
+    return {"prompt": pw_write.llm_prompt(max(1, min(40, count)), None, _hub_topics()[0], format)}
 
 
 class LLMText(BaseModel):
@@ -401,7 +403,7 @@ def write_view(kind: str) -> dict[str, Any]:
 @router.post("/write/{kind}")
 def write_start(kind: str, req: StartRequest) -> dict[str, Any]:
     """A new writing session, from the Linux hub's topic list on the sending machine."""
-    return _write(pw_write.start, kind, req.question, req.count, None, _hub_topics(strict=True)[0])
+    return _write(pw_write.start, kind, req.question, req.count, None, _hub_topics(strict=True)[0], req.format)
 
 
 @router.post("/write/{kind}/answer")

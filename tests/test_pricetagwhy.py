@@ -645,3 +645,91 @@ def test_a_drawing_is_only_ever_the_thing_it_shows():
     assert not pw_write.scene_problems({"kind": "product", "product": {"draw": "flower", "lines": []}})
     assert not pw_write.scene_problems({"kind": "product", "product": {"draw": "can", "label": ["ICED", "TEA"], "lines": []}})
     assert "dress = a dress on a hanger" in pw_write.rules()
+
+
+# --------------------------------------------------------------------------- the money story (the long format)
+
+STORY = pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-story.json"
+
+
+def _story() -> dict:
+    return json.loads(STORY.read_text(encoding="utf-8"))
+
+
+def test_the_story_example_meets_the_story_rules_and_its_math_adds_up():
+    from modules import pw_write
+
+    script = _story()
+    assert pw_channel.is_story(script) and pw_channel.limits(script) == pw_channel.STORY_SECONDS
+    assert pw_write.problems_of(script) == []
+    assert pw_write.STORY_WORDS[0] <= pw_channel.words(pw_channel.narration(script)) <= pw_write.STORY_WORDS[1]
+    assert pw_write.math_value("5 x 365 x $10 = $18,250") == 18250 and pw_write.math_value("70 x 365 x 20 x $1 = $511,000") == 511000
+    assert pw_write.math_value("5 x 365 x $10 = $18,000") is None and pw_write.math_value("five carts = $18,250") is None
+    bad = json.loads(json.dumps(script))
+    bad["scenes"][2]["step"]["math"] = "5 x 365 x $10 = $18,000"
+    bad["scenes"][3]["step"]["draw"] = "chicken"
+    bad["scenes"][0]["cast"]["people"].append({"name": "Friend 5"})
+    del bad["parable"]
+    problems = pw_write.problems_of(bad)
+    assert any("adds up" in p for p in problems) and any("step.draw" in p for p in problems)
+    assert any("cast.people" in p for p in problems) and any("fewer than two sources" in p for p in problems)
+    said = json.loads(json.dumps(script))
+    said["scenes"][1]["narration"] = said["scenes"][1]["narration"].replace("$3,650", "three thousand six hundred and fifty")
+    assert any("says the result in digits" in p for p in pw_write.problems_of(said))
+    quiet = json.loads(json.dumps(script))
+    quiet["description"] = "Four friends."
+    quiet["scenes"][6]["narration"] = quiet["scenes"][6]["narration"].replace("It's a parable, not a plan. ", "")
+    assert any("parable says so" in p for p in pw_channel.check_script(quiet))
+
+
+def test_a_story_session_writes_from_story_ideas_with_the_story_rules(tmp_path):
+    from modules import pw_write
+
+    with pytest.raises(pw_write.WriteError):
+        pw_write.start("one", out_dir=tmp_path, format="story")  # no story ideas on the list yet
+    pw_write.add_topic("Same $300, three cousins with a lemonade stand: how did one make $900 and one $90,000?",
+                       "business tricks", tmp_path, "story")
+    fresh = pw_write.view("one", tmp_path)
+    assert fresh["formats"] == ["why", "story"] and fresh["stories"][0]["question"].startswith("Same $300")
+    assert fresh["topics"][0]["question"].startswith("Why")  # the why questions stay apart
+    view = pw_write.start("one", out_dir=tmp_path, format="story")
+    assert view["format"] == "story" and "money story" in view["prompt"] and "\"math\": a product" in view["prompt"]
+    assert "Friend 4" in view["prompt"]  # the example story is in the prompt
+    story = _story()
+    del story["format"]
+    view = pw_write.answer("one", json.dumps(story), tmp_path)
+    assert view["drafts"][0]["problems"] == [] and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "story"
+    assert "money stories" in pw_write.llm_prompt(5, tmp_path, format="story")
+    assert "money stories" not in pw_write.llm_prompt(5, tmp_path)
+    added = pw_write.llm_add(json.dumps({"topics": [{"question": "Same $50, two kids and a stand: who made $5,000?", "pillar": "business tricks", "format": "story"}]}), tmp_path)
+    assert added["added"] and [t for t in pw_write.topics(tmp_path) if t.get("format") == "story"][-1]["question"].startswith("Same $50")
+
+
+def test_the_story_scenes_draw_the_cast_the_math_and_the_bars_on_the_narrator_s_words():
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    script = _story()
+    spec = bw_render.Spec(scenes=[bw_render.Scene(kind=s["kind"], narration=s["narration"], opts={k: v for k, v in s.items() if k not in ("kind", "narration")})
+                                  for s in script["scenes"]], words=[])
+    for k, scene in enumerate(spec.scenes):
+        scene.start, scene.end = k * 20.0, (k + 1) * 20.0
+    spec.words = [bw_render.Word("$18,250", 52.0, 52.6)]  # said late in scene 2
+    pw_render.restyle(spec)
+    r = pw_render.PwRenderer(spec)
+    cast, step, bars, ask = r.drawn[0], r.drawn[2], r.drawn[5], r.drawn[6]
+    assert cast.late >= 4 * 13 and all(it["at"] < 0 for it in cast.items[:cast.late])  # four people on the first frame
+    result = next(it for it in step.items if it.get("count"))
+    assert result["text"] == "$18,250" and 51.5 <= result["at"] <= 52.0  # the result lands on the spoken number
+    assert [it for it in step.items if it["kind"] == "write" and it["text"] == "LEASING"]
+    assert sum(1 for it in bars.items if it.get("under")) == 4 and ask.items[0]["text"] == "Which friend are you?"
+    frame = r.scene_frame(2, 53.0)
+    assert frame.size == (bw_render.W, bw_render.H)
+    assert r.scene_frame(7, 145.0).size == frame.size  # the follow line draws the cast again
+
+
+def test_a_story_thumbnail_shows_a_person_and_the_two_results(tmp_path):
+    from modules import pw_thumb
+
+    w = pw_thumb.words(_story())
+    assert w["draw"] == "person" and w["old"] == "$3,650" and w["now"] == "$511,000" and w["old_label"] == "Friend 1"
+    assert pw_thumb.make(_story(), tmp_path / "t.jpg").is_file()

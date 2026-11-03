@@ -530,7 +530,7 @@ class PriceTagWhy:
         from modules import pw_write
 
         try:
-            item = pw_write.add_topic(str(topic.get("question", "")), str(topic.get("pillar", "")))
+            item = pw_write.add_topic(str(topic.get("question", "")), str(topic.get("pillar", "")), None, str(topic.get("format", "")))
         except pw_write.WriteError as err:
             raise HubError(str(err), 400) from err
         return {**item, "added": [item["question"]]}

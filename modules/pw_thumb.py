@@ -50,6 +50,11 @@ def words(script: dict) -> dict[str, Any]:
     """What the thumbnail shows: {title, hook, draw, label, old, old_label, now, now_label, style}."""
     t = dict(script.get("thumbnail") or {})
     product = next(((s.get("product") or {}) for s in script.get("scenes") or [] if s.get("kind") == "product"), {})
+    bars = next(((s.get("bars") or {}).get("bars") or [] for s in script.get("scenes") or [] if s.get("kind") == "bars"), [])
+    if not product and bars:  # a money story: the person, the smallest result crossed out, the biggest in the starburst
+        shown = sorted((b for b in bars if isinstance(b, dict)), key=lambda b: float(b.get("value") or 0))
+        product = {"draw": "person", "lines": [str(shown[0].get("label") or ""), str(shown[0].get("text") or ""),
+                                               str(shown[-1].get("label") or ""), str(shown[-1].get("text") or "")]}
     lines = [bw_brand.pen_line(x)["text"].strip() for x in product.get("lines") or []]
     numbered = [k for k, ln in enumerate(lines) if DIGIT.search(ln)]
     label = lambda k: lines[k - 1] if k > 0 and not DIGIT.search(lines[k - 1]) else ""
