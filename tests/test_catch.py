@@ -43,7 +43,7 @@ def test_the_catch_script_holds_three_emoji_and_asks_for_them_at_the_end(tmp_pat
     result = catch.script(s, "Minecraft", rng=random.Random(3))
     assert len(result.catch) == 3 and len(set(result.catch)) == 3 and all(e in catch.EMOJI for e in result.catch)
     assert result.answer == " ".join(result.catch) and result.choices == []
-    assert result.script.startswith("Minecraft fans only. A zombie is hiding in this video.")
+    assert result.script.startswith("Minecraft fans only. A zombie is hiding in this video, three times,")
     assert result.script.endswith("What three emojis did the zombie hold? Comment all three below! Level 3 drops next. Subscribe so you don't miss it!")
     assert result.title == "Can You Catch The Zombie? | Level 2 🎮" and result.title_card == "LEVEL 2 - CATCH THE ZOMBIE"
     assert "All three = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment
