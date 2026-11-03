@@ -105,6 +105,7 @@ class ShortScript(GeminiShort):
     flashes: list[Flash] = Field(default_factory=list)  # quiz: numbers / clues flashed on screen
     answer: str = ""  # quiz: the correct answer (also in the pinned comment)
     choices: list[str] = Field(default_factory=list)  # quiz: the options in full, e.g. "B) No, I am your father."
+    catch: list[str] = Field(default_factory=list)  # Catch the Zombie: the three emoji it holds (trendclip/catch.py)
 
 
 class GeminiSeries(BaseModel):

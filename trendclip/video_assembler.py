@@ -641,6 +641,7 @@ class Overlay:
     style: Literal["asis", "sticker", "card"] = "asis"
     pulse: bool = False  # gentle breathing while shown (call-to-action stickers)
     animated: bool = False  # play the GIF / WebP animation
+    cut: bool = False  # appear and vanish in one frame, no pop-in or fade (Catch the Zombie: it may last 4 frames)
 
     def xy(self) -> tuple[int, int]:
         return self.center or (WIDTH // 2 + self.x_offset, POPUP_CENTER_Y)
@@ -717,6 +718,12 @@ def render_pop_frames(overlay: Overlay | Path, out_dir: Path, name: str, box: in
     biggest = max(max(f.size) for f, _ in frames)
     side = int(biggest * max(POP_SCALES) * (1.06 if overlay.pulse else 1)) + 4
     side += side % 2
+    if overlay.cut:  # one frame at full size; ffmpeg holds it
+        img = frames[0][0]
+        frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+        frame.alpha_composite(img, ((side - img.width) // 2, (side - img.height) // 2))
+        frame.save(out_dir / f"{name}_000.png")
+        return f"{name}_%03d.png"
     moving = len(frames) > 1 or overlay.pulse
     count = max(len(POP_SCALES), math.ceil((overlay.end - overlay.start) * fps)) if moving else len(POP_SCALES)
     loop = sum(d for _, d in frames)
@@ -746,10 +753,17 @@ def render_pop_frames(overlay: Overlay | Path, out_dir: Path, name: str, box: in
 
 def overlay_filter(index: int, input_index: int, overlay: Overlay, fps: int, src: str, dst: str) -> str:
     """Chain one overlay (input `input_index`, PNG frames) onto video `src` → `dst`."""
+    cx, cy = overlay.xy()
+    if overlay.cut:
+        duration = max(overlay.end - overlay.start, 1 / fps)
+        return (
+            f"[{input_index}:v]format=rgba,tpad=stop_mode=clone:stop_duration={duration:.3f},"
+            f"trim=duration={duration:.3f},setpts=PTS-STARTPTS+{overlay.start:.3f}/TB[pop{index}];"
+            f"[{src}][pop{index}]overlay=x={cx}-w/2:y={cy}-h/2:eof_action=pass[{dst}]"
+        )
     duration = max(overlay.end - overlay.start, 0.3)
     hold = max(duration - len(POP_SCALES) / fps, 0.05)
     fade = min(0.25, duration / 4)
-    cx, cy = overlay.xy()
     return (
         f"[{input_index}:v]format=rgba,tpad=stop_mode=clone:stop_duration={hold:.3f},"
         f"trim=duration={duration:.3f},"

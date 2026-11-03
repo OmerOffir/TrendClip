@@ -1267,7 +1267,7 @@ def gamer_card(level: int, short_name: str, game: str) -> str:
 def gamer_asked(settings: Settings) -> list[str]:
     """The Gamer IQ questions already written, "question (answer)", oldest first."""
     return _unique([f"{d.get('question', '')} ({d.get('answer', '')})" for d in history(settings, "gamer")
-                    if d.get("question")])
+                    if d.get("question") and d.get("shape") != "catch"])
 
 
 def gamer_prompt(settings: Settings, game: str, shape: str, asked: list[str], notes: str = "") -> str:
@@ -1281,8 +1281,11 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
                  rng: random.Random) -> ShortScript:
     """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
     level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
-    from . import gamer_queue, script_writer as sw
+    from . import catch, gamer_queue, script_writer as sw
 
+    if catch.wanted(settings, game, notes):  # Catch the Zombie: no question, no Gemini
+        progress(None, "A Catch the Zombie level")
+        return catch.script(settings, game, format=format, rng=rng)
     queued = gamer_queue.take(settings, game)  # written for later (the dashboard's "Write a week"): no Gemini
     if queued is not None:
         result, shape = queued

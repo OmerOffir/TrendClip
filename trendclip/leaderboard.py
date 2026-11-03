@@ -111,6 +111,7 @@ _NUMBERS = {w: i for i, w in enumerate(
     "sixteen seventeen eighteen nineteen".split())}
 _TENS = {w: 10 * i for i, w in enumerate("_ _ twenty thirty forty fifty sixty seventy eighty ninety".split()) if i > 1}
 _SKIP = {"a", "an", "the"}
+_EMOJI = re.compile("[\U0001F300-\U0001FAFF\u2600-\u27BF]")
 
 
 def _words(text: str) -> list[str]:
@@ -166,6 +167,11 @@ def judge(video: Video, text: str) -> str:
         if not picks:
             return "comment"
         return "correct" if picks == {right} else "wrong"
+    if wanted := _EMOJI.findall(video.answer):  # Catch the Zombie: the emoji it held, all of them
+        got = set(_EMOJI.findall(text))
+        if set(wanted) <= got:
+            return "correct"
+        return "wrong" if got & set(wanted) else "comment"
     if "," in video.answer:  # an open question: every part named (counts optional) is correct, some of them wrong
         parts = [[w for w in _words(p) if not w.isdigit() and w not in _SKIP] for p in video.answer.split(",")]
         hits = [all(w in words for w in p) for p in parts if p]

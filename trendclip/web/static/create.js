@@ -12,6 +12,7 @@
     game: $("cGame"),
     length: $("cLength"),
     notes: $("cNotes"),
+    catch: $("cCatch"),
     watch: $("cWatch"),
     write: $("cWrite"),
     describe: $("cDescribe"),
@@ -108,6 +109,7 @@
     popups: [], // [{word, emoji, query}]
     reactions: [], // [{word, mood}] reaction-sticker beats from Gemini
     flashes: [], // quiz: [{word, text}] numbers / clues flashed on screen
+    catch: [], // Catch the Zombie: the three emoji it holds
     answer: "", // quiz: the correct answer
     choices: [], // quiz: the options in full, for the leaderboard
     stickerLib: null,
@@ -138,6 +140,7 @@
     draft.popups = state.popups;
     draft.reactions = state.reactions;
     draft.flashes = state.flashes;
+    draft.catch = state.catch;
     draft.answer = state.answer;
     draft.choices = state.choices;
     draft.stickers = els.stickers.checked;
@@ -154,11 +157,11 @@
   // ---- formats & parts -------------------------------------------------------------------
 
   const emptyPart = () => ({ script: "", title: "", desc: "", tags: "", titleCard: "", endCard: "", popups: [], reactions: [],
-    flashes: [], answer: "", choices: [] });
+    flashes: [], answer: "", choices: [], catch: [] });
 
   function capturePart() {
     const p = { popups: state.popups, reactions: state.reactions, flashes: state.flashes, answer: state.answer,
-      choices: state.choices };
+      choices: state.choices, catch: state.catch };
     for (const key of PART_FIELDS) p[key] = els[key].value;
     return p;
   }
@@ -168,6 +171,7 @@
     state.popups = Array.isArray(p.popups) ? p.popups : [];
     state.reactions = Array.isArray(p.reactions) ? p.reactions : [];
     state.flashes = Array.isArray(p.flashes) ? p.flashes : [];
+    state.catch = Array.isArray(p.catch) ? p.catch : [];
     state.answer = p.answer || "";
     state.choices = p.choices || [];
     renderPopups();
@@ -270,6 +274,7 @@
       if (Array.isArray(draft.popups)) state.popups = draft.popups;
       if (Array.isArray(draft.reactions)) state.reactions = draft.reactions;
       if (Array.isArray(draft.flashes)) state.flashes = draft.flashes;
+      if (Array.isArray(draft.catch)) state.catch = draft.catch;
       state.answer = draft.answer || "";
       state.choices = draft.choices || [];
       if (draft.stickers != null) els.stickers.checked = draft.stickers;
@@ -542,6 +547,7 @@
     state.popups = r.popups || [];
     state.reactions = r.reactions || [];
     state.flashes = r.flashes || [];
+    state.catch = r.catch || [];
     state.answer = r.answer || "";
     state.choices = r.choices || [];
     setSelect(els.voice, r.voice);
@@ -828,7 +834,7 @@
       clip: state.clip,
       game,
       trend_titles: titles,
-      notes: els.notes.value,
+      notes: els.catch.checked ? "catch the zombie" : els.notes.value,
       target_seconds: Number(els.length.value),
       watch_clip: els.watch.checked,
       mode: els.mode.value,
@@ -880,6 +886,7 @@
         state.reactions = r.reactions || [];
         const wasQuiz = state.flashes.length > 0;
         state.flashes = r.flashes || [];
+        state.catch = r.catch || [];
         state.answer = r.answer || "";
         state.choices = r.choices || [];
         if (state.flashes.length) els.endCard.value = r.end_card || "";
@@ -997,6 +1004,7 @@
           flashes: state.flashes,
           answer: state.answer,
           choices: state.choices,
+          catch: state.catch,
         }),
       });
       state.renderJob = body.id;

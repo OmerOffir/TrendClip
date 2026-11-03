@@ -39,6 +39,8 @@ _ENV_MAP: dict[str, str] = {
     "tts_engine": "TTS_ENGINE",
     "tts_voice": "TTS_VOICE",
     "tts_rate": "TTS_RATE",
+    "catch_every": "CATCH_EVERY",
+    "catch_game": "CATCH_GAME",
     "short_target_seconds": "SHORT_TARGET_SECONDS",
     "music_channels": "MUSIC_CHANNELS",
     "music_volume": "MUSIC_VOLUME",
@@ -133,6 +135,10 @@ class Settings(BaseModel):
     tts_engine: Literal["auto", "kokoro", "edge"] = "auto"
     tts_voice: str = DEFAULT_TTS_VOICE
     tts_rate: str = Field("+5%", pattern=r"^[+-]\d{1,3}%$")
+    # Gamer IQ "Catch the Zombie" levels (trendclip/catch.py): one whenever CATCH_GAME's video comes up and no
+    # catch level sits in the last CATCH_EVERY - 1 levels; 0 = never.
+    catch_every: int = Field(3, ge=0)
+    catch_game: str = "Minecraft"
     short_target_seconds: int = Field(22, ge=10, le=180)  # up to 30: the viral 18-22 s rules
     # Channel handle used in the multi-part calls to action ("Sub to @handle for Part 2").
     channel_handle: str = Field("@SideQuestLogic", pattern=r"^@[\w.-]{3,30}$")

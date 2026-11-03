@@ -17,7 +17,7 @@ from typing import Any, Callable, Literal
 
 from pydantic import BaseModel, Field
 
-from . import kokoro_voice, music, popups, quiz, script_writer, stickers, video_assembler, video_downloader, voiceover
+from . import catch, kokoro_voice, music, popups, quiz, script_writer, stickers, video_assembler, video_downloader, voiceover
 from .config import DEFAULT_TTS_VOICE, Settings
 from .models import utcnow
 from .popups import Popup
@@ -115,6 +115,7 @@ class RenderRequest(BaseModel):
     flashes: list[Flash] = Field(default_factory=list, max_length=30)  # quiz numbers / clues
     answer: str = Field("", max_length=80)
     choices: list[str] = Field(default_factory=list, max_length=6)  # quiz options in full: "A) ...", for the leaderboard
+    catch: list[str] = Field(default_factory=list, max_length=3)  # Catch the Zombie: the emoji it holds, one pop each
 
 
 class SeriesPart(BaseModel):
@@ -364,6 +365,9 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     row_until = (flashes[-1].start if flashes else words[-1].end) if req.flashes and req.popups else None
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress, row_until)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress, flashes)
+    if req.catch:
+        progress(None, "Hiding the zombie three times")
+        overlays = overlays + catch.plan(settings, req.catch, words, seed=req.script)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(

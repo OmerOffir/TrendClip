@@ -8,7 +8,8 @@ from trendclip.quiz import Flash, Step
 
 
 def make_settings(tmp_path):
-    return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output")
+    # catch_every=0: these tests want questions; Catch the Zombie levels are tests/test_catch.py's
+    return Settings(youtube_api_key="k", assets_dir=tmp_path / "assets", output_dir=tmp_path / "output", catch_every=0)
 
 
 def fake_client(answer, seen=None):
