@@ -216,7 +216,8 @@ class Drawn(bw_brand.Board):
         self.items: list[dict[str, Any]] = []
         portrait = bw_render.LAYOUT == "portrait"
         self.W = bw_render.W
-        self.top = 400 if portrait else bw_render.MAP_TOP + 30  # under the question header
+        # under the question header; the opening sits under the yellow hook banner (hook_banner: y 135-385) instead
+        self.top = (480 if first else 400) if portrait else bw_render.MAP_TOP + 30
         self.bottom = bw_render.CAPTION_Y - (90 if portrait else 80)
         self.late = 0  # items drawn before the first frame when this is the opening (the product)
         getattr(self, "draw_" + scene.kind)(o if isinstance(o, dict) else {})
