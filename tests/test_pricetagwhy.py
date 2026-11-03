@@ -761,3 +761,26 @@ def test_the_story_hook_keeps_moving_and_the_story_stays_short():
     sway = [it for it in board.items if "bob" in it]
     a, b = board.frame(1.0), board.frame(1.3)
     assert sway and a.tobytes() != b.tobytes()  # never a still frame
+
+
+def test_a_fix_answer_with_only_the_broken_script_keeps_the_ones_that_passed(tmp_path):
+    from modules import pw_write
+
+    pw_write.start("week", count=3, out_dir=tmp_path)
+    good = _script()
+    scripts = [{**good, "title": f"Why number {k}?", "question": f"Why {k}?"} for k in range(3)]
+    bad = json.loads(json.dumps(scripts[1]))
+    bad["scenes"] = bad["scenes"][1:]  # no opening: breaks the rules
+    view = pw_write.answer("week", json.dumps({"scripts": [scripts[0], bad, scripts[2]]}), tmp_path)
+    assert view["step"] == "fix" and [bool(d["problems"]) for d in view["drafts"]] == [False, True, False]
+    prompt = view["prompt"]
+    assert "ONLY the script below" in prompt and "Why number 1?" in prompt
+    assert "Why number 0?" not in prompt.split("The script to fix")[1]  # the passing ones aren't sent back
+    view = pw_write.answer("week", json.dumps({"scripts": [scripts[1]]}), tmp_path)  # just the fixed one
+    assert [d["title"] for d in view["drafts"]] == ["Why number 0?", "Why number 1?", "Why number 2?"]
+    assert view["step"] == "facts" and not any(d["problems"] for d in view["drafts"])
+    with pytest.raises(pw_write.WriteError):  # nothing left to fix: two pasted can't replace one
+        session = pw_write.load("week", tmp_path)
+        session["step"], session["problems"] = "fix", {"1": [], "2": ["x"], "3": []}
+        pw_write._save(session, tmp_path)
+        pw_write.answer("week", json.dumps({"scripts": [{**good, "title": "New a"}, {**good, "title": "New b"}]}), tmp_path)

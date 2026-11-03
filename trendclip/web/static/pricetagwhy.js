@@ -214,8 +214,8 @@
   // ---- writing with any LLM
   const STEP_TEXT = {
     write: "1. Copy the prompt into any LLM (one that can browse is best), then paste its JSON answer below.",
-    fix: "The answer broke some rules: copy this fix prompt into the same chat and paste the new answer below.",
-    flagged: "The fact checker flagged the lines in red above. Either copy this fix prompt into the writing chat (it cuts or corrects only those) and paste the new answer below, or, if you checked them and they're fine, accept the script as it is.",
+    fix: "Some scripts broke the rules: copy this fix prompt into the same chat (it sends only those) and paste its answer below. The scripts that passed are kept.",
+    flagged: "The fact checker flagged the lines in red above. Either copy this fix prompt into the writing chat (it sends only those scripts) and paste its answer below (the others are kept), or, if you checked them and they're fine, accept the script as it is.",
     facts: "2. The rules pass ✅. Now the fact check: copy this prompt into a second LLM that can open links (a new chat with web search), paste its JSON answer below and press Check it. Or skip it.",
   };
 

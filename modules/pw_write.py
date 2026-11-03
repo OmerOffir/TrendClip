@@ -530,17 +530,30 @@ def write_prompt(session: dict[str, Any]) -> str:
             f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per idea, in this order' if many else 'one object'}.")
 
 
+def broken(session: dict[str, Any]) -> list[int]:
+    """The scripts (1-based) that still have problems; the others already passed and are kept."""
+    n = len(session.get("drafts") or [])
+    return [int(k) for k, p in sorted(session["problems"].items(), key=lambda kv: int(kv[0])) if p and 0 < int(k) <= n]
+
+
 def fix_prompt(session: dict[str, Any]) -> str:
+    """Only the broken scripts go back to the LLM, and only they come back: the passing ones stay in the session."""
     lines = [f"Script {k}: " + "; ".join(p) for k, p in sorted(session["problems"].items(), key=lambda kv: int(kv[0])) if p]
+    bad = broken(session)
+    whole = bool(session["problems"].get("0")) or not bad  # a wrong number of scripts: everything again
+    sent = session["drafts"] if whole else [session["drafts"][k - 1] for k in bad]
+    back = ("the whole JSON again ({\"scripts\": [...]}, every script, in order)" if whole else
+            f"ONLY the {'script' if len(bad) == 1 else f'{len(bad)} scripts'} below, fixed ({{\"scripts\": [...]}}, "
+            f"{'one object' if len(bad) == 1 else 'in this order'}); the others already passed, leave them out")
+    which = "" if whole else f" (script{'s' if len(bad) > 1 else ''} {', '.join(map(str, bad))} of your last answer)"
     if session.get("flagged"):
         return (f"{write_prompt(session)}\n\nA fact checker could not confirm these statements in your last answer:\n" + "\n".join(lines)
                 + "\n\nFor each one: cut it, or say only what the listed sources say (fix the number, the year, the cause). "
-                  "Don't add any new facts, keep everything else as it is, and answer with the whole JSON again "
-                  "({\"scripts\": [...]}, every script, in order). Your last answer:\n"
-                + json.dumps({"scripts": session["drafts"]}, ensure_ascii=False))
+                  f"Don't add any new facts, keep everything else as it is, and answer with {back}. The script{'s' if len(sent) > 1 else ''} to fix{which}:\n"
+                + json.dumps({"scripts": sent}, ensure_ascii=False))
     return (f"{write_prompt(session)}\n\nYour last answer broke these rules:\n" + "\n".join(lines)
-            + "\n\nFix only that and answer with the whole JSON again ({\"scripts\": [...]}, every script, in order). Your last answer:\n"
-            + json.dumps({"scripts": session["drafts"]}, ensure_ascii=False))
+            + f"\n\nFix only that and answer with {back}. The script{'s' if len(sent) > 1 else ''} to fix{which}:\n"
+            + json.dumps({"scripts": sent}, ensure_ascii=False))
 
 
 def facts_prompt(session: dict[str, Any]) -> str:
@@ -697,6 +710,32 @@ def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Pa
     return _save(session, out_dir)
 
 
+def _same(a: dict[str, Any], b: dict[str, Any]) -> bool:
+    keys = lambda d: {_norm(str(d.get(k) or "")) for k in ("title", "question", "topic")} - {""}
+    return bool(keys(a) & keys(b))
+
+
+def merge(session: dict[str, Any], scripts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A fix answer with fewer scripts than the session holds: each fixed script takes the place of the draft it
+    answers (the same title or question, else the next broken one in order), and the scripts that passed stay. An
+    answer with every script replaces them all, as before."""
+    old = session.get("drafts") or []
+    if session.get("step") != "fix" or not old or len(scripts) >= len(old):
+        return scripts
+    merged, free = list(old), [k - 1 for k in broken(session)]
+    for d in scripts:
+        at = next((i for i, o in enumerate(old) if _same(d, o)), None)
+        if at is None:
+            if not free:
+                raise WriteError(f"{len(scripts)} scripts pasted but only {len(broken(session))} needed fixing: "
+                                 "paste the fixed ones only, or every script")
+            at = free[0]
+        merged[at] = d
+        if at in free:
+            free.remove(at)
+    return merged
+
+
 def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     """The LLM's scripts: the rules check; all passing moves to the fact check."""
     session = load(kind, out_dir)
@@ -706,13 +745,14 @@ def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     if stripped.startswith("{") and '"scripts"' not in stripped[:200]:
         stripped = '{"scripts": [' + stripped + "]}"  # one script pasted on its own
     parsed = llm_json.parse(stripped, Answer, WriteError)
-    session["drafts"] = parsed.scripts
+    drafts = merge(session, parsed.scripts)
+    session["drafts"] = drafts
     if session_format(session) == "story":
-        for d in parsed.scripts:
+        for d in drafts:
             d["format"] = "story"
-    session["problems"] = {str(k): problems_of(d) for k, d in enumerate(parsed.scripts, 1)}
-    if len(parsed.scripts) != len(session["topics"]):
-        session["problems"]["0"] = [f"{len(parsed.scripts)} scripts for {len(session['topics'])} questions"]
+    session["problems"] = {str(k): problems_of(d) for k, d in enumerate(drafts, 1)}
+    if len(drafts) != len(session["topics"]):
+        session["problems"]["0"] = [f"{len(drafts)} scripts for {len(session['topics'])} questions"]
     session["flagged"] = {}
     session["step"] = "facts" if not any(session["problems"].values()) else "fix"
     return _save(session, out_dir)
