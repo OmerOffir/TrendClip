@@ -69,7 +69,7 @@ def test_the_zombie_pops_three_times_between_ready_and_the_question_shorter_each
     ready = next(w.start for w in spoken if w.text == "Ready?")
     ask = next(w.start for w in spoken if w.text == "What")
     assert len(pops) == 3 and all(isinstance(p, Overlay) and p.cut for p in pops)
-    assert [round(p.end - p.start, 2) for p in pops] == list(catch.POPS)
+    assert [round(p.end - p.start, 3) for p in pops] == [round(h, 3) for h in catch.POPS]
     assert ready <= pops[0].start and pops[-1].end <= ask
     assert pops[0].end < pops[1].start < pops[1].end < pops[2].start  # apart, in order
     assert len({p.center for p in pops}) == 3  # three different places

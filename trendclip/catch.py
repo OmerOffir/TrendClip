@@ -1,6 +1,6 @@
 """Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up three
-times in the gameplay, each time holding a different random emoji, for less and less time: 0.4 s, 0.25 s, then
-four frames. The video ends by asking which three emojis it held; three right emojis score on the leaderboard.
+times in the gameplay, each time holding a different random emoji, for less and less time: 0.4 s, four frames,
+then two. The video ends by asking which three emojis it held; three right emojis score on the leaderboard.
 Viewers pause and replay to catch them, which is the point.
 
 The level is picked in quiz._write_gamer: on CATCH_GAME's videos, once no catch level sits in the last
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
-POPS = (0.4, 0.25, 0.13)  # how long each appearance lasts: quick, quicker, four frames (the owner's call, 2026-11-03)
+POPS = (0.4, 0.13, 0.067)  # how long each appearance lasts: quick, four frames, two frames (the owner's call, 2026-11-03)
 BOX = 640  # the sprite's height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
@@ -39,7 +39,7 @@ WINDOW = ("Ready", "What")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
 PINNED = ("🧟 The zombie showed up 3 times. Which emojis did it hold? Comment all three 👇\n"
-          "Hint: pause fast, the last one lasts 4 frames.\n"
+          "Hint: pause and step frames, the last one lasts 2 frames.\n"
           "🏆 All three = 10 leaderboard points. Level {next} drops next!")
 DESCRIPTION = "A zombie hides three times in this video, each time with a different emoji. Catch all three and comment them."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#catchthezombie", "#quiz"]
@@ -173,5 +173,6 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
         x = min(max(x + rng.randint(-JITTER, JITTER), BOX // 2), WIDTH - BOX // 2 - 120)
         y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 120), HEIGHT // 2 + 260)
-        out.append(Overlay(image, round(at, 3), round(at + hold, 3), center=(x, y), box=BOX, style="asis", cut=True))
+        at = round(at, 3)
+        out.append(Overlay(image, at, round(at + hold, 3), center=(x, y), box=BOX, style="asis", cut=True))
     return out
