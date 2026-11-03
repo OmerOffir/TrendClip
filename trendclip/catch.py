@@ -1,5 +1,5 @@
 """Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up three
-times in the gameplay, each time holding a different random emoji, for less and less time: 0.8 s, 0.4 s, then
+times in the gameplay, each time holding a different random emoji, for less and less time: 0.4 s, 0.25 s, then
 four frames. The video ends by asking which three emojis it held; three right emojis score on the leaderboard.
 Viewers pause and replay to catch them, which is the point.
 
