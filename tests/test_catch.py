@@ -80,8 +80,10 @@ def test_the_zombie_pops_between_ready_and_catch_them_all_shorter_each_time(tmp_
         assert ready <= pops[0].start and pops[-1].end <= ask
         assert all(a.end < b.start for a, b in zip(pops, pops[1:]))  # apart, in order
         assert len({p.center for p in pops}) == len(pops)  # all in different places
+        assert len({p.box for p in pops}) > 1  # and not all one size
         for p in pops:
-            assert p.image.is_file() and catch.BOX // 2 <= p.center[0] and p.center[1] <= 1920 - catch.BOX // 2
+            assert p.image.is_file() and p.box in catch.SIZES
+            assert p.box // 2 <= p.center[0] <= 1080 - p.box // 2 and p.box // 2 <= p.center[1] <= 1920 - p.box // 2
         assert catch.plan(s, emojis, spoken, seed="x") == pops  # the same seed, the same moments
     assert catch.plan(s, [], spoken) == []
 

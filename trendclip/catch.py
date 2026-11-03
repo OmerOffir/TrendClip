@@ -26,7 +26,8 @@ SHAPE = "catch"
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
 COUNT = (3, 6)  # how many times it shows up, random; the script never says (the owner's call, 2026-11-03)
 POPS = (0.4, 0.13, 0.067)  # how long each appearance lasts: quick, four frames, then two frames for all the rest
-BOX = 640  # the sprite's height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
+BOX = 640  # the sprite's usual height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
+SIZES = (440, 540, 640, 760, 880)  # each pop picks one, so the eye can't settle on a shape (the owner, 2026-11-03)
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
 SPOTS = ((340, 520), (640, 520), (340, 700), (640, 700), (340, 880), (640, 880))
@@ -159,7 +160,7 @@ def _word_time(words: list[Word], text: str, start: bool, default: float) -> flo
 
 def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "") -> list[Overlay]:
     """The appearances: random moments between the spoken "Ready" and the closing "Catch", one in each equal
-    share of that window so they stay apart, each in a different spot, each shorter than the last."""
+    share of that window so they stay apart, each in a different spot and a random size, each shorter than the last."""
     if not emojis or not words:
         return []
     rng = random.Random(seed or " ".join(emojis))
@@ -174,9 +175,10 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
     spots = rng.sample(SPOTS, min(len(emojis), len(SPOTS)))  # different places
     for i, (image, (x, y)) in enumerate(zip(images, spots)):
         hold = POPS[min(i, len(POPS) - 1)]
+        box = rng.choice(SIZES)
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
-        x = min(max(x + rng.randint(-JITTER, JITTER), BOX // 2), WIDTH - BOX // 2 - 120)
-        y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 120), HEIGHT // 2 + 260)
+        x = min(max(x + rng.randint(-JITTER, JITTER), box // 2), WIDTH - box // 2 - 120)
+        y = min(max(y + rng.randint(-JITTER, JITTER), box // 2 + 120), HEIGHT // 2 + 260)
         at = round(at, 3)
-        out.append(Overlay(image, at, round(at + hold, 3), center=(x, y), box=BOX, style="asis", cut=True))
+        out.append(Overlay(image, at, round(at + hold, 3), center=(x, y), box=box, style="asis", cut=True))
     return out
