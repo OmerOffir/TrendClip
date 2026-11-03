@@ -35,7 +35,7 @@ JITTER = 60
 # The opening (the Shorts thumbnail is the first frame): the zombie stands below the captions holding a "?"
 # while the banner shows, so the grid already says what the game is.
 CARD_EMOJI = "\u2753"
-CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1580), 640
+CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1620), 600
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
