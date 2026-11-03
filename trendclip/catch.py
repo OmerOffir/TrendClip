@@ -1,6 +1,6 @@
 """Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up a few
 times in the gameplay (three to six, and the video never says how many, so viewers watch to the end), each time
-holding a different random emoji, small and anywhere in the upper part of the screen, for four frames and then two.
+holding a different random emoji, small and anywhere in the upper part of the screen, for 0.4 s, then four frames, then two.
 Empty-handed decoys pop up too (they don't count), so stepping frame by frame finds more zombies than answers.
 The video ends by asking which emojis it held; all of them right scores on the leaderboard. Viewers pause and
 replay to catch them, which is the point.
@@ -26,9 +26,9 @@ SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
 COUNT = (3, 6)  # how many times it shows up, random; the script never says (the owner's call, 2026-11-03)
-# How long each appearance lasts: four frames, then two for all the rest. Bigger and longer (0.4 s, 440-880 px)
-# was caught at once (the owner, 2026-11-03), so they are short, small and spread out, with decoys.
-POPS = (0.133, 0.067)
+# How long each appearance lasts: 0.4 s for the first, four frames for the second, then two for all the rest (the
+# owner, 2026-11-03). Bigger zombies (440-880 px) were caught at once, so they are small and spread out, with decoys.
+POPS = (0.4, 0.133, 0.067)
 BOX = 640  # the sprite's usual height on the 1080 x 1920 canvas
 SIZES = (260, 320, 380, 440, 520)  # each pop picks one; at 260 px the emoji is still about 80 px, readable when paused
 DECOYS = (2, 4)  # empty-handed zombies, two frames each, at other moments: they hold nothing and don't count
@@ -178,7 +178,7 @@ def card_overlay(settings: Settings) -> Overlay:
 def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "") -> list[Overlay]:
     """The opening zombie with its "?", then the appearances: random moments between the spoken "Ready" and
     the closing "Catch", one in each equal share of that window so they stay apart, each in a different spot
-    and a random size, four frames and then two; then the empty-handed decoys at other moments."""
+    and a random size, 0.4 s, four frames, then two; then the empty-handed decoys at other moments."""
     if not emojis or not words:
         return []
     rng = random.Random(seed or " ".join(emojis))

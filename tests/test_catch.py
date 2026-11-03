@@ -80,7 +80,7 @@ def test_the_zombie_pops_between_ready_and_catch_them_all_shorter_each_time(tmp_
         assert card.image.is_file() and card.image.name == "zombie-2753.png"
         assert len(pops) == len(emojis) and all(isinstance(p, Overlay) and p.cut for p in pops)
         holds = [round(p.end - p.start, 3) for p in pops]
-        assert holds == [0.133] + [0.067] * (len(emojis) - 1)
+        assert holds == [0.4, 0.133] + [0.067] * (len(emojis) - 2)
         assert catch.DECOYS[0] <= len(decoys) <= catch.DECOYS[1] and all(round(d.end - d.start, 3) == 0.067 for d in decoys)
         assert all(ready <= d.start and d.end <= ask for d in decoys)
         shown = sorted(every, key=lambda p: p.start)
