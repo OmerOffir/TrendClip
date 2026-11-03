@@ -126,7 +126,7 @@
       <form class="pw-add" id="pwAddTopic">
         <input type="text" id="pwAddQuestion" placeholder="Why does …?  or a story: Same $500, four friends…?" maxlength="160" required>
         <select id="pwAddPillar"><option value="">pillar</option></select>
-        <select id="pwAddFormat" title="A 35 s why, or a 60-115 s money story (a cast, their moves with the math, the bars, which one are you?)"><option value="why">❓ why (35 s)</option><option value="story">📖 story (90 s)</option></select>
+        <select id="pwAddFormat" title="A 35 s why, or a 50-75 s money story (a cast, their moves with the math, the bars, which one are you?)"><option value="why">❓ why (35 s)</option><option value="story">📖 story (60 s)</option></select>
         <button type="submit" class="btn-primary">Add</button>
         <span class="hint" id="pwAddStatus"></span>
       </form>
@@ -142,7 +142,7 @@
         <button type="button" id="pwTopicsRefresh" hidden></button>
       </div>
       <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
-        <div class="llm-topics-row"><select data-l="format" title="What the prompt asks for"><option value="why">❓ why questions (35 s)</option><option value="story">📖 money stories (90 s)</option></select>
+        <div class="llm-topics-row"><select data-l="format" title="What the prompt asks for"><option value="why">❓ why questions (35 s)</option><option value="story">📖 money stories (60 s)</option></select>
           <button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
         <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
       </div>
@@ -157,7 +157,7 @@
       <div class="card-head">
         <div>
           <h2>✍️ Write it myself</h2>
-          <span class="hint">One script with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. A <b>story</b> is the long format (60-115 s): a cast of drawn people, one move each with its math on the board, the bars, "which one are you?"</span>
+          <span class="hint">One script with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. A <b>story</b> is the long format (50-75 s): a cast of drawn people, one move each with its math on the board, the bars, "which one are you?"</span>
         </div>
       </div>
       <div class="pw-write" id="pwWriteOne"><div class="empty">Loading…</div></div>

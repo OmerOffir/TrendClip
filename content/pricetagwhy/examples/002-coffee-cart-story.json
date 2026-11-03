@@ -15,21 +15,35 @@
   "scenes": [
     {
       "kind": "cast",
-      "narration": "Same $500. Four friends. One made $3,650. Another made $511,000. Same coffee, same year, same town. Each friend got $500 to start. Here is what each one did.",
+      "narration": "Same $500. Four friends. One made $3,650. One made $511,000. Same coffee cart, same year. Here's what each one did.",
       "cast": {
         "title": "Same $500 each",
         "people": [
-          {"name": "Friend 1", "money": "$500"},
-          {"name": "Friend 2", "money": "$500"},
-          {"name": "Friend 3", "money": "$500"},
-          {"name": "Friend 4", "money": "$500"}
+          {
+            "name": "Friend 1",
+            "money": "$500",
+            "result": "$3,650"
+          },
+          {
+            "name": "Friend 2",
+            "money": "$500"
+          },
+          {
+            "name": "Friend 3",
+            "money": "$500"
+          },
+          {
+            "name": "Friend 4",
+            "money": "$500",
+            "result": "$511,000"
+          }
         ],
-        "note": "One year later..."
+        "note": "One year later"
       }
     },
     {
       "kind": "step",
-      "narration": "Friend one bought one coffee cart for exactly $500. He pushes it himself, every morning. It makes about $10 of profit a day. In a year, 365 times $10, that's $3,650. This is called organic growth. Your own money, your own two hands, one cart.",
+      "narration": "Friend one bought one cart for $500. About $10 profit a day. 365 times $10, that's $3,650. This is called organic growth.",
       "step": {
         "who": "Friend 1",
         "n": 1,
@@ -42,7 +56,7 @@
     },
     {
       "kind": "step",
-      "narration": "Friend two asked around. Renting a cart costs just $100 a year. So she rented five, with her whole $500. Five carts, 365 days, $10 each, that's $18,250. This is called leasing. You don't need to own the cart to earn from the cart.",
+      "narration": "Friend two rented carts instead, at $100 a year. Five carts, 365 days, $10 each. That's $18,250. This is called leasing.",
       "step": {
         "who": "Friend 2",
         "n": 2,
@@ -55,7 +69,7 @@
     },
     {
       "kind": "step",
-      "narration": "Friend three rented five carts too. Then he walked into an office tower and said: buy a year of coffee today, at 80 cents on the dollar, and I deliver every morning. They paid $14,600 up front. With that money he rented 146 more carts. 151 carts, 365 days, $8 each, that's $440,920. This is called pre-selling. The customer's money built the business.",
+      "narration": "Friend three rented five too. Then an office tower paid him a year of coffee up front, at 80 cents on the dollar. That rented 146 more. 151 carts, $8 a day. That's $440,920. This is called pre-selling.",
       "step": {
         "who": "Friend 3",
         "n": 3,
@@ -68,7 +82,7 @@
     },
     {
       "kind": "step",
-      "narration": "Friend four never bought a cart. She wrote down the recipe, the prices, the rules, and put her name on it. Seventy people now run carts under her name, 20 cups a day each, and pay her $1 a cup. 70 carts, 365 days, 20 cups, $1, that's $511,000. This is called a system. She sells the way to do it, not the coffee.",
+      "narration": "Friend four never bought a cart. She sold her recipe and her name. 70 carts pay her $1 a cup, 20 cups a day. That's $511,000. This is called a system.",
       "step": {
         "who": "Friend 4",
         "n": 4,
@@ -81,29 +95,50 @@
     },
     {
       "kind": "bars",
-      "narration": "Same $500. $3,650. $18,250. $440,920. $511,000. The money was the same. The idea was different.",
+      "narration": "Same $500. $3,650 against $511,000. The money was the same. The idea wasn't.",
       "bars": {
         "title": "Same $500, one year",
         "bars": [
-          {"label": "Friend 1", "value": 3650, "text": "$3,650"},
-          {"label": "Friend 2", "value": 18250, "text": "$18,250"},
-          {"label": "Friend 3", "value": 440920, "text": "$440,920"},
-          {"label": "Friend 4", "value": 511000, "text": "$511,000"}
+          {
+            "label": "Friend 1",
+            "value": 3650,
+            "text": "$3,650"
+          },
+          {
+            "label": "Friend 2",
+            "value": 18250,
+            "text": "$18,250"
+          },
+          {
+            "label": "Friend 3",
+            "value": 440920,
+            "text": "$440,920"
+          },
+          {
+            "label": "Friend 4",
+            "value": 511000,
+            "text": "$511,000"
+          }
         ]
       }
     },
     {
       "kind": "ask",
-      "narration": "It's a parable, not a plan. But which friend are you? One, two, three, or four? Tell me below, and send this to a friend who still pushes the cart.",
+      "narration": "It's a parable, not a plan. Which friend are you? One, two, three, or four? Tell me below.",
       "ask": {
         "question": "Which friend are you?",
-        "options": ["1", "2", "3", "4"],
+        "options": [
+          "1",
+          "2",
+          "3",
+          "4"
+        ],
         "line": "Send this to a friend"
       }
     },
     {
       "kind": "follow",
-      "narration": "Same $500, four very different years. Follow for tomorrow's why."
+      "narration": "Same $500, four different years. Follow for tomorrow's why."
     }
   ],
   "sources": [],

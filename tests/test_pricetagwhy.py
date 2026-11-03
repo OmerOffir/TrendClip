@@ -733,3 +733,31 @@ def test_a_story_thumbnail_shows_a_person_and_the_two_results(tmp_path):
     w = pw_thumb.words(_story())
     assert w["draw"] == "person" and w["old"] == "$3,650" and w["now"] == "$511,000" and w["old_label"] == "Friend 1"
     assert pw_thumb.make(_story(), tmp_path / "t.jpg").is_file()
+
+
+def test_the_story_hook_keeps_moving_and_the_story_stays_short():
+    from modules import pw_write
+
+    script = _story()
+    assert pw_channel.STORY_SECONDS[1] <= 85 and pw_write.STORY_WORDS[1] <= 190
+    long = json.loads(json.dumps(script))
+    long["scenes"][1]["narration"] += " " + "And then he kept on pushing that cart every single day of the year." * 2
+    assert any("a step is" in p for p in pw_write.problems_of(long))
+    quiet = json.loads(json.dumps(script))
+    for person in quiet["scenes"][0]["cast"]["people"]:
+        person.pop("result", None)
+    assert any("result" in p for p in pw_write.problems_of(quiet))
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    scene = bw_render.Scene(kind="cast", narration=script["scenes"][0]["narration"], opts={"cast": script["scenes"][0]["cast"]})
+    scene.start, scene.end = 0.0, 10.0
+    spec = bw_render.Spec(scenes=[scene], words=[bw_render.Word("$500.", 0.1, 0.9), bw_render.Word("$3,650.", 3.2, 4.0),
+                                                 bw_render.Word("$511,000.", 5.9, 7.0)])
+    board = pw_render.Drawn(scene, first=True)
+    board.retime(scene, spec.words)
+    small = next(it for it in board.items if it["kind"] == "write" and it["text"] == "$3,650")
+    big = next(it for it in board.items if it["kind"] == "write" and it["text"] == "$511,000")
+    assert 3.0 <= small["at"] <= 4.5 and 5.7 <= big["at"] <= 7.5  # written as they are said
+    sway = [it for it in board.items if "bob" in it]
+    a, b = board.frame(1.0), board.frame(1.3)
+    assert sway and a.tobytes() != b.tobytes()  # never a still frame

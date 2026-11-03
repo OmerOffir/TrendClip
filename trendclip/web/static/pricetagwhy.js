@@ -204,7 +204,7 @@
     els.topics.innerHTML = rows.length ? rows.map((t, i) => `<div class="pw-slot pw-topic${i === 0 && !t.used ? " next" : ""}">
         <span class="pw-n">${t.used ? "" : i + 1}</span>
         ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
-        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 60-115 s">📖 story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
+        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 50-75 s">📖 story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
         ${t.used ? "" : `${i && !linux ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
           <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
           ${linux ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}`}
@@ -239,9 +239,9 @@
     card.querySelector('[data-l="copy"]').click();  // fills the prompt in (and copies it)
   }
 
-  const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 60-115 s" };
-  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why, or a money story: 60-115 s, a cast of drawn people, one move each with its math, the bars, which one are you?">
-      <option value="why"${state.format[kind] === "story" ? "" : " selected"}>❓ why (35 s)</option><option value="story"${state.format[kind] === "story" ? " selected" : ""}>📖 story (60-115 s)</option></select>`;
+  const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s" };
+  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why, or a money story: 50-75 s, a cast of drawn people, one move each with its math, the bars, which one are you?">
+      <option value="why"${state.format[kind] === "story" ? "" : " selected"}>❓ why (35 s)</option><option value="story"${state.format[kind] === "story" ? " selected" : ""}>📖 story (50-75 s)</option></select>`;
   const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
 
   function renderWrite(kind, v) {

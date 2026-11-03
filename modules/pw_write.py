@@ -25,14 +25,16 @@ from modules import pw_channel, pw_draw
 from trendclip import llm_json
 
 KINDS = ("one", "week")
-FORMATS = ("why", "story")  # a 35 s "why" explainer; a 60-120 s money story (a cast, their moves with the math, the bars, the ask)
+FORMATS = ("why", "story")  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask)
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 70, 100  # about 30-38 s with the channel's voice (1.1x): 45-50 s ones lost most viewers
-STORY_WORDS = (170, 320)  # 60-115 s: the stories that get the views run 80-150 s; the viewer stays for the next number
+STORY_WORDS = (130, 190)  # 50-75 s: long enough for the next number to pull, short enough for the algorithm (a 300-word one ran 123 s)
+STEP_WORDS = 42  # one move: what they did, the math, the idea's name
 HOOK_WORDS = 10  # the first sentence, said before a scroller decides
 STORY = ("cast", "step", "bars", "ask")
 STORY_SCENE_KINDS = (*STORY, "board", "number", "compare", "chart", "map", "photo", "follow")
 STORY_HOOK_WORDS = 14
+HOOK_MOST = 26  # the whole hook scene: the clash and "here's what each did", about 10 s
 SLOW_START = re.compile(r"^(when|in \d|back in|once|since|most people|have you|did you|ever|today|so|imagine)\b", re.I)
 SCENE_KINDS = ("product", "tag", "board", "number", "compare", "chart", "map", "photo", "follow")
 MIDDLE = ("product", "board", "number", "compare", "chart", "map", "photo")  # what goes between the opening and the follow line
@@ -218,7 +220,7 @@ def story_problems(script: dict) -> list[str]:
     n = pw_channel.words(pw_channel.narration(script))
     lo, hi = STORY_WORDS
     if not lo <= n <= hi:
-        problems.append(f"{n} words of narration (a story wants {lo}-{hi}, about 60-115 s)")
+        problems.append(f"{n} words of narration (a story wants {lo}-{hi}, about 50-75 s)")
     said = str(scenes[0].get("narration") or "").strip() if scenes else ""
     first = re.split(r"(?<=[.!?])\s", said, maxsplit=1)[0]
     if scenes and len(first.split()) > STORY_HOOK_WORDS:
@@ -226,12 +228,23 @@ def story_problems(script: dict) -> list[str]:
                         f"(\"Same $500. Four friends. One made $3,650, one made $511,000.\"): {first!r}")
     if scenes and not re.search(r"\d", said):
         problems.append("the hook says the numbers that clash (the smallest and the biggest result)")
+    if scenes and pw_channel.words(said) > HOOK_MOST:
+        problems.append(f"the hook is {pw_channel.words(said)} words; {HOOK_MOST} at most (the clash, then \"Here's what each one did.\")")
+    if scenes and scenes[0].get("kind") == "cast":
+        results = [str(p.get("result") or "") for p in (scenes[0].get("cast") or {}).get("people") or [] if isinstance(p, dict)]
+        said_digits = re.sub(r"[^\d ]", "", said).split()
+        if len([r for r in results if r]) != 2 or any(r and re.sub(r"\D", "", r) not in said_digits for r in results):
+            problems.append("cast.people: the smallest and the biggest result go in their person's \"result\" (\"$3,650\", \"$511,000\"), "
+                            "each said in the hook in digits exactly so: they are written under them as they are said")
     kinds = [s.get("kind") for s in scenes]
     for k, s in enumerate(scenes, 1):
         if s.get("kind") not in STORY_SCENE_KINDS:
             problems.append(f"scene {k}: a story's kinds are {', '.join(STORY_SCENE_KINDS)}")
         if s.get("kind") != "follow" and not str(s.get("narration") or "").strip():
             problems.append(f"scene {k}: no narration")
+        if s.get("kind") == "step" and pw_channel.words(str(s.get("narration") or "")) > STEP_WORDS:
+            problems.append(f"scene {k}: a step is {STEP_WORDS} words at most (what they did, the math, the idea's name); "
+                            f"this one is {pw_channel.words(str(s.get('narration') or ''))}")
         o = s.get(s.get("kind") or "") or {}
         if s.get("kind") == "cast":
             people = o.get("people") or []
@@ -392,14 +405,16 @@ US/UK/CA/AU) who are not finance experts. A MONEY STORY is a parable (made up, a
 growing with every move, so the viewer stays to see the next number. It explains, it never advises.
 
 Each script is ONE JSON object shaped exactly like the example below, with "format": "story":
-- {lo}-{hi} words of narration in all (60-115 seconds), short spoken sentences. Every figure the math shows is
+- {lo}-{hi} words of narration in all (50-75 seconds: SHORT wins, cut every word that isn't the story), short
+  spoken sentences. Every figure the math shows is
   said in digits exactly as written ("that's $18,250"), so it lands on screen as it is said.
-- scene 1 is kind "cast": the hook. Its first sentence (at most {STORY_HOOK_WORDS} words) holds the clash: the same start, the
-  smallest and the biggest result ("Same $500. Four friends. One made $3,650. Another made $511,000."). Then the
-  setting in a few words and "Here is what each one did." cast: {{"title": at most 24 characters, "people": 2-4 of
-  {{"name": "Friend 1" (12 characters at most), "money": "$500"}}, "note": "One year later..."}}.
-- then 3-4 scenes of kind "step", one per person, in order, each 45-70 words: what they did, the math said out
-  loud, the result, then the idea's name ("This is called leasing.") and one line of why it worked.
+- scene 1 is kind "cast": the hook, at most {HOOK_MOST} words (about 10 s). Its first sentence (at most {STORY_HOOK_WORDS} words) holds
+  the clash: the same start, the smallest and the biggest result ("Same $500. Four friends. One made $3,650. One made
+  $511,000."). Then a few words of setting and "Here's what each one did." cast: {{"title": at most 24 characters,
+  "people": 2-4 of {{"name": "Friend 1" (12 characters at most), "money": "$500", "result": "$3,650" only on the
+  smallest and the biggest}}, "note": "One year later"}}: the hand writes each figure under its person as it is said.
+- then 3-4 scenes of kind "step", one per person, in order, each 20-{STEP_WORDS} words: what they did, the math said out
+  loud with its result, then the idea's name ("This is called leasing."). No extra lines.
   step: {{"who": the person's name, "n": their number (1-4), "did": at most 24 characters ("Rented five carts"),
   "draw": the thing they got, one of the drawings below, "count": how many (a whole number; 6 are drawn, more is
   written "x151"), "math": a product that adds up, at most 34 characters ("5 x 365 x $10 = $18,250": the numbers
@@ -579,7 +594,7 @@ Answer with JSON only, no other text:
 The pillar is written exactly as above."""
 
 
-STORY_TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel of whiteboard money stories (60-115 seconds): 3-4 people
+STORY_TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel of whiteboard money stories (50-75 seconds): 3-4 people
 start with the same money, each does something different with it, the numbers grow with every move, and each move
 teaches one money idea with a name (leasing, pre-selling, stock turnover, a system, fixed vs variable cost, sales vs
 profit, price vs value, cash now vs cash later...). It explains, it never gives financial advice.

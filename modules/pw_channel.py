@@ -44,7 +44,7 @@ OUTPUT_DIR = PROJECT_ROOT / "output" / CHANNEL
 SCRIPTS_DIR = PROJECT_ROOT / "content" / CHANNEL / "scripts"  # hand-checked scripts, kept in git
 CATEGORY = "27"  # Education
 MIN_SECONDS, MAX_SECONDS = 22.0, 45.0  # the brief asks 30-38 s: viewers swiped away from 45-50 s ones
-STORY_SECONDS = (55.0, 130.0)  # a money story (modules.pw_write.STORY): a cast, 3-4 moves with their math, the bars, the ask
+STORY_SECONDS = (45.0, 85.0)  # the owner (2026-11-03): the 123 s sample was too long for the algorithm  # a money story (modules.pw_write.STORY): a cast, 3-4 moves with their math, the bars, the ask
 STORY_KINDS = ("cast", "step", "bars", "ask")
 
 

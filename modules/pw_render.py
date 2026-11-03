@@ -230,6 +230,13 @@ class Drawn(bw_brand.Board):
         for it in self.items:
             if "count" in it:
                 it["text"] = counted(it, t)
+            if "bob" in it:  # a person sways a little, each on their own beat, so the picture is never still
+                dy = 9 * math.sin(2.8 * t + 1.7 * it["bob"])
+                if it["kind"] == "write":
+                    it["y"] = it.setdefault("y0", it["y"]) + dy
+                else:
+                    base = it.setdefault("base", np.array(it["pts"], dtype=float))
+                    it["pts"] = base + np.array([0.0, dy])
         return super().frame(t)
 
     def put_text(self, text: str, center: tuple[float, float], px: int, rgb, count_from: float | None = None) -> None:
@@ -415,7 +422,10 @@ class Drawn(bw_brand.Board):
 
     def put_person(self, k: int, name: str, box: tuple[float, float, float, float], seed: int = 0) -> float:
         """Person k (from 0) drawn in box with their number on the badge, their name written under; returns the name's y."""
+        first = len(self.items)
         self.put_drawing("person", box, [str(k + 1)], self.SHIRTS[k % len(self.SHIRTS)], seed=seed + 7 * k)
+        for it in self.items[first:]:
+            it["bob"] = k
         _, kk, dx, dy = pw_draw.scaled("person", box)
         y = dy + 260 * kk + 48
         if name:
@@ -423,25 +433,45 @@ class Drawn(bw_brand.Board):
         return y
 
     def draw_cast(self, o: dict[str, Any]) -> None:
-        """The hook of a story: the people in a row (a number on each badge, the name under), their starting money
-        written under them as it is said, and a note under all (what happened a year later)."""
+        """The hook of a story: the people in a row (a number on each badge, the name under), swaying, there on the
+        first frame. Then, each on the word that says it: their starting money under each, and the results the hook
+        names (people[].result): an arrow down to it, the smallest in red, the biggest in green and circled, so the
+        hand is busy through the whole hook."""
         people = [p if isinstance(p, dict) else {"name": str(p)} for p in (o.get("people") or [])][:4]
         y = self.put_title(str(o.get("title") or ""))
         n = max(1, len(people))
         slot = (self.W - 60) / n
-        h = min(560.0, (self.bottom - y) * 0.55)
+        results = [str(p.get("result") or "") for p in people]
+        h = min(500.0 if any(results) else 560.0, (self.bottom - y) * (0.45 if any(results) else 0.55))
         for k, p in enumerate(people):
             x0 = 30 + k * slot
             self.put_person(k, str(p.get("name") or ""), (x0 + 10, y + 20, x0 + slot - 10, y + 20 + h), seed=31)
         self.late = len(self.items)  # the people are there on the first frame (the hook, the thumbnail)
-        money_y = y + 20 + h + 120
+        money_y = y + 20 + h + 110
+        cx = lambda k: 30 + k * slot + slot / 2
         for k, p in enumerate(people):
             money = str(p.get("money") or "")
             if money:
-                cx = 30 + k * slot + slot / 2
-                self.put_text(money, (cx, money_y), fit(money, 96, slot - 24), GREEN)
+                self.put_text(money, (cx(k), money_y), fit(money, 90, slot - 24), INK)
                 self.items[-1]["cue"] = money
-        if note := str(o.get("note") or ""):
+        note = str(o.get("note") or "")
+        if any(results):
+            values = {k: (number_parts(r) or ("", 0.0, "", 0, False))[1] for k, r in enumerate(results) if r}
+            best = max(values, key=values.get)
+            res_y = money_y + 250
+            for k in sorted(values, key=lambda j: (j != min(values, key=values.get), j)):  # the small one is said first
+                r = results[k]
+                self.put_line([(cx(k), money_y + 55), (cx(k), res_y - 75)], INK, 9, 0.18)
+                self.put_line([(cx(k) - 22, res_y - 98), (cx(k), res_y - 72), (cx(k) + 22, res_y - 98)], INK, 9, 0.12)
+                self.items[-2]["cue"] = r
+                px = fit(r, 110 if k == best else 84, slot + (120 if k == best else 10))
+                self.put_text(r, (min(max(cx(k), 140), self.W - 140), res_y), px, GREEN if k == best else RED, 0.0)
+                if k == best:
+                    w = bw_fx.hand_font(px).getlength(r) / 2 + 40
+                    self.put_line(loop(min(max(cx(k), 140), self.W - 140), res_y, w, px * 0.75), GREEN, 12, 0.45)
+            if note:
+                self.put_text(note, (self.W / 2, min(self.bottom - 30, res_y + 150)), fit(note, 64, self.W - 120), INK)
+        elif note:
             self.put_text(note, (self.W / 2, min(self.bottom - 40, money_y + 150)), fit(note, 72, self.W - 120), RED)
             self.items[-1]["cue"] = note.split()[0] if note.split() else ""
 
