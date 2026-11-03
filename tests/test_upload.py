@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -112,6 +113,35 @@ def test_upload_youtube_records_the_video(tmp_path):
     assert record["url"] == "https://youtube.com/shorts/abc123" and record["privacy"] == "private"
     assert 0.5 in progress
     assert shorts.get_short(settings, name).uploads["youtube"]["video_id"] == "abc123"
+
+
+def test_upload_youtube_sets_the_drawn_thumbnail(tmp_path, monkeypatch):
+    from modules import thumbs
+
+    settings = make_settings(tmp_path)
+    name = add_short(settings)
+    thumb = tmp_path / "t.jpg"
+    thumb.write_bytes(b"\xff\xd8\xff")
+    asked, sent = [], []
+    monkeypatch.setattr(thumbs, "ensure", lambda channel, ref, out: asked.append((channel, ref)) or thumb)
+
+    class Thumbs:
+        def set(self, videoId, media_body):
+            sent.append(videoId)
+            return SimpleNamespace(execute=lambda: {})
+
+    class Videos:
+        def insert(self, part, body, media_body, notifySubscribers):
+            return SimpleNamespace(next_chunk=lambda: (None, {"id": "th1", "status": {"privacyStatus": "public"}}))
+
+    youtube = SimpleNamespace(videos=lambda: Videos(), thumbnails=lambda: Thumbs())
+    record = publish.upload_youtube(settings, name, publish.YouTubeUploadRequest(title="T"), youtube=youtube)
+    assert asked == [("sidequestlogic", Path(name).stem)] and sent == ["th1"]
+    assert record["thumbnail"] == "set" and shorts.get_short(settings, name).uploads["youtube"]["thumbnail"] == "set"
+
+    monkeypatch.setattr(thumbs, "ensure", lambda *a: (_ for _ in ()).throw(thumbs.ThumbError("the video isn't made yet")))
+    record = publish.upload_youtube(settings, name, publish.YouTubeUploadRequest(title="T"), youtube=youtube)
+    assert record["thumbnail"].startswith("not set") and record["video_id"] == "th1"
 
 
 def test_scheduled_upload_is_private_with_publish_at(tmp_path):

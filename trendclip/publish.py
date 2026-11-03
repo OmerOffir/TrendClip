@@ -477,10 +477,29 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     path = shorts.short_path(settings, filename)
     can_be_short = is_short(shorts.get_short(settings, filename))
     as_short = can_be_short if req.as_short is None else req.as_short and can_be_short
+    youtube = youtube or _youtube()
     record = upload_file(path, req, as_short, progress, youtube)
+    progress(0.99, "Setting the thumbnail")
+    record["thumbnail"] = set_short_thumbnail(settings, filename, record["video_id"], youtube)
     shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
     progress(1.0, "Uploaded")
     return record
+
+
+def set_short_thumbnail(settings: Settings, filename: str, video_id: str, youtube) -> str:
+    """Give an uploaded SideQuestLogic Short its drawn thumbnail (modules.thumbs): "set", or why not. YouTube shows
+    it on the channel's Shorts shelf about half an hour after the upload; the video is up either way."""
+    from googleapiclient.http import MediaFileUpload
+
+    from modules import thumbs
+
+    try:
+        thumb = thumbs.ensure("sidequestlogic", Path(filename).stem, settings.output_dir)
+        youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(thumb), mimetype="image/jpeg")).execute()
+        return "set"
+    except Exception as err:  # noqa: BLE001
+        logger.warning("Thumbnail for %s not set: %s", video_id, err)
+        return f"not set: {str(err)[:200]}"
 
 
 def upload_file(path: Path, req: YouTubeUploadRequest, as_short: bool = True,
