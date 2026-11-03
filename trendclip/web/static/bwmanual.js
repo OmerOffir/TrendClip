@@ -167,10 +167,16 @@
   $("bwWStart").addEventListener("click", (e) => act(async () => {
     const sel = $("bwWTopic");
     const opt = sel.selectedOptions[0];
+    const ownQ = $("bwWQuestion").value.trim();
+    const ownA = $("bwWArticle").value.trim();
+    if (ownQ && !ownA) throw new Error("Add the Wikipedia article your question starts from (e.g. Gaza Strip)");
+    // your own question goes straight here, never on the topic list (so Gemini doesn't make it first)
+    const req = ownA ? { article: ownA, question: ownQ } : { article: sel.value, question: sel.value ? opt.dataset.q : "" };
     e.target.disabled = true;
     box.innerHTML = '<div class="empty">Reading Wikipedia and the pages it cites (about a minute)…</div>';
     try {
-      render((await post("/api/borderlinewhy/manual", { article: sel.value, question: sel.value ? opt.dataset.q : "" })).body);
+      render((await post("/api/borderlinewhy/manual", req)).body);
+      $("bwWQuestion").value = $("bwWArticle").value = "";
       load();
     } catch (err) {
       box.innerHTML = "";
