@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
-POPS = (0.6, 0.35, 0.25)  # how long each appearance lasts: easy, quick, pros only (the owner's call, 2026-11-03)
+POPS = (0.4, 0.25, 0.13)  # how long each appearance lasts: quick, quicker, four frames (the owner's call, 2026-11-03)
 BOX = 640  # the sprite's height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
@@ -39,7 +39,7 @@ WINDOW = ("Ready", "What")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
 PINNED = ("🧟 The zombie showed up 3 times. Which emojis did it hold? Comment all three 👇\n"
-          "Hint: pause fast, the last one is a quarter of a second.\n"
+          "Hint: pause fast, the last one lasts 4 frames.\n"
           "🏆 All three = 10 leaderboard points. Level {next} drops next!")
 DESCRIPTION = "A zombie hides three times in this video, each time with a different emoji. Catch all three and comment them."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#catchthezombie", "#quiz"]
