@@ -45,7 +45,7 @@ def test_write_it_myself_prompt_answer_fact_check_then_ready(tmp_path):
 
 def test_failed_fact_check_asks_for_new_questions_and_never_the_rejected_ones(tmp_path):
     s = make_settings(tmp_path)
-    sid = gamer_manual.start(s, "GTA V / Online")["id"]
+    sid = gamer_manual.start(s, "GTA V / Online", random.Random(1))["id"]
     gamer_manual.answer(s, sid, candidates(gamer()))
     view = gamer_manual.facts(s, sid, "1: FAIL: corners count in Bedrock")
     assert view["step"] == "write" and "corners count in Bedrock" in view["problems"][0]
@@ -78,6 +78,7 @@ def test_the_dashboard_makes_every_ticked_question_in_the_next_free_slots(tmp_pa
     s = make_settings(tmp_path)
     monkeypatch.setattr(web, "_base_settings", lambda: s)
     monkeypatch.setattr(web.video_downloader, "get_library", lambda settings: (_ for _ in ()).throw(RuntimeError("offline")))
+    monkeypatch.setattr(quiz, "pick_gamer_shape", lambda settings, rng: "number")  # the pasted questions have options
     client = TestClient(web.app)
     listing = client.get("/api/gamer/manual").json()
     assert listing["games"] == ["Minecraft"] and listing["level"] == 1 and len(listing["slots"]) >= 3
@@ -129,7 +130,7 @@ def test_the_dashboard_makes_every_ticked_question_in_the_next_free_slots(tmp_pa
 
 def test_a_session_from_before_several_videos_keeps_its_made_question(tmp_path):
     s = make_settings(tmp_path)
-    sid = gamer_manual.start(s, "Minecraft")["id"]
+    sid = gamer_manual.start(s, "Minecraft", random.Random(1))["id"]
     gamer_manual.answer(s, sid, candidates(gamer(), gamer(question="Q2 in Minecraft", correct="7")))
     gamer_manual.facts(s, sid, "1: PASS\n2: PASS")
     folder = gamer_manual.root(s) / sid
@@ -162,7 +163,7 @@ def test_questions_titles_and_banners_from_hand_written_answers_are_cleaned(tmp_
     assert quiz.gamer_card(3, "BETA ENDING", gta) == "LEVEL 3 - GTA V FANS ONLY"
     assert quiz.gamer_card(3, "CS2", "Counter-Strike 2") == "LEVEL 3 - CS2 FANS ONLY"
     s = make_settings(tmp_path)
-    sid = gamer_manual.start(s, gta)["id"]
+    sid = gamer_manual.start(s, gta, random.Random(1))["id"]
     view = gamer_manual.answer(s, sid, candidates(gamer(question=long, trap="Trevor", distractor="Michael", correct="Franklin")))
     assert view["step"] == "write" and "at most 16 words" in view["problems"][0]
 

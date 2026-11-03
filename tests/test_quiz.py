@@ -658,8 +658,10 @@ def gamer(question="How many obsidian blocks make the smallest Nether portal", t
         description="Comment it!", hashtags=["#minecraft", "#shorts"], hint=kw.pop("hint", "fewer than a full frame"))
 
 
-def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path):
+def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, monkeypatch):
     s, seen = make_settings(tmp_path), {}
+    shapes = iter(["number", "fake"])  # the fixtures have three options (never the open shape)
+    monkeypatch.setattr(quiz, "pick_gamer_shape", lambda settings, rng: next(shapes))
     result = script_writer.write_script(s, "Minecraft", mode="gamer",
                                         client=gamer_client([[gamer()]], ["1: PASS"], seen))
     assert "about Minecraft" in seen["prompts"][0] and "GAMER IQ" in seen["prompts"][0]
@@ -704,7 +706,7 @@ def test_an_open_gamer_question_has_no_options_and_wants_the_whole_list(tmp_path
                    hint="")
     assert quiz.gamer_problem(beacon, "open") == "" and quiz.gamer_problem(beacon, "number")  # needs three options
     assert quiz.open_items(beacon.correct) == ["5 glass", "3 obsidian", "1 Nether Star"]
-    assert not quiz.open_items("a, b, c, d, e, f, g") and not quiz.open_items("")
+    assert not quiz.open_items("a, b, c, d, e, f, g") and not quiz.open_items("") and not quiz.open_items("10")
     result = quiz.gamer_script(s, "Minecraft", beacon, shape="open", model="manual", rng=random.Random(1))
     assert result.script.startswith("What do you need to craft a Beacon in Minecraft? No options. Name every part. Three.")
     assert " Is it " not in result.script and result.choices == []

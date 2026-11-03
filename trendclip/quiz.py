@@ -548,7 +548,7 @@ GAMER_SHAPES = {
               "maps, characters, mechanics, games of the series). The correct answer is the oldest"),
     "open": ("an OPEN question with no options: 'What do you need to craft / build / unlock X?', 'Name every "
              "ingredient of Y': the viewer must name every part. The answer is a short list every real player "
-             "could reconstruct (1 to 6 parts), where most players forget one part or its count"),
+             "could reconstruct (2 to 6 parts), where most players forget one part or its count"),
 }
 OPEN = "open"  # the shape without options
 
@@ -1209,11 +1209,11 @@ OPEN_PARTS = 6
 
 
 def open_items(answer: str) -> list[str]:
-    """The parts of an open question's answer ("3 obsidian, 5 glass and 1 Nether Star"), 1 to OPEN_PARTS of them,
-    each at most 4 words; [] when the answer isn't such a list."""
+    """The parts of an open question's answer ("3 obsidian, 5 glass and 1 Nether Star"), 2 to OPEN_PARTS of them
+    (one part is a plain answer, not "name every part"), each at most 4 words; [] when the answer isn't such a list."""
     parts = [" ".join(p.split()) for p in re.split(r",|;|\band\b|\n", answer or "")]
     items = [p.strip(" .") for p in parts if p.strip(" .")]
-    if not 1 <= len(items) <= OPEN_PARTS or any(len(i.split()) > 4 for i in items):
+    if not 2 <= len(items) <= OPEN_PARTS or any(len(i.split()) > 4 for i in items):
         return []
     return items
 
@@ -1237,7 +1237,7 @@ def gamer_problem(c: GeminiGamer, shape: str) -> str:
     """Why a candidate can't become a video ("" when it can): the options, or the open answer, then the question."""
     options = gamer_options(c, shape)
     if options is None:
-        return (f"the answer must be a list of 1 to {OPEN_PARTS} short parts" if shape == OPEN
+        return (f"the answer must be a list of 2 to {OPEN_PARTS} short parts" if shape == OPEN
                 else "needs three short, different options")
     if not gamer_question(c.question, options):
         return f"the question alone (without the options) must be at most {GAMER_MAX_WORDS} words"
