@@ -913,11 +913,13 @@ class FxRenderer(Renderer):
         self.sat = satellite()
         self.war = spec.style == "war"
         self._counters: dict[tuple[str, int], Image.Image] = {}
+        self._side_flags: dict[str, str] = {}
         self._bearers: dict[tuple[str, int], tuple[list[Image.Image], list[float]]] = {}
         if dropped := dress(spec, short_globe=not self.LIVELY):
             logger.info("Left out of the video: %s", ", ".join(dropped))
         self.views = [s.view for s in spec.scenes] if self.war else vary_views(spec.scenes)  # a war map stays on the front
         if self.war:  # a side already on the map stays filled into the next scene (fading in again, the map flickered)
+            self.hold_sides()
             held: set[tuple[str, str]] = set()
             for s in spec.scenes:
                 if s.kind != "map":
@@ -930,6 +932,12 @@ class FxRenderer(Renderer):
                             el.at = s.start - 5.0
                         now.add(key)
                 held = now
+            self.hold_armies()
+            for s in spec.scenes:  # each side's flag waves over its country: on the light tint, who is who reads at once
+                for el in s.elements:
+                    if el.kind == "highlight" and not el.opts.get("flag") and el.feature is not None and el.feature.kind == "country":
+                        el.opts["_badge"] = self._side_flags.setdefault(el.feature.name, usable_flag(el.feature.name))
+        self.attempts = bw_render.attempt_marks(spec.words) if self.war else []
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
         self.open_view = self.opening_view() if self.LIVELY else None
         self.beats = {i: self.plan_beats(i) for i, s in enumerate(spec.scenes)
@@ -946,6 +954,41 @@ class FxRenderer(Renderer):
         self.ends: dict[int, Any] = {}  # the outro's end card, built on its first frame
         self.photos: dict[int, Any] = {}  # photo scenes (modules.bw_photos), built on their first frame
         self._hand: tuple[float, float] | None = None
+
+    def hold_sides(self) -> None:
+        """A side tinted once stays tinted (and its flag waving) on every later map scene, until the script colours
+        or transfers that place again: who is who reads on every frame, whatever the script put in each scene."""
+        scenes = self.spec.scenes
+        for j, s in enumerate(scenes):
+            for el in list(s.elements):
+                if s.kind != "map" or el.kind != "highlight" or el.opts.get("flag") or el.opts.get("_held") or el.feature is None:
+                    continue
+                for nxt in scenes[j + 1:]:
+                    if nxt.kind != "map":
+                        continue
+                    if any(e.kind == "highlight" and e.place == el.place and not e.opts.get("_held") for e in nxt.elements):
+                        break
+                    nxt.elements.append(Element(kind="highlight", place=el.place, color=el.color, at=nxt.start - 5.0,
+                                                feature=el.feature, opts={**el.opts, "_held": True}))
+
+    def hold_armies(self) -> None:
+        """An army that arrived stays at its target through the attempt's later map scenes, so the map fills up as
+        the story goes (the 6M-view Short kept every army on screen): until the next year, until the same army marches
+        again, until another side's army reaches that place, or until the place changes hands."""
+        scenes = self.spec.scenes
+        for j, s in enumerate(scenes):
+            for el in list(s.elements):
+                if s.kind != "map" or el.kind != "army" or el.opts.get("_held") or el.feature is None or el.feature_to is None:
+                    continue
+                for nxt in scenes[j + 1:]:
+                    if nxt.kind != "map":
+                        continue
+                    if nxt.opts.get("year") or any(
+                            (e.kind == "army" and not e.opts.get("_held") and (e.color == el.color and e.opts.get("flag") == el.opts.get("flag") or e.to == el.to))
+                            or (e.kind == "highlight" and e.opts.get("flag") and e.place == el.to) for e in nxt.elements):
+                        break
+                    nxt.elements.append(Element(kind="army", place=el.place, to=el.to, color=el.color, at=nxt.start - 5.0,
+                                                feature=el.feature, feature_to=el.feature_to, opts={**el.opts, "_held": True}))
 
     # -- cameras --
 
@@ -1029,9 +1072,10 @@ class FxRenderer(Renderer):
         events = sorted({start, *[el.at for el in scene.elements if start <= el.at < end], *nums,
                          *([start + 0.5] if self.main[i][0] is not None and not self.main[i][1] else [])})
         beats = list(nums)
+        gap = BEAT_GAP * (0.7 if self.war else 1.0)  # a war map keeps a quicker beat
         for a, b in zip(events, [*events[1:], end]):
-            while b - a > BEAT_GAP:
-                a += BEAT_GAP * 0.8
+            while b - a > gap:
+                a += gap * 0.8
                 if a < end - 0.6:
                     beats.append(a)
         out: list[float] = []
@@ -1534,6 +1578,8 @@ class FxRenderer(Renderer):
             return
         elif el.kind == "sketch":
             self.sketch_on_map(ov, cam, el, t)
+        elif el.kind == "highlight" and el.opts.get("_badge") and el.feature is not None:  # a war-map side's flag
+            self.flag_badge(ov, cam.pt(*el.feature.label_point()), el.opts["_badge"], t, el.at, r=62)
         elif el.kind == "highlight" and el.opts.get("flag"):
             if el.feature is not None and self.tiny(cam, el.feature):
                 same = [e for e in scene.elements if e.kind == "highlight" and e.opts.get("flag") and e.feature is el.feature
@@ -1749,20 +1795,24 @@ class FxRenderer(Renderer):
         marching squads in a column."""
         if t < el.at:
             return
+        held = bool(el.opts.get("_held"))  # arrived in an earlier scene: it stands at its target, no trail
         dur = float(el.opts.get("dur", 2.4))
-        u = ease((t - el.at - 0.3) / dur)
+        u = 1.0 if held else ease((t - el.at - 0.3) / dur)
         p0, p1 = cam.pt(*el.feature.label_point()), cam.pt(*el.feature_to.label_point())
         path = np.array(curve(p0, p1, bend=0.12, n=60), dtype=float)
+        on = np.flatnonzero((path[:, 0] > -60) & (path[:, 0] < W + 60) & (path[:, 1] > MAP_TOP) & (path[:, 1] < MAP_BOTTOM))
+        if len(on) > 4 and on[0] > 0:  # a march from a country's centre off-screen: it starts where it enters the frame
+            path = path[on[0]:]
         k = max(1, int(round(u * (len(path) - 1))))
-        trail = path[:k + 1]
+        trail = path[:k + 1] if not held else path[:0]
         rgb = self.color(el.color)
-        if len(trail) > 1:  # the trail, dashed, in the side's colour
+        if len(trail) > 1:  # the trail, dashed, in the side's colour; the dashes crawl forward, so it never stands still
             d = ImageDraw.Draw(ov)
             for n, (a, b) in enumerate(zip(trail[:-1], trail[1:])):
-                if n % 3 != 2:
+                if (n - int(t * 9)) % 3 != 2:
                     d.line([*a, *b], fill=(0, 0, 0, 90), width=16)
                     d.line([*a, *b], fill=rgb + (235,), width=10)
-        if u >= 1:
+        if u >= 1 and not held:
             bw_brand.chevron(ov, path, rgb)
         head = path[k]
         back = path[max(0, k - 3)]
@@ -1796,7 +1846,7 @@ class FxRenderer(Renderer):
                     if fx < -0.2:  # marching left: the cloth flies behind
                         img = img.transpose(Image.FLIP_LEFT_RIGHT)
                     ov.alpha_composite(img, (int(head[0] - img.width / 2), int(head[1] - img.height * 0.85)))
-        if el.text and u >= 1:
+        if el.text and u >= 1 and not held:
             text(ov, (p1[0], p1[1] - 130), el.text.upper(), 46, fill=rgb, a=ramp(t, el.at + 0.3 + dur), max_width=W - 80)
 
     def battle(self, ov: Image.Image, cam, el: Element, t: float) -> None:
@@ -1860,6 +1910,32 @@ class FxRenderer(Renderer):
             d.rounded_rectangle([x - tag_w / 2 - 20, y - 46, x + tag_w / 2 + 20, y + 46], radius=14, fill=(12, 16, 26, 200))
         d.text((x, y), label, font=font(size, serif=True) if u < 1 else f_tag, fill=(255, 255, 255, 255),
                stroke_width=8 if u < 1 else 0, stroke_fill=(0, 0, 0, 220), anchor="mm")
+        img.alpha_composite(ov)
+
+    def attempt_tag(self, img: Image.Image, t: float) -> None:
+        """The attempt being told ("ATTEMPT 2", bw_render.attempt_marks): it slams in big in gold as the narration
+        counts it, then shrinks into a tag at the top right, opposite the year's."""
+        at, label = next(((at, label) for at, label in reversed(self.attempts) if t >= at), (None, ""))
+        if at is None:
+            return
+        age = t - at
+        f_tag = font(60)
+        tag_w = f_tag.getlength(label)
+        big_y, tx, ty = CY - 260, W - 60 - tag_w / 2, bw_render.HEAD_Y - 150
+        gold = WAR["gold"]
+        ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(ov)
+        if age < YEAR_BIG:
+            s = 1 + 1.3 * (1 - ease(min(1.0, age / 0.22)))
+            d.text((W / 2, big_y), label, font=font(int(170 * s)), fill=gold + (int(255 * min(1.0, age / 0.12)),),
+                   stroke_width=10, stroke_fill=(0, 0, 0, 220), anchor="mm")
+        else:
+            u = ease(min(1.0, (age - YEAR_BIG) / (YEAR_TAG - YEAR_BIG)))
+            x, y = W / 2 + (tx - W / 2) * u, big_y + (ty - big_y) * u
+            if u >= 1:
+                d.rounded_rectangle([x - tag_w / 2 - 20, y - 44, x + tag_w / 2 + 20, y + 44], radius=14, fill=(12, 16, 26, 200))
+            d.text((x, y), label, font=font(int(170 + (60 - 170) * u)) if u < 1 else f_tag, fill=gold + (255,),
+                   stroke_width=8 if u < 1 else 0, stroke_fill=(0, 0, 0, 220), anchor="mm")
         img.alpha_composite(ov)
 
     @staticmethod
@@ -2027,6 +2103,8 @@ class FxRenderer(Renderer):
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         if scene.opts.get("year"):
             self.year(img, scene, t)
+        if self.attempts and self.cam_clock is None:  # not on the opening flash-forward of the outcome
+            self.attempt_tag(img, t)
         chapter = self.spec.scenes[i].opts.get("chapter")
         if isinstance(chapter, dict) and chapter.get("title"):
             self.banner(img, int(chapter.get("n") or 0), str(chapter["title"]), t - self.spec.scenes[i].start)

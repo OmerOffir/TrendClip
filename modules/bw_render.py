@@ -58,7 +58,7 @@ def use_layout(name: str) -> None:
         hook()
 MOVE = 0.9  # seconds the camera takes from one scene's view to the next
 FADE = 0.4
-TAIL = 1.2  # seconds after the last word
+TAIL = 1.2  # seconds after the last word (a video with an outro uses its own, shorter hold instead)
 POP = 0.16  # seconds a caption word stays bigger as it is said
 COUNT_UP = 1.0  # seconds a counter takes to count up to its number
 HOOK_FLIP, HOOK_END, HOOK_FADE = 0.9, 1.8, 0.35  # the opening flash-forward: the outcome scene before its change until
@@ -148,7 +148,7 @@ class Spec:
     look: str = "flat"  # flat | satellite (modules.bw_fx)
     brand: bool = False  # the mascot and the marker hand (modules.bw_brand); needs the satellite look
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
-    hold: float = 0.0  # extra seconds at the end (the outro's end card, modules.bw_brand)
+    hold: float = 0.0  # with an outro: seconds after the last word, in place of TAIL (modules.bw_brand.END_HOLD)
     sfx: bool = False  # mix modules.bw_sfx's sound effects under the voice (Borderline Why turns it on)
     # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
     # "before": the words stamped on the first map, "after": the words stamped on the outcome}
@@ -159,7 +159,7 @@ class Spec:
     def duration(self) -> float:
         ends = [self.words[-1].end] if self.words else []
         ends += [line[-1].end for line in self.lines if line]
-        return max(ends, default=0.0) + TAIL + self.hold
+        return max(ends, default=0.0) + (self.hold if self.hold else TAIL)
 
     def line_at(self, t: float, before: float = 0.05, after: float = 0.35) -> list[Word] | None:
         """The mascot's line being said at `t` (with a moment after it, while its bubble is still up)."""
@@ -1002,8 +1002,62 @@ def _elements(raw: list[dict[str, Any]], el_keys: set[str]) -> list[Element]:
     return out
 
 
+ORDINALS = {"one": 1, "first": 1, "two": 2, "second": 2, "three": 3, "third": 3, "four": 4, "fourth": 4, "five": 5,
+            "fifth": 5, "six": 6, "sixth": 6}
+SENTENCE_END = re.compile(r"(?<=[.!?])\s+(?=\S)")
+SPLIT_WORDS = 14  # a war-map scene longer than this is cut into its sentences (the picture then changes every 3-4 s)
+
+
+def attempt_marks(words: list[Word]) -> list[tuple[float, str]]:
+    """(time, "ATTEMPT 2") wherever the narration counts an attempt: "Attempt 2", "attempt number two", "the second
+    try/attempt/time" (modules.bw_whatif's attempts format; drawn by bw_fx.FxRenderer.attempt_tag)."""
+    out: list[tuple[float, str]] = []
+    toks = [re.sub(r"[^a-z0-9]", "", w.text.lower()) for w in words]
+    for k, tok in enumerate(toks):
+        n = None
+        if tok == "attempt" and k + 1 < len(toks):
+            nxt = toks[k + 1] if toks[k + 1] != "number" or k + 2 >= len(toks) else toks[k + 2]
+            n = int(nxt) if nxt.isdigit() else ORDINALS.get(nxt)
+        elif tok in ("try", "attempt", "time") and k >= 1 and toks[k - 1] in ORDINALS and toks[k - 1] not in ("one", "two", "three", "four", "five", "six"):
+            n = ORDINALS[toks[k - 1]]
+        if n and (not out or out[-1][1] != f"ATTEMPT {n}"):
+            out.append((words[k].start, f"ATTEMPT {n}"))
+    return out
+
+
+def split_scenes(data: dict[str, Any]) -> dict[str, Any]:
+    """The script with every long map scene cut at its sentences, each element going with the sentence that says
+    its cue (the rest with the first); the year, headline and ask stay on the first piece, the react on the last.
+    The hook's scene index follows. A war-map Short reads faster this way (the owner, 2026-11-03)."""
+    scenes, index = [], {}
+    for n, sc in enumerate(data["scenes"]):
+        index[n] = len(scenes)
+        parts = SENTENCE_END.split(str(sc.get("narration") or "").strip())
+        if sc.get("kind", "map") != "map" or len(parts) < 2 or len(str(sc.get("narration") or "").split()) <= SPLIT_WORDS:
+            scenes.append(sc)
+            continue
+        pieces = [dict(sc, narration=part, elements=[]) for part in parts]
+        for piece in pieces[1:]:
+            for key in ("year", "headline", "kicker", "title", "subtitle", "ask"):
+                piece.pop(key, None)
+        for piece in pieces[:-1]:
+            piece.pop("react", None)
+        for el in sc.get("elements", []):
+            cue = _tok(str(el.get("cue") or ""))
+            home = next((piece for piece in pieces if cue and any(
+                _tok(w) == cue or (len(cue) > 3 and _tok(w).startswith(cue)) for w in piece["narration"].split())), pieces[0])
+            home["elements"].append(el)
+        scenes += pieces
+    hook = dict(data.get("hook") or {})
+    if isinstance(hook.get("scene"), int) and hook["scene"] in index:
+        hook["scene"] = index[hook["scene"]]
+    return {**data, "scenes": scenes, "hook": hook}
+
+
 def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
     """A Spec from the script JSON (modules.bw_script) and the voice's words."""
+    if data.get("style") == "war":
+        data = split_scenes(data)
     scenes = []
     el_keys = {"kind", "place", "to", "value", "text", "color", "cue"}
     scene_keys = {"kind", "narration", "focus", "headline", "kicker", "title", "subtitle", "elements"}

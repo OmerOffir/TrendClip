@@ -70,7 +70,7 @@ def test_the_end_card_starts_with_the_subscribe_line_and_holds():
     assert len(spec.lines) == 2  # the reaction and the subscribe line are two bubbles
     bw_render.align(spec)
     assert spec.scenes[-1].start == pytest.approx(2.9)
-    assert spec.duration == pytest.approx(3.6 + bw_render.TAIL + bw_brand.END_HOLD["short"])
+    assert spec.duration == pytest.approx(3.6 + bw_brand.END_HOLD["short"])  # 0.5 s after its last word, no TAIL on top
 
 
 def test_a_photo_scene_without_a_picture_falls_back():

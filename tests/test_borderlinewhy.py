@@ -365,7 +365,7 @@ def test_make_records_the_video(settings, tmp_path, world):
     assert rendered and rendered[0].scenes[0].view is not None
     saved = bw_channel.load_info(job.key, tmp_path)
     assert saved["title"] == SCRIPT["title"] and saved["check"] == []
-    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 + 1.2)  # + the outro's end card
+    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 - bw_render.TAIL + 0.5)  # ends 0.5 s after the outro's last word
     assert (tmp_path / job.key / "script.json").is_file()
     assert bw_channel.videos(tmp_path)[0]["key"] == job.key
     assert "Northwest Angle" in bw_topics.load(tmp_path).used  # the script's topic is never made again
@@ -1955,6 +1955,44 @@ def test_the_war_map_draws_sides_armies_battles_and_years(world, fx_offline):
     spec.scenes[0].opts["year"] = "1812"
     sounds = [name for t, name, _ in bw_sfx.events(spec) if t < spec.scenes[0].end]
     assert "stamp" in sounds and "whoosh" in sounds  # the battle's thud, the army's whoosh
+
+
+def test_the_war_map_counts_the_attempts_and_keeps_its_armies_on_screen(world, fx_offline):
+    words = _words("Attempt 1 began. The second try failed. Attempt number three too. Then the third time again.")
+    marks = bw_render.attempt_marks(words)
+    assert [m[1] for m in marks] == ["ATTEMPT 1", "ATTEMPT 2", "ATTEMPT 3"]  # "the third time" repeats 3: no second mark
+    assert marks[0][0] == words[0].start and marks[1][0] == words[5].start
+    # a long war scene is cut at its sentences, each element with the sentence that says its cue, the hook following
+    data = _fx_dict()
+    data["style"] = "war"
+    data["hook"] = {"scene": 1, "before": "A", "after": "B"}
+    data["scenes"][0].update(narration="The army marched north on the lake in the spring of that year. Then it stopped at the border.",
+                             year="1812", ask="Why?", react="Wow.", elements=data["scenes"][0]["elements"] + [
+                                 {"kind": "army", "place": "Minnesota", "to": "Canada", "flag": "Flag of Canada.svg", "cue": "stopped"}])
+    cut = bw_render.split_scenes(data)
+    first, second = cut["scenes"][0], cut["scenes"][1]
+    assert len(cut["scenes"]) == len(data["scenes"]) + 1 and cut["hook"]["scene"] == 2
+    assert first["year"] == "1812" and first["ask"] == "Why?" and "year" not in second and "ask" not in second
+    assert "react" not in first and second["react"] == "Wow." and second["narration"] == "Then it stopped at the border."
+    assert [e["kind"] for e in second["elements"]] == ["army"] and not any(e["kind"] == "army" for e in first["elements"])
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert len(spec.scenes) == len(data["scenes"]) + 1  # cut on the way in
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    army = next(e for e in spec.scenes[1].elements if e.kind == "army")
+    later = [(s, e) for s in spec.scenes[2:] if s.kind == "map" for e in s.elements if e.kind == "army"]
+    assert later and all(e.opts.get("_held") and e.at < s.start and e.to == army.to for s, e in later)  # it stays where it arrived
+    silent = {round(e.at + 0.3, 1) for _, e in later}
+    assert not any(round(t, 1) in silent for t, n, _ in bw_sfx.events(spec) if n == "whoosh")  # the held copies make no sound
+    sides = [e for s in spec.scenes for e in s.elements if e.kind == "highlight" and e.opts.get("_badge")]
+    assert sides and all(e.feature.kind == "country" for e in sides)  # each side's flag waves over its country
+    r.attempts = [(spec.scenes[1].start, "ATTEMPT 1")]
+    big = np.asarray(r.frame(spec.scenes[1].start + 0.3)).astype(int)
+    r.attempts = []
+    plain = np.asarray(r.frame(spec.scenes[1].start + 0.3)).astype(int)
+    assert (big != plain).any()  # the attempt slams in
+    for t in (spec.scenes[2].start + 0.2, spec.scenes[-2].end - 0.2):
+        assert r.frame(t).size == (bw_render.W, bw_render.H)
 
 
 def test_any_war_story_goes_on_the_war_map_and_a_peaceful_one_does_not(world):

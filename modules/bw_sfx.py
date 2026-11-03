@@ -96,6 +96,8 @@ def events(spec) -> list[tuple[float, str, float]]:
         if scene.opts.get("year"):  # the year slamming in (bw_fx.FxRenderer.year)
             found.append((scene.start + 0.05, "stamp", 0.0))
         for el in scene.elements:
+            if el.opts.get("_held"):  # an army standing where it arrived earlier (bw_fx.FxRenderer.hold_armies)
+                continue
             if el.kind in ("stamp", "battle"):
                 found.append((el.at, "stamp", 0.0))
             elif el.kind == "army":
@@ -106,6 +108,10 @@ def events(spec) -> list[tuple[float, str, float]]:
                 found.append((el.at, "whoosh", 0.0))
             elif el.kind in LINE_KINDS:
                 found.append((el.at, "whoosh", 0.0))
+    if getattr(spec, "style", "") == "war":  # "Attempt 2" slamming in (bw_fx.FxRenderer.attempt_tag)
+        from modules import bw_render
+
+        found += [(at, "stamp", 0.0) for at, _ in bw_render.attempt_marks(spec.words)]
     hook = getattr(spec, "hook", None) or {}
     if isinstance(hook.get("scene"), int):  # the opening flash-forward's cut to the outcome comes before anything near it
         from modules import bw_render

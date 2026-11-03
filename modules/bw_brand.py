@@ -238,7 +238,8 @@ OUTROS = (  # the mascot's last line, picked by the script's seed
     "Subscribe! There are way more weird borders out there.",
     "Subscribe, and let's find the next strange border together!",
 )
-END_HOLD = {"short": 1.2, "long": 9.0}  # seconds the end card stays after the line (a long video's end screen needs 5-20 s)
+END_HOLD = {"short": 0.5, "long": 9.0}  # seconds the video runs on after the mascot's last word (the owner, 2026-11-03: a
+# Short ends half a second after it; a long video's end screen needs 5-20 s)
 
 
 def add_outro(script: dict, long: bool = False) -> dict:

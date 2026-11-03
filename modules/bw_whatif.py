@@ -32,7 +32,7 @@ SESSIONS_SHOWN = 10
 LIMITS = Limits(min_claims=0, min_cited=0)
 # an attempts Short runs about 75-90 s: each attempt is a fresh mini-story, so viewers stay for the next one
 ATTEMPT_WORDS = (150, 195)
-ATTEMPT_LIMITS = Limits(min_words=ATTEMPT_WORDS[0], max_words=ATTEMPT_WORDS[1], min_scenes=8, max_scenes=24, max_cards=0,
+ATTEMPT_LIMITS = Limits(min_words=ATTEMPT_WORDS[0], max_words=ATTEMPT_WORDS[1], min_scenes=8, max_scenes=32, max_cards=0,
                         spoken_words=215, max_photos=4, max_boards=1, min_claims=0, min_cited=0)
 FORMAT = bw_manual.JSON_FORMAT.replace(
     '  "claims": [{"claim": "One fact the narration states.", "source_id": 1, "quote": "the exact words copied from source 1"}],',
@@ -102,6 +102,8 @@ THE WAR MAP (this Short is drawn on it: a pale paper map, each side in one solid
   helps (fire for a burned city, ship, horse, cannon if listed).
 - Keep the camera on the front: "focus" is the 1-3 states/provinces or cities where the fighting is, not whole
   continents.
+- Fast: a map scene is ONE sentence (6-14 words), so the picture changes every 3-4 seconds, and every scene brings
+  something new (an army, a battle, a transfer, a label). Two things can happen at once in a scene.
 - No cards. Photos only for a famous face or place (0-3), a board only for a plan worth writing out (0-1).
 
 THE TITLE: under 50 characters, the count and the surprise ("4 Times the US Tried to Take Canada").
