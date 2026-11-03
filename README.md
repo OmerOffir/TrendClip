@@ -281,8 +281,8 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    every part named counts as correct, the leaderboard ignores the counts). The shapes take turns; the
    developer-trivia shape was dropped on 2026-11-03 (its levels drew the fewest comments). **Catch the Zombie**
    (`CATCH_EVERY=3`, `CATCH_GAME=Minecraft`) is a level with no question: a pixel zombie drawn by the code
-   pops up three times in the gameplay holding a different random emoji each time, for 0.8 s, 0.4 s and
-   4 frames, and the voice asks which three emojis it held; three right emojis score on the leaderboard.
+   pops up three times in the gameplay holding a different random emoji each time, for 0.6 s, 0.35 s and
+   0.25 s, and the voice asks which three emojis it held; three right emojis score on the leaderboard.
    It comes up on a Minecraft video whenever the last two levels had none (or tick **🧟 Catch the Zombie
    level** in Create). Every one is a numbered level
    of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in
