@@ -202,9 +202,14 @@ def label(series: str, number: int) -> str:
 
 
 def strip(title: str) -> str:
-    """The title without a series tag an LLM may have added ("... | Weird Borders #3", "Weird Borders: ...")."""
+    """The title without a series tag an LLM may have added ("... | Weird Borders #3", "Weird Borders: ..."): the
+    name after a separator, before one, or with an episode number. The name inside the question itself stays
+    ("Why Is China Shaped Like This?" is the series' own title; stripping it rejected every episode, 2026-11-03)."""
     for name in SERIES:
-        title = re.sub(rf"\s*[|:\-–—]?\s*{re.escape(name)}\s*(?:#|ep\.?\s*|episode\s*)?\d*\s*[|:\-–—]?\s*", " ", title, flags=re.I)
+        n, num = re.escape(name), r"(?:\s*(?:#|ep\.?\s*|episode\s*)?\d+)?"
+        title = re.sub(rf"\s*[|:\-–—]\s*{n}{num}\s*$", " ", title, flags=re.I)  # "... | Weird Borders #3"
+        title = re.sub(rf"^\s*{n}{num}\s*[|:\-–—]\s*", " ", title, flags=re.I)  # "Weird Borders #3: ..."
+        title = re.sub(rf"\s*{n}\s*(?:#|ep\.?\s*|episode\s*)\d+\s*[|:\-–—]?\s*", " ", title, flags=re.I)  # a numbered tag anywhere
     return re.sub(r"\s+", " ", title).strip(" |:-–—")
 
 

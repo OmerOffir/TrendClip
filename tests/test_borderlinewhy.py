@@ -1245,6 +1245,9 @@ def test_series_of_a_topic():
 def test_series_title_is_numbered_and_fits():
     assert bw_series.titled("Why is Gambia inside Senegal?", "Weird Borders", 7) == "Why is Gambia inside Senegal? | Weird Borders #7"
     assert bw_series.titled("Weird Borders #3: Why is Gambia inside Senegal?", "Weird Borders", 7).startswith("Why is Gambia")
+    assert bw_series.strip("Why Is China Shaped Like This?") == "Why Is China Shaped Like This?"  # the series' own question stays
+    assert bw_series.strip("Why Is China Shaped Like This? | Shaped Like This #4") == "Why Is China Shaped Like This?"
+    assert bw_series.strip("Shaped Like This: Chile") == "Chile" and bw_series.strip("Chile - Weird Borders") == "Chile"
     long = bw_series.titled("Why " + "very " * 30 + "odd?", "Weird Borders", 12)
     assert len(long) <= bw_series.TITLE_ROOM and long.endswith(" | Weird Borders #12")
     assert bw_channel.publish._yt_title(long).endswith("| Weird Borders #12 #shorts")
