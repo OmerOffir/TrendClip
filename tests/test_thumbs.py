@@ -49,6 +49,19 @@ def test_sidequest_thumbnail_without_its_clip(tmp_path):
     assert Image.open(out).size == (1080, 1920)
 
 
+def test_a_catch_level_thumbnail_has_the_zombie_holding_the_mark(tmp_path):
+    _video(tmp_path / "shorts" / "mc_1.mp4", "blue")
+    (tmp_path / "shorts" / "mc_1.json").write_text(json.dumps({"title_card": "LEVEL 12 - CATCH THE ZOMBIE",
+                                                              "render_settings": {"catch": ["🍕", "🚀", "👺"]}}))
+    out = thumbs.draw("sidequestlogic", "mc_1.mp4", tmp_path)
+    img = Image.open(out)
+    assert img.size == (1080, 1920)
+    shirt = (0, 150, 150)
+    near = lambda px: all(abs(a - b) <= 4 for a, b in zip(px[:3], shirt))  # JPEG rounding
+    assert near(img.getpixel((540, 1320)))  # the zombie's shirt, centre of the lower half
+    assert not near(img.getpixel((540, 900)))  # and nothing of it up in the title
+
+
 def test_a_newer_video_makes_the_thumbnail_stale(tmp_path):
     video, thumb = thumbs.paths("darkarchives", "3", tmp_path)
     _video(video)

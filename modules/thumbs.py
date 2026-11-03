@@ -230,17 +230,42 @@ def sidequest(video: Path, out: Path) -> None:
         for line in lines:
             d.text((W / 2, y), line, font=f, fill=WHITE, stroke_width=10, stroke_fill=BLACK, anchor="ma")
             y += int(size * 1.08)
-    q = font(420)  # the big question mark, a little tilted
-    mark = Image.new("RGBA", (420, 520), (0, 0, 0, 0))
-    ImageDraw.Draw(mark).text((210, 260), "?", font=q, fill=YELLOW, stroke_width=18, stroke_fill=BLACK, anchor="mm")
-    mark = mark.rotate(-12, expand=True, resample=Image.BICUBIC)
-    glow = Image.new("RGBA", mark.size, (0, 0, 0, 0))
-    glow.putalpha(mark.getchannel("A").filter(ImageFilter.GaussianBlur(18)).point(lambda a: a * 0.6))
-    at = ((W - mark.width) // 2, max(y + 20, int(H * 0.5)))
-    img.alpha_composite(glow, at)
-    img.alpha_composite(mark, at)
+    if (info.get("render_settings") or {}).get("catch"):  # Catch the Zombie: the zombie holds the "?"
+        zombie_with_mark(img, max(y + 20, int(H * 0.42)))
+    else:
+        q = font(420)  # the big question mark, a little tilted
+        mark = Image.new("RGBA", (420, 520), (0, 0, 0, 0))
+        ImageDraw.Draw(mark).text((210, 260), "?", font=q, fill=YELLOW, stroke_width=18, stroke_fill=BLACK, anchor="mm")
+        mark = mark.rotate(-12, expand=True, resample=Image.BICUBIC)
+        glow = Image.new("RGBA", mark.size, (0, 0, 0, 0))
+        glow.putalpha(mark.getchannel("A").filter(ImageFilter.GaussianBlur(18)).point(lambda a: a * 0.6))
+        at = ((W - mark.width) // 2, max(y + 20, int(H * 0.5)))
+        img.alpha_composite(glow, at)
+        img.alpha_composite(mark, at)
     badge(img, "GAMER IQ", (12, 12, 14, 235), YELLOW, y=H - 230)
     img.convert("RGB").save(out, quality=92)
+
+
+def zombie_with_mark(img: Image.Image, top: int) -> None:
+    """The pixel zombie from the catch levels (trendclip.catch), scaled with hard pixels, holding a big yellow
+    "?" in its hands, standing from `top` down to the badge."""
+    from trendclip import catch
+
+    with tempfile.TemporaryDirectory() as tmp:
+        sprite = Image.open(catch.draw_zombie(None, Path(tmp) / "zombie.png")).convert("RGBA")
+    height = max(600, H - 250 - top)
+    k = height / sprite.height
+    sprite = sprite.resize((round(sprite.width * k), height), Image.NEAREST)
+    side = int(10 * catch.CELL * k)  # the hands' box, where the emoji goes in the videos
+    mark = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+    ImageDraw.Draw(mark).text((side / 2, side / 2), "?", font=font(int(side * 0.95)), fill=YELLOW,
+                              stroke_width=max(8, side // 24), stroke_fill=BLACK, anchor="mm")
+    sprite.alpha_composite(mark, ((sprite.width - side) // 2, int(9 * catch.CELL * k)))
+    glow = Image.new("RGBA", sprite.size, (0, 0, 0, 0))
+    glow.putalpha(sprite.getchannel("A").filter(ImageFilter.GaussianBlur(24)).point(lambda a: a * 0.7))
+    at = ((W - sprite.width) // 2, top)
+    img.alpha_composite(glow, at)
+    img.alpha_composite(sprite, at)
 
 
 def pricetag(video: Path, thumb: Path) -> None:
