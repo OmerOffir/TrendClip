@@ -222,6 +222,7 @@ def plan(fresh: bool = False) -> dict[str, Any]:
 class ManualStart(BaseModel):
     question: str = Field("", max_length=200)
     article: str = Field("", max_length=200)
+    more: list[str] = Field(default_factory=list, max_length=8)
 
 
 class ManualText(BaseModel):
@@ -254,7 +255,7 @@ def manual_start(req: ManualStart) -> dict[str, Any]:
     """Read the topic's sources (about a minute) and give the writing prompt."""
     from modules import bw_manual
 
-    return _manual(bw_manual.start, req.question, req.article)
+    return _manual(lambda: bw_manual.start(req.question, req.article, more=req.more))
 
 
 @router.get("/manual/{sid}")

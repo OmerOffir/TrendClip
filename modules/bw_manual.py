@@ -28,6 +28,7 @@ from trendclip import llm_json
 from trendclip.llm_json import repair_json  # noqa: F401 - kept importable from here
 
 SESSIONS_SHOWN = 10
+MORE_SOURCES = 4  # your own sources read at the start
 
 JSON_FORMAT = """ANSWER FORMAT
 Answer with ONLY one JSON object (no text before or after it, no code fence), shaped like this example:
@@ -106,18 +107,37 @@ def _state(folder: Path) -> dict[str, Any]:
 # --------------------------------------------------------------------------- the steps
 
 
-def start(question: str = "", article: str = "", progress=lambda m: None, out_dir: Path | None = None) -> dict[str, Any]:
-    """Research a topic (the next on the list when none is given) and open its session."""
+def start(question: str = "", article: str = "", progress=lambda m: None, out_dir: Path | None = None,
+          more: list[str] | None = None) -> dict[str, Any]:
+    """Research a topic (the next on the list when none is given) and open its session. `more`: your own sources
+    (links or Wikipedia article titles) read besides the cited pages; links typed in the question count too."""
     topics_dir = bw_channel.out_root(out_dir)
-    if article.strip():
-        topic = bw_topics.Topic(question=question.strip() or f"Why {article.strip()}?", article=article.strip(), source="manual")
+    more = re.findall(r"https?://\S+", question) + [m.strip() for m in (more or []) if m.strip()]
+    question = re.sub(r"https?://\S+", "", question).strip()
+    article = article.strip()
+    listed = next((t for t in bw_topics.remaining(topics_dir) if t.article.lower() == article.lower()), None) if article else None
+    if listed is not None:  # a topic on the list keeps its series
+        topic = listed.model_copy(update={"question": question or listed.question})
+    elif article:
+        topic = bw_topics.Topic(question=question or f"Why {article}?", article=article, source="manual")
     else:
         topic = bw_topics.next_topic(topics_dir)
         if topic is None:
             raise ManualError("The topic list is empty: add a topic in Topics first")
     res = bw_script.research(topic, progress)
+    failed = []
+    for entry in list(dict.fromkeys(more))[:MORE_SOURCES]:
+        if any(s.url == entry for s in res.sources):
+            continue
+        progress(f"Reading your source: {entry}")
+        try:
+            res.sources.append(bw_script.own_source(entry, max(s.id for s in res.sources) + 1))
+        except ScriptError as err:
+            failed.append(str(err))
     if len(res.sources) < 2:
-        raise ScriptError(f"Only Wikipedia could be read for {res.article!r}: the channel wants two sources. Pick another topic.")
+        why = f" ({'; '.join(failed)})" if failed else ""
+        raise ScriptError(f"Only Wikipedia could be read for {res.article!r}{why}. The channel wants two sources: add a link "
+                          "or another Wikipedia article (e.g. the country's own article) in More sources and try again.")
     folder = root(out_dir) / _slug(res.article)
     folder.mkdir(parents=True, exist_ok=True)
     _save(folder, "research.json", {"topic": topic.model_dump(), "article": res.article,

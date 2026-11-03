@@ -167,16 +167,20 @@
   $("bwWStart").addEventListener("click", (e) => act(async () => {
     const sel = $("bwWTopic");
     const opt = sel.selectedOptions[0];
-    const ownQ = $("bwWQuestion").value.trim();
+    // a link typed in the question box is a source, not the question
+    const typed = $("bwWQuestion").value.trim();
+    const links = typed.match(/https?:\/\/\S+/g) || [];
+    const ownQ = typed.replace(/https?:\/\/\S+/g, "").trim();
     const ownA = $("bwWArticle").value.trim();
+    const more = [...links, ...$("bwWMore").value.split(/[,\n]/).map((m) => m.trim()).filter(Boolean)];
     if (ownQ && !ownA) throw new Error("Add the Wikipedia article your question starts from (e.g. Gaza Strip)");
     // your own question goes straight here, never on the topic list (so Gemini doesn't make it first)
-    const req = ownA ? { article: ownA, question: ownQ } : { article: sel.value, question: sel.value ? opt.dataset.q : "" };
+    const req = ownA ? { article: ownA, question: ownQ, more } : { article: sel.value, question: sel.value ? opt.dataset.q : "", more };
     e.target.disabled = true;
-    box.innerHTML = '<div class="empty">Reading Wikipedia and the pages it cites (about a minute)…</div>';
+    box.innerHTML = '<div class="empty">Reading Wikipedia, the pages it cites and your sources (about a minute)…</div>';
     try {
       render((await post("/api/borderlinewhy/manual", req)).body);
-      $("bwWQuestion").value = $("bwWArticle").value = "";
+      $("bwWQuestion").value = $("bwWArticle").value = $("bwWMore").value = "";
       load();
     } catch (err) {
       box.innerHTML = "";

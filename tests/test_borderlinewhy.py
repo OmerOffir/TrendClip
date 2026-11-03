@@ -827,6 +827,34 @@ def test_a_manual_script_needs_two_sources(tmp_path, monkeypatch):
         bw_manual.view("../etc", tmp_path)
 
 
+def test_your_own_sources_make_up_the_second_source(tmp_path, monkeypatch):
+    from modules import bw_manual
+
+    def only_wiki(topic, progress=None):
+        res = _research()
+        res.topic, res.sources = topic, res.sources[:1]
+        return res
+
+    read = []
+
+    def own(entry, sid):
+        read.append(entry)
+        if "broken" in entry:
+            raise bw_script.ScriptError("broken.example couldn't be read (403)")
+        return bw_script.Source(sid, entry if entry.startswith("http") else f"https://en.wikipedia.org/wiki/{entry}", entry, "text " * 400)
+
+    monkeypatch.setattr(bw_script, "research", only_wiki)
+    monkeypatch.setattr(bw_script, "own_source", own)
+    bw_topics.add(tmp_path, "Why is China shaped like this?", "Borders of China")
+
+    # a link typed in the question box is read as a source; a topic on the list keeps its question and series
+    view = bw_manual.start("https://mapgo.io/china", "borders of china", out_dir=tmp_path, more=["China", "China"])
+    assert read == ["https://mapgo.io/china", "China"]
+    assert [s["id"] for s in view["sources"]] == [1, 2, 3] and view["question"] == "Why is China shaped like this?"
+    with pytest.raises(bw_script.ScriptError, match="broken.example couldn't be read.*More sources"):
+        bw_manual.start(article="Pheasant Island", out_dir=tmp_path, more=["https://broken.example/x"])
+
+
 def test_a_pasted_answer_with_unescaped_quotes_and_trailing_commas_is_read():
     from modules import bw_manual
 

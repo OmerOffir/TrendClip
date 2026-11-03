@@ -16,7 +16,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -292,6 +292,28 @@ def research(topic: Topic, progress=lambda m: None) -> Research:
             continue
         out.sources.append(Source(len(out.sources) + 1, url, page_title or domain, body[:SOURCE_CHARS]))
     return out
+
+
+def own_source(entry: str, sid: int) -> Source:
+    """A source you named: a link (any readable web page) or another Wikipedia article's title. Unreadable: ScriptError."""
+    entry = entry.strip()
+    if re.match(r"https?://", entry):
+        wiki = re.match(r"https?://[a-z]+\.wikipedia\.org/wiki/([^?#]+)", entry)
+        if wiki:
+            return own_source(unquote(wiki.group(1)).replace("_", " "), sid)
+        try:
+            r = _get(entry, timeout=20, tries=2)
+            page_title, body = page_text(r.text[:2_000_000])
+        except Exception as err:  # noqa: BLE001 - paywalls, 403s, timeouts
+            raise ScriptError(f"{urlparse(entry).netloc} couldn't be read ({err})") from err
+        if len(body) < MIN_SOURCE_CHARS:
+            raise ScriptError(f"{urlparse(entry).netloc} has almost no readable text (a page drawn by JavaScript can't be read)")
+        return Source(sid, entry, page_title or urlparse(entry).netloc, body[:SOURCE_CHARS])
+    title = article_exists(entry)
+    if not title:
+        raise ScriptError(f"No Wikipedia article called {entry!r}")
+    real, text = wiki_text(title)
+    return Source(sid, f"https://en.wikipedia.org/wiki/{real.replace(' ', '_')}", f"{real} - Wikipedia", text)
 
 
 # --------------------------------------------------------------------------- the draft
