@@ -291,6 +291,7 @@
     if (v && !sent && !up && !["vetoed", "blocked"].includes(r.state)) btns.push(`<button type="button" class="btn-secondary" data-act="upload" data-key="${esc(v.key)}">⬆️ Upload now</button>`);
     if (v && r.state !== "vetoed") btns.push(`<button type="button" class="btn-secondary" data-act="veto" data-key="${esc(v.key)}">🚫 ${up ? "Make private" : "Don't post"}</button>`);
     if (prog) btns.push(`<button type="button" class="btn-secondary" data-act="stop" data-key="${esc(r.key)}">⏹ Stop</button>`);
+    if (!v && planned && !prog && r.key !== making) btns.push(`<button type="button" class="btn-ghost" data-act="remove" data-choice="${esc(planned.value)}" title="Take it off the Plan">✕ Remove</button>`);
     if (!up && !r.extra && r.key !== making && !prog && !past) btns.push(`<button type="button" class="btn-secondary" data-act="make" data-day="${esc(r.day)}" data-slot="${esc(r.slot)}"${!v && planned ? ` data-choice="${esc(planned.value)}"` : ""}>🗺️ ${v ? "Make another" : "Make now"}</button>`);
     return `<div class="bw-slot"><span class="bw-time">${esc(r.slot)}</span>
       <span class="bw-what"><span class="pill ${cls}">${label}</span> ${what}</span>
@@ -366,6 +367,11 @@
         if (!confirm("Stop making this video? Nothing will be posted for this slot unless you make it again.")) return;
         await post("/api/borderlinewhy/make/stop", { key });
         btn.textContent = "Stopped";
+      } else if (act === "remove") {
+        const what = row.querySelector(".bw-what b");
+        const queued = btn.dataset.choice.startsWith("queue:");
+        if (!confirm(`Take "${what ? what.textContent : "this"}" off the Plan? ${queued ? "The script moves out of the queue (to queue/removed)." : "The topic is dropped from the list; add it again in Topics to bring it back."}`)) return;
+        await post("/api/borderlinewhy/next/remove", { choice: btn.dataset.choice });
       } else if (act === "make") {
         const what = row.querySelector(".bw-what b");
         if (!confirm(`Make a new video for ${day} ${slot} now${what && !what.classList.contains("hint") ? `: ${what.textContent}` : ""}? A video already made for it (not uploaded) is set aside.`)) return;

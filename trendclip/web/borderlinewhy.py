@@ -441,6 +441,16 @@ def pick_next(req: NextRequest) -> dict[str, Any]:
     return bw_channel.next_choices()
 
 
+@router.post("/next/remove")
+def remove_next(req: NextRequest) -> dict[str, Any]:
+    """Take a planned topic or queued script off the Plan (a topic can be added again to bring it back)."""
+    try:
+        bw_channel.remove_next(req.choice)
+    except ValueError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return bw_channel.next_choices()
+
+
 class CountryRequest(BaseModel):
     country: str = Field(min_length=2, max_length=80)
 

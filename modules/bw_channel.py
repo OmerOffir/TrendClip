@@ -343,6 +343,27 @@ def next_choices(out_dir: Path | None = None, limit: int = 60) -> dict[str, Any]
     return {"choice": choice, "options": options}
 
 
+def remove_next(choice: str, out_dir: Path | None = None) -> None:
+    """Take a planned video off the Plan: a topic is dropped from the list (adding it again brings it back), a
+    queued script moves to queue/removed/. Either way it stops being the owner's pick."""
+    root = out_root(out_dir)
+    if choice.startswith("topic:"):
+        article = choice[6:]
+        if article not in {t.article for t in bw_topics.remaining(root)}:
+            raise ValueError(f"{article!r} is not on the topic list")
+        bw_topics.mark(root, article, used=False, note="removed from the Plan by the owner")
+    elif choice.startswith("queue:"):
+        path = queue_dir(out_dir) / Path(choice[6:]).name
+        if not path.is_file():
+            raise ValueError("That script is no longer in the queue")
+        (path.parent / "removed").mkdir(exist_ok=True)
+        path.rename(path.parent / "removed" / path.name)
+        if bw_topics.picked(root) == choice:
+            bw_topics.pick(root, "")
+    else:
+        raise ValueError(f"Can't remove {choice!r}")
+
+
 def next_script(progress=lambda m: None, out_dir: Path | None = None, client=None, research=None, write=None,
                 choice: str | None = None) -> tuple[dict, str]:
     """(the script, where it came from): a queued script first, else the next topic with two readable sources

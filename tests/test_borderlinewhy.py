@@ -1499,6 +1499,28 @@ def test_the_owner_picks_the_next_video(tmp_path):
         bw_topics.pick(root, "topic:Nowhere")
 
 
+def test_the_owner_removes_a_planned_video(tmp_path):
+    root = tmp_path
+    queue = bw_channel.queue_dir(root)
+    queue.mkdir(parents=True)
+    (queue / "001_a.json").write_text(json.dumps({**SCRIPT, "title": "Queued A"}))
+    gaza = bw_topics.add(root, "Why is Gaza separated from the West Bank?", "Gaza Strip")
+    bw_topics.pick(root, "topic:Gaza Strip")
+    bw_channel.remove_next("topic:Gaza Strip", root)  # the pick and the topic both go
+    values = [o["value"] for o in bw_channel.next_choices(root)["options"]]
+    assert "topic:Gaza Strip" not in values and bw_topics.picked(root) == ""
+    assert next(t for t in bw_topics.listing(root) if t["article"] == "Gaza Strip")["status"] == "dropped"
+    bw_topics.add(root, gaza.question, gaza.article)  # added again: it is back
+    assert "topic:Gaza Strip" in [o["value"] for o in bw_channel.next_choices(root)["options"]]
+
+    bw_topics.pick(root, "queue:001_a.json")
+    bw_channel.remove_next("queue:001_a.json", root)
+    assert bw_channel.queued_scripts(root) == [] and (queue / "removed" / "001_a.json").is_file() and bw_topics.picked(root) == ""
+    for bad in ("queue:001_a.json", "topic:Nowhere", "nothing"):
+        with pytest.raises(ValueError):
+            bw_channel.remove_next(bad, root)
+
+
 # --------------------------------------------------------------------------- music per kind and the sound effects
 
 from modules import bw_sfx  # noqa: E402
