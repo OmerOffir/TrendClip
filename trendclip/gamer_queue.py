@@ -90,18 +90,18 @@ def put(settings: Settings, questions: list[dict[str, Any]]) -> dict[str, Any]:
         except ValueError:
             skipped.append({**label, "why": "not a complete question"})
             continue
-        options = quiz._trivia_options(q)
-        if not game or not options or not quiz.gamer_question(q.question, options):
-            skipped.append({**label, "why": "no game, or the question can't be spoken with three different options"})
+        shape = str(item.get("shape") or "").lower()
+        shape = shape if shape in quiz.GAMER_SHAPES else "number"
+        if not game or (problem := quiz.gamer_problem(q, shape)):
+            skipped.append({**label, "why": "no game" if not game else problem})
             continue
         if asked_key(q.question, q.correct) in asked:
             skipped.append({**label, "why": "already asked or queued on the hub"})
             continue
         asked.add(asked_key(q.question, q.correct))
-        shape = str(item.get("shape") or "").lower()
         name = f"{stamp}-{n:02d}-{slug(game)}.json"
         (folder / name).write_text(json.dumps({
-            "game": game, "shape": shape if shape in quiz.GAMER_SHAPES else "number", "question": q.model_dump(),
+            "game": game, "shape": shape, "question": q.model_dump(),
             "week_i": item.get("week_i"), "received_at": datetime.now().replace(microsecond=0).isoformat()},
             indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         queued.append({**label, "name": name})

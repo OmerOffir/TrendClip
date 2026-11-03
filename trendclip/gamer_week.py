@@ -40,7 +40,7 @@ class WeekError(ValueError):
 
 class Candidate(quiz.GeminiGamer):
     game: str = Field(description="The game, exactly as named in the prompt")
-    shape: str = Field("", description="The question's shape: number, fake, first or lore")
+    shape: str = Field("", description="The question's shape: " + ", ".join(quiz.GAMER_SHAPES))
 
 
 class WeekAnswer(BaseModel):
@@ -149,7 +149,8 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
     }
   ]
 }
-"game" is the game's name exactly as written above; "shape" one of number, fake, first, lore."""
+"game" is the game's name exactly as written above; "shape" one of """ + ", ".join(quiz.GAMER_SHAPES) + """.
+For an open question: "correct" is the whole answer as a comma-separated list with counts, "distractor" is ""."""
 
 
 def write_prompt(settings: Settings, session: dict[str, Any]) -> str:
@@ -162,7 +163,8 @@ def write_prompt(settings: Settings, session: dict[str, Any]) -> str:
     blocks = []
     for game, n in need:
         count = n + SPARE
-        text = quiz.GAMER_PROMPT.format(count=count, game=game, shape="SEE SHAPES", used="; ".join(asked[-60:]) or "none yet",
+        text = quiz.GAMER_PROMPT.format(count=count, game=game, shape="SEE SHAPES", form=quiz.gamer_form(None).format(game=game),
+                                        used="; ".join(asked[-60:]) or "none yet",
                                         notes=quiz._notes("") + quiz._variety(settings) + quiz._learned(settings, "gamer"))
         text = text.replace("Shape: SEE SHAPES.", "The shapes are listed above; mix them.")
         blocks.append(f"=== GAME: {game} ({count} candidates, {n} will be used) ===\n{text.strip()}")
@@ -182,8 +184,10 @@ def facts_prompt(session: dict[str, Any]) -> str:
     if not todo:
         return ""
     listing = "\n\n".join(
-        f"{i}. [{q['game']}] Q: {q['question']['question'].strip().rstrip('?')}?\n   Claimed correct: {q['question']['correct']}\n"
-        f"   Wrong options: {q['question']['trap']}; {q['question']['distractor']}\n   Claimed proof: {q['question']['fact']}"
+        f"{i}. [{q['game']}] Q: {q['question']['question'].strip().rstrip('?')}?\n   Claimed correct: {q['question']['correct']}\n   "
+        + (f"Wrong options: {q['question']['trap']}; {q['question']['distractor']}" if q['question']['distractor'].strip()
+           else f"No options (most forget: {q['question']['trap']})")
+        + f"\n   Claimed proof: {q['question']['fact']}"
         for i, q in enumerate(todo, 1))
     return quiz.GAMER_CHECK.format(candidates=listing) + "\n" + gamer_manual.FACTS_FORMAT
 
@@ -205,13 +209,11 @@ def answer(settings: Settings, text: str) -> dict[str, Any]:
     problems, added = [], 0
     for c in found.candidates:
         game = games.get(" ".join(c.game.split()).lower())
-        options = quiz._trivia_options(c)
+        shape = c.shape.strip().lower() if c.shape.strip().lower() in quiz.GAMER_SHAPES else "number"
         if game is None:
             problems.append(f"{c.question!r}: {c.game!r} is not a game of this week")
-        elif not options:
-            problems.append(f"{c.question!r}: needs three short, different options")
-        elif not quiz.gamer_question(c.question, options):
-            problems.append(f"{c.question!r}: the question alone (without the options) must be at most {quiz.GAMER_MAX_WORDS} words")
+        elif problem := quiz.gamer_problem(c, shape):
+            problems.append(f"{c.question!r}: {problem}")
         elif gamer_queue.asked_key(c.question, c.correct) in asked:
             problems.append(f"{c.question!r}: already asked")
         elif need.get(game, 0) <= 0:
@@ -220,7 +222,6 @@ def answer(settings: Settings, text: str) -> dict[str, Any]:
             asked.add(gamer_queue.asked_key(c.question, c.correct))
             need[game] -= 1
             added += 1
-            shape = c.shape.strip().lower() if c.shape.strip().lower() in quiz.GAMER_SHAPES else "number"
             session["questions"].append({"i": len(session["questions"]) + 1, "game": game, "shape": shape, "step": "facts",
                                          "question": quiz.GeminiGamer.model_validate(c.model_dump(exclude={"game", "shape"})).model_dump(),
                                          "why": ""})
@@ -306,9 +307,10 @@ def view(settings: Settings) -> dict[str, Any]:
     questions = []
     for q in session["questions"]:
         c = quiz.GeminiGamer.model_validate(q["question"])
-        options = quiz._trivia_options(c)
+        options = quiz.gamer_options(c, q["shape"])
         questions.append({"i": q["i"], "game": q["game"], "shape": q["shape"], "step": q["step"], "question": c.question,
-                          "spoken": quiz.gamer_question(c.question, options) if options else "", "options": [c.trap, c.distractor, c.correct],
+                          "spoken": quiz.gamer_question(c.question, options) if options is not None else "",
+                          "options": [c.trap, c.distractor, c.correct] if options else [],
                           "correct": c.correct, "fact": c.fact, "title": c.title, "why": q.get("why", ""), "sent": q.get("sent")})
     steps = [q["step"] for q in questions]
     need = _need(session)

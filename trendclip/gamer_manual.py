@@ -121,12 +121,8 @@ def answer(settings: Settings, sid: str, text: str) -> dict[str, Any]:
     asked = {a.lower() for a in quiz.gamer_asked(settings) + state["rejected"]}
     usable, problems = [], []
     for c in batch.candidates:
-        options = quiz._trivia_options(c)
-        if not options:
-            problems.append(f"{c.question!r}: needs three short, different options")
-        elif not quiz.gamer_question(c.question, options):
-            problems.append(f"{c.question!r}: the question alone (without the options) must be at most "
-                            f"{quiz.GAMER_MAX_WORDS} words")
+        if problem := quiz.gamer_problem(c, state["shape"]):
+            problems.append(f"{c.question!r}: {problem}")
         elif f"{c.question} ({c.correct})".lower() in asked:
             problems.append(f"{c.question!r}: already asked")
         else:
@@ -208,9 +204,9 @@ def view(settings: Settings, sid: str) -> dict[str, Any]:
     questions = []
     for i, c in enumerate(_candidates(state)):
         ok, why = verdicts[i] if i < len(verdicts) else (None, "")
-        options = quiz._trivia_options(c)
-        questions.append({"question": c.question, "spoken": quiz.gamer_question(c.question, options) if options else "",
-                          "options": [c.trap, c.distractor, c.correct], "correct": c.correct, "fact": c.fact,
+        options = quiz.gamer_options(c, state["shape"])
+        questions.append({"question": c.question, "spoken": quiz.gamer_question(c.question, options) if options is not None else "",
+                          "options": [c.trap, c.distractor, c.correct] if options else [], "correct": c.correct, "fact": c.fact,
                           "passed": ok, "why": why, "video": made.get(str(i))})
     return {"id": sid, "game": state["game"], "shape": state["shape"], "step": state["step"],
             "level": quiz.gamer_level(settings), "prompt": _prompt(settings, state), "problems": state.get("problems") or [],

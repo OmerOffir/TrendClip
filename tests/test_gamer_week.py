@@ -44,18 +44,19 @@ def test_pasted_candidates_get_the_shape_checks_and_wait_for_the_fact_check(tmp_
         ("Minecraft", "number", gamer()),  # already asked
         ("minecraft", "fake", gamer(question="Which mob is NOT in Minecraft", trap="Drowned", distractor="Phantom", correct="Hollow")),
         ("Minecraft", "first", gamer(question="Which came first in Minecraft", trap="10", distractor="10", correct="12")),  # same options
-        ("Minecraft", "lore", gamer(question="What was the creeper originally meant to be in Minecraft", trap="a cow", distractor="a zombie", correct="a pig")),
-        ("Minecraft", "lore", gamer(question="How many blocks tall is a Minecraft Enderman", trap="2", distractor="4", correct="3")),  # one too many
+        ("Minecraft", "open", gamer(question="What do you need to craft a Beacon in Minecraft", trap="the Nether Star", distractor="", correct="5 glass, 3 obsidian, 1 Nether Star")),
+        ("Minecraft", "number", gamer(question="How many blocks tall is a Minecraft Enderman", trap="2", distractor="4", correct="3")),  # one too many
         ("Fortnite", "number", gamer(question="How many players start a Fortnite match", trap="99", distractor="120", correct="100")),
     ) + "\n```")
-    assert [(q["game"], q["shape"], q["step"]) for q in view["questions"]] == [("Minecraft", "fake", "facts"), ("Minecraft", "lore", "facts")]
+    assert [(q["game"], q["shape"], q["step"]) for q in view["questions"]] == [("Minecraft", "fake", "facts"), ("Minecraft", "open", "facts")]
     assert view["questions"][0]["spoken"] == "Which mob is NOT in Minecraft?" and view["questions"][0]["options"] == ["Drowned", "Phantom", "Hollow"]
+    assert view["questions"][1]["spoken"] == "What do you need to craft a Beacon in Minecraft?" and view["questions"][1]["options"] == []
     assert [p.split(":")[-1].strip()[:28] for p in view["problems"]] == [
         "already asked", "needs three short, different", "Minecraft has enough questio", "'Fortnite' is not a game of "]
     assert view["to_write"] == 1 and view["need"] == [{"game": "GTA V", "missing": 1}] and view["to_check"] == 2
     assert "=== GAME: GTA V" in view["write_prompt"] and "=== GAME: Minecraft" not in view["write_prompt"]
     assert "Which mob is NOT in Minecraft" in view["write_prompt"]  # the LLM is told not to repeat it
-    assert "1. [Minecraft] Q: Which mob is NOT in Minecraft?" in view["facts_prompt"] and "2. [Minecraft] Q: What was the creeper" in view["facts_prompt"]
+    assert "1. [Minecraft] Q: Which mob is NOT in Minecraft?" in view["facts_prompt"] and "2. [Minecraft] Q: What do you need to craft a Beacon" in view["facts_prompt"]
     with pytest.raises(gamer_week.WeekError, match="No usable question"):
         gamer_week.answer(s, _answer(("Minecraft", "number", gamer())))
     with pytest.raises(gamer_week.WeekError, match="no JSON object"):

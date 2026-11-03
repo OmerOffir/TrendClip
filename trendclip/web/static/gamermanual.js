@@ -11,7 +11,7 @@
   const STORE = "gamerManualSession";
   const STEPS = [["write", "1 · Questions"], ["facts", "2 · Fact check"], ["ready", "3 · Make the video"]];
   const NOW = { write: "write", facts: "facts", ready: "ready", made: "ready" };
-  const SHAPES = { number: "a number players meet", fake: "which one is NOT in the game", first: "which came first", lore: "a fact from its makers" };
+  const SHAPES = { number: "recipe math: a number you can work out", fake: "which one is NOT in the game", first: "which came first", open: "open question: name every part, no options" };
   let current = null;
   let slots = [];
   let busy = false;

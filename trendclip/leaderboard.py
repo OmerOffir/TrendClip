@@ -166,6 +166,12 @@ def judge(video: Video, text: str) -> str:
         if not picks:
             return "comment"
         return "correct" if picks == {right} else "wrong"
+    if "," in video.answer:  # an open question: every part named (counts optional) is correct, some of them wrong
+        parts = [[w for w in _words(p) if not w.isdigit() and w not in _SKIP] for p in video.answer.split(",")]
+        hits = [all(w in words for w in p) for p in parts if p]
+        if hits and all(hits):
+            return "correct"
+        return "wrong" if any(hits) else "comment"
     if _mentions(words, video.answer):
         return "correct"
     numeric = all(w.isdigit() for w in _words(video.answer))

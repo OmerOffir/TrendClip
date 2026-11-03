@@ -275,8 +275,11 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    The pinned comment is the question plus a hint, not the answer.
 
    **🎮 Gamer IQ** (12–15 s, same loop as the trivia trap) asks about the game in the background, so the
-   game is the puzzle, not wallpaper: a number every player has met, "which one is NOT in the game?",
-   "which came first?", or a fact from its makers (the shapes take turns). Every one is a numbered level
+   game is the puzzle, not wallpaper: recipe math (a number a player can work out, "how many iron ingots
+   in a full anvil?"), "which one is NOT in the game?", "which came first?", or an open question with no
+   options ("what do you need to craft a Beacon?": viewers write the whole list and correct each other;
+   every part named counts as correct, the leaderboard ignores the counts). The shapes take turns; the
+   developer-trivia shape was dropped on 2026-11-03 (its levels drew the fewest comments). Every one is a numbered level
    of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in
    "| Level 12 🎮", and the pinned comment adds the leaderboard points and "Level 13 drops next!". The
    questions are fact-checked on Google against the game's wiki; a quiz without a game uses a random

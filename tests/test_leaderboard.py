@@ -21,6 +21,15 @@ def test_judge_riddle_and_math():
     assert lb.judge(math, "great video") == "comment"
 
 
+def test_judge_open_list_answer():
+    """An open Gamer IQ question: every part named is correct (counts and order optional), some parts is wrong."""
+    v = Video("v", "t", kind="quiz", answer="5 glass, 3 obsidian, 1 Nether Star")
+    assert lb.judge(v, "obsidian, glass and a nether star") == "correct"
+    assert lb.judge(v, "5 Glass 3 Obsidian 1 Nether Star!!") == "correct"
+    assert lb.judge(v, "glass and obsidian") == "wrong"
+    assert lb.judge(v, "nice vid") == "comment"
+
+
 def test_judge_multiple_choice():
     v = Video("v", "t", kind="quiz", answer="Alaska",
               choices=[("A", "Florida"), ("B", "Alaska"), ("C", "California")])

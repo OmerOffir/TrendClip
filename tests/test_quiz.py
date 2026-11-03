@@ -693,4 +693,27 @@ def test_gamer_shapes_take_turns(tmp_path):
     s = make_settings(tmp_path)
     for shape in ("number", "fake"):
         quiz._remember(s, "gamer", shape=shape)
-    assert all(quiz.pick_gamer_shape(s, random.Random(i)) in ("first", "lore") for i in range(20))
+    assert all(quiz.pick_gamer_shape(s, random.Random(i)) in ("first", "open") for i in range(20))
+
+
+def test_an_open_gamer_question_has_no_options_and_wants_the_whole_list(tmp_path):
+    s = make_settings(tmp_path)
+    beacon = gamer("What do you need to craft a Beacon in Minecraft", trap="the Nether Star", distractor="",
+                   correct="5 glass, 3 obsidian and 1 Nether Star", fact="A beacon is 5 glass, 3 obsidian, 1 nether star.",
+                   hint="")
+    assert quiz.gamer_problem(beacon, "open") == "" and quiz.gamer_problem(beacon, "number")  # needs three options
+    assert quiz.open_items(beacon.correct) == ["5 glass", "3 obsidian", "1 Nether Star"]
+    assert not quiz.open_items("a, b, c, d, e, f, g") and not quiz.open_items("")
+    result = quiz.gamer_script(s, "Minecraft", beacon, shape="open", model="manual", rng=random.Random(1))
+    assert result.script.startswith("What do you need to craft a Beacon in Minecraft? No options. Name every part. Three.")
+    assert " Is it " not in result.script and result.choices == []
+    assert result.answer == "5 glass, 3 obsidian, 1 Nether Star"
+    assert [f.text for f in result.flashes] == ["?", "NO OPTIONS", "3", "2", "1", "GOT IT?"]
+    assert "Name every part. 👇" in result.pinned_comment and "Hint: 3 different parts, counts matter." in result.pinned_comment
+    assert "Nether Star" not in result.pinned_comment and "First complete answer" in result.pinned_comment
+    assert "most forget: the Nether Star" in result.on_screen
+    assert quiz.history(s, "gamer")[0]["shape"] == "open"
+    # The prompts say what an open answer looks like; the fact check lists no options for it.
+    assert "comma-separated list" in quiz.gamer_prompt(s, "Minecraft", "open", []) and "Is it A? B? Or C?" not in quiz.gamer_prompt(s, "Minecraft", "open", [])
+    assert "Is it A? B? Or C?" in quiz.gamer_prompt(s, "Minecraft", "number", [])
+    assert "No options (most forget: the Nether Star)" in quiz.check_listing([beacon])
