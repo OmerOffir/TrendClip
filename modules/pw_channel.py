@@ -500,7 +500,8 @@ def _plan_video(info: dict | None) -> dict | None:
         return None
     return {"key": info["key"], "title": info.get("title", ""), "duration_seconds": info.get("duration_seconds"),
             "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"),
-            "script_file": info.get("script_file", ""), "created_at": info.get("created_at", "")}
+            "script_file": info.get("script_file", ""), "created_at": info.get("created_at", ""),
+            "video_t": info.get("video_t", "")}
 
 
 def plan_view(settings, now: datetime | None = None) -> dict[str, Any]:
@@ -533,13 +534,22 @@ def load_info(key: str, out_dir: Path | None = None) -> dict | None:
     if not path.is_file() or not video_file(key, out_dir).is_file():
         return None
     data = _read(path)
-    return None if data is None else {**data, "key": key}
+    return None if data is None else {**data, "key": key, "video_t": video_t(video_file(key, out_dir))}
+
+
+def video_t(video: Path) -> str:
+    """When the video file last changed: the dashboard's player link carries it, so a re-made video is fetched anew
+    (a browser holding the old file's bytes asked past the new, shorter one's end and froze)."""
+    try:
+        return str(int(video.stat().st_mtime))
+    except OSError:
+        return ""
 
 
 def save_info(info: dict, out_dir: Path | None = None) -> Path:
     path = info_path(info["key"], out_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({k: v for k, v in info.items() if k != "key"}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    path.write_text(json.dumps({k: v for k, v in info.items() if k not in ("key", "video_t")}, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
 
 
@@ -568,6 +578,7 @@ def videos(out_dir: Path | None = None) -> list[dict[str, Any]]:
             continue
         info["key"] = path.parent.name
         info["has_video"] = (path.parent / "video.mp4").is_file()
+        info["video_t"] = video_t(path.parent / "video.mp4")
         info["state"] = video_state(info)
         found.append(info)
     return sorted(found, key=lambda v: v.get("created_at", ""), reverse=True)

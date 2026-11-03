@@ -80,7 +80,7 @@
       : r.state === "held" ? '<span class="hint">nothing is made or uploaded until the YouTube channel is renamed</span>' : "";
     const actions = [];
     if (v) {
-      actions.push(`<button type="button" class="btn-secondary" data-watch="${esc(v.key)}" data-t="${esc(v.created_at)}">▶ Watch</button>`);
+      actions.push(`<button type="button" class="btn-secondary" data-watch="${esc(v.key)}" data-t="${esc(v.video_t || v.created_at)}">▶ Watch</button>`);
       if (r.state === "waiting") actions.push(`<button type="button" class="btn-primary" data-approve="${esc(v.key)}">✅ Approve</button>`);
       if (r.state !== "vetoed") actions.push(`<button type="button" class="btn-secondary" data-veto="${esc(v.key)}">🚫 ${yt ? "Make it private" : "Don't post this"}</button>`);
       if (!yt && r.state !== "blocked" && r.state !== "vetoed") actions.push(`<button type="button" class="btn-secondary" data-upload="${esc(v.key)}" ${connected ? "" : "disabled"}>⬆️ Upload now</button>`);
@@ -122,7 +122,7 @@
   }
 
   function videoCard(v) {
-    const src = videoSrc(v.key, v.created_at);
+    const src = videoSrc(v.key, v.video_t || v.created_at);
     return `<article class="da-vcard">
       <div class="da-vcard-player">${v.has_video ? `<video controls preload="metadata" src="${src}"></video>
         <a class="hint" href="${src}" download="${esc(v.key)}.mp4">Download</a>` : '<span class="hint">no video file</span>'}</div>
