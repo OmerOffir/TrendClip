@@ -784,3 +784,39 @@ def test_a_fix_answer_with_only_the_broken_script_keeps_the_ones_that_passed(tmp
         session["step"], session["problems"] = "fix", {"1": [], "2": ["x"], "3": []}
         pw_write._save(session, tmp_path)
         pw_write.answer("week", json.dumps({"scripts": [{**good, "title": "New a"}, {**good, "title": "New b"}]}), tmp_path)
+
+
+def test_the_videos_move_faster_tight_pauses_sounds_and_no_elevator_music(tmp_path, monkeypatch):
+    import numpy as np
+
+    from modules import bw_sfx
+
+    rate = pw_channel.RATE
+    talk, hush = np.full(rate // 10, 0.3, dtype=np.float32), np.zeros(rate, dtype=np.float32)
+    samples = np.concatenate([talk, hush, talk, np.zeros(rate // 10, dtype=np.float32), talk])
+    found = pw_channel.cuts(samples, 0.2)
+    assert len(found) == 1  # the 1 s pause is cut down to 0.2 s; the 0.1 s breath stays
+    dropped = [(a / rate, b / rate) for a, b in found]
+    assert sum(b - a for a, b in dropped) == pytest.approx(0.8, abs=0.02)
+    assert pw_channel.shifted(1.2, dropped) == pytest.approx(0.4, abs=0.02) and pw_channel.shifted(0.05, dropped) == 0.05
+
+    folder = tmp_path / "music" / "funny"
+    folder.mkdir(parents=True)
+    for name in ("Elevator Muzak", "Elevator Bossa Nova", "Quirky Plucks"):
+        (folder / f"{name}.mp3").write_bytes(b"")
+    monkeypatch.setattr(pw_channel, "PROJECT_ROOT", tmp_path)
+    assert {pw_channel.pick_music(seed).stem for seed in range(20)} == {"Quirky Plucks"}
+
+    pw_render.use_style()
+    bw_render.use_layout("portrait")
+    script = _story()
+    spec = bw_render.Spec(scenes=[bw_render.Scene(kind=s["kind"], narration=s["narration"], opts={k: v for k, v in s.items() if k not in ("kind", "narration")})
+                                  for s in script["scenes"]], words=[])
+    for k, scene in enumerate(spec.scenes):
+        scene.start, scene.end = k * 20.0, (k + 1) * 20.0
+    pw_render.restyle(spec)
+    pw_render.PwRenderer(spec)
+    kinds = {name for _, name, _ in spec.sfx_extra}
+    assert {"whoosh", "pop", "marker", "cash", "ding"} <= kinds
+    assert all(at >= 0.05 for at, _, _ in spec.sfx_extra)  # nothing for what is already drawn on the first frame
+    assert bw_sfx.sfx_track(spec, tmp_path / "sfx.wav").stat().st_size > 1000

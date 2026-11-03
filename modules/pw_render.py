@@ -507,6 +507,7 @@ class Drawn(bw_brand.Board):
             self.items[-1]["cue"] = "called"
             px = fit(lesson.upper(), 104, self.W - 200)
             self.put_text(lesson.upper(), (self.W / 2, ly + 100), px, GREEN)
+            self.items[-1]["sfx"] = "ding"
             half = bw_fx.hand_font(px).getlength(lesson.upper()) / 2 + 36
             self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, ly + 100 - px * 0.62, self.W / 2 + half, ly + 100 + px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
 
@@ -609,6 +610,38 @@ class Drawn(bw_brand.Board):
                 shift += at - it["at"]
                 it["at"] = at
         self.done = max(self.done, max(it["at"] + it["dur"] for it in self.items)) if self.items else self.done
+
+
+def sounds(spec: bw_render.Spec, boards: dict[int, bw_brand.Board]) -> list[tuple[float, str, float]]:
+    """The channel's sound moments (modules.bw_sfx mixes them, thinned): a whoosh on every cut, the marker while a
+    drawing is drawn, a pop when words are written, a cash ring when a counted figure lands, a ding on the idea's name."""
+    found: list[tuple[float, str, float]] = []
+    for i, scene in enumerate(spec.scenes):
+        if i > 0 and scene.kind != "follow":
+            found.append((scene.start, "whoosh", 0.0))
+        items = getattr(boards.get(i), "items", None) or []
+        k = 0
+        while k < len(items):
+            it = items[k]
+            at = float(it.get("at", -1.0))
+            if at < 0.05 or at >= scene.end:  # the opening's predrawn items are there on the first frame
+                k += 1
+                continue
+            if it.get("sfx"):
+                found.append((at, it["sfx"], 0.0))
+            elif it["kind"] == "write":
+                found.append((at, "pop", 0.0))
+            elif it.get("quick") and not it.get("under"):  # a drawing: one marker run over all its strokes
+                j = k
+                while j + 1 < len(items) and items[j + 1].get("quick") and items[j + 1]["kind"] == "line":
+                    j += 1
+                end = max(float(x.get("at", at)) + float(x.get("dur", 0)) for x in items[k:j + 1])
+                found.append((at, "marker", round(min(2.0, max(0.3, end - at)), 1)))
+                k = j
+            if "count" in it:
+                found.append((at + float(it.get("dur", 0)) + float(it["count"]["dur"]), "cash", 0.0))
+            k += 1
+    return found
 
 
 DRAWN = ("number", "compare", "chart", "product", "sketch", "cast", "step", "bars", "ask")
@@ -799,6 +832,7 @@ class PwRenderer(bw_fx.FxRenderer):
                 board.retime(spec.scenes[i], spec.words)
         tag = next((s.opts.get("tag") for s in spec.scenes if s.kind == "tag" and isinstance(s.opts.get("tag"), dict)), {})
         question = " ".join(str(bw_brand.pen_line(q)["text"]) for q in tag.get("question") or []) or self.question
+        spec.sfx_extra = sounds(spec, {**self.tags, **self.drawn})
         self.header = header(question, (bw_render.W, bw_render.H)) if question else None
         self.banner = hook_banner(question, (bw_render.W, bw_render.H)) if question else None
         self.replays: dict[int, Replay] = {}

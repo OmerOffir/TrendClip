@@ -18,7 +18,7 @@ import numpy as np
 
 RATE = 44100
 MIN_GAP = 0.22  # seconds between two sounds
-GAIN = {"pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20}
+GAIN = {"pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20, "cash": 0.24}
 POP_KINDS = ("pin", "icon", "label", "ring", "pole", "counter")
 LINE_KINDS = ("arrow", "line", "route")
 
@@ -70,6 +70,12 @@ def sound(name: str, seconds: float = 0.0) -> np.ndarray:
     elif name == "ding":  # a small bell
         t = _t(0.9)
         x = (np.sin(2 * np.pi * 1320 * t) + 0.4 * np.sin(2 * np.pi * 2640 * t) + 0.2 * np.sin(2 * np.pi * 3960 * t)) * np.exp(-t * 5)
+    elif name == "cash":  # a register: a quick rattle, then two bright bell hits
+        t = _t(0.7)
+        bell = lambda f, at: np.where(t >= at, (np.sin(2 * np.pi * f * (t - at)) + 0.3 * np.sin(2 * np.pi * 2 * f * (t - at)))
+                                      * np.exp(-np.clip(t - at, 0, None) * 7), 0.0)
+        rattle = (_noise(0.7, 5) - _smooth(_noise(0.7, 5), 4)) * np.exp(-t * 30) * 0.5
+        x = rattle + bell(2093, 0.03) + 0.8 * bell(2637, 0.11)
     else:
         raise KeyError(name)
     return _norm(x.astype(np.float64))
@@ -106,7 +112,8 @@ def events(spec) -> list[tuple[float, str, float]]:
 
         flip = bw_render.HOOK_FLIP if hook.get("before") else 0.0
         found = [e for e in found if abs(e[0] - flip) >= MIN_GAP] + [(flip, "whoosh", 0.0)]
-    found.sort(key=lambda e: (e[0], e[1] != "stamp"))  # a stamp wins a tie
+    found += list(getattr(spec, "sfx_extra", None) or [])  # a channel's own moments (modules.pw_render.sounds)
+    found.sort(key=lambda e: (e[0], e[1] not in ("stamp", "cash")))  # a stamp or a cash ring wins a tie
     kept: list[tuple[float, str, float]] = []
     for e in found:
         if e[0] >= 0 and (not kept or e[0] - kept[-1][0] >= MIN_GAP):

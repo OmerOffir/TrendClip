@@ -611,15 +611,85 @@ def record(text: str, out: Path, progress=lambda m: None) -> list[bw_render.Word
     if kokoro_voice.available() and setting("PW_TTS_ENGINE", "kokoro").lower() == "kokoro":
         voice = setting("PW_TTS_VOICE", VOICE)
         progress(f"Recording the narration (Kokoro {voice})")
-        got = kokoro_voice.synthesize(text, out, voice, float(setting("PW_TTS_SPEED", "1.1")))
+        got = kokoro_voice.synthesize(text, out, voice, float(setting("PW_TTS_SPEED", "1.15")))
         kokoro_voice.unload()
     else:
         from trendclip import voiceover
 
         voice = setting("PW_EDGE_VOICE", "en-US-EmmaNeural")
         progress(f"Recording the narration ({voice})")
-        got = voiceover.synthesize(text, out, voice, setting("PW_TTS_RATE", "+5%"))
-    return [bw_render.Word(w.text, float(w.start), float(w.end)) for w in got]
+        got = voiceover.synthesize(text, out, voice, setting("PW_TTS_RATE", "+12%"))
+    words = [bw_render.Word(w.text, float(w.start), float(w.end)) for w in got]
+    try:
+        return tighten(out, words, float(setting("PW_PAUSE_MAX", str(PAUSE_MAX))))
+    except Exception as err:  # noqa: BLE001 - the untouched narration still makes the video
+        logger.warning("The narration's pauses were left as they are: %s", err)
+        return words
+
+
+PAUSE_MAX = 0.2  # seconds: a longer silence in the narration is cut down to this (the owner, 2026-11-03: the flow was slow)
+RATE = 24000
+
+
+def cuts(samples, longest: float = PAUSE_MAX, rate: int = RATE, floor: float = 0.018) -> list[tuple[int, int]]:
+    """(from, to) sample ranges to drop: the middle of every silence longer than `longest` (10 ms windows under
+    `floor`, about -35 dB), so each pause keeps `longest` seconds, half on each side."""
+    import numpy as np
+
+    win = rate // 100
+    n = len(samples) // win
+    if n == 0:
+        return []
+    rms = np.sqrt(np.mean(samples[: n * win].reshape(n, win) ** 2, axis=1))
+    quiet = rms < floor
+    keep = int(longest * 100)
+    found, k = [], 0
+    while k < n:
+        if not quiet[k]:
+            k += 1
+            continue
+        j = k
+        while j < n and quiet[j]:
+            j += 1
+        if j - k > keep:
+            found.append(((k + keep // 2) * win, (j - (keep - keep // 2)) * win))
+        k = j
+    return found
+
+
+def shifted(t: float, dropped: list[tuple[float, float]]) -> float:
+    """A time in the old narration, in the tightened one (`dropped`: (from, to) seconds cut out)."""
+    gone = 0.0
+    for a, b in dropped:
+        if t >= b:
+            gone += b - a
+        elif t > a:
+            gone += t - a
+    return t - gone
+
+
+def tighten(mp3: Path, words: list[bw_render.Word], longest: float = PAUSE_MAX) -> list[bw_render.Word]:
+    """Cut the narration's long pauses down to `longest` seconds, in place (the MP3 and its words.json), and return
+    the words at their new times."""
+    import numpy as np
+
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(mp3), "-f", "s16le", "-ac", "1", "-ar", str(RATE), "-"],
+                         capture_output=True, check=True).stdout
+    samples = np.frombuffer(raw, dtype="<i2").astype(np.float32) / 32768
+    found = cuts(samples, longest)
+    if not found:
+        return words
+    keep = np.ones(len(samples), dtype=bool)
+    for a, b in found:
+        keep[a:b] = False
+    pcm = (samples[keep] * 32768).clip(-32768, 32767).astype("<i2").tobytes()
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-f", "s16le", "-ac", "1", "-ar", str(RATE), "-i", "-",
+                    "-c:a", "libmp3lame", "-b:a", "160k", str(mp3)], input=pcm, check=True)
+    dropped = [(a / RATE, b / RATE) for a, b in found]
+    words = [bw_render.Word(w.text, round(shifted(w.start, dropped), 3), round(shifted(w.end, dropped), 3)) for w in words]
+    mp3.with_suffix(".words.json").write_text(
+        json.dumps([{"word": w.text, "start": w.start, "end": w.end} for w in words], indent=1), encoding="utf-8")
+    return words
 
 
 def pick_music(seed: int) -> Path | None:
@@ -627,7 +697,12 @@ def pick_music(seed: int) -> Path | None:
     if folder.lower() in ("none", "off", "0"):
         return None
     tracks = sorted((PROJECT_ROOT / "music" / folder).glob("*.mp3"))
+    lively = [t for t in tracks if not any(w in t.stem.lower() for w in CALM_MUSIC)]  # elevator music drags the pace
+    tracks = lively or tracks
     return random.Random(seed).choice(tracks) if tracks else None
+
+
+CALM_MUSIC = ("elevator", "bossa")
 
 
 def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f, m: None, job: dict | None = None,
@@ -648,11 +723,12 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
     spec = bw_render.spec_from_dict(script, spoken)
     spec.hold = 0.6  # the hand finishes drawing the opening again, so the Short loops
+    spec.sfx = setting("PW_SFX", "on").lower() not in ("off", "0", "no")  # pops, marker, whooshes, a cash ring (pw_render)
     pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
     music = pick_music(int(script["seed"]))
-    pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, float(setting("PW_MUSIC_VOLUME", "0.07")),
+    pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, float(setting("PW_MUSIC_VOLUME", "0.09")),
                      lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle(), question=script.get("question", ""))
     info = {
         "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
