@@ -318,6 +318,7 @@
   }
 
   async function openSourceDialog(game) {
+    if (els.srcDialog.parentElement !== document.body) document.body.appendChild(els.srcDialog); // the Create tab opens it too: out of the hidden Insights view
     srcGame = game;
     els.srcGame.textContent = game;
     els.srcSeconds.innerHTML = els.dlSeconds.innerHTML;
@@ -459,6 +460,7 @@
   }
 
   function renderDownloads() {
+    document.dispatchEvent(new CustomEvent("trendclip:jobs", { detail: { jobs: state.jobs } }));
     const pending = state.jobs.filter((j) => j.status !== "done");
     const jobCards = pending.map((j) => {
       const failed = j.status === "error";
@@ -837,6 +839,8 @@
     getData: () => state.data,
     getClips: () => state.clips,
     reloadClips: loadClips,
+    getGameplay: openSourceDialog, // the "where from?" dialog, then the download (the Create tab's Get a new clip)
+    getJobs: () => state.jobs,
     submitLink,
     reloadLibrary: () => loadLibrary(),
     getLibrary: () => state.library,

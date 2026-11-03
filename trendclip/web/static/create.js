@@ -8,6 +8,8 @@
     banner: $("createBanner"),
     error: $("createError"),
     picker: $("clipPicker"),
+    getClip: $("cGetClip"),
+    clipJobs: $("cClipJobs"),
     geminiInfo: $("geminiInfo"),
     game: $("cGame"),
     length: $("cLength"),
@@ -298,13 +300,31 @@
 
   // ---- clip picker ---------------------------------------------------------------------
 
+  const DEFAULT_GAME = "Minecraft";
+
+  function getNewClip() {
+    T.getGameplay(els.game.value.trim() || (selectedClip() || {}).game || DEFAULT_GAME);
+  }
+
+  function renderClipJobs(jobs) {
+    const active = (jobs || []).filter((j) => j.status === "queued" || j.status === "running");
+    const failed = (jobs || []).filter((j) => j.status === "error").slice(0, 1);
+    els.clipJobs.hidden = !active.length && !failed.length;
+    els.clipJobs.innerHTML = [
+      ...active.map((j) => `⬇ Downloading ${esc(j.game)} gameplay${j.progress != null ? ` · ${Math.round(j.progress * 100)}%` : ""}… it appears below when done`),
+      ...failed.map((j) => `⚠ ${esc(j.game)}: ${esc(j.error || "download failed")}`),
+    ].join("<br>");
+    els.getClip.disabled = active.length > 0;
+    els.getClip.textContent = active.length ? "⬇ Downloading…" : "⬇ Get a new clip";
+  }
+
   function renderPicker() {
     const list = clips();
     const loaded = T.getClips() !== null;
     if (loaded && state.clip && !list.some((c) => c.filename === state.clip)) state.clip = null;
     if (!list.length) {
       els.picker.innerHTML =
-        '<div class="empty">No clips yet. Go to <a href="#trends" data-goto="trends"><b>Trending on YouTube</b></a> in Insights and press <b>Get gameplay</b> on a game.</div>';
+        '<div class="empty">No clips yet. Press <b>Get a new clip</b> above (or <b>Get gameplay</b> on a game in Insights).</div>';
       updatePreview();
       return;
     }
@@ -1368,6 +1388,8 @@
 
     document.addEventListener("trendclip:shorts-changed", loadShorts);
     document.addEventListener("trendclip:plan-changed", loadShorts);
+    els.getClip.addEventListener("click", getNewClip);
+    document.addEventListener("trendclip:jobs", (e) => renderClipJobs(e.detail.jobs));
     document.addEventListener("trendclip:clips", () => {
       if (state.started && !state.clip && clips().length) selectClip(clips()[0].filename);
       else renderPicker();
