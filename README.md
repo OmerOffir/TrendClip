@@ -284,7 +284,8 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    pops up three to six times in the gameplay (the video never says how many, so viewers watch to the end)
    holding a different random emoji each time, in a random spot and size, for 0.4 s, 4 frames, then 2 frames
    for the rest, and the
-   voice asks "Catch them all?" and which emojis it held; all of them right scores on the leaderboard.
+   voice asks "Catch them all?" and which emojis it held; all of them right scores on the leaderboard. The zombie also stands under the opening banner holding a "?", so the first
+   frame (the Shorts thumbnail) shows the game.
    It comes up on a Minecraft video whenever the last two levels had none (or tick **🧟 Catch the Zombie
    level** in Create). Every one is a numbered level
    of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in

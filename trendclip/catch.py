@@ -32,6 +32,10 @@ MARGIN = 2.0  # never in the first seconds (the banner) nor right before the que
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
 SPOTS = ((340, 520), (640, 520), (340, 700), (640, 700), (340, 880), (640, 880))
 JITTER = 60
+# The opening (the Shorts thumbnail is the first frame): the zombie stands below the captions holding a "?"
+# while the banner shows, so the grid already says what the game is.
+CARD_EMOJI = "\u2753"
+CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1580), 640
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
@@ -158,9 +162,16 @@ def _word_time(words: list[Word], text: str, start: bool, default: float) -> flo
     return hits[0].start if start else hits[-1].end
 
 
+def card_overlay(settings: Settings) -> Overlay:
+    """The zombie holding "?" under the opening banner (pops in like a sticker, no catching needed)."""
+    image = sprites(settings, [CARD_EMOJI])[0]
+    return Overlay(image, CARD_AT, CARD_UNTIL, center=CARD_CENTER, box=CARD_BOX, style="asis")
+
+
 def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "") -> list[Overlay]:
-    """The appearances: random moments between the spoken "Ready" and the closing "Catch", one in each equal
-    share of that window so they stay apart, each in a different spot and a random size, each shorter than the last."""
+    """The opening zombie with its "?", then the appearances: random moments between the spoken "Ready" and
+    the closing "Catch", one in each equal share of that window so they stay apart, each in a different spot
+    and a random size, each shorter than the last."""
     if not emojis or not words:
         return []
     rng = random.Random(seed or " ".join(emojis))
@@ -170,7 +181,7 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
     if close - begin < 3.0:  # the voice is faster than expected: use the middle of the video
         begin, close = MARGIN, max(total - MARGIN, MARGIN + 3.0)
     images = sprites(settings, emojis)
-    out = []
+    out = [card_overlay(settings)]
     span = (close - begin) / len(emojis)
     spots = rng.sample(SPOTS, min(len(emojis), len(SPOTS)))  # different places
     for i, (image, (x, y)) in enumerate(zip(images, spots)):
