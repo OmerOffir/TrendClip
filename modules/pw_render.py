@@ -442,12 +442,17 @@ class Drawn(bw_brand.Board):
         n = max(1, len(people))
         slot = (self.W - 60) / n
         results = [str(p.get("result") or "") for p in people]
-        h = min(500.0 if any(results) else 560.0, (self.bottom - y) * (0.45 if any(results) else 0.55))
+        if any(results):  # laid out from the bottom up, so the results sit above the captions
+            res_y = self.bottom - 70
+            money_y = res_y - 250
+            h = money_y - 110 - (y + 20)
+        else:
+            h = min(560.0, (self.bottom - y) * 0.55)
+            money_y = y + 20 + h + 110
         for k, p in enumerate(people):
             x0 = 30 + k * slot
             self.put_person(k, str(p.get("name") or ""), (x0 + 10, y + 20, x0 + slot - 10, y + 20 + h), seed=31)
         self.late = len(self.items)  # the people are there on the first frame (the hook, the thumbnail)
-        money_y = y + 20 + h + 110
         cx = lambda k: 30 + k * slot + slot / 2
         for k, p in enumerate(people):
             money = str(p.get("money") or "")
@@ -455,22 +460,20 @@ class Drawn(bw_brand.Board):
                 self.put_text(money, (cx(k), money_y), fit(money, 90, slot - 24), INK)
                 self.items[-1]["cue"] = money
         note = str(o.get("note") or "")
-        if any(results):
+        if any(results):  # the results the hook names, each on its word; the note is left out (the figures say it)
             values = {k: (number_parts(r) or ("", 0.0, "", 0, False))[1] for k, r in enumerate(results) if r}
             best = max(values, key=values.get)
-            res_y = money_y + 250
             for k in sorted(values, key=lambda j: (j != min(values, key=values.get), j)):  # the small one is said first
                 r = results[k]
-                self.put_line([(cx(k), money_y + 55), (cx(k), res_y - 75)], INK, 9, 0.18)
-                self.put_line([(cx(k) - 22, res_y - 98), (cx(k), res_y - 72), (cx(k) + 22, res_y - 98)], INK, 9, 0.12)
+                self.put_line([(cx(k), money_y + 55), (cx(k), res_y - 80)], INK, 9, 0.18)
+                self.put_line([(cx(k) - 22, res_y - 102), (cx(k), res_y - 76), (cx(k) + 22, res_y - 102)], INK, 9, 0.12)
                 self.items[-2]["cue"] = r
-                px = fit(r, 110 if k == best else 84, slot + (120 if k == best else 10))
-                self.put_text(r, (min(max(cx(k), 140), self.W - 140), res_y), px, GREEN if k == best else RED, 0.0)
+                px = fit(r, 104 if k == best else 84, (self.W / 2 - 60) if k == best else slot + 20)
+                half = bw_fx.hand_font(px).getlength(r) / 2
+                x = min(max(cx(k), half + 50), self.W - half - 50)  # kept on the screen, the circle too
+                self.put_text(r, (x, res_y), px, GREEN if k == best else RED, 0.0)
                 if k == best:
-                    w = bw_fx.hand_font(px).getlength(r) / 2 + 40
-                    self.put_line(loop(min(max(cx(k), 140), self.W - 140), res_y, w, px * 0.75), GREEN, 12, 0.45)
-            if note:
-                self.put_text(note, (self.W / 2, min(self.bottom - 30, res_y + 150)), fit(note, 64, self.W - 120), INK)
+                    self.put_line(loop(x, res_y, half + 34, px * 0.72), GREEN, 12, 0.45)
         elif note:
             self.put_text(note, (self.W / 2, min(self.bottom - 40, money_y + 150)), fit(note, 72, self.W - 120), RED)
             self.items[-1]["cue"] = note.split()[0] if note.split() else ""
