@@ -373,7 +373,7 @@ def person() -> Drawing:
                   (poly((40, 180), (46, 250)), "ink"), (poly((120, 180), (114, 250)), "ink"), (poly((80, 180), (80, 250)), "ink"),
                   (ellipse(68, 38, 3, 3), "ink"), (ellipse(92, 38, 3, 3), "ink"), (ellipse(80, 48, 14, 10, 20, 160, 8), "thin"),
                   (ellipse(80, 130, 22, 22), "ink")]
-    d.label_at = (80, 130, 34)
+    d.label_at = (80, 131, 60)  # the badge: the number fills it
     return d
 
 

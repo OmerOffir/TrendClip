@@ -430,6 +430,8 @@ def test_kokoro_words_and_sentences(tmp_path, monkeypatch):
     words = kv.words_from_tokens([T("In"), T("1956", 0.1, 0.6), T(","), T("doctors", 0.7, 1.1), T("infected", None, None), T("children", 1.6, 2.1), T(".")], offset=10.0)
     assert [(w.text, w.start, w.end) for w in words] == [("In", 10.0, 10.25), ("1956,", 10.1, 10.6), ("doctors", 10.7, 11.1),
                                                           ("infected", 11.1, 11.35), ("children.", 11.6, 12.1)]
+    money = kv.words_from_tokens([T("Same", 0.0, 0.3), T("$"), T("500", 0.3, 1.0), T("."), T("Four", 1.1, 1.4)], offset=0.0)
+    assert [w.text for w in money] == ["Same", "$500.", "Four"]  # the sign starts the figure, as the captions show it
 
     class FakePipe:
         def __call__(self, text, voice, speed):

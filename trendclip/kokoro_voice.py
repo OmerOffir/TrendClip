@@ -124,14 +124,18 @@ def words_from_tokens(tokens: list[Any], offset: float, fallback: float = 0.25) 
     """Kokoro's tokens (text, start_ts, end_ts within the chunk) as timed words from `offset`; punctuation
     joins the word before it, a token without a timestamp gets a short slot after the previous one."""
     out: list[Word] = []
+    prefix = ""  # a currency sign: the start of the next word ("$500"), never the end of the one before
     for tok in tokens:
         text = (getattr(tok, "text", "") or "").strip()
         if not text:
             continue
         if not re.search(r"[\w]", text):  # punctuation: part of the previous word, as in the script
-            if out:
+            if text in ("$", "€", "£", "¥"):
+                prefix += text
+            elif out:
                 out[-1] = Word(out[-1].text + text, out[-1].start, out[-1].end)
             continue
+        text, prefix = prefix + text, ""
         start, end = getattr(tok, "start_ts", None), getattr(tok, "end_ts", None)
         if start is None or end is None:
             prev_end = out[-1].end if out else offset
