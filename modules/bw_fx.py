@@ -145,6 +145,7 @@ class Satellite:
         self.world = grade(Image.open(path))
         self.globe_tex = np.asarray(self.world.resize((4096, 2048), Image.LANCZOS))
         self.tiles: dict[tuple[int, int, int], Image.Image] = {}
+        self.failed: set[tuple[int, int, int]] = set()  # tiles NASA refused this run: the world picture there, no new wait
         self.mosaic_key: tuple | None = None
         self.mosaic: Image.Image | None = None
 
@@ -153,6 +154,13 @@ class Satellite:
         return dict(SERVICE="WMS", REQUEST="GetMap", VERSION="1.3.0", LAYERS=LAYER, STYLES="", CRS="EPSG:4326",
                     BBOX=f"{y0},{x0},{y1},{x1}", WIDTH=w, HEIGHT=h, FORMAT="image/jpeg")
 
+    def _tile_path(self, level: int, i: int, j: int) -> Path:
+        """Tile (level, i, j) on disk, downloaded from NASA the first time (slow: up to minutes for one tile)."""
+        px, deg = LEVELS[level]
+        x0, y1 = -180 + i * deg, 90 - j * deg
+        n = int(round(px * deg))
+        return _cached(FX_DIR / "sat" / str(px) / f"{i}_{j}.jpg", GIBS, self._wms(x0, y1 - deg, x0 + deg, y1, n, n))
+
     def tile(self, level: int, i: int, j: int) -> Image.Image:
         key = (level, i, j)
         if key not in self.tiles:
@@ -160,27 +168,58 @@ class Satellite:
             x0, y1 = -180 + i * deg, 90 - j * deg
             n = int(round(px * deg))
             try:
-                path = _cached(FX_DIR / "sat" / str(px) / f"{i}_{j}.jpg", GIBS, self._wms(x0, y1 - deg, x0 + deg, y1, n, n))
-                self.tiles[key] = grade(Image.open(path))
+                if key in self.failed:
+                    raise RuntimeError("refused earlier in this run")
+                self.tiles[key] = grade(Image.open(self._tile_path(level, i, j)))
             except Exception:  # noqa: BLE001 - a blurrier patch beats a failed video; the next render asks NASA again
-                logger.warning("Satellite tile %s won't download; using the world picture there", key, exc_info=True)
+                logger.warning("Satellite tile %s won't download; using the world picture there", key, exc_info=key not in self.failed)
+                self.failed.add(key)
                 g = GLOBAL_PX / 360
                 box = ((x0 + 180) * g, (90 - y1) * g, (x0 + deg + 180) * g, (90 - y1 + deg) * g)
                 self.tiles[key] = self.world.resize((n, n), Image.BICUBIC, box=box)
         return self.tiles[key]
 
-    def frame(self, cam: Cam) -> Image.Image:
+    @staticmethod
+    def span(cam: Cam) -> tuple[int, int, int, int, int] | None:
+        """(level, i0, i1, j0, j1): the tiles a frame through `cam` is cut from, or None for the world picture."""
         need = cam.ppd * 0.85
+        if need <= 30:
+            return None
         x0, y1 = cam.lonlat(0, H)
         x1, y0 = cam.lonlat(W, 0)
-        if need <= 30:
+        level = 0 if need <= 120 else 1
+        deg = LEVELS[level][1]
+        return level, int((x0 + 180) // deg), int((x1 + 180) // deg), int((90 - y0) // deg), int((90 - y1) // deg)
+
+    def fetch(self, keys: set[tuple[int, int, int]], progress=lambda f, m: None) -> None:
+        """Download the tiles a video needs before its first frame, several at once: fetched one by one mid-drawing,
+        a slow NASA held the drawing still for minutes (a Friday video, 2026-11-03). A tile that won't come is left
+        to the world picture, with no second wait while drawing."""
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        todo = sorted(k for k in keys if k not in self.tiles and k not in self.failed
+                      and not (FX_DIR / "sat" / str(LEVELS[k[0]][0]) / f"{k[1]}_{k[2]}.jpg").is_file())
+        if not todo:
+            return
+        progress(None, f"Downloading the satellite map: 0/{len(todo)} pictures")
+        with ThreadPoolExecutor(max_workers=6) as pool:
+            jobs = {pool.submit(self._tile_path, *k): k for k in todo}
+            for n, job in enumerate(as_completed(jobs), 1):
+                try:
+                    job.result()
+                except Exception:  # noqa: BLE001 - tile() draws the world picture there
+                    logger.warning("Satellite tile %s won't download; using the world picture there", jobs[job], exc_info=True)
+                    self.failed.add(jobs[job])
+                progress(None, f"Downloading the satellite map: {n}/{len(todo)} pictures")
+
+    def frame(self, cam: Cam) -> Image.Image:
+        span = self.span(cam)
+        if span is None:
             src, px, lon0, lat0 = self.world, GLOBAL_PX / 360, -180.0, 90.0
         else:
-            level = 0 if need <= 120 else 1
+            level, i0, i1, j0, j1 = span
             px, deg = LEVELS[level]
-            i0, i1 = int((x0 + 180) // deg), int((x1 + 180) // deg)
-            j0, j1 = int((90 - y0) // deg), int((90 - y1) // deg)
-            key = (level, i0, i1, j0, j1)
+            key = span
             if key != self.mosaic_key:
                 n = int(round(px * deg))
                 m = Image.new("RGB", ((i1 - i0 + 1) * n, (j1 - j0 + 1) * n))
@@ -920,6 +959,19 @@ class FxRenderer(Renderer):
                     "pan": (1.08, -0.07 + 0.14 * u), "pan_back": (1.08, 0.07 - 0.14 * u)}[motion]
         p = ppd * zoom
         return inside_world(lon + dx * W / (p * max(0.2, math.cos(math.radians(lat)))), lat, p)
+
+    def prefetch(self, progress=lambda f, m: None) -> None:
+        """Download every satellite tile the map scenes' cameras will cross (sampled every 0.1 s) before drawing."""
+        keys: set[tuple[int, int, int]] = set()
+        for i, s in enumerate(self.spec.scenes):
+            if s.kind != "map" or s.opts.get("globe"):
+                continue
+            for k in range(int(max(0.1, s.end - s.start) * 10) + 1):
+                span = self.sat.span(self.camera(i, s.start + k / 10))
+                if span is not None:
+                    level, i0, i1, j0, j1 = span
+                    keys |= {(level, a, b) for a in range(i0, i1 + 1) for b in range(j0, j1 + 1)}
+        self.sat.fetch(keys, progress)
 
     def camera(self, i: int, t: float) -> Cam:
         t = self.cam_time(i, t)

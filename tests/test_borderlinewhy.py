@@ -701,11 +701,46 @@ def test_a_satellite_tile_nasa_wont_send_comes_from_the_world_picture(monkeypatc
     monkeypatch.setattr(bw_fx, "_get", slow)
     monkeypatch.setattr(bw_fx, "FX_DIR", tmp_path)
     sat = bw_fx.Satellite.__new__(bw_fx.Satellite)
-    sat.world, sat.tiles = Image.new("RGB", (bw_fx.GLOBAL_PX, bw_fx.GLOBAL_PX // 2), (10, 90, 30)), {}
+    sat.world, sat.tiles, sat.failed = Image.new("RGB", (bw_fx.GLOBAL_PX, bw_fx.GLOBAL_PX // 2), (10, 90, 30)), {}, set()
     tile = sat.tile(0, 40, 6)
     px, deg = bw_fx.LEVELS[0]
     assert tile.size == (px * deg, px * deg) and tile.getpixel((5, 5)) == (10, 90, 30)
     assert not (tmp_path / "sat" / str(px) / "40_6.jpg").exists()  # not saved: the next render asks NASA again
+
+
+def test_the_satellite_tiles_come_down_before_the_drawing_and_a_refused_one_is_not_asked_again(monkeypatch, tmp_path):
+    import io
+
+    from PIL import Image
+
+    from modules import bw_fx
+
+    asked = []
+
+    def nasa(url, params=None, tries=3):
+        asked.append(params["BBOX"])
+        if len(asked) == 1:
+            raise OSError("read timed out")
+        buf = io.BytesIO()
+        Image.new("RGB", (8, 8), (200, 10, 10)).save(buf, "JPEG")
+        return buf.getvalue()
+
+    monkeypatch.setattr(bw_fx, "_get", nasa)
+    monkeypatch.setattr(bw_fx, "FX_DIR", tmp_path)
+    sat = bw_fx.Satellite.__new__(bw_fx.Satellite)
+    sat.world, sat.tiles, sat.failed = Image.new("RGB", (bw_fx.GLOBAL_PX, bw_fx.GLOBAL_PX // 2), (10, 90, 30)), {}, set()
+    seen = []
+    sat.fetch({(0, 1, 1)}, lambda f, m: seen.append(m))  # the first ask fails
+    sat.fetch({(0, 1, 1), (0, 2, 1)}, lambda f, m: seen.append(m))
+    assert len(asked) == 2 and sat.failed == {(0, 1, 1)}
+    assert (tmp_path / "sat" / str(bw_fx.LEVELS[0][0]) / "2_1.jpg").is_file()
+    assert seen[-1] == "Downloading the satellite map: 1/1 pictures"
+    sat.tile(0, 1, 1)  # drawing: the world picture at once, NASA isn't asked a second time
+    assert len(asked) == 2
+    cam = bw_render.Cam(35.0, 31.5, 400.0)
+    level, i0, i1, j0, j1 = bw_fx.Satellite.span(cam)
+    assert level == 1 and i0 <= i1 and j0 <= j1
+    assert bw_fx.Satellite.span(bw_render.Cam(35.0, 31.5, 10.0)) is None  # zoomed out: the world picture
 
 
 

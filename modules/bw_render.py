@@ -918,6 +918,8 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
         except Exception as err:  # noqa: BLE001 - NASA or GitHub down: the flat look still makes the video
             logger.warning("The satellite look is unavailable (%s); drawing the flat look", err)
     renderer = renderer or Renderer(spec)
+    if hasattr(renderer, "prefetch"):  # bw_fx: the satellite tiles, all before the first frame
+        renderer.prefetch(progress)
     out.parent.mkdir(parents=True, exist_ok=True)
     silent = out.with_name(out.stem + ".silent.mp4")
     n = int(math.ceil(spec.duration * FPS))

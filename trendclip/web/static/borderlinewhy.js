@@ -252,8 +252,12 @@
   function makingLine(p) {
     if (!p) return `<b class="hint">Starting…</b>`;
     const quiet = minsAgo(p.updated);
+    // what a quiet spell means depends on the step: drawing and NASA's map pictures never wait on Gemini
+    const why = /^Downloading the satellite/.test(p.message) ? "NASA's map server is slow (it waits and tries again by itself)"
+      : /^(Drawing|Placing|Mixing|Encoding)/.test(p.message) ? "still drawing, a heavy stretch of the video (it carries on by itself)"
+      : "Gemini is slow or busy (it waits and tries again by itself)";
     return `<b>${esc(p.message)}</b><small>started ${minsAgo(p.started)} min ago${quiet >= 3
-      ? ` · no news for ${quiet} min: Gemini is slow or busy (it waits and tries again by itself)` : ""}</small>`;
+      ? ` · no news for ${quiet} min: ${why}` : ""}</small>`;
   }
 
   function slotRow(r, making, past, planned, first) {
