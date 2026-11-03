@@ -48,7 +48,8 @@ def test_the_catch_script_holds_three_emoji_and_asks_for_them_at_the_end(tmp_pat
     assert result.title == "Can You Catch The Zombie? | Level 2 🎮" and result.title_card == "LEVEL 2 - CATCH THE ZOMBIE"
     assert "All three = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment
     assert not any(e in result.pinned_comment for e in result.catch)  # never the answer
-    assert [f.text for f in result.flashes] == ["1", "2", "3", "GOT ALL 3?"]
+    assert [f.text for f in result.flashes] == ["x3", "READY?", "GOT ALL 3?"]
+    assert len(result.script.split()) < 70  # about 23 s spoken: a level, not a lecture
     history = quiz.history(s, "gamer")
     assert history[-1]["shape"] == "catch" and history[-1]["answer"] == result.answer and quiz.gamer_level(s) == 3
     assert "Catch the zombie" not in " ".join(quiz.gamer_asked(s))  # not an "already asked" question for the LLM

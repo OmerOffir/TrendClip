@@ -24,17 +24,16 @@ SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
 POPS = (0.8, 0.4, 0.13)  # how long each appearance lasts: easy, quick, pros only (4 frames at 30 fps)
-BOX = 440
+BOX = 640  # the sprite's height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
-# Where the zombie may stand: the corners, clear of the captions in the middle and the Shorts buttons at the right.
-SPOTS = ((300, 540), (760, 540), (300, 1400), (760, 1400))
-JITTER = 70
+# Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
+SPOTS = ((340, 520), (640, 520), (340, 880), (640, 880))
+JITTER = 60
 
 HOOK = "{game} fans only."
-SCRIPT = ("{game} fans only. A zombie is hiding in this video. It shows up three times, each time holding a "
-          "different emoji. The first is easy. The second is quick. The third? Only pros catch it. Watch closely. "
-          "Ready? Here comes the first one. Keep your eyes open. Don't blink now. Last one, pros only. "
-          "What three emojis did the zombie hold? Comment all three below! "
+SCRIPT = ("{game} fans only. A zombie is hiding in this video, three times, each time holding a different emoji. "
+          "The third one? Only pros catch it. Ready? Here comes the first. Keep your eyes open. Don't blink. "
+          "Last one, pros only. What three emojis did the zombie hold? Comment all three below! "
           "Level {next} drops next. Subscribe so you don't miss it!")
 WINDOW = ("Ready", "What")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
@@ -83,7 +82,7 @@ def script(settings: Settings, game: str, *, format: str = "short", rng: random.
     text = SCRIPT.format(game=name, next=level + 1)
     if record:
         quiz._remember(settings, "gamer", answer=answer, question="Catch the zombie", game=game, shape=SHAPE, level=str(level))
-    flashes = [quiz.Flash(word="first", text="1"), quiz.Flash(word="second", text="2"), quiz.Flash(word="third", text="3"),
+    flashes = [quiz.Flash(word="three", text="x3"), quiz.Flash(word="Ready", text="READY?"),
                quiz.Flash(word="What", text="GOT ALL 3?", color="green")]
     pack = SimpleNamespace(title=TITLE.format(level=level), description=DESCRIPTION, hashtags=HASHTAGS,
                            title_card=CARD.format(level=level))
@@ -173,6 +172,6 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
         x, y = rng.choice(SPOTS)
         x = min(max(x + rng.randint(-JITTER, JITTER), BOX // 2), WIDTH - BOX // 2 - 120)
-        y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 200), HEIGHT - BOX // 2 - 150)
+        y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 120), HEIGHT // 2 + 260)
         out.append(Overlay(image, round(at, 3), round(at + hold, 3), center=(x, y), box=BOX, style="asis", cut=True))
     return out
