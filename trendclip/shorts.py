@@ -115,7 +115,7 @@ class RenderRequest(BaseModel):
     flashes: list[Flash] = Field(default_factory=list, max_length=30)  # quiz numbers / clues
     answer: str = Field("", max_length=80)
     choices: list[str] = Field(default_factory=list, max_length=6)  # quiz options in full: "A) ...", for the leaderboard
-    catch: list[str] = Field(default_factory=list, max_length=3)  # Catch the Zombie: the emoji it holds, one pop each
+    catch: list[str] = Field(default_factory=list, max_length=6)  # Catch the Zombie: the emoji it holds, one pop each
 
 
 class SeriesPart(BaseModel):
@@ -366,7 +366,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     overlays, assets, shown = resolve_popups(settings, req.popups, words, progress, row_until)
     sticker_overlays, used = resolve_stickers(settings, req, words, overlays, progress, flashes)
     if req.catch:
-        progress(None, "Hiding the zombie three times")
+        progress(None, f"Hiding the zombie {len(req.catch)} times")
         overlays = overlays + catch.plan(settings, req.catch, words, seed=req.script)
 
     progress(0.0, "Rendering video")

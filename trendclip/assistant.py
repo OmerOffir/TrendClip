@@ -258,7 +258,7 @@ def _render_script(settings: Settings, clip: video_downloader.BackgroundClip, sc
         popups=script.popups[:20], reactions=script.reactions[:10], end_card=script.end_card,
         pinned_comment=script.pinned_comment, music_source="mood", music_mood=script.music_mood,
         channel_handle=settings.channel_handle, flashes=script.flashes[:30], answer=script.answer,
-        choices=script.choices[:6], catch=script.catch[:3],
+        choices=script.choices[:6], catch=script.catch[:6],
     )
     try:
         return shorts.render_short(settings, req, progress)

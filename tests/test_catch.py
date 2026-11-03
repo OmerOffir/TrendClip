@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 from pathlib import Path
 
 from trendclip import catch, popups, quiz
@@ -37,19 +38,23 @@ def test_a_catch_level_comes_up_on_the_game_once_the_last_levels_had_none(tmp_pa
     assert not catch.wanted(settings(tmp_path, catch_every=0), "Minecraft")
 
 
-def test_the_catch_script_holds_three_emoji_and_asks_for_them_at_the_end(tmp_path):
+def test_the_catch_script_holds_a_few_emoji_never_says_how_many_and_asks_for_them_at_the_end(tmp_path):
     s = settings(tmp_path)
     quiz._remember(s, "gamer", shape="number", level="1")
     result = catch.script(s, "Minecraft", rng=random.Random(3))
-    assert len(result.catch) == 3 and len(set(result.catch)) == 3 and all(e in catch.EMOJI for e in result.catch)
+    assert 3 <= len(result.catch) <= 6 and len(set(result.catch)) == len(result.catch)
+    assert all(e in catch.EMOJI for e in result.catch)
     assert result.answer == " ".join(result.catch) and result.choices == []
-    assert result.script.startswith("Minecraft fans only. A zombie is hiding in this video, three times,")
-    assert result.script.endswith("What three emojis did the zombie hold? Comment all three below! Level 3 drops next. Subscribe so you don't miss it!")
+    assert result.script.startswith("Minecraft fans only. A zombie is hiding in this video, more than once,")
+    assert "Catch them all? What emojis did the zombie hold? Comment every one below! Level 3 drops next." in result.script
+    assert not re.search(r"\b(three|four|five|six) times\b", result.script + result.pinned_comment)  # the count is the game
     assert result.title == "Can You Catch The Zombie? | Level 2 🎮" and result.title_card == "LEVEL 2 - CATCH THE ZOMBIE"
-    assert "All three = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment
+    assert "All of them = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment
     assert not any(e in result.pinned_comment for e in result.catch)  # never the answer
-    assert [f.text for f in result.flashes] == ["x3", "GOT ALL 3?"]
-    assert len(result.script.split()) < 70  # about 23 s spoken: a level, not a lecture
+    assert [f.text for f in result.flashes] == ["x?", "CATCH THEM ALL?!"]
+    assert len(result.script.split()) < 75  # about 25 s spoken: a level, not a lecture
+    counts = {len(catch.script(s, "Minecraft", rng=random.Random(n), record=False).catch) for n in range(40)}
+    assert counts == {3, 4, 5, 6}
     history = quiz.history(s, "gamer")
     assert history[-1]["shape"] == "catch" and history[-1]["answer"] == result.answer and quiz.gamer_level(s) == 3
     assert "Catch the zombie" not in " ".join(quiz.gamer_asked(s))  # not an "already asked" question for the LLM
@@ -61,21 +66,23 @@ def test_the_bot_makes_a_catch_level_without_gemini(tmp_path):
     assert result.mode == "gamer" and result.catch and result.model == "builtin"
 
 
-def test_the_zombie_pops_three_times_between_ready_and_the_question_shorter_each_time(tmp_path, monkeypatch):
+def test_the_zombie_pops_between_ready_and_catch_them_all_shorter_each_time(tmp_path, monkeypatch):
     s = settings(tmp_path)
     monkeypatch.setattr(popups, "fetch_asset", lambda settings, popup, session=None: None)  # no network: no emoji
     spoken = words(catch.SCRIPT.format(game="Minecraft", next=2))
-    pops = catch.plan(s, ["👺", "🍕", "🚀"], spoken, seed="x")
     ready = next(w.start for w in spoken if w.text == "Ready?")
-    ask = next(w.start for w in spoken if w.text == "What")
-    assert len(pops) == 3 and all(isinstance(p, Overlay) and p.cut for p in pops)
-    assert [round(p.end - p.start, 3) for p in pops] == [round(h, 3) for h in catch.POPS]
-    assert ready <= pops[0].start and pops[-1].end <= ask
-    assert pops[0].end < pops[1].start < pops[1].end < pops[2].start  # apart, in order
-    assert len({p.center for p in pops}) == 3  # three different places
-    for p in pops:
-        assert p.image.is_file() and catch.BOX // 2 <= p.center[0] and p.center[1] <= 1920 - catch.BOX // 2
-    assert catch.plan(s, ["👺", "🍕", "🚀"], spoken, seed="x") == pops  # the same seed, the same moments
+    ask = next(w.start for w in spoken if w.text == "Catch")
+    for emojis in (["👺", "🍕", "🚀"], list("👺🍕🚀🐸🎃👑")):
+        pops = catch.plan(s, emojis, spoken, seed="x")
+        assert len(pops) == len(emojis) and all(isinstance(p, Overlay) and p.cut for p in pops)
+        holds = [round(p.end - p.start, 3) for p in pops]
+        assert holds == [0.4, 0.13] + [0.067] * (len(emojis) - 2)
+        assert ready <= pops[0].start and pops[-1].end <= ask
+        assert all(a.end < b.start for a, b in zip(pops, pops[1:]))  # apart, in order
+        assert len({p.center for p in pops}) == len(pops)  # all in different places
+        for p in pops:
+            assert p.image.is_file() and catch.BOX // 2 <= p.center[0] and p.center[1] <= 1920 - catch.BOX // 2
+        assert catch.plan(s, emojis, spoken, seed="x") == pops  # the same seed, the same moments
     assert catch.plan(s, [], spoken) == []
 
 

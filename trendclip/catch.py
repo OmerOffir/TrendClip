@@ -1,7 +1,8 @@
-"""Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up three
-times in the gameplay, each time holding a different random emoji, for less and less time: 0.4 s, four frames,
-then two. The video ends by asking which three emojis it held; three right emojis score on the leaderboard.
-Viewers pause and replay to catch them, which is the point.
+"""Catch the Zombie: a Gamer IQ level with no question. A pixel zombie (drawn here, not Mojang's) pops up a few
+times in the gameplay (three to six, and the video never says how many, so viewers watch to the end), each time
+holding a different random emoji, for less and less time: 0.4 s, four frames, then two. The video ends by asking
+which emojis it held; all of them right scores on the leaderboard. Viewers pause and replay to catch them, which
+is the point.
 
 The level is picked in quiz._write_gamer: on CATCH_GAME's videos, once no catch level sits in the last
 CATCH_EVERY - 1 levels (or "catch" in the Create tab's notes). It needs no Gemini.
@@ -23,25 +24,26 @@ logger = logging.getLogger(__name__)
 SHAPE = "catch"
 # Single-code-point emoji that read at a glance and that the Noto set has (the leaderboard matches them 1:1).
 EMOJI = list("👺🍕🚀🐸🎃👑🦄🍩🔥⚡🎸🍌🐙🎯👽🤖🦖🧀🎈💎🌵🍄🐧🦋🍉⚽🎲🐔🌮🍔")
-POPS = (0.4, 0.13, 0.067)  # how long each appearance lasts: quick, four frames, two frames (the owner's call, 2026-11-03)
+COUNT = (3, 6)  # how many times it shows up, random; the script never says (the owner's call, 2026-11-03)
+POPS = (0.4, 0.13, 0.067)  # how long each appearance lasts: quick, four frames, then two frames for all the rest
 BOX = 640  # the sprite's height on the 1080 x 1920 canvas: the emoji in its hands must read in 4 frames
 MARGIN = 2.0  # never in the first seconds (the banner) nor right before the question
 # Where the zombie may stand: the upper half, clear of the captions (lower middle) and the Shorts buttons (right).
-SPOTS = ((340, 520), (640, 520), (340, 880), (640, 880))
+SPOTS = ((340, 520), (640, 520), (340, 700), (640, 700), (340, 880), (640, 880))
 JITTER = 60
 
 HOOK = "{game} fans only."
-SCRIPT = ("{game} fans only. A zombie is hiding in this video, three times, each time holding a different emoji. "
-          "The third one? Only pros catch it. Ready? Here comes the first. Keep your eyes open. Don't blink. "
-          "Last one, pros only. What three emojis did the zombie hold? Comment all three below! "
+SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
+          "How many times? I won't tell. Ready? Here comes the first. Keep your eyes open. Don't blink. "
+          "Still watching? Pros only. Catch them all? What emojis did the zombie hold? Comment every one below! "
           "Level {next} drops next. Subscribe so you don't miss it!")
-WINDOW = ("Ready", "What")  # the pops happen between these two spoken words
+WINDOW = ("Ready", "Catch")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
-PINNED = ("🧟 The zombie showed up 3 times. Which emojis did it hold? Comment all three 👇\n"
-          "Hint: pause and step frames, the last one lasts 2 frames.\n"
-          "🏆 All three = 10 leaderboard points. Level {next} drops next!")
-DESCRIPTION = "A zombie hides three times in this video, each time with a different emoji. Catch all three and comment them."
+PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
+          "Hint: pause and step frames, the last ones last 2 frames. How many? That's the game.\n"
+          "🏆 All of them = 10 leaderboard points. Level {next} drops next!")
+DESCRIPTION = "A zombie hides a few times in this video, each time with a different emoji. Catch them all and comment them."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#catchthezombie", "#quiz"]
 
 # The sprite, Minecraft style: 16 x 32 cells (head 8 x 8, body 8 x 12, legs 4 x 12), the arms raised forward so
@@ -65,13 +67,14 @@ def wanted(settings: Settings, game: str, notes: str = "") -> bool:
     return all(d.get("shape") != SHAPE for d in recent)
 
 
-def pick_emoji(rng: random.Random, count: int = 3) -> list[str]:
-    return rng.sample(EMOJI, count)
+def pick_emoji(rng: random.Random, count: int | None = None) -> list[str]:
+    return rng.sample(EMOJI, count or rng.randint(*COUNT))
 
 
 def script(settings: Settings, game: str, *, format: str = "short", rng: random.Random | None = None,
            level: int | None = None, record: bool = True):
-    """The level's ShortScript: fixed narration, the three emoji in `catch`, the answer for the leaderboard."""
+    """The level's ShortScript: fixed narration, the emoji in `catch` (one per appearance), the answer for the
+    leaderboard."""
     from . import quiz
 
     rng = rng or random.Random()
@@ -82,8 +85,8 @@ def script(settings: Settings, game: str, *, format: str = "short", rng: random.
     text = SCRIPT.format(game=name, next=level + 1)
     if record:
         quiz._remember(settings, "gamer", answer=answer, question="Catch the zombie", game=game, shape=SHAPE, level=str(level))
-    # No flash while the zombie can appear (a flash would cover it): one before the window, one after.
-    flashes = [quiz.Flash(word="three", text="x3"), quiz.Flash(word="What", text="GOT ALL 3?", color="green")]
+    # No flash while the zombie can appear (a flash would cover it): one before the window, one right after.
+    flashes = [quiz.Flash(word="once", text="x?"), quiz.Flash(word="Catch", text="CATCH THEM ALL?!", color="green")]
     pack = SimpleNamespace(title=TITLE.format(level=level), description=DESCRIPTION, hashtags=HASHTAGS,
                            title_card=CARD.format(level=level))
     out = quiz._script(settings, game, "builtin", "gamer", format, text, HOOK.format(game=name), flashes, answer,
@@ -155,8 +158,8 @@ def _word_time(words: list[Word], text: str, start: bool, default: float) -> flo
 
 
 def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "") -> list[Overlay]:
-    """The three appearances: random moments between the spoken "Ready" and the closing "What", one in each
-    third of that window so they stay apart, each in a random corner, each shorter than the last."""
+    """The appearances: random moments between the spoken "Ready" and the closing "Catch", one in each equal
+    share of that window so they stay apart, each in a different spot, each shorter than the last."""
     if not emojis or not words:
         return []
     rng = random.Random(seed or " ".join(emojis))
@@ -168,8 +171,9 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
     images = sprites(settings, emojis)
     out = []
     span = (close - begin) / len(emojis)
-    spots = rng.sample(SPOTS, len(emojis))  # three different places
-    for i, (image, hold, (x, y)) in enumerate(zip(images, POPS, spots)):
+    spots = rng.sample(SPOTS, min(len(emojis), len(SPOTS)))  # different places
+    for i, (image, (x, y)) in enumerate(zip(images, spots)):
+        hold = POPS[min(i, len(POPS) - 1)]
         at = begin + span * i + rng.uniform(0.2, max(0.3, span - hold - 0.2))
         x = min(max(x + rng.randint(-JITTER, JITTER), BOX // 2), WIDTH - BOX // 2 - 120)
         y = min(max(y + rng.randint(-JITTER, JITTER), BOX // 2 + 120), HEIGHT // 2 + 260)
