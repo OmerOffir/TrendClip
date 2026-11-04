@@ -609,7 +609,8 @@ def upload_file(path: Path, req: YouTubeUploadRequest, as_short: bool = True,
     body = {
         "snippet": {"title": title, "description": description,
                     "tags": _tags(req.tags if as_short else [t for t in req.tags if t.lower().lstrip("#") != "shorts"]),
-                    "categoryId": req.category_id},
+                    "categoryId": req.category_id,
+                    "defaultLanguage": "en", "defaultAudioLanguage": "en"},
         "status": status_body,
     }
     progress(0.0, "Connecting to YouTube")
