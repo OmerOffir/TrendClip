@@ -115,6 +115,20 @@ def test_upload_youtube_records_the_video(tmp_path):
     assert shorts.get_short(settings, name).uploads["youtube"]["video_id"] == "abc123"
 
 
+def test_an_upload_deletes_the_clip_it_was_cut_from_unless_another_short_still_needs_it(tmp_path):
+    settings = make_settings(tmp_path)
+    settings.backgrounds_dir.mkdir(parents=True, exist_ok=True)
+    (settings.backgrounds_dir / "bg.mp4").write_bytes(b"\x00" * 64)
+    (settings.backgrounds_dir / "bg.json").write_text("{}")
+    first, second = add_short(settings), add_short(settings, "gta_2.mp4")
+    assert not publish.drop_used_clip(settings, first)  # gta_2 is cut from bg.mp4 and not on YouTube yet
+    assert (settings.backgrounds_dir / "bg.mp4").is_file()
+    shorts.update_short(settings, second, lambda s: s.uploads.__setitem__("youtube", {"video_id": "x"}))
+    assert publish.drop_used_clip(settings, first)
+    assert not (settings.backgrounds_dir / "bg.mp4").exists() and not (settings.backgrounds_dir / "bg.json").exists()
+    assert not publish.drop_used_clip(settings, first)  # already gone: nothing to do, no error
+
+
 def test_upload_youtube_sets_the_drawn_thumbnail(tmp_path, monkeypatch):
     from modules import thumbs
 

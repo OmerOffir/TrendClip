@@ -206,7 +206,7 @@ it asks for. `assets/` is git-ignored. Needs ffmpeg (system or the bundled `imag
 
 The dashboard's **Create** tab turns a downloaded clip into a finished Short:
 
-1. **Pick a background clip** (or press **Create Short** on a clip under **Trending on YouTube** at the end of Insights; the Trends tab was folded in there on 2026-10-31). Create makes only Gamer IQ: the other kinds' fields are hidden.
+1. **Pick a background clip** (or press **Create Short** on a clip under **Trending on YouTube** at the end of Insights; the Trends tab was folded in there on 2026-10-31). Create makes only Gamer IQ: the other kinds' fields are hidden. **Get a new clip** on this step downloads a random no-copyright clip of the game typed below. A clip is deleted once a Short cut from it is on YouTube (the owner never reuses one; a clip another unuploaded Short needs is kept).
 2. **Write script with Gemini:** Gemini watches the part of the clip the Short uses (a small 480p
    copy is uploaded and deleted afterwards), reads the game's current trending video titles, and
    returns a hook + voiceover sized to the chosen length, a title, a description, hashtags and a

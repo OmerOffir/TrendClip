@@ -492,8 +492,32 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
             doctor.alert_thumbnail("sq", filename, status, settings)
 
         keep_thumbnail((lambda: given) if given is not None else _youtube, record["video_id"], thumb, note)
+    drop_used_clip(settings, filename)
     progress(1.0, "Uploaded")
     return record
+
+
+def drop_used_clip(settings: Settings, filename: str) -> bool:
+    """Delete the gameplay clip an uploaded Short was cut from (the owner never reuses one, 2026-11-04), unless
+    a Short that isn't on YouTube yet was cut from the same clip."""
+    from . import video_downloader
+
+    short = shorts.get_short(settings, filename)
+    clip = short.background
+    if not clip or clip == video_downloader.LATEST_FILENAME:
+        return False
+    for other in shorts.list_shorts(settings):
+        if other.filename != filename and other.background == clip and "youtube" not in other.uploads:
+            logger.info("Keeping %s: %s is cut from it and not uploaded yet", clip, other.filename)
+            return False
+    try:
+        gone = video_downloader.delete_background(settings, clip)
+    except (OSError, ValueError) as err:
+        logger.warning("Couldn't delete the used clip %s: %s", clip, err)
+        return False
+    if gone:
+        logger.info("Deleted the used clip %s (%s is on YouTube)", clip, filename)
+    return gone
 
 
 def short_thumbnail(settings: Settings, filename: str) -> Path | None:
