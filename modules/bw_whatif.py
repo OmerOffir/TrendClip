@@ -229,10 +229,12 @@ def script(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
         raise WhatIfError("The script hasn't passed the check yet")
     draft = Draft.model_validate(state["draft"])
     out = bw_script.finish(draft, _research(state["question"]))
-    if state.get("format") == ATTEMPTS:  # the war map; the description leads with the title
+    # the description leads with the title, never with the owner's typed question (typos and all went out as the
+    # first line of "What If Gaza Wasn't a Thin Strip?", 2026-11-04); the state keeps the typed question
+    if state.get("format") == ATTEMPTS:  # the war map
         return {**out, "question": draft.title.strip(), "kind": ATTEMPTS, "style": "war", "series": "", "origin": "whatif",
                 "claims": [], "sources": []}
-    return {**out, "kind": KIND, "series": "", "origin": "whatif", "claims": [], "sources": []}
+    return {**out, "question": draft.title.strip(), "kind": KIND, "series": "", "origin": "whatif", "claims": [], "sources": []}
 
 
 def queue(sid: str, out_dir: Path | None = None) -> dict[str, Any]:
