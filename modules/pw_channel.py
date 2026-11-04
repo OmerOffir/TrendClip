@@ -389,8 +389,9 @@ def description(script: dict) -> str:
     """The YouTube description: the question, the short answer, the sources, the disclaimer, hashtags; a credit only
     for what needs one (Noto emoji here, Wikimedia pictures in with_credits)."""
     tags = list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:7]
-    lines = [script.get("question", ""), "", script.get("description", ""), "", "Sources:"]
-    lines += [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
+    lines = [script.get("question", ""), "", script.get("description", "")]
+    if script.get("sources"):  # a parable has none
+        lines += ["", "Sources:"] + [f"- {s['title']}: {s['url']}" for s in script["sources"]]
     if shows_icons(script):
         lines += ["", "Icons: Noto Emoji by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0)."]
     often = "twice a day" if len(slots()) == 2 else "every day"

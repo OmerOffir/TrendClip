@@ -832,3 +832,22 @@ def test_videos_end_on_their_last_real_scene_with_no_follow_line():
     assert not [p for p in pw_write.problems_of(story) if "follow" in p.lower()]  # still queues and makes
     assert not [p for p in pw_write.problems_of(cut) if "follow" in p.lower() or "last scene" in p]
     assert '"follow"' not in pw_write.story_rules() and "the ask is the LAST scene" in pw_write.story_rules()
+
+
+def test_a_named_cast_is_asked_by_its_own_word_and_a_parable_lists_no_sources():
+    from modules import pw_write
+
+    story = json.loads((pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-story.json").read_text(encoding="utf-8"))
+    assert pw_write.cast_noun(story) == "friend"
+    vendors = json.loads(json.dumps(story))
+    for k, p in enumerate(vendors["scenes"][0]["cast"]["people"], 1):
+        p["name"] = f"Vendor {k}"
+    assert pw_write.cast_noun(vendors) == "vendor"
+    assert any("Which vendor are you" in p for p in pw_write.format_problems(vendors))
+    for s in vendors["scenes"]:
+        if s["kind"] == "ask":
+            s["ask"]["question"], s["narration"] = "Which vendor are you?", "Which vendor are you? Tell me below."
+    vendors["comment"] = "Which vendor are you: 1, 2, 3 or 4? 👇"
+    assert not any("Which vendor" in p for p in pw_write.format_problems(vendors))
+    assert "Sources:" not in pw_channel.description({**story, "sources": []})
+    assert "Sources:" in pw_channel.description(_script())

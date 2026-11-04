@@ -195,6 +195,14 @@ def format_problems(script: dict) -> list[str]:
 MATH_NUMBER = re.compile(r"[$€£]?\s*([\d][\d,]*(?:\.\d+)?)")
 
 
+def cast_noun(script: dict) -> str:
+    """The word the cast's names share ("Vendor 1", "Vendor 2"… -> "vendor"), or "" when they are real names."""
+    cast = next(((s.get("cast") or {}) for s in script.get("scenes") or [] if s.get("kind") == "cast"), {})
+    words_ = [str((p if isinstance(p, dict) else {"name": p}).get("name") or "").split()[:1] for p in cast.get("people") or []]
+    first = {w[0].lower() for w in words_ if w}
+    return first.pop() if len(first) == 1 and len(words_) > 1 and re.fullmatch(r"[a-z]+", next(iter(first))) else ""
+
+
 def math_value(text: str) -> float | None:
     """"5 x 365 x $10 = $18,250" -> 18250.0 when the working really gives the result, else None (a wrong line,
     or one that isn't a product of numbers)."""
@@ -295,7 +303,13 @@ def story_problems(script: dict) -> list[str]:
     if [k for k in kinds if k != "follow"][-1:] != ["ask"]:  # an older script's follow line is skipped when made
         problems.append("the ask is the last scene: no follow line after it (the video ends on the question)")
     if not _short(script.get("comment"), 120):
-        problems.append("comment: the question pinned under the video (\"Which friend are you: 1, 2, 3 or 4? 👇\")")
+        problems.append("comment: the question pinned under the video (\"Which vendor are you: 1, 2, 3 or 4? 👇\")")
+    if noun := cast_noun(script):  # "Vendor 1"… are asked "Which vendor are you?", not "Which friend"
+        ask = next((s for s in scenes if s.get("kind") == "ask"), {})
+        for text in (str((ask.get("ask") or {}).get("question") or ""), str(ask.get("narration") or ""), str(script.get("comment") or "")):
+            if "which" in text.lower() and noun not in text.lower():
+                problems.append(f"the cast are {noun}s: ask \"Which {noun} are you?\" (not friend) in the ask scene, its narration and the comment")
+                break
     for src in script.get("sources") or []:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
@@ -417,14 +431,15 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
 - then 3-4 scenes of kind "step", one per person, in order, each 20-{STEP_WORDS} words: what they did, the math said out
   loud with its result, then the idea's name ("This is called leasing."). No extra lines.
   step: {{"who": the person's name, "n": their number (1-4), "did": at most 24 characters ("Rented five carts"),
-  "draw": the thing they got, one of the drawings below, "count": how many (a whole number; 6 are drawn, more is
+  "draw": the thing they got, one of the drawings below, "count": how many (a whole number; 3 are drawn big, more is
   written "x151"), "math": a product that adds up, at most 34 characters ("5 x 365 x $10 = $18,250": the numbers
   multiplied, = , the result; it is checked), "lesson": the idea's name, 1-3 words}}. Each move must beat the one
   before it, and the last is the biggest.
 - then kind "bars": every result side by side. bars: {{"title": ..., "bars": [{{"label": the name, "value": the
   result as a number, "text": "$18,250"}}, ...]}} in the cast's order; the narration says them one by one and the
   moral in one line ("The money was the same. The idea was different.").
-- then kind "ask": {{"question": "Which friend are you?" (26 characters at most), "options": ["1", "2", "3", "4"],
+- then kind "ask": {{"question": "Which vendor are you?" (the cast's own word: friend, vendor, farmer, driver…; 26
+  characters at most), "options": ["1", "2", "3", "4"],
   "line": "Send this to a friend"}}; the narration asks it, then asks for a comment and a share.
 - the ask is the LAST scene: no follow line, no "Follow for…" after it (the video ends on the question).
 - THE DRAWING IS THE THING THE NARRATION NAMES. step.draw (and any board.picture, photo mark) is one of these, used
@@ -435,7 +450,7 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   plan."); it needs no sources. A true story (a founder, a town, a country) has "parable": false, "sources" (2 or
   more real pages, never Wikipedia) and "claims" (every figure, each with 2 or more source numbers); its steps may
   be years instead of people (n still 1-4, who the year or the name).
-- "comment": the question pinned under the video, the one the ask scene asks ("Which friend are you: 1, 2, 3 or 4? 👇").
+- "comment": the question pinned under the video, the one the ask scene asks ("Which vendor are you: 1, 2, 3 or 4? 👇").
 - "title": the YouTube title with the numbers in it ("Same $500, four friends: one made $3,650, one made $511,000").
   "question": the words on the first frame, at most 5 ("Same $500. Four friends."). "description": 2-3 sentences,
   starting with "A money parable" when it is one. "hashtags": 2-3 without #. "pillar": one of {", ".join(PILLARS)}.

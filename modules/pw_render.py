@@ -267,8 +267,9 @@ class Drawn(bw_brand.Board):
         return self.top + px + 50
 
     def put_drawing(self, name: str, box: tuple[float, float, float, float], label: list[str] | None = None,
-                    accent: str = "green", seed: int = 0) -> None:
-        """One of modules.pw_draw's drawings, as big as fits in box: its outline, its marker colour (under the outline), then the label."""
+                    accent: str = "green", seed: int = 0, seconds: float = 1.5) -> None:
+        """One of modules.pw_draw's drawings, as big as fits in box: its outline (drawn in about `seconds`), its marker
+        colour (under the outline), then the label."""
         if name not in pw_draw.DRAWINGS:
             return
         d, k, dx, dy = pw_draw.scaled(name, box)
@@ -281,7 +282,7 @@ class Drawn(bw_brand.Board):
         for j, (pts, role) in enumerate(d.strokes):
             rgb = RED if role == "red" else acc if role == "accent" else INK
             pts_at = at(pts)
-            cost = max(0.06, 1.5 * bw_brand.length(np.array(pts_at, dtype=float)) / total)  # the whole outline in about 1.5 s
+            cost = max(0.06, seconds * bw_brand.length(np.array(pts_at, dtype=float)) / total)
             self.put_line(wobble(densify(pts_at), seed=seed + j, amp=2.2), rgb, width if role != "thin" else max(6, int(width * 0.6)), cost)
         tint_w = int(width * 2.6)
         for poly, role in d.washes:
@@ -480,36 +481,41 @@ class Drawn(bw_brand.Board):
 
     def draw_step(self, o: dict[str, Any]) -> None:
         """One person's move: what they did as the title, the person on the left, the thing they got drawn `count`
-        times on the right (6 at most, "x151" written when there are more), the math line slammed in as it is said
-        (its result counting up), and the idea's name in a green box: "This is called LEASING"."""
+        times on the right (3 at most, big; "x151" written when there are more), the math line slammed in as it is
+        said (its result counting up), and the idea's name in a green box: "This is called LEASING"."""
         y = self.put_title(str(o.get("did") or ""))
         n = max(1, int(o.get("n") or 1))
         who = str(o.get("who") or "")
-        h = min(430.0, (self.bottom - y) * 0.36)
-        self.put_person(n - 1, who, (40, y + 10, 330, y + 10 + h), seed=41)
+        # laid out from the bottom up, so the lesson box clears the captions: the lesson, "This is called", the math
+        # line, and the rest of the board for the person and the things (the owner: no empty half)
         name, count = str(o.get("draw") or ""), max(1, int(o.get("count") or 1))
-        shown = min(count, 6)
-        cols = 1 if shown == 1 else 2 if shown <= 4 else 3
-        rows = -(-shown // cols)
-        x0, x1 = 370, self.W - 40
-        cw, rh = (x1 - x0) / cols, h / rows
+        lesson = str(o.get("lesson") or "")
+        lesson_px = fit(lesson.upper(), 104, self.W - 200) if lesson else 0
+        lesson_y = self.bottom - lesson_px * 0.62 - 8
+        ly = lesson_y - lesson_px * 0.62 - 50  # "This is called" clear of the lesson's box
+        math_y = (ly - 135) if lesson else self.bottom - 90  # the math box (77 up and down) clear of that line
+        pictures_bottom = math_y - 97
+        h = min(500.0, pictures_bottom - (y + 10))
+        h_person = min(h, math_y - 77 - 14 - 48 - (y + 10))  # the name under the person stays above the math box
+        self.put_person(n - 1, who, (40, y + 10, 370, y + 10 + h_person), seed=41)
+        shown = min(count, 3)  # a row of big ones (tall things use the whole height)
+        x0, x1 = 400, self.W - 40
+        cw = (x1 - x0) / shown
+        top = y + 10 + (70 if count > shown else 0)  # room for the count in the corner
         for j in range(shown):
-            c, r = j % cols, j // cols
-            self.put_drawing(name, (x0 + c * cw + 8, y + 10 + r * rh + 6, x0 + (c + 1) * cw - 8, y + 10 + (r + 1) * rh - 6), seed=51 + j)
-        if count > shown:
-            self.put_text(f"x{count:,}", ((x0 + x1) / 2, y + 10 + h + 60), 92, RED)
+            self.put_drawing(name, (x0 + j * cw + 8, top, x0 + (j + 1) * cw - 8, y + 10 + h), seed=51 + j,
+                             seconds=0.7 if shown > 1 else 1.5)  # the same thing again and again is drawn quicker
+        if count > shown:  # how many there really are, in the top right corner (the things sit centred, lower)
+            self.put_text(f"x{count:,}", (x1 - 100, y + 10 + 34), 84, RED)
             self.items[-1]["cue"] = str(count)
-        math_y = y + 10 + h + (150 if count > shown else 110)
         self.put_math(str(o.get("math") or ""), math_y)
-        if lesson := str(o.get("lesson") or ""):
-            ly = math_y + 200
+        if lesson:
             self.put_text("This is called", (self.W / 2, ly), 54, INK)
             self.items[-1]["cue"] = "called"
-            px = fit(lesson.upper(), 104, self.W - 200)
-            self.put_text(lesson.upper(), (self.W / 2, ly + 100), px, GREEN)
+            self.put_text(lesson.upper(), (self.W / 2, lesson_y), lesson_px, GREEN)
             self.items[-1]["sfx"] = "ding"
-            half = bw_fx.hand_font(px).getlength(lesson.upper()) / 2 + 36
-            self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, ly + 100 - px * 0.62, self.W / 2 + half, ly + 100 + px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
+            half = bw_fx.hand_font(lesson_px).getlength(lesson.upper()) / 2 + 36
+            self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, lesson_y - lesson_px * 0.62, self.W / 2 + half, lesson_y + lesson_px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
 
     def put_math(self, text: str, y: float) -> None:
         """"5 x 365 x $10 = $18,250": the working in ink, the result in red counting up from 0, boxed; the result's
