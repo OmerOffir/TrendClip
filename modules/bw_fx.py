@@ -1275,8 +1275,8 @@ class FxRenderer(Renderer):
                 self.pen_line(ov, d, cam, i, el, t)
             else:
                 self.element(ov, d, cam, el, t, scene)
-        if self._hand is not None:
-            bw_brand.draw_hand(ov, self._hand, t)
+        if self._hand is not None and self.cam_clock is None:  # not on the flash-forward's held frames: a hand that
+            bw_brand.draw_hand(ov, self._hand, t)  # never moves looks stuck (the owner, 2026-11-04)
         img.alpha_composite(ov)
         return img
 

@@ -1922,6 +1922,26 @@ def test_flash_forward_opens_on_the_outcome_then_the_story(world):
     assert np.abs(flashed[band] - outcome[band]).mean() > 5  # the "after" words are stamped on the outcome
     assert np.abs(flashed[900:1300] - outcome[900:1300]).mean() < 3  # the rest of the frame is the outcome
     assert r.hook_frame(0.3) is not None and r.hook_frame(bw_render.HOOK_END) is None
+    # the marker hand never shows on the flash-forward's held frames (it would stand still: a stuck hand)
+    from modules import bw_brand, bw_fx
+    drawn = []
+    monkeypatch_hand = bw_brand.draw_hand
+    bw_brand.draw_hand = lambda *a, **k: drawn.append(a)
+    try:
+        hooked = {**_hook_dict(), "brand": True}  # the mascot's marker hand draws the outcome scene's highlight
+        hooked["scenes"][2]["elements"].append({"kind": "highlight", "place": "Minnesota", "color": "gold", "cue": "And"})
+        hooked_spec = bw_render.spec_from_dict(hooked, _words(" ".join(s["narration"] for s in hooked["scenes"])))
+        assert bw_render.prepare(hooked_spec) == []
+        hooked_spec.scenes[2].elements[-1].at = hooked_spec.scenes[2].start  # the pen starts with the scene
+        fx = bw_fx.FxRenderer(hooked_spec)
+        fx.hook_frame(0.3)
+        assert fx._hand is not None  # the pen would be in the frame...
+        fx.hook_frame(1.2)
+        assert drawn == []  # ...but is not drawn on either held frame
+        fx.scene_frame(2, fx.spec.scenes[2].start)
+        assert drawn  # in the story itself it is
+    finally:
+        bw_brand.draw_hand = monkeypatch_hand
     gold = lambda a: ((a[..., 0] > 200) & (a[..., 1] > 150) & (a[..., 2] < 120)).sum()
     assert gold(np.asarray(r.frame(0.3))[band]) > 2000  # "DAY 0" on the first map
     # after the flash the story starts from scene 1 as before, and no script without a hook changes
