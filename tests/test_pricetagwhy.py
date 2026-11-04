@@ -184,7 +184,7 @@ def test_write_a_week_rules_facts_and_queue(tmp_path, monkeypatch):
     with pytest.raises(pw_write.WriteError):
         pw_write.add_topic("not a question", out_dir=tmp_path)
     view = pw_write.start("week", count=2, out_dir=tmp_path)
-    assert view["step"] == "write" and "Follow for tomorrow's why" in view["prompt"] and len(view["topics"]) == 2
+    assert view["step"] == "write" and "no follow line" in view["prompt"] and "Follow for tomorrow" not in view["prompt"] and len(view["topics"]) == 2
     good = _script()
     bad = {**good, "scenes": good["scenes"][:2]}
     view = pw_write.answer("week", json.dumps({"scripts": [good, bad]}), tmp_path)
@@ -724,7 +724,7 @@ def test_the_story_scenes_draw_the_cast_the_math_and_the_bars_on_the_narrator_s_
     assert sum(1 for it in bars.items if it.get("under")) == 4 and ask.items[0]["text"] == "Which friend are you?"
     frame = r.scene_frame(2, 53.0)
     assert frame.size == (bw_render.W, bw_render.H)
-    assert r.scene_frame(7, 145.0).size == frame.size  # the follow line draws the cast again
+    assert r.scene_frame(7, 145.0).size == frame.size
 
 
 def test_a_story_thumbnail_shows_a_person_and_the_two_results(tmp_path):
@@ -820,3 +820,15 @@ def test_the_videos_move_faster_tight_pauses_sounds_and_no_elevator_music(tmp_pa
     assert {"whoosh", "pop", "marker", "cash", "ding"} <= kinds
     assert all(at >= 0.05 for at, _, _ in spec.sfx_extra)  # nothing for what is already drawn on the first frame
     assert bw_sfx.sfx_track(spec, tmp_path / "sfx.wav").stat().st_size > 1000
+
+
+def test_videos_end_on_their_last_real_scene_with_no_follow_line():
+    from modules import pw_write
+
+    story = _story()
+    assert story["scenes"][-1]["kind"] == "follow"  # an older script still has one
+    cut = pw_channel.without_follow(story)
+    assert cut["scenes"][-1]["kind"] == "ask" and "Follow for" not in pw_channel.narration(cut)
+    assert not [p for p in pw_write.problems_of(story) if "follow" in p.lower()]  # still queues and makes
+    assert not [p for p in pw_write.problems_of(cut) if "follow" in p.lower() or "last scene" in p]
+    assert '"follow"' not in pw_write.story_rules() and "the ask is the LAST scene" in pw_write.story_rules()

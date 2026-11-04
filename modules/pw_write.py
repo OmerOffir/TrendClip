@@ -179,13 +179,11 @@ def format_problems(script: dict) -> list[str]:
         for el in s.get("elements") or []:
             if el.get("kind") == "icon" and el.get("icon") not in ICONS:
                 problems.append(f"scene {k}: unknown icon {el.get('icon')!r}")
-    if scenes and scenes[-1].get("kind") == "follow" and "follow" not in str(scenes[-1].get("narration", "")).lower():
-        problems.append("the last scene says the follow line (\"Follow for tomorrow's why.\")")
     if not any(s.get("kind") == "product" for s in scenes):
         problems.append("show the product: a scene of kind product (drawn, or a free photo when it can't be drawn)")
-    middle = [s.get("kind") for s in scenes[1:-1]]
+    middle = [s.get("kind") for s in scenes[1:] if s.get("kind") != "follow"]
     if not 3 <= len(middle) <= 4:
-        problems.append("2 reasons and a twist: 3-4 scenes between the opening and the follow line")
+        problems.append("2 reasons and a twist: 3-4 scenes after the opening")
     if middle and all(k == "board" for k in middle):
         problems.append("vary the pictures: at least one number, compare, chart, map or photo scene, not only boards")
     for src in script.get("sources") or []:
@@ -214,7 +212,7 @@ def math_value(text: str) -> float | None:
 
 
 def story_problems(script: dict) -> list[str]:
-    """A money story: the cast, 3-4 steps whose math adds up, the bars, the ask, the follow line."""
+    """A money story: the cast, 3-4 steps whose math adds up, the bars, the ask (the last scene)."""
     problems = []
     scenes = script.get("scenes") or []
     n = pw_channel.words(pw_channel.narration(script))
@@ -293,9 +291,9 @@ def story_problems(script: dict) -> list[str]:
     if "bars" not in kinds:
         problems.append("a bars scene near the end: every result side by side")
     if "ask" not in kinds:
-        problems.append("an ask scene before the follow line: \"Which one are you?\" and the choices")
-    if kinds[-1:] != ["follow"] or "follow" not in str(scenes[-1].get("narration", "")).lower():
-        problems.append("the last scene says the follow line (\"Follow for tomorrow's why.\")")
+        problems.append("an ask scene at the end: \"Which one are you?\" and the choices")
+    if [k for k in kinds if k != "follow"][-1:] != ["ask"]:  # an older script's follow line is skipped when made
+        problems.append("the ask is the last scene: no follow line after it (the video ends on the question)")
     if not _short(script.get("comment"), 120):
         problems.append("comment: the question pinned under the video (\"Which friend are you: 1, 2, 3 or 4? 👇\")")
     for src in script.get("sources") or []:
@@ -394,7 +392,10 @@ STORY_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-st
 
 
 def _example(path: Path = EXAMPLE) -> str:
-    return path.read_text(encoding="utf-8").strip() if path.is_file() else "{}"
+    """The example script for the prompt, without its follow line (videos end on their last real scene now)."""
+    if not path.is_file():
+        return "{}"
+    return json.dumps(pw_channel.without_follow(json.loads(path.read_text(encoding="utf-8"))), indent=2, ensure_ascii=False)
 
 
 def story_rules() -> str:
@@ -425,7 +426,7 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   moral in one line ("The money was the same. The idea was different.").
 - then kind "ask": {{"question": "Which friend are you?" (26 characters at most), "options": ["1", "2", "3", "4"],
   "line": "Send this to a friend"}}; the narration asks it, then asks for a comment and a share.
-- last scene, kind "follow": one short line back to the opening, then "Follow for tomorrow's why."
+- the ask is the LAST scene: no follow line, no "Follow for…" after it (the video ends on the question).
 - THE DRAWING IS THE THING THE NARRATION NAMES. step.draw (and any board.picture, photo mark) is one of these, used
   only for what it shows: {"; ".join(f"{k} = {v}" for k, v in pw_draw.LOOKS.items())}. Write the story around
   these things (carts, stands, machines, cups, trucks, contracts, coins, shops): never name a thing there is no
@@ -500,8 +501,7 @@ Each script is ONE JSON object shaped exactly like the example below:
 - "comment": one short question to viewers about the video, posted under it and pinned, that they want to answer
   ("Would you pay $2.38 for it? 👇", "Did you ever notice there's no clock? 👇"); never advice, never a poll on money moves.
 - the twist must surprise (a number that flips the story, what the owner said), never a letdown.
-- last scene, kind "follow": one short line that leads back into the opening, then "Follow for tomorrow's why."
-  (the hand draws the opening again, so the Short loops).
+- the twist is the LAST scene: no follow line, no "Follow for…" after it (the video ends on the twist).
 - every reason needs its 2 sources: leave out anything only one source says.
 - "sources": 2 or more real pages with working links (news, official, academic). Never Wikipedia, Wikiwand, Kiddle or
   a fandom wiki: use them to find the real source and cite that.

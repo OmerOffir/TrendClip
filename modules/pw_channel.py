@@ -138,6 +138,12 @@ def upload_privacy() -> str:
 # --------------------------------------------------------------------------- scripts
 
 
+def without_follow(script: dict) -> dict:
+    """The script with no follow line: the owner (2026-11-04) cut the ending where the hand drew the opening again
+    (8 s of the $400 vendors story), so a video ends on its last real line. Older scripts' follow scenes are skipped."""
+    return {**script, "scenes": [s for s in script.get("scenes") or [] if s.get("kind") != "follow"]}
+
+
 def narration(script: dict) -> str:
     return " ".join(" ".join(str(s.get("narration") or "").split()) for s in script.get("scenes") or [] if s.get("narration"))
 
@@ -158,8 +164,8 @@ def check_script(script: dict) -> list[str]:
             problems.append("a story's first scene is its cast (kind cast)")
     elif not scenes or scenes[0].get("kind") not in ("tag", "product"):
         problems.append("the first scene must be the product (kind product) or the price tag (kind tag)")
-    if not scenes or scenes[-1].get("kind") != "follow":
-        problems.append("the last scene must be the follow line (kind follow)")
+    if len(without_follow(script)["scenes"]) < 3:
+        problems.append("a video needs at least 3 scenes: the opening and what explains it")
     sources = script.get("sources") or []
     parable = bool(script.get("parable"))  # a made-up story that teaches an idea: its math is checked, not its facts
     if parable and "parable" not in (str(script.get("description") or "") + narration(script)).lower():
@@ -727,13 +733,14 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     pw_render.use_style()
     work = out_root(out_dir) / key
     work.mkdir(parents=True, exist_ok=True)
+    script = without_follow(script)
     script = {**script, "narration": narration(script), "look": "satellite", "brand": True}
     script.setdefault("seed", random.randrange(1, 10_000))
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.05, "Recording the narration")
     spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
     spec = bw_render.spec_from_dict(script, spoken)
-    spec.hold = 0.6  # the hand finishes drawing the opening again, so the Short loops
+    spec.hold = 0.5  # the video ends half a second after the last word (no follow line, no redraw)
     spec.sfx = setting("PW_SFX", "on").lower() not in ("off", "0", "no")  # pops, marker, whooshes, a cash ring (pw_render)
     pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
     if missing := bw_render.prepare(spec):
