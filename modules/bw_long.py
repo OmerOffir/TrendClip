@@ -944,20 +944,20 @@ def upload(sid: str, privacy: str = "private", progress=lambda f, m: None, out_d
     info = _load(f, "info.json")
     if youtube is None and not bw_channel.connected():
         raise publish.PublishError("Connect the Borderline Why YouTube channel first (/bw connect)")
+    given = youtube
     youtube = youtube or publish._youtube(bw_channel.TOKEN)
     req = publish.YouTubeUploadRequest(title=info["title"][: publish.YT_TITLE_MAX], description=info["description"][:5000],
                                        tags=[t for t in info.get("hashtags", []) if t], privacy=privacy,
                                        category_id=bw_channel.CATEGORY, as_short=False)
     record = publish.upload_file(f / "video.mp4", req, False, progress, youtube)
     if (f / "thumbnail.jpg").is_file():
-        try:
-            from googleapiclient.http import MediaFileUpload
-
-            youtube.thumbnails().set(videoId=record["video_id"], media_body=MediaFileUpload(str(f / "thumbnail.jpg"),
-                                                                                          mimetype="image/jpeg")).execute()
-            record["thumbnail"] = True
-        except Exception as err:  # noqa: BLE001 - the video is up; the thumbnail can be set in Studio
-            record["thumbnail_error"] = publish._api_error_text(err)
+        status = publish.set_thumbnail(youtube, record["video_id"], f / "thumbnail.jpg")
+        record["thumbnail"] = status == "set"
+        if status == "set":  # again once YouTube has processed the video, else it picks its own frame
+            publish.keep_thumbnail((lambda: given) if given is not None else (lambda: publish._youtube(bw_channel.TOKEN)),
+                                   record["video_id"], f / "thumbnail.jpg")
+        else:
+            record["thumbnail_error"] = status.removeprefix("not set: ")
     info["upload"] = record
     _save(f, "info.json", info)
     progress(1.0, "Uploaded")

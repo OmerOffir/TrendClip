@@ -478,12 +478,30 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     can_be_short = is_short(shorts.get_short(settings, filename))
     as_short = can_be_short if req.as_short is None else req.as_short and can_be_short
     youtube = youtube or _youtube()
+    given = youtube
     record = upload_file(path, req, as_short, progress, youtube)
     progress(0.99, "Setting the thumbnail")
-    record["thumbnail"] = set_short_thumbnail(settings, filename, record["video_id"], youtube)
+    thumb = short_thumbnail(settings, filename)
+    record["thumbnail"] = set_thumbnail(youtube, record["video_id"], thumb) if thumb else "not set: it couldn't be drawn"
     shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
+    if thumb and record["thumbnail"] == "set":  # again once YouTube has processed the video, else it picks its own frame
+        def note(status: str) -> None:
+            shorts.update_short(settings, filename, lambda s: s.uploads["youtube"].__setitem__("thumbnail", f"{status} after processing"))
+
+        keep_thumbnail((lambda: given) if given is not None else _youtube, record["video_id"], thumb, note)
     progress(1.0, "Uploaded")
     return record
+
+
+def short_thumbnail(settings: Settings, filename: str) -> Path | None:
+    """A SideQuestLogic Short's drawn thumbnail (modules.thumbs; drawn now when missing), or None when it can't be."""
+    from modules import thumbs
+
+    try:
+        return thumbs.ensure("sidequestlogic", Path(filename).stem, settings.output_dir)
+    except Exception:  # noqa: BLE001 - the video goes out without it
+        logger.warning("Thumbnail for %s couldn't be drawn", filename, exc_info=True)
+        return None
 
 
 def set_short_thumbnail(settings: Settings, filename: str, video_id: str, youtube) -> str:
@@ -500,6 +518,71 @@ def set_short_thumbnail(settings: Settings, filename: str, video_id: str, youtub
     except Exception as err:  # noqa: BLE001
         logger.warning("Thumbnail for %s not set: %s", video_id, err)
         return f"not set: {str(err)[:200]}"
+
+
+PROCESSING_WAIT, PROCESSING_POLL = 15 * 60, 20.0  # seconds to wait for YouTube to finish processing a video, and between asks
+
+
+def set_thumbnail(youtube, video_id: str, path: Path) -> str:
+    """Set a video's thumbnail: "set", or why YouTube refused (custom Shorts thumbnails need a verified channel)."""
+    from googleapiclient.http import MediaFileUpload
+
+    try:
+        youtube.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(path), mimetype="image/jpeg")).execute()
+        return "set"
+    except Exception as err:  # noqa: BLE001 - the video is up either way
+        logger.warning("Thumbnail for %s not set: %s", video_id, err)
+        return f"not set: {str(err)[:200]}"
+
+
+def processed(youtube, video_id: str) -> bool | None:
+    """True once YouTube has finished processing the video, False while it still works on it, None when it can't say."""
+    try:
+        items = youtube.videos().list(part="processingDetails", id=video_id).execute().get("items") or []
+    except Exception as err:  # noqa: BLE001 - a fake client, or the API down: unknown
+        logger.debug("Processing status of %s unknown: %s", video_id, err)
+        return None
+    if not items:
+        return None
+    return (items[0].get("processingDetails") or {}).get("processingStatus") == "succeeded"
+
+
+def keep_thumbnail(client: Callable[[], Any], video_id: str, path: Path, on_set: Callable[[str], None] | None = None) -> threading.Thread:
+    """Set the thumbnail again once YouTube has finished processing the video, in the background. A thumbnail set
+    right after the upload is accepted, then replaced by an auto-picked frame when the processing ends: every Short
+    of 2026-11-02/03 went out that way on all three channels. `client` makes the thread its own client (httplib2 is
+    not thread-safe); `on_set` gets the result for the upload record."""
+    t = threading.Thread(target=keep_thumbnail_now, args=(client, video_id, path, on_set), name=f"thumbnail-{video_id}", daemon=True)
+    t.start()
+    return t
+
+
+def keep_thumbnail_now(client: Callable[[], Any], video_id: str, path: Path, on_set: Callable[[str], None] | None = None) -> str:
+    """keep_thumbnail's work: wait for the processing (PROCESSING_WAIT at most; give up after three unknown answers),
+    set the thumbnail, report."""
+    youtube = client()
+    deadline = time.monotonic() + PROCESSING_WAIT
+    unknown = 0
+    while True:
+        state = processed(youtube, video_id)
+        if state:
+            break
+        unknown = unknown + 1 if state is None else 0
+        if unknown >= 3:
+            logger.warning("Can't tell whether %s is processed: its thumbnail stays as set at the upload", video_id)
+            return "unknown"
+        if time.monotonic() >= deadline:
+            logger.warning("%s is still processing after %d s: setting its thumbnail again anyway", video_id, PROCESSING_WAIT)
+            break
+        time.sleep(PROCESSING_POLL)
+    status = set_thumbnail(youtube, video_id, path)
+    logger.info("Thumbnail of %s set again after the processing: %s", video_id, status)
+    if on_set is not None:
+        try:
+            on_set(status)
+        except Exception:  # noqa: BLE001 - the record is a note; the thumbnail is what matters
+            logger.exception("Couldn't note the thumbnail of %s", video_id)
+    return status
 
 
 def upload_file(path: Path, req: YouTubeUploadRequest, as_short: bool = True,

@@ -1360,6 +1360,48 @@ class FakeThumbs(FakeComments):
         return self
 
 
+class FakeProcessing(FakeThumbs):
+    """A YouTube that is still processing the video for the first `busy` asks, then done."""
+
+    def __init__(self, busy=2):
+        super().__init__()
+        self.busy, self.asked, self.status = busy, 0, ""
+
+    def videos(self):
+        return self
+
+    def list(self, part, id):
+        self.asked += 1
+        self.status = "processing" if self.asked <= self.busy else "succeeded"
+        return self
+
+    def execute(self):
+        return {"items": [{"processingDetails": {"processingStatus": self.status}}]}
+
+
+def test_the_thumbnail_is_set_again_once_youtube_has_processed_the_video(settings, tmp_path, world, monkeypatch):
+    """YouTube accepts a thumbnail set seconds after the upload, then replaces it with its own frame when the
+    processing ends (all three channels, 2026-11-02/03): so it is set again, in the background, once processed."""
+    from trendclip import publish
+
+    monkeypatch.setattr(publish, "PROCESSING_POLL", 0.0)
+    job, _, _ = _make(settings, tmp_path, world)
+    (tmp_path / job.key / "thumbnail.jpg").write_bytes(b"\xff\xd8 a jpeg")
+    _fake_upload(monkeypatch, [])
+    monkeypatch.setattr(bw_channel, "announce_text", lambda text, settings=None, components=None: None)
+    started = []
+    monkeypatch.setattr(publish, "keep_thumbnail", lambda client, vid, path, on_set=None: started.append((client, vid, path, on_set)))
+    yt = FakeProcessing()
+    record = bw_channel.upload(job.key, youtube=yt, out_dir=tmp_path)
+    assert record["thumbnail"] == "set" and len(yt.thumbs) == 1 and len(started) == 1
+    client, vid, path, on_set = started[0]
+    assert client() is yt and vid == "v1" and path == tmp_path / job.key / "thumbnail.jpg"
+    assert publish.keep_thumbnail_now(client, vid, path, on_set) == "set"
+    assert yt.asked == 3 and len(yt.thumbs) == 2  # waited two asks, then set it again
+    assert bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]["thumbnail"] == "set after processing"
+    assert publish.keep_thumbnail_now(lambda: FakeThumbs(), "v2", path) == "unknown"  # a client that can't say: left alone
+
+
 def test_the_thumbnail_goes_up_with_the_video(settings, tmp_path, world, monkeypatch):
     """The dashboard's thumbnail is set on YouTube right after the upload; a refusal leaves the video up and says so."""
     job, _, _ = _make(settings, tmp_path, world)

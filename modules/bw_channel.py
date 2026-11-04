@@ -845,6 +845,9 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
     record["thumbnail"] = set_thumbnail(client, record["video_id"], thumb) if thumb else "not set: it couldn't be drawn"
     info.setdefault("uploads", {})["youtube"] = record
     save_info(info, out_dir)
+    if thumb and record["thumbnail"] == "set":  # again once YouTube has processed the video, else it picks its own frame
+        publish.keep_thumbnail((lambda: youtube) if youtube is not None else (lambda: publish._youtube(TOKEN)), record["video_id"], thumb,
+                               lambda status: note_thumbnail(key, status, out_dir))
     progress(1.0, "Uploaded")
     comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
@@ -868,14 +871,16 @@ def thumbnail(key: str, out_dir: Path | None = None) -> Path | None:
 
 def set_thumbnail(client, video_id: str, path: Path) -> str:
     """Give the uploaded Short its thumbnail: "set", or why YouTube refused (the channel needs phone verification)."""
-    from googleapiclient.http import MediaFileUpload
+    return publish.set_thumbnail(client, video_id, path)
 
-    try:
-        client.thumbnails().set(videoId=video_id, media_body=MediaFileUpload(str(path), mimetype="image/jpeg")).execute()
-        return "set"
-    except Exception as err:  # noqa: BLE001 - the video is up either way
-        logger.warning("Borderline Why thumbnail for %s not set: %s", video_id, err)
-        return f"not set: {str(err)[:200]}"
+
+def note_thumbnail(key: str, status: str, out_dir: Path | None = None) -> None:
+    """How the thumbnail's second setting went (publish.keep_thumbnail), into the upload record."""
+    info = load_info(key, out_dir)
+    record = ((info or {}).get("uploads") or {}).get("youtube")
+    if info and record:
+        record["thumbnail"] = f"{status} after processing"
+        save_info(info, out_dir)
 
 
 def can_comment() -> bool:
