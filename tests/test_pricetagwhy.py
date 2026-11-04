@@ -851,3 +851,18 @@ def test_a_named_cast_is_asked_by_its_own_word_and_a_parable_lists_no_sources():
     assert not any("Which vendor" in p for p in pw_write.format_problems(vendors))
     assert "Sources:" not in pw_channel.description({**story, "sources": []})
     assert "Sources:" in pw_channel.description(_script())
+
+
+def test_a_slot_made_or_emptied_from_the_tab_is_marked_so_the_bot_leaves_it(tmp_path):
+    from datetime import datetime
+
+    from trendclip.web import pricetagwhy as web
+
+    settings = _settings()
+    job = pw_channel.job_for(settings, datetime(2026, 11, 4).date(), "23:00")
+    fake = type("S", (), {"output_dir": tmp_path})()
+    web._mark_made(job, fake)
+    sent = json.loads((tmp_path / "discord_state.json").read_text())["sent"]
+    assert job.make_key in sent
+    at = datetime(2026, 11, 4, 22, 22, tzinfo=settings.tz)
+    assert all(j.key != job.key for j in pw_channel.due_makes(settings, at, set(sent), tmp_path))

@@ -130,6 +130,7 @@ def make_slot(req: SlotRequest) -> dict[str, Any]:
         pw_channel.set_aside(job.key)
     except pw_channel.ChannelError as err:
         raise HTTPException(status_code=400, detail=str(err)) from err
+    _mark_made(job, settings)
     return _start(script, job.key, job)
 
 
@@ -167,6 +168,7 @@ def place(req: PlaceRequest) -> dict[str, Any]:
     if req.video:
         if req.video in _making():
             raise HTTPException(status_code=409, detail="That video is still being made")
+        _mark_made(job)
         return _plan_change(pw_channel.place_video, req.video, job)
     if not req.script:
         raise HTTPException(status_code=400, detail="Choose a video or a script")
@@ -175,8 +177,10 @@ def place(req: PlaceRequest) -> dict[str, Any]:
 
 @router.post("/plan/remove")
 def remove_slot(req: SlotRequest) -> dict[str, Any]:
-    """Empty a slot that has a video (it is set aside; its script leaves the plan)."""
-    return _plan_change(pw_channel.remove_slot, pw_channel.job_for(_settings(), req.day, req.slot))
+    """Empty a slot that has a video (it is set aside; its script leaves the plan). The bot does not refill it."""
+    job = pw_channel.job_for(_settings(), req.day, req.slot)
+    _mark_made(job)
+    return _plan_change(pw_channel.remove_slot, job)
 
 
 @router.post("/scripts/remove")
@@ -192,6 +196,14 @@ def restore_script(req: ScriptRequest) -> dict[str, Any]:
     if pw_channel.find_script(req.file) is None:
         raise HTTPException(status_code=404, detail="No such script")
     return _plan_change(pw_channel.restore_script, req.file)
+
+
+def _mark_made(job, settings=None) -> None:
+    """Tell the bot this slot is taken care of from here (the sent log), so it never starts its own video for it: a
+    hand-made video has no such mark, and the bot filled a slot emptied from the tab within the minute."""
+    from trendclip import assistant
+
+    assistant.SentLog(settings or _settings()).add(job.make_key, job.day)
 
 
 def _known(key: str) -> dict:
