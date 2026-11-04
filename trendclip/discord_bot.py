@@ -19,7 +19,7 @@ import discord
 from discord import app_commands
 from discord.ext import tasks
 
-from . import (gamer_queue, analytics, assistant, channel_stats, hub, leaderboard, leaderboard_card, planner, publish,
+from . import (gamer_queue, analytics, assistant, channel_stats, doctor, hub, leaderboard, leaderboard_card, planner, publish,
                script_writer, shorts, video_downloader)
 from .config import ConfigError, Settings, get_settings
 
@@ -1833,6 +1833,68 @@ async def act_pw_comment(bot: TrendClipBot, interaction: discord.Interaction, ke
     await reply(interaction, pw_channel.comment_line({"comment": found}))
 
 
+# --------------------------------------------------------------------------- debugging from the phone (trendclip.doctor)
+
+
+Channel3 = Literal["sq", "pw", "bw"]
+
+
+def _channel_key(arg: str) -> tuple[str, str | None]:
+    channel, _, key = arg.strip().partition(" ")
+    if channel not in doctor.CHANNELS:
+        raise ValueError(f"no channel {channel!r} (sq, pw or bw)")
+    return channel, (key.strip() or None)
+
+
+async def send_check(interaction: discord.Interaction, channel: str, key: str | None, settings: Settings) -> None:
+    """The /check report: the lines, our thumbnail and the one YouTube serves attached, Set it again under it."""
+    try:
+        report = await asyncio.to_thread(doctor.check, channel, key, settings)
+    except doctor.DoctorError as err:
+        return await reply(interaction, f"🔎 {err}")
+    files = []
+    if report.get("ours") and Path(report["ours"]).is_file():
+        files.append(discord.File(report["ours"], filename="ours.jpg"))
+    t = report.get("thumbnail") or {}
+    if t.get("served"):
+        files.append(discord.File(io.BytesIO(t["served"]), filename="youtube-serves.jpg"))
+    elif t.get("frame"):
+        files.append(discord.File(io.BytesIO(t["frame"]), filename="youtube-own-frame.jpg"))
+    arg = f"{channel} {report['key']}"
+    buttons = [button("thumb", arg, "🖼️ Set it again", discord.ButtonStyle.primary) if report.get("ours") and t.get("match") is not True else None,
+               button("check", arg, "🔎 Check again")]
+    await reply(interaction, "\n".join(doctor.format_report(report)), files=files, view=view_of(*buttons), suppress_embeds=True)
+
+
+async def act_check(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    try:
+        channel, key = _channel_key(arg)
+    except ValueError as err:
+        return await reply(interaction, f"🔎 {err}", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    await send_check(interaction, channel, key, bot.settings)
+
+
+async def act_thumb(bot: TrendClipBot, interaction: discord.Interaction, arg: str) -> None:
+    """"Set it again": our thumbnail set on the video now, then checked against what YouTube serves."""
+    try:
+        channel, key = _channel_key(arg)
+    except ValueError as err:
+        return await reply(interaction, f"🖼️ {err}", ephemeral=True)
+    await interaction.response.defer(thinking=True)
+    try:
+        status = await asyncio.to_thread(doctor.set_again, channel, key, bot.settings)
+    except (doctor.DoctorError, publish.PublishError) as err:
+        return await reply(interaction, f"🖼️ Couldn't set it: {err}")
+    if doctor.thumbnail_ok(status):
+        text = "🖼️ Set again, and YouTube serves it now ✅"
+    elif status.startswith("set"):
+        text = f"🖼️ Set again, but YouTube still serves something else ({status.removeprefix('set, but ')}). It can take a few minutes: press **Check** later."
+    else:
+        text = f"🖼️ YouTube refused it: {status.removeprefix('not set: ')}"
+    await reply(interaction, text, view=view_of(button("check", f"{channel} {key}", "🔎 Check")))
+
+
 ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "show": act_show, "up": act_upload_confirm, "upgo": act_upload, "no": act_cancel, "cm": act_comment,
     "pl": act_plan_next, "pt": act_plan_today, "rm": act_unplan, "del": act_delete_confirm, "delgo": act_delete,
@@ -1841,7 +1903,7 @@ ACTIONS: dict[str, Callable[[TrendClipBot, discord.Interaction, str], Any]] = {
     "dadelgo": act_da_delete, "bwok": act_bw_approve, "bwveto": act_bw_veto, "bwrun": act_bw_run,
     "bwup": act_bw_upload_confirm, "bwupgo": act_bw_upload, "bwcm": act_bw_comment,
     "pwok": act_pw_approve, "pwveto": act_pw_veto, "pwrun": act_pw_run, "pwup": act_pw_upload_confirm, "pwupgo": act_pw_upload,
-    "pwcm": act_pw_comment,
+    "pwcm": act_pw_comment, "check": act_check, "thumb": act_thumb,
 }
 
 
@@ -1993,6 +2055,39 @@ async def videos_cmd(interaction: discord.Interaction) -> None:
         lines.append(f"…and {len(waiting) - 15} more (see the dashboard).")
     buttons = [button("show", s.filename, f"Show: {clip_text(s.title, 60)}") for s in waiting[:5]]
     await reply(interaction, "\n".join(lines), view=view_of(*buttons))
+
+
+async def check_video_choices(interaction: discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+    channel = getattr(interaction.namespace, "channel", None) or "sq"
+    try:
+        found = await asyncio.to_thread(doctor.uploads, channel, _bot(interaction).settings, 15)
+    except Exception:  # noqa: BLE001 - a bad channel name: no choices
+        return []
+    out = [app_commands.Choice(name=clip_text(f"{u.created_at} · {u.title}", 100), value=u.key) for u in found
+           if current.lower() in f"{u.key} {u.title}".lower()]
+    return out[:25]
+
+
+@app_commands.command(name="check", description="One upload live from YouTube: privacy, processing, views, and its thumbnail next to ours")
+@app_commands.describe(channel="sq SideQuestLogic · pw Price Tag Why · bw Borderline Why", video="The upload (default: the last one)")
+@app_commands.autocomplete(video=check_video_choices)
+async def check_cmd(interaction: discord.Interaction, channel: Channel3 = "sq", video: str | None = None) -> None:
+    await interaction.response.defer(thinking=True)
+    await send_check(interaction, channel, video, _bot(interaction).settings)
+
+
+LogWhat = Literal["all", "errors", "sq", "pw", "bw"]
+
+
+@app_commands.command(name="log", description="The bot's log from the hub: the last lines, the errors, or one channel's")
+@app_commands.describe(what="all · errors (warnings and tracebacks) · sq / pw / bw (one channel's lines)", lines="How many lines (default 40)")
+async def log_cmd(interaction: discord.Interaction, what: LogWhat = "errors", lines: app_commands.Range[int, 5, 150] = 40) -> None:
+    await interaction.response.defer(thinking=True, ephemeral=True)
+    found = await asyncio.to_thread(doctor.log_lines, doctor.log_path(_bot(interaction).settings), lines, what)
+    if not found:
+        return await reply(interaction, f"📜 Nothing in the log for `{what}`.", ephemeral=True)
+    for text in chunks(found, MESSAGE_MAX - 80):
+        await reply(interaction, f"```text\n{text}\n```", ephemeral=True, suppress_embeds=True, allowed_mentions=NO_PINGS)
 
 
 @app_commands.command(name="status", description="YouTube connection, today's plan and what's waiting")
@@ -2287,6 +2382,10 @@ async def help_cmd(interaction: discord.Interaction) -> None:
         "**Borderline Why** (map Shorts, its own YouTube channel): `/bw status` · `/bw make` the next video now · "
         "`/bw connect` the YouTube login. Every day the bot makes one video hours before its slot and posts it in its "
         "channel; press **Approve** and it goes out at the slot.",
+        "",
+        "**From the phone**: `/check channel: video:` reads one upload live from YouTube (privacy, processing, views) and shows "
+        "the thumbnail YouTube serves next to ours, with **Set it again** · `/log what: lines:` the hub's log (errors, or one "
+        "channel's). After every upload the thumbnail is verified by itself; a miss is posted with the button.",
     ]), ephemeral=True)
 
 
@@ -2546,7 +2645,7 @@ async def bw_connect_cmd(interaction: discord.Interaction) -> None:
 
 
 COMMANDS = [today_cmd, slot_cmd, create_cmd, upload_cmd, videos_cmd, status_cmd, stats_cmd, insights_cmd, leaderboard_cmd,
-            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, bw_group, help_cmd]
+            comments_cmd, replies_cmd, points_cmd, answer_cmd, plan_group, bw_group, check_cmd, log_cmd, help_cmd]
 if not _da_retired():  # Dark Outliers' /da only while the channel runs (DA_ENABLED=1)
     COMMANDS.insert(COMMANDS.index(bw_group), da_group)
 

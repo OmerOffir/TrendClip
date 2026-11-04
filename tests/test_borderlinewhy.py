@@ -1384,7 +1384,10 @@ def test_the_thumbnail_is_set_again_once_youtube_has_processed_the_video(setting
     processing ends (all three channels, 2026-11-02/03): so it is set again, in the background, once processed."""
     from trendclip import publish
 
+    from trendclip import doctor
+
     monkeypatch.setattr(publish, "PROCESSING_POLL", 0.0)
+    monkeypatch.setattr(doctor, "verify_thumbnail", lambda video_id, path, wait=None: "set")  # the doctor's own tests cover it
     job, _, _ = _make(settings, tmp_path, world)
     (tmp_path / job.key / "thumbnail.jpg").write_bytes(b"\xff\xd8 a jpeg")
     _fake_upload(monkeypatch, [])

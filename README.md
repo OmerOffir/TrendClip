@@ -618,6 +618,13 @@ runs at a time. Control TrendClip from your Discord server with slash commands.
 | `/videos` | Videos that are made but not planned or uploaded |
 | `/status` | YouTube connection, Gemini key, next free slot, today's plan |
 | `/stats` | The channel report (below) right now |
+| `/check channel: video:` | From the phone: one upload read live from YouTube (privacy, processing, views, the comment) with the thumbnail YouTube serves attached next to ours, compared pixel by pixel; **Set it again** when they differ (`sq` / `pw` / `bw`, the last upload by default) |
+| `/log what: lines:` | The hub's bot log without SSH: the errors (warnings and tracebacks), one channel's lines, or the last lines |
+
+After every upload, on every channel, the thumbnail is set again once YouTube has processed the video and then
+checked against the picture the Shorts shelf serves (`THUMB_VERIFY_WAIT` seconds later, default 90; -1 skips the
+check). When it is not ours, the channel's Discord channel gets a 🖼️ alert with **Set it again** and **Check**:
+nothing has to be asked.
 
 On its own the bot posts to `DISCORD_CHANNEL_ID`:
 

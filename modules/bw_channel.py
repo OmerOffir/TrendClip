@@ -881,6 +881,10 @@ def note_thumbnail(key: str, status: str, out_dir: Path | None = None) -> None:
     if info and record:
         record["thumbnail"] = f"{status} after processing"
         save_info(info, out_dir)
+    if out_dir is None:  # the real channel: a miss is an alert in its Discord channel (trendclip.doctor)
+        from trendclip import doctor
+
+        doctor.alert_thumbnail("bw", key, status, title=(info or {}).get("title", ""))
 
 
 def can_comment() -> bool:

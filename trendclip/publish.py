@@ -486,7 +486,10 @@ def upload_youtube(settings: Settings, filename: str, req: YouTubeUploadRequest,
     shorts.update_short(settings, filename, lambda s: s.uploads.__setitem__("youtube", record))
     if thumb and record["thumbnail"] == "set":  # again once YouTube has processed the video, else it picks its own frame
         def note(status: str) -> None:
+            from trendclip import doctor
+
             shorts.update_short(settings, filename, lambda s: s.uploads["youtube"].__setitem__("thumbnail", f"{status} after processing"))
+            doctor.alert_thumbnail("sq", filename, status, settings)
 
         keep_thumbnail((lambda: given) if given is not None else _youtube, record["video_id"], thumb, note)
     progress(1.0, "Uploaded")
@@ -576,6 +579,10 @@ def keep_thumbnail_now(client: Callable[[], Any], video_id: str, path: Path, on_
             break
         time.sleep(PROCESSING_POLL)
     status = set_thumbnail(youtube, video_id, path)
+    if status == "set":  # then look: does the Shorts shelf serve our picture? (trendclip.doctor; THUMB_VERIFY_WAIT=-1 skips)
+        from trendclip import doctor
+
+        status = doctor.verify_thumbnail(video_id, path)
     logger.info("Thumbnail of %s set again after the processing: %s", video_id, status)
     if on_set is not None:
         try:
