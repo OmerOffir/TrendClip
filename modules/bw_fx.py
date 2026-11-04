@@ -915,6 +915,7 @@ class FxRenderer(Renderer):
         self._counters: dict[tuple[str, int], Image.Image] = {}
         self._side_flags: dict[str, str] = {}
         self._bearers: dict[tuple[str, int], tuple[list[Image.Image], list[float]]] = {}
+        self._squads: dict[tuple[tuple[int, int, int], int], tuple[list[Image.Image], list[float]]] = {}
         if dropped := dress(spec, short_globe=not self.LIVELY):
             logger.info("Left out of the video: %s", ", ".join(dropped))
         self.views = [s.view for s in spec.scenes] if self.war else vary_views(spec.scenes)  # a war map stays on the front
@@ -935,7 +936,8 @@ class FxRenderer(Renderer):
             self.hold_armies()
             for s in spec.scenes:  # each side's flag waves over its country: on the light tint, who is who reads at once
                 for el in s.elements:
-                    if el.kind == "highlight" and not el.opts.get("flag") and el.feature is not None and el.feature.kind == "country":
+                    if (el.kind == "highlight" and not el.opts.get("flag") and not el.opts.get("_noflag") and el.feature is not None
+                            and el.feature.kind == "country"):
                         el.opts["_badge"] = self._side_flags.setdefault(el.feature.name, usable_flag(el.feature.name))
         self.attempts = bw_render.attempt_marks(spec.words) if self.war else []
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
@@ -1752,6 +1754,31 @@ class FxRenderer(Renderer):
             img.putalpha(img.getchannel("A").point(lambda v: int(v * a)))
         ov.alpha_composite(img, (int(xy[0] - img.width / 2), int(xy[1] - img.height / 2)))
 
+    def squad(self, ov: Image.Image, rgb: tuple[int, int, int], xy: tuple[float, float], size: int, age: float, a: float = 1.0) -> None:
+        """The owner's marching squad painted in a side's colour (uniform and helmet keep their shading), so the red
+        and the blue army tell apart at a glance (the owner, 2026-11-04: on Hannibal both looked the same)."""
+        code = icon_code("marching_squad")
+        if not code or age < 0:
+            return
+        key = (rgb, size)
+        if key not in self._squads:
+            anim = anim_frames(code, size)
+            frames, ends = anim if anim else ([icon_image(code, size)], [1.0])
+            out = []
+            for f in frames:
+                arr = np.asarray(f.convert("RGBA"), dtype=np.float32)
+                lum = (0.3 * arr[..., 0] + 0.59 * arr[..., 1] + 0.11 * arr[..., 2]) / 150.0  # the shading, 1.0 at mid-tone
+                tint = np.clip(lum[..., None] * np.array(rgb, dtype=np.float32), 0, 255)
+                arr[..., :3] = 0.25 * arr[..., :3] + 0.75 * tint
+                out.append(Image.fromarray(arr.astype(np.uint8), "RGBA"))
+            self._squads[key] = (out, ends)
+        frames, ends = self._squads[key]
+        img = frames[min(len(frames) - 1, bisect.bisect_right(ends, age % ends[-1]))]
+        if a < 1:
+            img = img.copy()
+            img.putalpha(img.getchannel("A").point(lambda v: int(v * a)))
+        ov.alpha_composite(img, (int(xy[0] - img.width / 2), int(xy[1] - img.height / 2)))
+
     def bearer(self, flag: str, size: int, age: float) -> Image.Image:
         """The owner's flag with eyes, its cloth painted with a country's flag: an army's flag-bearer."""
         key = (flag, size)
@@ -1827,7 +1854,7 @@ class FxRenderer(Renderer):
             for j in range(max(1, min(3, round(count / 3)))):  # a squad per 3 soldiers, one behind the other
                 bob = 4 * math.sin(t * 11 + j) if 0 < u < 1 else 0.0
                 xy = (head[0] - fx * (j * 120 + 20), head[1] - fy * (j * 120 + 20) + bob)
-                self.gif(ov, "marching_squad", xy, 120, age, min(1.0, (age - 0.08 * j) / 0.3))
+                self.squad(ov, rgb, xy, 120, age, min(1.0, (age - 0.08 * j) / 0.3))
         else:
             gap = 84 if flag else 50
             for j in range(count):

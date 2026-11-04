@@ -2078,3 +2078,34 @@ def test_any_war_story_goes_on_the_war_map_and_a_peaceful_one_does_not(world):
     assert bw_script.to_spec_dict(draft)["style"] == "war"
     assert bw_script.finish(draft, _research())["style"] == "war"
     assert "war map" in bw_script.SCENE_RULES and "army" in bw_script.SCENE_RULES
+
+
+def test_squads_wear_their_sides_colour_and_an_ancient_side_gets_no_flag(world, fx_offline):
+    """The owner, 2026-11-04 (Hannibal): the red and the blue army looked the same, and Italy's and Tunisia's flags
+    waved over Rome and Carthage. Squads are painted in their side's colour; a highlight with "flag": "none" gets no
+    badge, on the scene it is in and on every scene it is held into."""
+    data = _fx_dict()
+    data["style"] = "war"
+    data["scenes"][0]["elements"] = [{"kind": "highlight", "place": "Canada", "color": "b", "flag": "none"},
+                                     {"kind": "highlight", "place": "United States", "color": "a"},
+                                     {"kind": "army", "place": "Minnesota", "to": "Canada", "color": "a", "cue": "marched"},
+                                     {"kind": "army", "place": "Canada", "to": "Minnesota", "color": "b", "cue": "back"}]
+    data["scenes"][0]["narration"] = "They marched north. Then they came back."
+    data["scenes"].append({"kind": "map", "narration": "Nothing changed.", "focus": ["Canada"], "elements": []})
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    sides = [e for s in spec.scenes for e in s.elements if e.kind == "highlight"]
+    assert all(not e.opts.get("_badge") and e.opts["_noflag"] for e in sides if e.place == "Canada")  # no flag over Canada, held copies too
+    assert len([e for e in sides if e.place == "Canada"]) >= 2
+    assert all(e.opts.get("_badge") for e in sides if e.place == "United States")  # the other side keeps its flag
+    from PIL import Image
+
+    a = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    b = Image.new("RGBA", (300, 300), (0, 0, 0, 0))
+    r.squad(a, r.color("a"), (150, 150), 120, 0.5)
+    r.squad(b, r.color("b"), (150, 150), 120, 0.5)
+    if a.getbbox():  # with the owner's squad GIF on this machine: the two sides tell apart
+        pa, pb = np.asarray(a).astype(int), np.asarray(b).astype(int)
+        on = pa[..., 3] > 0
+        assert pa[on][:, 2].mean() > pa[on][:, 0].mean() and pb[on][:, 0].mean() > pb[on][:, 2].mean()  # blue-ish vs red-ish

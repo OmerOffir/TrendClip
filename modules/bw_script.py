@@ -413,7 +413,9 @@ must be the whole narration.
   story's armies and fights as elements and the video switches to it (each side lightly tinted, color "a" the
   attacker and "b" the defender, the same all video). army: troops marching from "place" to "to" (cities or
   states/provinces near the front), with "flag" for whose army it is (a block of little flags led by a flag-bearer)
-  or no flag (marching soldiers); "count" 3-9. battle: a clash at a place, the attacker's "flag" against the
+  or no flag (marching soldiers, painted in the side's colour); "count" 3-9. A side that is not one of today's
+  countries (Rome, Carthage, a kingdom or empire that is gone) gets "flag": "none" on its highlight, so no modern
+  flag waves over it; a side that is a country of today gets its flag. battle: a clash at a place, the attacker's "flag" against the
   defender's "from_flag", with explosions and smoke; "text" can name it. A map scene can also have "year" ("1812")
   when the story jumps to a new date: it slams in big, then stays as a small tag. The marker hand draws a war scene's
   "line" or "arrow" (the front, the new border, the push), else it circles the battle just before it starts. Not for a peaceful story: a sale,

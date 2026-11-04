@@ -980,12 +980,18 @@ def add_fill(fills: dict[int, tuple[tuple[int, int, int], float]], feat: bw_geo.
     fills[key] = ((int(r0 + (rgb[0] - r0) * a), int(g0 + (rgb[1] - g0) * a), int(b0 + (rgb[2] - b0) * a)), max(a0, a))
 
 
+NO_FLAG = {"none", "no", "no flag", "-"}  # a highlight's "flag" that means: no flag over this side (an ancient state)
+
+
 def _elements(raw: list[dict[str, Any]], el_keys: set[str]) -> list[Element]:
     """A scene's elements; a transfer becomes the place in its old owner's flag / colour from the scene's start,
     then the new owner's wiping over it on the cue word."""
     out = []
     for n, e in enumerate(raw):
         opts = {k: v for k, v in e.items() if k not in el_keys and v not in (None, "", [])}
+        if e["kind"] == "highlight" and str(opts.get("flag") or "").strip().lower() in NO_FLAG:
+            opts.pop("flag")  # "flag": "none": a side that is no country of today (Rome, Carthage) gets no flag over it
+            opts["_noflag"] = True
         color = e.get("color") or "a"
         if e["kind"] == "transfer":
             old_flag, new_flag = opts.pop("from_flag", ""), opts.pop("flag", "")
