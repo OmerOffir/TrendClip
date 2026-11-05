@@ -1698,7 +1698,7 @@ class FxRenderer(Renderer):
                 zones.append((max(0, min(xs)), max(0, min(ys)), min(W, max(xs)), min(H, max(ys))))
         return zones
 
-    def text_zones(self, cam, i: int, scene: Scene) -> list[tuple[float, float, float, float]]:
+    def text_zones(self, cam, i: int, scene: Scene, skip: Element | None = None) -> list[tuple[float, float, float, float]]:
         """Where the scene's words are on screen (x0, y0, x1, y1), as bw_render and element() draw them: the place
         names, labels, pin and ring names, arrow captions, a stamp, a flag badge's name, the captions band, and
         the mascot's speech bubble while it talks in this scene."""
@@ -1732,6 +1732,14 @@ class FxRenderer(Renderer):
             elif e.kind in ("line", "arrow") and e.text and e.feature_to is not None:
                 x1, y1 = cam.pt(*e.feature_to.label_point())
                 words(((x + x1) / 2, (y + y1) / 2 - 50), e.text, 46)
+        for e in scene.elements:  # what a country's character says, in its bubble over its head
+            if e.kind == "local" and e.opts.get("say") and e is not skip:
+                size = int(e.opts.get("size", LOCAL_SIZE))
+                spot = self._spots.get(id(e))
+                ex, ey = spot or self.anchor(cam, e)
+                if not spot and e.feature is not None:
+                    ey -= size * 0.42
+                zones.append(bw_local.bubble_box(str(e.opts["say"]), self.head_of(e, (ex, ey), size), W, e.opts.get("_lean")))
         if not scene.opts.get("globe"):  # the captions (off while the mascot talks, but its bubble sits there then)
             zones.append((0, bw_render.CAPTION_Y - 80, W, bw_render.CAPTION_Y + 80))
         if self.spec.brand and any(ln and ln[0].who == bw_brand.PANDA and ln[-1].end > scene.start and ln[0].start < scene.end
@@ -1751,32 +1759,71 @@ class FxRenderer(Renderer):
             busy = [e for e in scene.elements if e is not el and e.kind != "icon"]
             ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in busy]]))
             cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
-            zones = self.flag_zones(cam, scene) + self.text_zones(cam, i, scene)
+            zones = self.flag_zones(cam, scene) + self.text_zones(cam, i, scene, skip=el)
             for e in scene.elements:  # a line's or an arrow's ends, with their pins and names (names)
                 if e.kind in ("line", "arrow") and e.feature is not None and e.feature_to is not None:
                     for f in (e.feature, e.feature_to):
                         fx, fy = cam.pt(*f.label_point())
                         zones.append((fx - 110, fy - 90, fx + 110, fy + 90))
             for e in scene.elements[:scene.elements.index(el)]:  # an icon or a local placed before this one: not on top of it
-                if e.kind in ("icon", "local") and (e.feature is not None or "at" in e.opts):
+                if e.kind in ("icon", "local") and (e.feature is not None or "at" in e.opts or self._spots.get(id(e))):
                     ex, ey = self._spots.get(id(e)) or self.anchor(cam, e)
                     eh = int(e.opts.get("size", LOCAL_SIZE if e.kind == "local" else 190)) * 0.5
                     if e.kind == "local" and not self._spots.get(id(e)):
                         ey -= eh * 0.84
-                    zones.append((ex - eh, ey - eh, ex + eh, ey + eh))
-            half = int(el.opts.get("size", 190)) * 0.65
+                    left = eh * 1.75 if e.kind == "local" and e.opts.get("flag") else eh  # the flag badge at the left shoulder, and air
+                    zones.append((ex - left, ey - eh, ex + eh, ey + eh))
+            local = el.kind == "local"  # a local's body: the owner's character stands LOCAL_SIZE x 1.3 tall over its feet on the place
+            half = int(el.opts.get("size", LOCAL_SIZE)) * 0.65 if local else int(el.opts.get("size", 190)) * 0.65
+            if el.kind == "icon" and el.opts.get("icon"):  # the owner's flat GIFs (a cannon, a ship) draw wider than tall
+                half = max(half, _icon_width(str(el.opts["icon"]), int(el.opts.get("size", 190))) * 0.5 + 8)
             hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
-            xy0 = self.anchor(cam, el) if el.feature is not None else xy
+            xy0 = xy if el.feature is None else self.anchor(cam, el)
+            if local and el.feature is not None:
+                xy0 = (xy0[0], xy0[1] - int(el.opts.get("size", LOCAL_SIZE)) * 0.42)  # the feet on the place (element)
+            near = []
+            if local:  # two sides face each other: the second stands beside the first, never on it
+                others = [self._spots.get(id(e)) or self.anchor(cam, e) for e in scene.elements[:scene.elements.index(el)] if e.kind == "local"]
+                near = [o for o in others if math.hypot(o[0] - xy0[0], o[1] - xy0[1]) < 330]
+                if near:
+                    ox = sum(o[0] for o in near) / len(near)
+                    xy0 = (max(180, min(W - 180, ox + (320 if ox < W / 2 else -320))), xy0[1])
+                    xy = xy0
             if hits(xy0):
                 taken = [self._spots[id(e)] for e in scene.elements if self._spots.get(id(e))]
                 x, y = xy0
-                near = [z for z in zones if x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3]]
-                beside = [(min(z[0] for z in near) - half - 12, y), (max(z[2] for z in near) + half + 12, y),
-                          (x, min(z[1] for z in near) - half - 12), (x, max(z[3] for z in near) + half + 12)]
-                free = [p for p in [*beside, *ICON_SLOTS.get("map", ())] if not hits(p)
-                        and half + 10 <= p[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= p[1] <= H - half
-                        and all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
+                sizes = [int(el.opts.get("size", 190))]
+                if el.kind == "icon" and el.opts.get("icon"):  # a wide GIF with no room: it shrinks until a spot is free
+                    sizes += [sz for sz in (150, 120) if sz < sizes[0]]
+                for sz in sizes:
+                    if el.kind == "icon" and el.opts.get("icon"):
+                        half = max(sz * 0.65, _icon_width(str(el.opts["icon"]), sz) * 0.5 + 8)
+                    near = [z for z in zones if x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3]]
+                    beside = [(min(z[0] for z in near) - half - 12, y), (max(z[2] for z in near) + half + 12, y),
+                              (x, min(z[1] for z in near) - half - 12), (x, max(z[3] for z in near) + half + 12)] if near else []
+                    free = [p for p in [*beside, *ICON_SLOTS.get("map", ())] if not hits(p)
+                            and half + 10 <= p[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= p[1] <= H - half
+                            and all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
+                    if free:
+                        if sz != sizes[0]:
+                            el.opts["size"] = sz
+                        break
                 self._spots[key] = min(free, key=lambda p: math.hypot(p[0] - x, p[1] - y)) if free else None
+            if local and near and self._spots[key] is None:
+                self._spots[key] = xy0  # a side moved beside the other side keeps that spot
+            if local:  # the scene's other sides are placed now too, so each side's bubble leans away from the other
+                locals_ = [e for e in scene.elements if e.kind == "local"]
+                for e in locals_:
+                    if id(e) not in self._spots:
+                        ex, ey = self.anchor(cam, e)
+                        self.icon_spot(i, scene, e, (ex, ey - int(e.opts.get("size", LOCAL_SIZE)) * 0.42 if e.feature is not None else ey))
+                if len(locals_) > 1:
+                    pos = {id(e): self._spots.get(id(e)) or (self.anchor(cam, e)[0], 0) for e in locals_}
+                    pos[key] = self._spots[key] or xy0
+                    for e in locals_:
+                        rest = [pos[id(o)] for o in locals_ if o is not e and abs(pos[id(o)][0] - pos[id(e)][0]) < 460]
+                        if rest:
+                            e.opts["_lean"] = -1 if pos[id(e)][0] <= min(r[0] for r in rest) else 1
         return self._spots[key] or xy
 
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
@@ -1903,11 +1950,27 @@ class FxRenderer(Renderer):
         if u <= 0:
             return
         size = int(el.opts.get("size", LOCAL_SIZE))
-        code = bw_local.character(str(el.opts.get("icon") or ""))
+        code = bw_local.character(str(el.opts.get("icon") or ""), el.color)
         mood = str(el.opts.get("mood") or "shocked")
-        bw_local.draw(ov, code, xy, size, t, el.at, mood, self.react_time(el, scene), flip=bool(el.opts.get("flip")))
+        flip = bool(el.opts.get("flip"))
+        if str(el.opts.get("say") or "").endswith("!") and code.startswith("@"):
+            base, _, coat = code[1:].partition(":")
+            if any(k.startswith("pointing") for k in bw_local.family_frames(base, size) if not coat or k.endswith(coat)):
+                mood = "point"  # a shouted line: the character points across the border (the owner's pointing pose)
+                flip = el.opts.get("_lean") == 1  # the pose points right: the side standing on the right points back
+        react = self.react_time(el, scene)
+        bw_local.draw(ov, code, xy, size, t, el.at, mood, react, flip=flip)
+        if el.opts.get("flag"):  # the country it speaks for: its flag badge at the shoulder
+            bw_local.badge(ov, str(el.opts["flag"]), xy, round(size * 1.3) if code.startswith("@") else size, t, el.at)
         if el.text:
             text(ov, (xy[0], xy[1] + size * 0.62), el.text.upper(), 44, a=min(1.0, max(0.0, u - 0.5)), max_width=W - 80)
+        if el.opts.get("say") and self.cam_clock is None:  # what it says, on the react word (not on the flash-forward)
+            bw_local.say(ov, str(el.opts["say"]), self.head_of(el, xy, size), t, react, el.opts.get("_lean"))
+
+    def head_of(self, el: Element, xy: tuple[float, float], size: int) -> tuple[float, float]:
+        """The top of a local's head (where its speech bubble's tail points)."""
+        tall = round(size * 1.3) if bw_local.character(str(el.opts.get("icon") or "")).startswith("@") else size
+        return (xy[0], xy[1] - tall * 0.5 + 6)
 
     def pole(self, ov: Image.Image, el: Element, xy: tuple[float, float], t: float) -> None:
         """A flag on a pole that rises out of the ground and waves."""
@@ -2475,4 +2538,4 @@ def _use_layout() -> None:
 
 bw_render.LAYOUT_HOOKS.append(_use_layout)
 
-from modules import bw_brand, bw_photos  # noqa: E402 - it draws with this module's helpers
+from modules import bw_brand, bw_local, bw_photos  # noqa: E402 - they draw with this module's helpers

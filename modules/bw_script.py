@@ -340,6 +340,7 @@ class ElementDraft(BaseModel):
     points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
     mood: str = Field("", description="local: how they feel once the react word is said: shocked | sad | grin | smug | think | smile.")
     react: str = Field("", description="local: the word of this scene's narration their mood changes on.")
+    say: str = Field("", description="local: what the character says on the react word, 1-5 words in a speech bubble (a country's voice).")
 
     @model_validator(mode="after")
     def _plain_kind(self):
@@ -418,12 +419,26 @@ must be the whole narration.
   the whole line with {{n}} where the number goes ("Day {{n}}", "{{n}}+ ships"); 2-3 counters in one scene stack into a
   tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
-  local (one of the channel's own characters standing on "place", for the people the narration names: "icon" is
-  citizen, farmer, settler, king or soldier (these act out the mood with their own faces), else another person
-  from the icon list (merchant, worker, scholar, sailor, queen...),
-  "text" a 1-3 word caption like "a villager"; they pop in on "cue" and react on "react", a later word of the
-  scene, with "mood": shocked (a border moved over them), sad (they lost the land), grin (they won), smug, think,
-  smile. Use 1-3 in the video, one per scene at most, only where the narration names people.
+  local (one of the channel's own characters standing on "place": "icon" is citizen, farmer, settler, king or
+  soldier (these act out the mood with their own faces), or diplomat, general, merchant, sultan, emperor, chief,
+  fisherman, child, village_woman, blacksmith or guard (a uniformed man who argues with both hands and points
+  across the border on a shouted line, one ending in "!") (drawn in the side's coat: "color" a is blue, b is red, so the two
+  sides of a story always read apart; use these for a treaty, an army's command, a company, a non-European ruler, a
+  people without a modern flag, a coast, the next generation, the town), else another person from the icon list
+  (scholar, queen...), "text" a 1-3 word caption like "a villager"; they pop in on "cue" and react on
+  "react", a later word of the scene, with "mood": shocked (a border moved over them), sad (they lost the land),
+  grin (they won), smug, think, smile.
+- THE COUNTRIES ARE THE CHARACTERS. Every side of the story is a local standing on its own land with "flag" (its
+  flag, pinned at its shoulder: "Flag of France.svg") that SPEAKS: "say" is what it says on its react word, 1-5
+  words in its own voice in a speech bubble ("Mine now.", "We never signed that!", "Wait, what?", "Not so fast."),
+  the mood matching ("grin" with "Mine now.", "shocked" with "Wait, what?"). The king speaks for a crown or an
+  empire, the emperor or sultan for one outside Europe, the general for an army, the diplomat for a treaty or an
+  offer, the merchant for a company or trade, the chief for a people without a modern flag, the settler for
+  colonists, the farmer, fisherman, village_woman or child for the land's own people, the citizen for a town. Keep
+  each side's "color" letter on its characters (a: blue coats, b: red coats). Tell the story as the quarrel
+  between them: who wanted what, who got it, who lost. A
+  country speaks in at least 3 scenes; the two sides can face each other across the border in one scene (two
+  locals, one per side; never more). A person who is no side (a villager, a mapmaker) needs no flag.
 - Wars and conflicts (an invasion, a battle, a border war, a siege, a rebellion) are told on the war map: give the
   story's armies and fights as elements and the video switches to it (each side lightly tinted, color "a" the
   attacker and "b" the defender, the same all video). army: troops marching from "place" to "to" (cities or
@@ -469,8 +484,10 @@ must be the whole narration.
 - The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
-  it?", "Ruined? How?"); put asks where a viewer would wonder, never on the first scene. "react" is a one-line
-  reaction just after a scene, best after the last one ("So Germany traded Zanzibar... for a waterfall?").
+  it?", "Ruined? How?"); put asks where a viewer would wonder, never on the first scene. Its LAST line picks the
+  fight for the comments: a "react" after the last scene that asks the viewer whose side they are on ("So... Team
+  France or Team Britain?", "Who got robbed here, Senegal or Gambia?"), naming the two sides.
+  Otherwise "react" is a one-line reaction just after a scene ("So Germany traded Zanzibar... for a waterfall?").
   3-12 words, casual and curious, no new facts, no greeting, no "subscribe". Its lines are not part of the narration:
   the narration must read as a whole without them.
 - cue: a word from that scene's narration, so the element appears as it is said.
@@ -801,12 +818,19 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a local's mood is one of {', '.join(LOCAL_MOODS)}")
             if e.kind == "local" and e.icon.strip() and not bw_fx.icon_code(e.icon) and not bw_local.family(e.icon):
                 problems.append(f"scene {i}: unknown local {e.icon!r} (use a person from the icon list)")
+            if e.kind == "local" and words(e.say) > bw_local.SAY_WORDS:
+                problems.append(f"scene {i}: a character says {words(e.say)} words (at most {bw_local.SAY_WORDS}: one short line in its bubble)")
             if e.kind == "army" and not (e.place.strip() and e.to.strip()):
                 problems.append(f"scene {i}: an army needs a place it starts from and a place it marches \"to\"")
             if e.kind == "battle" and not e.place.strip():
                 problems.append(f"scene {i}: a battle needs its place")
             if e.kind == "transfer" and (not e.place.strip() or bool(e.flag.strip()) != bool(e.from_flag.strip())):
                 problems.append(f"scene {i}: a transfer needs a place and both flags (from_flag and flag) or neither")
+        if sum(e.kind == "local" for e in s.elements) > 2:
+            problems.append(f"scene {i}: {sum(e.kind == 'local' for e in s.elements)} locals (at most 2: the two sides facing each other)")
+        if sum(bool(e.say.strip()) for e in s.elements if e.kind == "local") > 1 and \
+                len({e.flag.strip() for e in s.elements if e.kind == "local" and e.say.strip()}) < 2:
+            problems.append(f"scene {i}: two characters speak for the same side; give each side one voice")
     if stamps > 1:
         problems.append(f"{stamps} stamps (at most one)")
     counters = [(i, s, e) for i, s in enumerate(draft.scenes, 1) for e in s.elements if e.kind == "counter"]

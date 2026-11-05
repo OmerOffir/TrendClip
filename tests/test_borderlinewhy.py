@@ -2173,16 +2173,31 @@ def test_a_local_is_one_of_the_owners_characters():
     variant GIF when the owner drew one, the professor's surprised head for his outfits, else none (an emote pops)."""
     from modules import bw_local
 
-    assert bw_local.character("merchant") == "merchant_counting_coins"  # a person without moods: its GIF
+    assert bw_local.character("scholar") == "scholar_writing"  # a person without moods: its GIF
+    # the side families (<name>_blue / <name>_red, 2026-11-05 night): the coat follows the side letter
+    assert [bw_local.character(n, c) for n, c in (("merchant", "a"), ("ambassador", "b"), ("general", ""), ("woman", "b"))] == \
+        ["@merchant:blue", "@diplomat:red", "@general:blue", "@village_woman:red"]
+    from PIL import Image
+    blue, red = (Image.new("RGBA", (600, 600)) for _ in range(2))
+    bw_local.draw(blue, "@diplomat:blue", (300, 300), 250, 3.0, 0.0, "grin", 2.0)
+    bw_local.draw(red, "@diplomat:red", (300, 300), 250, 3.0, 0.0, "grin", 2.0)
+    assert blue.tobytes() != red.tobytes()
+    # the guard's poses (character_pointing_<coat>, character_arguing_<coat>): "point" for a shouted line
+    assert bw_local.character("guard", "b") == "@character:red"
+    assert {"pointing_red", "arguing_blue"} <= set(bw_local.family_frames("character", 250))
+    point, argue = (Image.new("RGBA", (600, 600)) for _ in range(2))
+    bw_local.draw(point, "@character:red", (300, 300), 250, 3.0, 0.0, "point", 2.0)
+    bw_local.draw(argue, "@character:red", (300, 300), 250, 3.0, 0.0, "shocked", 2.0)
+    assert point.tobytes() != argue.tobytes()
     assert bw_local.character("") == bw_local.character("no such person") == "@citizen"
     # the mood families (<name>_happy/_surprised/_sad): plural and other words for the same person find them
     assert [bw_local.character(n) for n in ("farmer", "settlers", "colonist", "king", "army", "villager")] == \
         ["@farmer", "@settler", "@settler", "@king", "@soldier", "@citizen"]
+    from PIL import Image
     fam = bw_local.family_frames("farmer", 250)
     assert set(fam) == {"happy", "surprised", "sad"}
     heights = [frames[0].getchannel("A").getbbox() for frames, _ in fam.values()]
     assert max(b[3] - b[1] for b in heights) - min(b[3] - b[1] for b in heights) <= 3  # the person keeps its size
-    from PIL import Image
     calm, played, rest = (Image.new("RGBA", (600, 600)) for _ in range(3))
     bw_local.draw(calm, "@farmer", (300, 300), 250, 1.0, 0.0, "grin", 2.0)
     bw_local.draw(played, "@farmer", (300, 300), 250, 2.6, 0.0, "grin", 2.0)
@@ -2285,3 +2300,40 @@ def test_a_slot_upload_goes_up_an_hour_early_scheduled_and_comments_once_public(
     monkeypatch.setattr(bw_channel.publish, "is_public", lambda yt, vid: True)
     assert bw_channel.after_publish(job.key, tmp_path, FakeYouTube()) is True and comments == [job.key]
     assert bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]["privacy"] == "public"
+
+
+def test_the_countries_are_the_characters(world):
+    """The owner (2026-11-05, after a 15M-view Short of a Canadian and an American arguing over the map): a local
+    with a flag speaks for that country, its flag badge at its shoulder, and says 1-5 words in a bubble on its
+    react word; two sides can face each other in a scene, never a third; the checker keeps a line short."""
+    from PIL import Image
+    from modules import bw_local
+
+    plain, flagged, spoke = (Image.new("RGBA", (1080, 1920)) for _ in range(3))
+    bw_local.draw(plain, "@king", (400, 900), 250, 1.0, 0.0, "grin", 2.0)
+    bw_local.draw(flagged, "@king", (400, 900), 250, 1.0, 0.0, "grin", 2.0)
+    bw_local.badge(flagged, "Flag of France.svg", (400, 900), 325, 1.0, 0.0)
+    assert flagged.tobytes() != plain.tobytes()  # the badge is there before the king speaks
+    bw_local.draw(spoke, "@king", (400, 900), 250, 3.0, 0.0, "grin", 2.0)
+    bw_local.say(spoke, "Mine now.", (400, 740), 3.0, 2.0)
+    box = bw_local.bubble_box("Mine now.", (400, 740), 1080)
+    assert box[3] <= 740 - 40 and box[0] >= 30 and box[2] <= 1050  # above the head, on the screen
+    assert spoke.crop(box).getchannel("A").getextrema()[1] == 255  # the bubble is drawn there
+    far = bw_local.bubble_box("We never signed that!", (1040, 740), 1080)
+    assert far[2] <= 1050  # a character at the edge: its bubble leans in
+    draft = _draft()
+    sides = [bw_script.ElementDraft(kind="local", place="Canada", icon="king", flag="Flag of the United Kingdom.svg", cue="border",
+                                    react="south", mood="grin", say="Mine now."),
+             bw_script.ElementDraft(kind="local", place="Minnesota", icon="settler", flag="Flag of the United States.svg", cue="border",
+                                    react="parallel", mood="shocked", say="Wait, what?")]
+    draft.scenes[4].elements += sides
+    assert bw_script.check(draft, _research(), _find(world)) == []
+    draft.scenes[4].elements[-1].say = "We never ever signed any of that"
+    assert any("says 7 words" in p for p in bw_script.check(draft, _research(), _find(world)))
+    draft.scenes[4].elements[-1].say = "Wait, what?"
+    draft.scenes[4].elements[-1].flag = sides[0].flag
+    assert any("same side" in p for p in bw_script.check(draft, _research(), _find(world)))
+    draft.scenes[4].elements[-1].flag = "Flag of the United States.svg"
+    draft.scenes[4].elements.append(bw_script.ElementDraft(kind="local", place="Canada", icon="farmer", cue="border"))
+    assert any("3 locals" in p for p in bw_script.check(draft, _research(), _find(world)))
+    assert "say" in bw_script.SCENE_RULES and "Team" in bw_script.SCENE_RULES
