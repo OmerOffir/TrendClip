@@ -274,7 +274,7 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    distractor and the surprising answer, and only a question that passes a Google fact-check is used.
    The pinned comment is the question plus a hint, not the answer.
 
-   **🎮 Gamer IQ** (12–15 s, same loop as the trivia trap) asks about the game in the background, so the
+   **🎮 Gamer IQ** (10–12 s, same loop as the trivia trap) asks about the game in the background, so the
    game is the puzzle, not wallpaper: recipe math (a number a player can work out, "how many iron ingots
    in a full anvil?"), "which one is NOT in the game?", "which came first?", or an open question with no
    options ("what do you need to craft a Beacon?": viewers write the whole list and correct each other;
@@ -288,8 +288,14 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    frame (the Shorts thumbnail) shows the game.
    It comes up on a Minecraft video whenever the last two levels had none (or tick **🧟 Catch the Zombie
    level** in Create). Every one is a numbered level
-   of an ongoing series: the banner reads "LEVEL 12 - MINECRAFT FANS ONLY", the title ends in
-   "| Level 12 🎮", and the pinned comment adds the leaderboard points and "Level 13 drops next!". The
+   of an ongoing series: the banner reads "LEVEL 12" over the question's tease ("FAKE MOB?", the LLM's
+   headline or the shape's), the title ends in "| Level 12 🎮", and the pinned comment adds the leaderboard
+   points and "Level 13 drops next!". Built for the Shorts first-impression test (2026-11-05: every level
+   stopped at ~1,000 views with ~40% of viewers staying): the banner is at full size on frame 0, the
+   question is at most 10 words and every option at most 3 (viewers left before the first option of a long
+   one), nothing is spoken after "Drop your answer below!" (the spoken "Level N drops next, subscribe" cut
+   the end retention in half), the tease is shown again after the last word so a replay feels natural, and
+   the answer is on the last two frames only, "Pause the last frame for the answer" on the end card. The
    questions are fact-checked on Google against the game's wiki; a quiz without a game uses a random
    clip and asks about its game (it is never moved to a "themed" background). `AUTO_PICK_DAILY_GAME=Minecraft`
    makes one video a day on Minecraft (the slot alternates by day) and sends the other slots to other games.
