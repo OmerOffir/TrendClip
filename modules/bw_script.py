@@ -334,7 +334,7 @@ class ElementDraft(BaseModel):
                                        "transfer: the new owner's flag; army: the flag its units carry; battle: the attacker's flag.")
     from_flag: str = Field("", description="transfer: the old owner's flag (give both flags or neither); battle: the defender's flag.")
     count: int = Field(0, description="army: how many units march (3-9; 0: 5).")
-    icon: str = Field("", description="icon / route: one name from the icon list.")
+    icon: str = Field("", description="icon / route / local: one name from the icon list (local: a person).")
     points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
     mood: str = Field("", description="local: how they feel once the react word is said: shocked | sad | grin | smug | think | smile.")
     react: str = Field("", description="local: the word of this scene's narration their mood changes on.")
@@ -414,11 +414,11 @@ must be the whole narration.
   the whole line with {{n}} where the number goes ("Day {{n}}", "{{n}}+ ships"); 2-3 counters in one scene stack into a
   tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
-  local (a cartoon person standing on "place", the people the narration names: villagers, farmers, settlers, a
-  king, a soldier; "text" a 1-3 word caption like "a villager"; "flag" their country's flag on their shirt
-  (optional); they pop in on "cue" and change their face on "react", a later word of the scene, to "mood":
-  shocked (a border moved over them), sad (they lost the land), grin (they won), smug, think, smile). Use 1-3 in
-  the video, one per scene at most, only where the narration names people.
+  local (one of the channel's own characters standing on "place", for the people the narration names: "icon" is
+  a person from the icon list (citizen, farmer, settlers, king, soldier, merchant, worker, scholar, explorer...),
+  "text" a 1-3 word caption like "a villager"; they pop in on "cue" and react on "react", a later word of the
+  scene, with "mood": shocked (a border moved over them), sad (they lost the land), grin (they won), smug, think,
+  smile. Use 1-3 in the video, one per scene at most, only where the narration names people.
 - Wars and conflicts (an invasion, a battle, a border war, a siege, a rebellion) are told on the war map: give the
   story's armies and fights as elements and the video switches to it (each side lightly tinted, color "a" the
   attacker and "b" the defender, the same all video). army: troops marching from "place" to "to" (cities or
@@ -784,6 +784,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a pole needs a flag")
             if e.kind == "local" and e.mood.strip() and e.mood.strip().lower() not in LOCAL_MOODS:
                 problems.append(f"scene {i}: a local's mood is one of {', '.join(LOCAL_MOODS)}")
+            if e.kind == "local" and e.icon.strip() and not bw_fx.icon_code(e.icon):
+                problems.append(f"scene {i}: unknown local {e.icon!r} (use a person from the icon list)")
             if e.kind == "army" and not (e.place.strip() and e.to.strip()):
                 problems.append(f"scene {i}: an army needs a place it starts from and a place it marches \"to\"")
             if e.kind == "battle" and not e.place.strip():

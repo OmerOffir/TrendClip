@@ -2132,14 +2132,15 @@ def test_squads_wear_their_sides_colour_and_an_ancient_side_gets_no_flag(world, 
 
 
 def test_a_local_stands_on_the_map_and_changes_face_on_the_react_word(world, fx_offline):
-    """A bean-head person (modules.pw_cast) on a place: pops in on the cue, keeps its mood from the react word on
-    (the pose goes with the mood), stands clear of an icon on the same place, and the rules check its mood."""
+    """One of the owner's characters (modules.bw_local) on a place: pops in on the cue, reacts from the react word on
+    (its own variant GIF or an emote over its head), stands clear of an icon on the same place, and the rules check
+    its mood and its name."""
     from modules import bw_fx, bw_script
 
     data = _spec_dict()
     data["scenes"][0]["elements"] += [{"kind": "icon", "place": "Minnesota", "icon": "question"},
                                       {"kind": "local", "place": "Minnesota", "cue": "notch", "react": "map", "mood": "grin", "text": "a farmer",
-                                       "flag": "Flag of Canada.svg"}]
+                                       "icon": "farmer"}]
     words = _words(" ".join(s["narration"] for s in data["scenes"]))
     spec = bw_render.spec_from_dict(data, words)
     assert bw_render.prepare(spec) == []
@@ -2159,3 +2160,14 @@ def test_a_local_stands_on_the_map_and_changes_face_on_the_react_word(world, fx_
     assert (lx, ly) != (0, 0) and (abs(lx - ix) > 150 or abs(ly - iy) > 150)  # the local moved off the icon
     el = bw_script.ElementDraft(kind="local", place="Minnesota", mood="angry", react="map")
     assert el.mood == "angry" and "angry" not in bw_script.LOCAL_MOODS and "grin" in bw_script.LOCAL_MOODS  # the check names the moods
+
+
+def test_a_local_is_one_of_the_owners_characters():
+    """The local's name resolves to the owner's GIF (stickers/borderlinewhy), and a mood keeps the character: its own
+    variant GIF when the owner drew one, the professor's surprised head for his outfits, else none (an emote pops)."""
+    from modules import bw_local
+
+    assert bw_local.character("farmer") == "farmer_working" and bw_local.character("") == "citizen_walking"
+    assert bw_local.character("no such person") == "citizen_walking"
+    assert bw_local.variant("scholar_writing", "shocked") == "surprised"  # the professor's surprised head
+    assert bw_local.variant("farmer_working", "shocked") is None  # the farmer has none yet: a burst pops over his head
