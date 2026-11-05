@@ -28,6 +28,8 @@ A side family can also have poses: <name>_pointing_<coat> (one arm out, pointing
 played for a shouted line, mirrored for the side standing on the right so it points at the other side) and
 <name>_arguing_<coat> (both hands up, talking: the reaction for the other moods). The first came as "character"
 (a uniformed guard, 2026-11-05 night); the script names him "guard".
+Looks: <name>_arab_blue / _red (2026-11-06) is the same person in Middle Eastern dress; the script names
+"general_arab", "merchant_arab"... for a Middle Eastern or North African side.
 """
 
 from __future__ import annotations
@@ -60,6 +62,7 @@ FAMILY_NAMES = {"villager": "citizen", "person": "citizen", "migrant": "citizen"
                 "kid": "child", "children": "child", "boy": "child", "girl": "child", "woman": "village_woman", "women": "village_woman",
                 "mother": "village_woman", "villager_woman": "village_woman", "smith": "blacksmith", "worker": "blacksmith", "workers": "blacksmith",
                 "guard": "character", "guards": "character", "sentry": "character", "border_guard": "character", "policeman": "character"}
+LOOKS = ("arab",)  # a family's other looks: <name>_<look>_blue / _red
 POSES = ("pointing", "arguing")  # a side family's poses: <name>_<pose>_<coat>
 SIDE_COLORS = {"a": "blue", "b": "red"}  # a side family's coat by the script's side letter (any other letter: blue)
 _families: dict[tuple[str, int], dict[str, tuple[list[Image.Image], list[float]]]] = {}
@@ -87,7 +90,12 @@ def family(name: str) -> str | None:
     one (<family>_happy is there); None otherwise."""
     key = name.strip().lower().replace(" ", "_").replace("-", "_")
     files = bw_fx.custom_icons()
-    for c in (key, FAMILY_NAMES.get(key, ""), key.split("_")[0], FAMILY_NAMES.get(key.split("_")[0], "")):
+    head, _, look = key.partition("_")  # "merchants_arab": the merchant family in the Arab look
+    tries = [key, FAMILY_NAMES.get(key, "")]
+    if look in LOOKS:
+        tries += [f"{FAMILY_NAMES.get(head, head)}_{look}"]
+    tries += [head, FAMILY_NAMES.get(head, "")]
+    for c in tries:
         if c and (f"{c}_happy" in files or f"{c}_blue" in files or f"{c}_pointing_blue" in files or f"{c}_arguing_blue" in files):
             return c
     return None

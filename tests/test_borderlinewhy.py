@@ -2184,6 +2184,8 @@ def test_a_local_is_one_of_the_owners_characters():
     assert blue.tobytes() != red.tobytes()
     # the guard's poses (character_pointing_<coat>, character_arguing_<coat>): "point" for a shouted line
     assert bw_local.character("guard", "b") == "@character:red"
+    assert bw_local.character("merchant_arab", "b") == "@merchant_arab:red"  # the Middle Eastern look (2026-11-06)
+    assert bw_local.character("merchants_arab", "a") == "@merchant_arab:blue"  # a plural keeps the look
     assert {"pointing_red", "arguing_blue"} <= set(bw_local.family_frames("character", 250))
     point, argue = (Image.new("RGBA", (600, 600)) for _ in range(2))
     bw_local.draw(point, "@character:red", (300, 300), 250, 3.0, 0.0, "point", 2.0)
