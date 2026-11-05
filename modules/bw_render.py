@@ -939,7 +939,8 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     chains, mix = ["[1:a]apad[v]"], ["[v]"]
     if music is not None and music.is_file():
         cmd += ["-stream_loop", "-1", "-i", str(music)]
-        chains.append(f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - 1.5):.2f}:d=1.5[m]")
+        fade = 1.5 if spec.scenes and spec.scenes[-1].kind == "end" else 0.4  # a looping Short keeps its music to the cut
+        chains.append(f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - fade):.2f}:d={fade}[m]")
         mix.append("[m]")
     sfx = None
     if spec.sfx:
@@ -1083,5 +1084,6 @@ def spec_from_dict(data: dict[str, Any], words: list[Word]) -> Spec:
             lines[-1].append(w)
     return Spec(scenes, [w for w in words if not w.who], cover=data.get("cover_text", ""), theme=theme, seed=seed,
                 look=data.get("look") or "flat", brand=bool(data.get("brand")), lines=lines,
-                hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0),
+                hold=max([float(s.get("hold") or 0) for s in data["scenes"] if s.get("kind") == "end"], default=0.0)
+                or float(data.get("hold") or 0),  # a looping Short's short tail (bw_channel.LOOP_HOLD)
                 hook=dict(data.get("hook") or {}), style=str(data.get("style") or ""))

@@ -40,7 +40,9 @@ CATEGORY = "27"  # Education
 DEFAULT_SLOTS = "14:30,23:00"  # two a day, like the other channels (BW_SLOTS, in Settings.timezone)
 DEFAULT_LEAD = 8  # hours before the slot the video is made, so there is time to approve it (BW_LEAD)
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
-MIN_SECONDS, MAX_SECONDS = 30.0, 60.0  # aimed at 45-55 s (bw_script.MAX_WORDS, SPOKEN_WORDS); longer ones lost half their viewers
+MIN_SECONDS, MAX_SECONDS = 22.0, 60.0  # aimed at 30-40 s since 2026-11-05 (bw_script.MAX_WORDS, SPOKEN_WORDS); longer ones lost half their viewers
+SHORT_PACE = 1.12  # a Short's voice (narrator and mascot) this much quicker than a long video's (BW_SHORT_PACE; the owner asked for higher energy, 2026-11-05)
+LOOP_HOLD = 0.35  # a Short without the outro ends this soon after its last word, so the replay starts at once
 # an attempts Short (modules.bw_whatif, the war map) is a list of fast mini-stories: 70-90 s, like the 6M-view one
 LONGER = {"attempts": (50.0, 95.0)}
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
@@ -432,6 +434,12 @@ def with_credits(description: str, spec: bw_render.Spec) -> str:
     return f"{description}\n\n{credits}" if credits else description
 
 
+def outro_on() -> bool:
+    """A Short's subscribe outro (the mascot's last line and the button); off by default since 2026-11-05 so a Short
+    loops. BW_OUTRO=on brings it back. Long videos always keep theirs (their end screen)."""
+    return _on("BW_OUTRO", "0")
+
+
 def sfx_on() -> bool:
     """The code-made sound effects under the voice (modules.bw_sfx); BW_SFX=off drops them."""
     return _on("BW_SFX")
@@ -442,16 +450,17 @@ def brand_on() -> bool:
     return setting("BW_BRAND", "on").lower() not in ("off", "0", "no", "false")
 
 
-def record_voice(text: str, out: Path, progress=lambda m: None, who: str = "", unload: bool = True) -> list[bw_render.Word]:
+def record_voice(text: str, out: Path, progress=lambda m: None, who: str = "", unload: bool = True,
+                 pace: float = 1.0) -> list[bw_render.Word]:
     """Kokoro (the hub's GPU voice) when it is installed, else the Edge voice. `who`: "" the narrator, "panda" the
-    mascot (its own voice, made higher and quicker by record_script)."""
+    mascot (its own voice, made higher and quicker by record_script). `pace` quickens it (a Short: SHORT_PACE)."""
     from trendclip import kokoro_voice
 
     engine = setting("BW_TTS_ENGINE", "kokoro" if kokoro_voice.available() else "edge").lower()
     if engine == "kokoro":
         voice = setting("BW_PANDA_VOICE", PANDA_VOICE) if who else setting("BW_TTS_VOICE", DEFAULT_VOICE)
         progress(f"Recording the {'mascot' if who else 'narration'} (Kokoro {voice})")
-        words = kokoro_voice.synthesize(text, out, voice, float(setting("BW_TTS_SPEED", "1.0")))
+        words = kokoro_voice.synthesize(text, out, voice, round(float(setting("BW_TTS_SPEED", "1.0")) * pace, 3))
         if unload:
             kokoro_voice.unload()
     else:
@@ -459,7 +468,10 @@ def record_voice(text: str, out: Path, progress=lambda m: None, who: str = "", u
 
         voice = setting("BW_PANDA_EDGE_VOICE", "en-US-AnaNeural") if who else setting("BW_EDGE_VOICE", "en-US-AndrewNeural")
         progress(f"Recording the {'mascot' if who else 'narration'} ({voice})")
-        words = voiceover.synthesize(text, out, voice, setting("BW_TTS_RATE", "+8%"))
+        rate = setting("BW_TTS_RATE", "+8%")
+        if pace != 1.0:  # Edge takes a percentage: +8% at pace 1.12 is +21%
+            rate = f"{round((1 + float(rate.strip().rstrip('%')) / 100) * pace * 100 - 100):+d}%"
+        words = voiceover.synthesize(text, out, voice, rate)
     return [bw_render.Word(w.text, float(w.start), float(w.end), who) for w in words]
 
 
@@ -472,16 +484,16 @@ def _pcm(path: Path, filters: str = "") -> bytes:
     return subprocess.run(cmd, capture_output=True, check=True).stdout
 
 
-def record_script(script: dict, out: Path, progress=lambda m: None) -> list[bw_render.Word]:
+def record_script(script: dict, out: Path, progress=lambda m: None, pace: float = 1.0) -> list[bw_render.Word]:
     """The narration, with the mascot's lines (a scene's ask / react, modules.bw_brand) in its own voice between the
-    narrator's parts: one MP3 and its timed words, the mascot's marked who="panda"."""
+    narrator's parts: one MP3 and its timed words, the mascot's marked who="panda". `pace` quickens both voices."""
     import subprocess
 
     from modules import bw_brand
 
     parts = bw_brand.dialogue(script)
     if all(not who for who, _ in parts):
-        return record_voice(script["narration"], out, progress)
+        return record_voice(script["narration"], out, progress, pace=pace)
     pitch = float(setting("BW_PANDA_PITCH", "1.22"))
     speed = float(setting("BW_PANDA_SPEED", "1.08"))
     gap = b"\0\0" * int(VOICE_RATE * bw_brand.PANDA_GAP)
@@ -490,7 +502,7 @@ def record_script(script: dict, out: Path, progress=lambda m: None) -> list[bw_r
     try:
         for k, (who, text) in enumerate(parts):
             tmp = out.with_name(f"{out.stem}.part{k}.mp3")
-            got = record_voice(text, tmp, progress, who=who, unload=False)
+            got = record_voice(text, tmp, progress, who=who, unload=False, pace=pace)
             # the mascot's voice: pitched up by `pitch` (which also quickens it by `pitch`), then retimed to `speed`
             raw = _pcm(tmp, f"asetrate={VOICE_RATE * pitch:.0f},aresample={VOICE_RATE},atempo={speed / pitch:.4f}" if who else "")
             if who and pcm:
@@ -706,13 +718,16 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     script.setdefault("brand", brand_on())
     from modules import bw_brand
 
-    script = bw_brand.add_outro(script)
+    if outro_on():
+        script = bw_brand.add_outro(script)
+    else:  # no subscribe outro: the Short ends on its last line and loops (a third of the viewers left at the outro, 2026-11-05)
+        script = {**script, "hold": LOOP_HOLD}
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.1, "Recording the narration")
     if voice:
         words = voice(script["narration"], work / "voice.mp3", lambda m: progress(0.1, m))
     else:
-        words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m))
+        words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m), pace=float(setting("BW_SHORT_PACE", str(SHORT_PACE))))
     spec = bw_render.spec_from_dict(script, words)
     fit = FIT_LONGER.get(script.get("kind") or "", FIT_SECONDS)
     if spec.duration > fit:

@@ -32,9 +32,10 @@ SOURCE_CHARS = 7000
 MIN_SOURCE_CHARS = 1200
 MAX_FETCH = 10  # cited pages tried per topic
 MAX_SOURCES = 4  # outside pages kept besides Wikipedia
-MIN_WORDS, MAX_WORDS = 80, 100  # the narrator's part; with the mascot and the end card a Short is 45-55 s (never over 60):
-# the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31); 115-120 words still came out at 60-67 s
-SPOKEN_WORDS = 120  # the narration and the mascot's lines together (about 52 s spoken)
+MIN_WORDS, MAX_WORDS = 60, 80  # the narrator's part; with the mascot a Short is 30-40 s (never over 60):
+# the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31); a 50 s what-if lost half its viewers
+# between seconds 3 and 15 and a third at its subscribe outro (2026-11-05): shorter, faster (bw_channel.SHORT_PACE), looping
+SPOKEN_WORDS = 100  # the narration and the mascot's lines together (about 37 s spoken at the Short's pace)
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 1  # a Short's static title cards: the first card lost viewers in 4 of the first 5 Shorts (2026-11-01)
@@ -483,6 +484,9 @@ HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
   "This is Point Roberts." or "It is called Pheasant Island." (the map already shows its name).
 - The title is a short question under 45 characters that names the place ("Why Does Kentucky Own This Island?"):
   the feed cuts longer ones. cover_text is the hook in 3-6 big words on the first frame, not the title again.
+- THE PACE: the answer is moving on the map by second 8: at most 2 short sentences of background before it. Every
+  scene is one sentence (6-14 words) and brings something new to the map (a line, a flag, a transfer, a label, a
+  person), so the picture changes every 2-3 seconds. No sentence that only sets the scene.
 - The flash-forward: in the first 2 seconds the video shows where the story ends, then goes back to the start.
   hook_scene is the number of a later map scene whose finished map shows the outcome (the pirates gone, the border
   drawn, the land in its new owner's flag, the what-if's new map); hook_after is 1-3 words stamped on it ("Day 85",
@@ -503,7 +507,7 @@ animated maps. Today's question: "{question}"
 Use ONLY the sources below. Do not add facts, numbers, names, dates or quotes that are not in them. If they cannot
 support a clear, true answer, set usable to false and say why.
 
-THE NARRATION ({min_words}-{max_words} words, about 35-45 seconds read aloud; with the mascot the Short is 45-55 seconds and never over 60:
+THE NARRATION ({min_words}-{max_words} words, about 25-30 seconds read aloud; with the mascot the Short is 30-40 seconds and never over 60:
 short Shorts get watched to the end and replayed)
 - Start straight away with the specific question or the surprising fact. No greeting, no "Did you know", no "You won't
   believe", no "Let's dive in".

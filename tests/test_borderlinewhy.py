@@ -151,7 +151,7 @@ def _research():
                                                          bw_script.Source(2, "https://www.mnhs.org/angle", "MNHS", SOURCE_2)])
 
 
-def _draft(narration_words: int = 90, quote_ok: bool = True) -> bw_script.Draft:
+def _draft(narration_words: int = 70, quote_ok: bool = True) -> bw_script.Draft:
     filler = " ".join(["The map shows the lake and the border clearly."] * ((narration_words - 20) // 9))
     scenes = [
         bw_script.SceneDraft(kind="map", narration="There is a notch on top of Minnesota.", focus=["Lake of the Woods"],
@@ -365,7 +365,7 @@ def test_make_records_the_video(settings, tmp_path, world):
     assert rendered and rendered[0].scenes[0].view is not None
     saved = bw_channel.load_info(job.key, tmp_path)
     assert saved["title"] == SCRIPT["title"] and saved["check"] == []
-    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 - bw_render.TAIL + 0.5)  # ends 0.5 s after the outro's last word
+    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 - bw_render.TAIL + bw_channel.LOOP_HOLD)  # no outro: it loops
     assert (tmp_path / job.key / "script.json").is_file()
     assert bw_channel.videos(tmp_path)[0]["key"] == job.key
     assert "Northwest Angle" in bw_topics.load(tmp_path).used  # the script's topic is never made again
@@ -1731,7 +1731,7 @@ def test_the_whole_short_stays_under_a_minute(world):
     assert bw_script.check(draft, _research(), _find(world)) == []  # 2 lines, within the words
     draft.scenes[3].ask = "Hold on, why did nobody check the river first?"
     problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
-    assert "the mascot has 3 lines (at most 2)" in problems and "words together (at most 120" in problems
+    assert "the mascot has 3 lines (at most 2)" in problems and f"words together (at most {bw_script.SPOKEN_WORDS}" in problems
     assert bw_channel.MAX_SECONDS == 60.0 and bw_channel.check_video({"duration_seconds": 63, "sources": [1, 2]})
 
 
@@ -2184,3 +2184,29 @@ def test_a_local_is_one_of_the_owners_characters():
     assert calm.tobytes() != played.tobytes() != rest.tobytes()  # the stance, the happy jump, its last frame
     assert bw_local.variant("scholar_writing", "shocked") == "surprised"  # the professor's surprised head
     assert bw_local.variant("sailor_waving", "shocked") is None  # the sailor has none yet: a burst pops over his head
+
+
+def test_a_short_speaks_faster_and_loops_without_the_outro(monkeypatch, tmp_path):
+    """The owner asked for higher energy (2026-11-05): a Short's voices run at SHORT_PACE (Kokoro's speed, or Edge's
+    rate percentage), a long video's at 1.0; a Short has no subscribe outro unless BW_OUTRO is on, and ends LOOP_HOLD
+    after its last word."""
+    from trendclip import kokoro_voice, voiceover
+
+    asked = {}
+    values = {"BW_TTS_ENGINE": "edge", "BW_TTS_RATE": "+8%"}
+    monkeypatch.setattr(bw_channel, "setting", lambda name, default="": values.get(name, default))
+    monkeypatch.setattr(voiceover, "synthesize", lambda text, out, voice, rate="+0%", **k: asked.setdefault("edge", []).append(rate) or [])
+    bw_channel.record_voice("Hello there.", tmp_path / "a.mp3", pace=1.12)
+    bw_channel.record_voice("Hello there.", tmp_path / "b.mp3")
+    assert asked["edge"] == ["+21%", "+8%"]
+    values["BW_TTS_ENGINE"] = "kokoro"
+    monkeypatch.setattr(kokoro_voice, "synthesize", lambda text, out, voice, speed=1.0: asked.setdefault("kokoro", []).append(speed) or [])
+    monkeypatch.setattr(kokoro_voice, "unload", lambda: None)
+    bw_channel.record_voice("Hello there.", tmp_path / "c.mp3", pace=bw_channel.SHORT_PACE)
+    assert asked["kokoro"] == [pytest.approx(1.12)]
+    assert not bw_channel.outro_on()
+    values["BW_OUTRO"] = "on"
+    assert bw_channel.outro_on()
+    spec = bw_render.spec_from_dict({"title": "t", "hold": bw_channel.LOOP_HOLD, "scenes": [{"kind": "map", "narration": "Russia sold Alaska."}]},
+                                    [bw_render.Word("Russia", 0.0, 0.4), bw_render.Word("sold", 0.4, 0.8), bw_render.Word("Alaska.", 0.8, 1.4)])
+    assert spec.duration == pytest.approx(1.4 + bw_channel.LOOP_HOLD)
