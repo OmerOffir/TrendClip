@@ -283,7 +283,7 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         if req.stickers and lib:
             progress(None, f"Placing stickers ({len(lib)} in the library)")
         cta = None
-        if req.cta_sticker:
+        if req.cta_sticker and req.mode != "gamer":  # a Gamer IQ level ends on its ask, no subscribe button (owner, 2026-11-05)
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
         reactions = list(req.reactions)
         if req.flashes and quiz.COUNTDOWN in req.script and not any(r.word == "Three" for r in reactions):
