@@ -1460,6 +1460,11 @@ class FxRenderer(Renderer):
         stood = [xy for el in scene.elements if el.kind in ("icon", "local") and el.at <= t + 0.5
                  and (xy := self._spots.get(id(el)) or (self.anchor(cam, el) if el.feature is not None else None))]
         crowded = lambda xy: any(math.hypot(xy[0] - q[0], xy[1] - q[1]) < 230 for q in stood)  # a character or icon there
+
+        def clear(xy, name: str, size: int) -> bool:  # whole on the screen, off the mascot's corner and the captions
+            half = bw_render.font(size).getlength(name.upper()) / 2 + 30
+            x, y = xy
+            return half <= x <= W - half and HEADLINE_BOTTOM - 60 <= y <= 1280 and not (x - half < 470 and y > 1000)
         named = 0
         for el in sorted(scene.elements, key=lambda e: e.at):
             if el.kind in ("line", "arrow") and el.feature is not None and el.feature_to is not None:
@@ -1470,13 +1475,14 @@ class FxRenderer(Renderer):
                     x, y = cam.pt(*feat.label_point())
                     r = 13 * backout((t - at) / 0.4)
                     d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, int(255 * a)), outline=(0, 0, 0, int(255 * a)), width=4)
-                    if key(feat) not in taken and not crowded((x, y)):
+                    if key(feat) not in taken and not crowded((x, y)) and clear((x, y + (58 if k else -58)), feat.name, 42):
                         text(ov, (x, y + (58 if k else -58)), feat.name.upper(), 42, a=a, max_width=W - 80)
                     taken.add(key(feat))
-            elif el.kind in self.NAMED_KINDS and el.feature is not None and key(el.feature) not in taken and named < self.MAX_NAMES:
+            elif (el.kind in self.NAMED_KINDS and el.feature is not None and key(el.feature) not in taken and named < self.MAX_NAMES
+                  and not el.opts.get("_badge") and not el.opts.get("_held")):  # a war side's flag badge names it already
                 taken.add(key(el.feature))
                 xy = cam.pt(*el.feature.label_point())
-                if crowded(xy):
+                if crowded(xy) or not clear(xy, el.feature.name, 46):
                     continue
                 named += 1
                 a = ramp(t, el.at + 0.6, 0.4)
