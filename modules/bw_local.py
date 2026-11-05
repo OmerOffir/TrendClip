@@ -128,6 +128,7 @@ def draw(ov: Image.Image, code: str, xy: tuple[float, float], size: int, t: floa
     s = bw_fx.backout(u)
     reacted = bool(mood) and mood_at is not None and t >= mood_at
     if code.startswith("@"):  # a mood family: the calm stance, then the mood GIF once, resting on its last frame
+        size = round(size * 1.3)  # as tall as the other stickers read (bw_fx fits those a third bigger)
         fam = family_frames(code[1:], size)
         clip = fam.get(FAMILY_MOODS.get(mood, "")) if reacted else None
         if clip is None:
