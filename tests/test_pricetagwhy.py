@@ -6,7 +6,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from modules import bw_brand, bw_render, pw_channel, pw_render
+from modules import bw_brand, bw_render, pw_cast, pw_channel, pw_render
 
 
 FIRST = pw_channel.SCRIPTS_DIR / "001-arizona-99c.json"
@@ -717,7 +717,16 @@ def test_the_story_scenes_draw_the_cast_the_math_and_the_bars_on_the_narrator_s_
     pw_render.restyle(spec)
     r = pw_render.PwRenderer(spec)
     cast, step, bars, ask = r.drawn[0], r.drawn[2], r.drawn[5], r.drawn[6]
-    assert cast.late >= 4 * 13 and all(it["at"] < 0 for it in cast.items[:cast.late])  # four people on the first frame
+    assert cast.late >= 4 * 9 and all(it["at"] < 0 for it in cast.items[:cast.late])  # four people on the first frame
+    # the bean-head cast lives (modules.pw_cast): four people, their faces on the first frame, the moods on the figures
+    assert [st["k"] for st in cast.cast] == [0, 1, 2, 3] and all(st["kind"] == "person" for st in cast.cast)
+    moods = {st["k"]: [m["expr"] for m in pw_cast.resolve(st["moods"], cast.items)] for st in cast.cast}
+    assert moods[0][-1] == "sad" and moods[3][-1] == "grin" and moods[1][-1] == moods[2][-1] == "shocked"
+    who = next(st for st in step.cast if st["kind"] == "person")
+    assert [m["expr"] for m in pw_cast.resolve(who["moods"], step.items)] == ["think", "smile", "grin", "smug"]
+    assert [st["kind"] for st in bars.cast] == ["head"] * 4 and [st["kind"] for st in ask.cast] == ["head"] * 4
+    frame = cast.frame(0.0)
+    assert frame.getpixel((int(cast.cast[0]["dx"] + 62 * cast.cast[0]["scale"]), int(cast.cast[0]["dy"] + 56 * cast.cast[0]["scale"])))[:3] == pw_render.INK  # a pupil
     result = next(it for it in step.items if it.get("count"))
     assert result["text"] == "$18,250" and 51.5 <= result["at"] <= 52.0  # the result lands on the spoken number
     assert [it for it in step.items if it["kind"] == "write" and it["text"] == "LEASING"]

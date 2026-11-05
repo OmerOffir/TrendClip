@@ -725,12 +725,16 @@ class Board:
                 pen = (away[0] + (s[0] - away[0]) * v, away[1] + (s[1] - away[1]) * v)
         if getattr(self, "guest_item", None) is not None and t > self.guest_item["at"]:
             self.guest(ov, self.guest_item, t)
+        self.live(ov, t)
         if pen is not None:
             draw_hand(ov, pen, t)
         if under is not None:
             img.alpha_composite(under)
         img.alpha_composite(ov)
         return img
+
+    def live(self, ov: Image.Image, t: float) -> None:
+        """What a board draws fresh on every frame, under the hand (Price Tag Why's living faces, modules.pw_cast)."""
 
     @staticmethod
     def start_of(it: dict[str, Any]) -> tuple[float, float]:

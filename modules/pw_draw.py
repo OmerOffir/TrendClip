@@ -362,18 +362,28 @@ def flower() -> Drawing:
     return d
 
 
-def person() -> Drawing:
-    """A simple standing person: round head, a shirt with a badge on the chest (the renderer writes a number on it)."""
+def body() -> Drawing:
+    """A bean-head person without the face and the arms (modules.pw_cast draws those alive): a big round head on a
+    small shirt with a badge on the chest (the renderer writes a number on it), short legs."""
     d = Drawing(160, 260)
-    shirt = [(44, 96), (116, 96), (124, 180), (36, 180), (44, 96)]
-    d.body = ellipse(80, 44, 36, 36, 180, 360, 18) + [(88, 80), (116, 96), (124, 180), (114, 250), (46, 250), (36, 180), (44, 96), (72, 80)]
+    hx, hy = 80, 58
+    shirt = [(46, 110), (114, 110), (124, 190), (36, 190), (46, 110)]
+    d.body = ellipse(hx, hy, 50, 54, 180, 360, 20) + [(130, 58), (116, 108), (124, 190), (114, 250), (46, 250), (36, 190), (44, 108), (30, 58)]
     d.washes.append((shirt, "accent"))
-    d.strokes += [(ellipse(80, 44, 36, 36), "ink"), (poly((72, 80), (72, 96)), "ink"), (poly((88, 80), (88, 96)), "ink"),
-                  (shirt, "ink"), (poly((44, 100), (14, 160)), "ink"), (poly((116, 100), (146, 160)), "ink"),
-                  (poly((40, 180), (46, 250)), "ink"), (poly((120, 180), (114, 250)), "ink"), (poly((80, 180), (80, 250)), "ink"),
-                  (ellipse(68, 38, 3, 3), "ink"), (ellipse(92, 38, 3, 3), "ink"), (ellipse(80, 48, 14, 10, 20, 160, 8), "thin"),
-                  (ellipse(80, 130, 22, 22), "ink")]
-    d.label_at = (80, 131, 60)  # the badge: the number fills it
+    d.strokes += [(ellipse(hx, hy, 50, 54, 0, 360, 40), "ink"), (shirt, "ink"),
+                  (poly((56, 190), (52, 248)), "ink"), (poly((104, 190), (108, 248)), "ink"),
+                  (poly((40, 250), (62, 250)), "ink"), (poly((98, 250), (120, 250)), "ink"),
+                  (ellipse(80, 150, 22, 22), "ink")]
+    d.label_at = (80, 151, 60)  # the badge: the number fills it
+    return d
+
+
+def person() -> Drawing:
+    """The whole bean-head person, still (the thumbnail): the body with a smiling face and hanging arms."""
+    from modules import pw_cast
+
+    d = body()
+    d.strokes += pw_cast.static_strokes()
     return d
 
 
@@ -446,7 +456,11 @@ FROM_ICON = dict(tv="tv", family="family", truck="truck", factory="factory", sto
 
 def scaled(name: str, box: tuple[float, float, float, float]) -> tuple[Drawing, float, float, float]:
     """The drawing and how it fits centred in box (x0, y0, x1, y1): (drawing, scale, dx, dy)."""
-    d = DRAWINGS[name]()
+    return fit(DRAWINGS[name](), box)
+
+
+def fit(d: Drawing, box: tuple[float, float, float, float]) -> tuple[Drawing, float, float, float]:
+    """How a drawing fits centred in box: (drawing, scale, dx, dy)."""
     x0, y0, x1, y1 = box
     k = min((x1 - x0) / d.w, (y1 - y0) / d.h)
     return d, k, x0 + ((x1 - x0) - d.w * k) / 2, y0 + ((y1 - y0) - d.h * k) / 2

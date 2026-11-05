@@ -21,6 +21,10 @@ colours, so the two channels never look alike.
   an icon it names: tv, family, truck...), so the picture explains and the words support;
 - the question stays at the top of every drawn scene, on a small price tag;
 - icons pop in on tag scenes and on boards without a drawing (Noto emoji, Apache 2.0; the owner's GIFs when one has the name);
+- the money stories' cast are bean-head cartoon people (modules.pw_cast, the look the owner asked for on 2026-11-05):
+  the hand draws the body, the face and arms live on every frame, blinking and reacting to the figures as they land
+  (sad at the small result, arms up and a grin at the big one, thinking at the start of a move, a thumbs-up on the
+  idea's name); a head stands under each bar and over each choice of the ask;
 - a scene of kind "follow" ends the video: the narrator says the follow line while the hand draws the opening again,
   so the last frame is the first one and the Short loops.
 
@@ -36,7 +40,7 @@ from typing import Any
 
 import numpy as np
 
-from modules import bw_brand, bw_fx, bw_render, pw_draw
+from modules import bw_brand, bw_fx, bw_render, pw_cast, pw_draw
 from modules.bw_render import Scene
 
 NAME = "Price Tag Why"  # spelled the same everywhere: the YouTube name, the captions, the description
@@ -214,6 +218,7 @@ class Drawn(bw_brand.Board):
     def __init__(self, scene: Scene, first: bool = False):
         o = scene.opts.get(scene.kind)
         self.items: list[dict[str, Any]] = []
+        self.cast: list[dict[str, Any]] = []  # the living people and heads (modules.pw_cast.draw), drawn every frame
         portrait = bw_render.LAYOUT == "portrait"
         self.W = bw_render.W
         # under the question header; the opening sits under the yellow hook banner (hook_banner: y 135-385) instead
@@ -226,18 +231,47 @@ class Drawn(bw_brand.Board):
         else:
             self._time(scene)
 
+    def sway(self, k: int, t: float) -> float:
+        """How far person k's drawing is up or down at t: a slow breath on their own beat, and the hop when their
+        mood changes (modules.pw_cast.pop), so the picture is never still."""
+        dy = 9 * math.sin(2.8 * t + 1.7 * k)
+        st = next((s for s in self.cast if s["kind"] == "person" and s["k"] == k), None)
+        if st is not None:
+            current, previous = pw_cast.mood_at(pw_cast.resolve(st["moods"], self.items), t)
+            if previous is not None:
+                dy += pw_cast.pop(t, current["time"])
+        return dy
+
     def frame(self, t: float):
         for it in self.items:
             if "count" in it:
                 it["text"] = counted(it, t)
             if "bob" in it:  # a person sways a little, each on their own beat, so the picture is never still
-                dy = 9 * math.sin(2.8 * t + 1.7 * it["bob"])
+                dy = self.sway(it["bob"], t)
                 if it["kind"] == "write":
                     it["y"] = it.setdefault("y0", it["y"]) + dy
                 else:
                     base = it.setdefault("base", np.array(it["pts"], dtype=float))
                     it["pts"] = base + np.array([0.0, dy])
         return super().frame(t)
+
+    def live(self, ov, t: float) -> None:
+        """The faces and arms, fresh on every frame (modules.pw_cast): a person follows their body's sway."""
+        for st in self.cast:
+            dy = self.sway(st["k"], t) if st["kind"] == "person" else 4 * math.sin(2.8 * t + 1.7 * st["k"])
+            pw_cast.draw(ov, st, self.items, t, INK, dy)
+
+    def mood(self, k: int, expr: str, pose: str = "hang", ref: int | None = None, offset: float = 0.0, at: float | None = None) -> None:
+        """Person (or head) k's mood from a moment on: when board item `ref` is done (its count-up too) plus
+        `offset`, or at an absolute time; the first mood given is there from the start."""
+        st = next(s for s in self.cast if s["k"] == k)
+        st["moods"].append({"expr": expr, "pose": pose, "ref": ref, "offset": offset, **({"at": at} if at is not None else {})})
+
+    def put_head(self, k: int, center: tuple[float, float], r: float, ref: int, expr: str = "neutral", seed: int = 0) -> None:
+        """A head alone (the bars, the ask), popping in once item `ref` starts; its face lives like a person's."""
+        scale = r / 50.0
+        self.cast.append(dict(kind="head", k=k, scale=scale, dx=center[0] - pw_cast.HEAD[0] * scale, dy=center[1] - pw_cast.HEAD[1] * scale,
+                              ref=ref, moods=[{"expr": expr, "pose": "hang", "ref": None, "at": -10.0}], seed=seed + 3 * k))
 
     def put_text(self, text: str, center: tuple[float, float], px: int, rgb, count_from: float | None = None) -> None:
         f = bw_fx.hand_font(px)
@@ -266,13 +300,16 @@ class Drawn(bw_brand.Board):
         self.put_line([(self.W / 2 - half + k * 2 * half / 30, y + 5 * math.sin(k / 4)) for k in range(31)], GREEN, 10, 0.35)
         return self.top + px + 50
 
-    def put_drawing(self, name: str, box: tuple[float, float, float, float], label: list[str] | None = None,
+    def put_drawing(self, name, box: tuple[float, float, float, float], label: list[str] | None = None,
                     accent: str = "green", seed: int = 0, seconds: float = 1.5) -> None:
         """One of modules.pw_draw's drawings, as big as fits in box: its outline (drawn in about `seconds`), its marker
         colour (under the outline), then the label."""
-        if name not in pw_draw.DRAWINGS:
+        if isinstance(name, pw_draw.Drawing):  # a drawing of the board's own (the cast's bodies)
+            d, k, dx, dy = pw_draw.fit(name, box)
+        elif name in pw_draw.DRAWINGS:
+            d, k, dx, dy = pw_draw.scaled(name, box)
+        else:
             return
-        d, k, dx, dy = pw_draw.scaled(name, box)
         at = lambda pts: [(dx + x * k, dy + y * k) for x, y in pts]
         first = len(self.items)
         total = sum(bw_brand.length(np.array(at(pts), dtype=float)) for pts, _ in d.strokes) or 1.0
@@ -421,13 +458,18 @@ class Drawn(bw_brand.Board):
 
     SHIRTS = ("green", "yellow", "red", "ink")  # one tint per person in a cast, in order
 
-    def put_person(self, k: int, name: str, box: tuple[float, float, float, float], seed: int = 0) -> float:
-        """Person k (from 0) drawn in box with their number on the badge, their name written under; returns the name's y."""
+    def put_person(self, k: int, name: str, box: tuple[float, float, float, float], seed: int = 0,
+                   expr: str = "smile", pose: str = "hang") -> float:
+        """Person k (from 0) drawn in box with their number on the badge, their name written under; returns the name's y.
+        The hand draws the body (modules.pw_draw.body); the face and arms live from the moment the head is drawn
+        (modules.pw_cast), starting in the mood given."""
         first = len(self.items)
-        self.put_drawing("person", box, [str(k + 1)], self.SHIRTS[k % len(self.SHIRTS)], seed=seed + 7 * k)
+        self.put_drawing(pw_draw.body(), box, [str(k + 1)], self.SHIRTS[k % len(self.SHIRTS)], seed=seed + 7 * k)
         for it in self.items[first:]:
             it["bob"] = k
-        _, kk, dx, dy = pw_draw.scaled("person", box)
+        _, kk, dx, dy = pw_draw.fit(pw_draw.body(), box)
+        self.cast.append(dict(kind="person", k=k, scale=kk, dx=dx, dy=dy, ref=first,  # the head's outline is the first stroke
+                              moods=[{"expr": expr, "pose": pose, "ref": None, "at": -10.0}], seed=seed + 5 * k))
         y = dy + 260 * kk + 48
         if name:
             self.put_text(name.upper(), ((box[0] + box[2]) / 2, y), fit(name.upper(), 54, box[2] - box[0] + 20), INK)
@@ -452,7 +494,8 @@ class Drawn(bw_brand.Board):
             money_y = y + 20 + h + 110
         for k, p in enumerate(people):
             x0 = 30 + k * slot
-            self.put_person(k, str(p.get("name") or ""), (x0 + 10, y + 20, x0 + slot - 10, y + 20 + h), seed=31)
+            self.put_person(k, str(p.get("name") or ""), (x0 + 10, y + 20, x0 + slot - 10, y + 20 + h), seed=31,
+                            expr="smile" if k % 2 == 0 else "neutral", pose="hang" if k % 2 == 0 else "hip")
         self.late = len(self.items)  # the people are there on the first frame (the hook, the thumbnail)
         cx = lambda k: 30 + k * slot + slot / 2
         for k, p in enumerate(people):
@@ -473,8 +516,15 @@ class Drawn(bw_brand.Board):
                 half = bw_fx.hand_font(px).getlength(r) / 2
                 x = min(max(cx(k), half + 50), self.W - half - 50)  # kept on the screen, the circle too
                 self.put_text(r, (x, res_y), px, GREEN if k == best else RED, 0.0)
+                landed = len(self.items) - 1  # the figure has counted up: the faces react to it
                 if k == best:
+                    self.mood(k, "grin", "up", ref=landed)
+                    for j in range(len(people)):  # the others gape at the big one
+                        if j != k and j not in values:
+                            self.mood(j, "shocked", "hang", ref=landed)
                     self.put_line(loop(x, res_y, half + 34, px * 0.72), GREEN, 12, 0.45)
+                else:
+                    self.mood(k, "sad", "hang", ref=landed)
         elif note:
             self.put_text(note, (self.W / 2, min(self.bottom - 40, money_y + 150)), fit(note, 72, self.W - 120), RED)
             self.items[-1]["cue"] = note.split()[0] if note.split() else ""
@@ -496,24 +546,31 @@ class Drawn(bw_brand.Board):
         math_y = (ly - 135) if lesson else self.bottom - 90  # the math box (77 up and down) clear of that line
         pictures_bottom = math_y - 97
         h = min(500.0, pictures_bottom - (y + 10))
-        h_person = min(h, math_y - 77 - 14 - 48 - (y + 10))  # the name under the person stays above the math box
-        self.put_person(n - 1, who, (40, y + 10, 370, y + 10 + h_person), seed=41)
+        h_person = min(h, math_y - 77 - 44 - 48 - (y + 10))  # the name under the person stays above the math box
+        self.put_person(n - 1, who, (40, y + 10, 410, y + 10 + h_person), seed=41, expr="think", pose="chin")  # wondering what to do
         shown = min(count, 3)  # a row of big ones (tall things use the whole height)
-        x0, x1 = 400, self.W - 40
+        x0, x1 = 430, self.W - 40
         cw = (x1 - x0) / shown
         top = y + 10 + (70 if count > shown else 0)  # room for the count in the corner
         for j in range(shown):
+            start = len(self.items)
             self.put_drawing(name, (x0 + j * cw + 8, top, x0 + (j + 1) * cw - 8, y + 10 + h), seed=51 + j,
                              seconds=0.7 if shown > 1 else 1.5)  # the same thing again and again is drawn quicker
+            if j == 0 and len(self.items) > start:
+                self.mood(n - 1, "smile", "point", ref=start)  # pointing at what they got, as it is drawn
         if count > shown:  # how many there really are, in the top right corner (the things sit centred, lower)
             self.put_text(f"x{count:,}", (x1 - 100, y + 10 + 34), 84, RED)
             self.items[-1]["cue"] = str(count)
         self.put_math(str(o.get("math") or ""), math_y)
+        result = next((j for j in range(len(self.items) - 1, -1, -1) if "count" in self.items[j]), None)
+        if result is not None:
+            self.mood(n - 1, "grin", "up", ref=result)  # the result lands: arms up
         if lesson:
             self.put_text("This is called", (self.W / 2, ly), 54, INK)
             self.items[-1]["cue"] = "called"
             self.put_text(lesson.upper(), (self.W / 2, lesson_y), lesson_px, GREEN)
             self.items[-1]["sfx"] = "ding"
+            self.mood(n - 1, "smug", "thumb", ref=len(self.items) - 1)  # the idea has a name: thumbs up
             half = bw_fx.hand_font(lesson_px).getlength(lesson.upper()) / 2 + 36
             self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, lesson_y - lesson_px * 0.62, self.W / 2 + half, lesson_y + lesson_px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
 
@@ -549,7 +606,8 @@ class Drawn(bw_brand.Board):
         top = max(values) or 1.0
         n = len(bars)
         slot = (self.W - 100) / n
-        base, roof = self.bottom - 90, y + 150
+        r = min(52.0, slot * 0.2)  # each person's head under their bar, the name under it
+        base, roof = self.bottom - 2 * r - 100, y + 150
         for k, (b, v) in enumerate(zip(bars, values)):
             cx = 50 + k * slot + slot / 2
             hgt = max(0.08, math.sqrt(v / top)) * (base - roof)
@@ -561,12 +619,15 @@ class Drawn(bw_brand.Board):
                 self.put_line(path, TINT["green" if best else "ink"], 40, 0.3)
                 self.items[-1]["under"] = True
             self.put_line(wobble(densify(box + box[:1]), seed=12 + k), GREEN if best else INK, 12, 0.5)
+            self.put_head(k, (cx, base + r + 14), r, ref=len(self.items) - 1, seed=12)  # pops in with the bar
             text = str(b.get("text") or f"{v:,.0f}")
             self.put_text(text, (cx, base - hgt - 50), fit(text, 84, slot - 10), GREEN if best else RED, 0.0)
             self.items[-1]["cue"] = re.sub(r"\D", "", text)
+            # the total lands: the big one grins, the smallest droops, the rest smile
+            self.mood(k, "grin" if best else "sad" if v <= min(values) else "smile", ref=len(self.items) - 1)
             label = str(b.get("label") or "")
             if label:
-                self.put_text(label.upper(), (cx, base + 50), fit(label.upper(), 48, slot - 10), INK)
+                self.put_text(label.upper(), (cx, base + 2 * r + 54), fit(label.upper(), 48, slot - 10), INK)
 
     def draw_ask(self, o: dict[str, Any]) -> None:
         """The question to the viewer ("Which one are you?"), the choices in circles, and the line that asks for a
@@ -581,12 +642,16 @@ class Drawn(bw_brand.Board):
         if options:
             slot = (self.W - 100) / len(options)
             r = min(90.0, slot * 0.36)
+            rh = min(44.0, slot * 0.18)  # a head over each choice: it winks when its choice is said
             for k, opt in enumerate(options):
                 cx = 50 + k * slot + slot / 2
                 self.put_line(loop(cx, y + 110, r, r), self.SHIRTS_RGB[k % len(self.SHIRTS_RGB)], 12, 0.35)
+                self.put_head(k, (cx, y + 110 + r + rh + 24), rh, ref=len(self.items) - 1, expr="smile", seed=7)
                 self.put_text(opt, (cx, y + 110), fit(opt, int(r * 1.3), r * 1.6), INK)
                 self.items[-1]["cue"] = opt
-            y += 300
+                self.mood(k, "wink", ref=len(self.items) - 1)
+                self.mood(k, "smile", ref=len(self.items) - 1, offset=0.9)
+            y += 300 + 2 * rh + 20
         if line := str(o.get("line") or ""):
             self.put_text(line, (self.W / 2, y + 40), fit(line, 76, self.W - 120), GREEN)
             self.items[-1]["cue"] = line.split()[0]
