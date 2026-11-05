@@ -1812,6 +1812,12 @@ class FxRenderer(Renderer):
                             el.opts["size"] = sz
                         break
                 self._spots[key] = min(free, key=lambda p: math.hypot(p[0] - x, p[1] - y)) if free else None
+                if off and self._spots[key] is None:  # no free slot (a battle fills the map): the nearest slot, in view anyway
+                    cx, cy = max(half + 10, min(W - half - 10, x)), max(HEADLINE_BOTTOM + half, min(H - half, y))
+                    slots = [p for p in ICON_SLOTS.get("map", ()) if all(math.hypot(p[0] - q[0], p[1] - q[1]) > 200 for q in taken)]
+                    overlap = lambda p: sum(max(0, min(p[0] + half, z[2]) - max(p[0] - half, z[0])) * max(0, min(p[1] + half, z[3]) - max(p[1] - half, z[1]))
+                                            for z in zones)  # the slot least under a battle or a word, then the nearest
+                    self._spots[key] = min(slots or ICON_SLOTS.get("map", ()), key=lambda p: (overlap(p), math.hypot(p[0] - cx, p[1] - cy)))
             if local and near and self._spots[key] is None:
                 self._spots[key] = xy0  # a side moved beside the other side keeps that spot
             if local:  # the scene's other sides are placed now too, so each side's bubble leans away from the other
