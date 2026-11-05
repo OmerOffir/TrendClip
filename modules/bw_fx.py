@@ -540,6 +540,54 @@ def icon_frame(code: str, size: int, age: float) -> tuple[Image.Image, bool]:
 _clouds: Image.Image | None = None
 
 
+LOCAL_SIZE = 250  # a local's height in pixels
+LOCAL_INK = (30, 32, 40)
+LOCAL_POSES = {"shocked": "hang", "sad": "hang", "grin": "up", "smug": "thumb", "think": "chin", "smile": "point", "neutral": "hang", "wink": "thumb"}
+_locals: dict[tuple, tuple[Image.Image, float, int]] = {}
+
+
+def local_body(size: int, flag: str, rgb: tuple[int, int, int]) -> tuple[Image.Image, float, int]:
+    """A local's still body (modules.pw_draw.body's shape: head, shirt, legs), `size` pixels tall, the shirt in the
+    flag or in the side's colour: (image, scale from drawing units, padding)."""
+    from modules import bw_brand, pw_draw
+
+    key = (size, flag, rgb)
+    if key not in _locals:
+        k, pad = size / 260, 24
+        im = Image.new("RGBA", (int(160 * k) + 2 * pad, int(260 * k) + 2 * pad), (0, 0, 0, 0))
+        d = ImageDraw.Draw(im)
+        P = lambda pts: [(pad + x * k, pad + y * k) for x, y in pts]
+        body = pw_draw.body(badge=False)
+        shirt = next(poly for poly, role in body.washes if role == "accent")
+        box = (min(x for x, _ in shirt), min(y for _, y in shirt), max(x for x, _ in shirt), max(y for _, y in shirt))
+        if flag:
+            try:
+                src = flag_image(flag)
+            except Exception:  # noqa: BLE001 - no flag file: the colour then
+                src = None
+        else:
+            src = None
+        mask = Image.new("L", im.size, 0)
+        ImageDraw.Draw(mask).polygon(P(shirt), fill=255)
+        if src is not None:
+            bw, bh = int((box[2] - box[0]) * k) + 2, int((box[3] - box[1]) * k) + 2
+            kk = max(bw / src.width, bh / src.height)
+            f = src.resize((max(1, int(src.width * kk)), max(1, int(src.height * kk))), Image.LANCZOS)
+            layer = Image.new("RGBA", im.size, (0, 0, 0, 0))
+            layer.paste(f, (int(pad + box[0] * k - (f.width - bw) / 2), int(pad + box[1] * k - (f.height - bh) / 2)))
+            im.paste(layer, (0, 0), mask)
+        else:
+            light = tuple(min(255, int(c * 0.55 + 255 * 0.45)) for c in rgb)
+            d.polygon(P(shirt), fill=light + (255,))
+        width = max(5, int(k * 5.5))
+        for pts, role in body.strokes:
+            if role == "ink" and pts is body.strokes[0][0]:  # the head: white, then its outline
+                d.polygon(P(pts), fill=(250, 250, 246, 255))
+            bw_brand.marker(im, P(pts), LOCAL_INK, width if role != "thin" else max(3, int(width * 0.6)), shade=False)
+        _locals[key] = (im, k, pad)
+    return _locals[key]
+
+
 def clouds() -> Image.Image:
     """Soft white clouds, three screens wide; a frame shows the part the wind has reached."""
     global _clouds
@@ -1543,6 +1591,13 @@ class FxRenderer(Renderer):
             ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in busy]]))
             cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
             zones = self.flag_zones(cam, scene) + self.text_zones(cam, i, scene)
+            for e in scene.elements[:scene.elements.index(el)]:  # an icon or a local placed before this one: not on top of it
+                if e.kind in ("icon", "local") and (e.feature is not None or "at" in e.opts):
+                    ex, ey = self._spots.get(id(e)) or self.anchor(cam, e)
+                    eh = int(e.opts.get("size", LOCAL_SIZE if e.kind == "local" else 190)) * 0.5
+                    if e.kind == "local" and not self._spots.get(id(e)):
+                        ey -= eh * 0.84
+                    zones.append((ex - eh, ey - eh, ex + eh, ey + eh))
             half = int(el.opts.get("size", 190)) * 0.65
             hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
             xy0 = self.anchor(cam, el) if el.feature is not None else xy
@@ -1570,6 +1625,12 @@ class FxRenderer(Renderer):
             self.icon(ov, el, self.icon_spot(i, scene, el, xy), t)
         elif el.kind == "pole":
             self.pole(ov, el, self.anchor(cam, el), t)
+        elif el.kind == "local":
+            i = next(k for k, s in enumerate(self.spec.scenes) if s is scene)
+            x, y = self.anchor(cam, el)
+            if el.feature is not None:
+                y -= int(el.opts.get("size", LOCAL_SIZE)) * 0.42  # the feet on the place
+            self.local(ov, el, self.icon_spot(i, scene, el, (x, y)), t, scene)
         elif el.kind == "route":
             self.route(ov, cam, el, t)
         elif el.kind == "army" and el.feature is not None and el.feature_to is not None:
@@ -1648,6 +1709,61 @@ class FxRenderer(Renderer):
             ov.alpha_composite(im, (int(x - w / 2), int(y - h / 2)))
         if el.text:
             text(ov, (xy[0], xy[1] + size * 0.75), el.text.upper(), 46, a=min(1.0, max(0.0, u - 0.5)), max_width=W - 80)
+
+    def react_time(self, el: Element, scene: Scene) -> float:
+        """When a local's mood changes: the narration word "react" (after it appeared), else 0.9 s after it popped in."""
+        if "_react" not in el.opts:
+            cue = bw_render._tok(str(el.opts.get("react") or ""))
+            hit = next((w.start for w in self.spec.words if scene.start - 0.05 <= w.start < scene.end and w.start >= el.at - 0.05 and cue
+                        and (bw_render._tok(w.text) == cue or (len(cue) > 3 and bw_render._tok(w.text).startswith(cue)))), None)
+            el.opts["_react"] = hit if hit is not None else el.at + 0.9
+        return el.opts["_react"]
+
+    def local(self, ov: Image.Image, el: Element, xy: tuple[float, float], t: float, scene: Scene) -> None:
+        """A local: a bean-head person (modules.pw_cast) standing on the map, popping in on the cue, blinking and
+        swaying, who changes mood on the "react" word: "mood" (shocked, sad, grin, smug, think, smile) with the arm
+        pose that goes with it, and a hop. The shirt is "flag" when given, else the side's colour. "text" is a
+        caption under the feet ("a villager")."""
+        from modules import bw_brand, pw_cast
+
+        u = (t - el.at) / 0.4
+        if u <= 0:
+            return
+        s = backout(u)
+        size = int(el.opts.get("size", LOCAL_SIZE))
+        body, k, pad = local_body(size, str(el.opts.get("flag") or ""), self.color(el.color if el.color != "a" else "gold"))
+        react = self.react_time(el, scene)
+        start, mood = str(el.opts.get("start") or "neutral"), str(el.opts.get("mood") or "shocked")
+        reacted = t >= react
+        expr = mood if reacted else start
+        pose = str(el.opts.get("pose") or LOCAL_POSES.get(expr, "hang"))
+        before = LOCAL_POSES.get(start, "hang")
+        lines, dots = pw_cast.face(expr, t, int(el.at * 10) % 7)
+        lines += pw_cast.arms(pose, before if reacted else pose, min(1.0, (t - react) / pw_cast.SWAP) if reacted else 1.0)
+        im = body.copy()
+        d = ImageDraw.Draw(im)
+        P = lambda pts: [(pad + x * k, pad + y * k) for x, y in pts]
+        width = max(5, int(k * 5.5))
+        for pts, role in lines:
+            bw_brand.marker(im, P(pts), LOCAL_INK, width if role in ("ink", "arm") else max(3, int(width * 0.6)), shade=False)
+            if role == "arm":
+                x, y = P(pts)[-1]
+                r = width * 0.62
+                d.ellipse([x - r, y - r, x + r, y + r], fill=LOCAL_INK + (255,))
+        for (cx, cy), r in dots:
+            (x, y), rr = P([(cx, cy)])[0], r * k
+            d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=LOCAL_INK + (255,))
+        if s < 1:
+            im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))), Image.BILINEAR)
+        hop = pw_cast.pop(t, react) if reacted else 0.0
+        x, y = xy[0], xy[1] + 5 * math.sin(2.4 * t + el.at) + hop
+        w, h = im.size
+        sh = Image.new("RGBA", (w, max(2, h // 5)), (0, 0, 0, 0))
+        ImageDraw.Draw(sh).ellipse([w * 0.2, 0, w * 0.8, max(2, h // 5) - 1], fill=(0, 0, 0, int(90 * min(1, s))))
+        ov.alpha_composite(sh.filter(ImageFilter.GaussianBlur(6)), (int(x - w / 2), int(xy[1] + h * 0.42)))
+        ov.alpha_composite(im, (int(x - w / 2), int(y - h / 2)))
+        if el.text:
+            text(ov, (xy[0], xy[1] + size * 0.62), el.text.upper(), 44, a=min(1.0, max(0.0, u - 0.5)), max_width=W - 80)
 
     def pole(self, ov: Image.Image, el: Element, xy: tuple[float, float], t: float) -> None:
         """A flag on a pole that rises out of the ground and waves."""

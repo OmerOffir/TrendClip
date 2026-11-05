@@ -362,9 +362,9 @@ def flower() -> Drawing:
     return d
 
 
-def body() -> Drawing:
+def body(badge: bool = True) -> Drawing:
     """A bean-head person without the face and the arms (modules.pw_cast draws those alive): a big round head on a
-    small shirt with a badge on the chest (the renderer writes a number on it), short legs."""
+    small shirt with a badge on the chest (the renderer writes a number on it; a map's local has none), short legs."""
     d = Drawing(160, 260)
     hx, hy = 80, 58
     shirt = [(46, 110), (114, 110), (124, 190), (36, 190), (46, 110)]
@@ -372,9 +372,10 @@ def body() -> Drawing:
     d.washes.append((shirt, "accent"))
     d.strokes += [(ellipse(hx, hy, 50, 54, 0, 360, 40), "ink"), (shirt, "ink"),
                   (poly((56, 190), (52, 248)), "ink"), (poly((104, 190), (108, 248)), "ink"),
-                  (poly((40, 250), (62, 250)), "ink"), (poly((98, 250), (120, 250)), "ink"),
-                  (ellipse(80, 150, 22, 22), "ink")]
-    d.label_at = (80, 151, 60)  # the badge: the number fills it
+                  (poly((40, 250), (62, 250)), "ink"), (poly((98, 250), (120, 250)), "ink")]
+    if badge:
+        d.strokes.append((ellipse(80, 150, 22, 22), "ink"))
+        d.label_at = (80, 151, 60)  # the badge: the number fills it
     return d
 
 

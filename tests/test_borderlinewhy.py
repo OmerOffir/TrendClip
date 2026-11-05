@@ -2129,3 +2129,33 @@ def test_squads_wear_their_sides_colour_and_an_ancient_side_gets_no_flag(world, 
         pa, pb = np.asarray(a).astype(int), np.asarray(b).astype(int)
         on = pa[..., 3] > 0
         assert pa[on][:, 2].mean() > pa[on][:, 0].mean() and pb[on][:, 0].mean() > pb[on][:, 2].mean()  # blue-ish vs red-ish
+
+
+def test_a_local_stands_on_the_map_and_changes_face_on_the_react_word(world, fx_offline):
+    """A bean-head person (modules.pw_cast) on a place: pops in on the cue, keeps its mood from the react word on
+    (the pose goes with the mood), stands clear of an icon on the same place, and the rules check its mood."""
+    from modules import bw_fx, bw_script
+
+    data = _spec_dict()
+    data["scenes"][0]["elements"] += [{"kind": "icon", "place": "Minnesota", "icon": "question"},
+                                      {"kind": "local", "place": "Minnesota", "cue": "notch", "react": "map", "mood": "grin", "text": "a farmer",
+                                       "flag": "Flag of Canada.svg"}]
+    words = _words(" ".join(s["narration"] for s in data["scenes"]))
+    spec = bw_render.spec_from_dict(data, words)
+    assert bw_render.prepare(spec) == []
+    scene = spec.scenes[0]
+    local = next(e for e in scene.elements if e.kind == "local")
+    assert local.opts["mood"] == "grin" and local.at <= next(w.start for w in words if w.text == "notch")  # a late cue pops in earlier (STAY_KINDS)
+    r = bw_fx.FxRenderer(spec)
+    react = r.react_time(local, scene)
+    assert react == next(w.start for w in words if w.text == "map.")  # "map" matches the spoken "map."
+    assert react > local.at
+    before = r.scene_frame(0, local.at + 0.5)
+    after = r.scene_frame(0, react + 0.5)
+    assert before.size == after.size == (bw_render.W, bw_render.H) and before.tobytes() != after.tobytes()
+    icon = next(e for e in scene.elements if e.kind == "icon")
+    ix, iy = r._spots.get(id(icon)) or r.anchor(r.camera(0, react), icon)
+    lx, ly = r._spots.get(id(local)) or (0, 0)
+    assert (lx, ly) != (0, 0) and (abs(lx - ix) > 150 or abs(ly - iy) > 150)  # the local moved off the icon
+    el = bw_script.ElementDraft(kind="local", place="Minnesota", mood="angry", react="map")
+    assert el.mood == "angry" and "angry" not in bw_script.LOCAL_MOODS and "grin" in bw_script.LOCAL_MOODS  # the check names the moods

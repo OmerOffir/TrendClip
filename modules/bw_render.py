@@ -72,10 +72,10 @@ ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.tt
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
-                 "transfer", "counter", "army", "battle")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
-MIN_ON_SCREEN = 2.0  # seconds an icon or a flag pole stays before its scene cuts away (a late cue pops in earlier)
-STAY_KINDS = ("icon", "pole")
-NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter")  # their place, if any, is optional
+                 "transfer", "counter", "army", "battle", "local")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+MIN_ON_SCREEN = 2.0  # seconds an icon, a flag pole or a local stays before its scene cuts away (a late cue pops in earlier)
+STAY_KINDS = ("icon", "pole", "local")
+NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter", "local")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
 THEMES: dict[str, dict[str, tuple[int, int, int]]] = {
