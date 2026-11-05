@@ -32,10 +32,11 @@ SOURCE_CHARS = 7000
 MIN_SOURCE_CHARS = 1200
 MAX_FETCH = 10  # cited pages tried per topic
 MAX_SOURCES = 4  # outside pages kept besides Wikipedia
-MIN_WORDS, MAX_WORDS = 60, 80  # the narrator's part; with the mascot a Short is 30-40 s (never over 60):
+MIN_WORDS, MAX_WORDS = 95, 115  # the narrator's part; with the mascot a Short is 45-55 s at its quicker pace (never over 60):
 # the 50-54 s Shorts were watched past their end, 59 s+ lost half (2026-10-31); a 50 s what-if lost half its viewers
-# between seconds 3 and 15 and a third at its subscribe outro (2026-11-05): shorter, faster (bw_channel.SHORT_PACE), looping
-SPOKEN_WORDS = 100  # the narration and the mascot's lines together (about 37 s spoken at the Short's pace)
+# between seconds 3 and 15 (a still photo) and a third at its subscribe outro (2026-11-05): faster (bw_channel.SHORT_PACE),
+# looping, something moving at every moment; the owner keeps 45-55 s for the channel (a 30 s trial, 2026-11-05)
+SPOKEN_WORDS = 135  # the narration and the mascot's lines together (about 50 s spoken at the Short's pace)
 MAX_SENTENCE_WORDS = 24
 MIN_SCENES, MAX_SCENES = 5, 14
 MAX_CARDS = 1  # a Short's static title cards: the first card lost viewers in 4 of the first 5 Shorts (2026-11-01)
@@ -509,7 +510,7 @@ animated maps. Today's question: "{question}"
 Use ONLY the sources below. Do not add facts, numbers, names, dates or quotes that are not in them. If they cannot
 support a clear, true answer, set usable to false and say why.
 
-THE NARRATION ({min_words}-{max_words} words, about 25-30 seconds read aloud; with the mascot the Short is 30-40 seconds and never over 60:
+THE NARRATION ({min_words}-{max_words} words, about 38-45 seconds read aloud; with the mascot the Short is 45-55 seconds and never over 60:
 short Shorts get watched to the end and replayed)
 - Start straight away with the specific question or the surprising fact. No greeting, no "Did you know", no "You won't
   believe", no "Let's dive in".

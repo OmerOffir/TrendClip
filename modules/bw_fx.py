@@ -543,6 +543,95 @@ _clouds: Image.Image | None = None
 LOCAL_SIZE = 250  # a local's height in pixels
 
 
+NOTE_GAP = 2.4  # seconds with nothing new on screen before a note pops up (the owner, 2026-11-05: viewers left at
+# still moments, a photo held for 5 s the worst)
+NOTE_MAX = 3  # notes in one scene at most
+NOTE_STOP = {"instead", "because", "through", "between", "without", "against", "another", "nothing", "perhaps", "however",
+             "already", "several", "whether", "himself", "herself", "themselves", "someone", "anything", "everything", "the", "a", "an", "of", "and", "or", "to", "in", "on", "at", "for", "by", "with", "from", "into", "that", "this",
+             "was", "were", "is", "are", "had", "has", "would", "might", "could", "it", "its", "their", "his", "her", "they"}
+NOTE_NOT_NOUN = ("al", "ly", "ous", "ive", "ern", "ed", "ing", "ful", "ic", "ar", "ble", "less", "est", "ent", "ant")  # a word
+# ending like an adjective, adverb or verb ("official", "eastern", "declared") says little on a note
+NOTE_CAPS_SKIP = {"i", "but", "and", "so", "then", "instead", "what", "wait", "now", "today", "yes", "no", "meanwhile", "however"}
+
+
+def note_words(words: list, skip: set[str], caps: set[str] | None = None) -> list[tuple[float, str, int]]:
+    """The words worth a note, as (time, text, priority): a number with up to two words after it ("6,000 square
+    miles", "1947"); a name ("Grover Cleveland"; at a sentence's start only two capitalized words or one the
+    narration capitalizes mid-sentence too, `caps`); else a strong word ("starvation"). Never what the screen
+    already shows (`skip`, lower case)."""
+    out = []
+    caps = caps or set()
+    k = 0
+    while k < len(words):
+        w = words[k]
+        bare = w.text.strip(".,!?;:\"'()")
+        if not bare:
+            k += 1
+            continue
+        if re.search(r"\d", bare):
+            phrase, j = [bare], k
+            while len(phrase) < 3 and not re.search(r"[.,!?;:]$", words[j].text) and j + 1 < len(words):
+                nxt = words[j + 1].text.strip(".,!?;:\"'()")
+                if not nxt or nxt.lower() in NOTE_STOP or not nxt.isalpha() or nxt[0].isupper():
+                    break
+                phrase.append(nxt)
+                j += 1
+            out.append((w.start, " ".join(phrase), 0))
+            k = j + 1
+            continue
+        first = k == 0 or bool(re.search(r"[.!?]$", words[k - 1].text))
+        if bare[0].isupper() and bare.isalpha() and bare.lower() not in NOTE_CAPS_SKIP:
+            phrase, j = [bare], k
+            while j + 1 < len(words) and not re.search(r"[.,!?;:]$", words[j].text):
+                nxt = words[j + 1].text.strip(".,!?;:\"'()")
+                if not (nxt[:1].isupper() and nxt.replace(".", "").isalpha()):
+                    break
+                phrase.append(nxt)
+                j += 1
+            if not first or len(phrase) > 1 or bare.lower() in caps:
+                out.append((w.start, " ".join(phrase), 1))
+            k = j + 1
+            continue
+        if len(bare) >= 7 and bare.isalpha() and bare.islower() and bare not in NOTE_STOP and not bare.endswith(NOTE_NOT_NOUN):
+            out.append((w.start, bare, 2))
+        k += 1
+    return [(at, text, pr) for at, text, pr in out if len(text) >= 3 and text.lower() not in skip
+            and not any(text.lower() in s_ or s_ in text.lower() for s_ in skip if len(s_) >= 4)]
+
+
+def plan_notes(spec, i: int, used: set[str] | None = None) -> list[Element]:
+    """A scene's notes: while some stretch of NOTE_GAP seconds would show nothing new (no element, no mascot line,
+    and on a photo none of its own beats), the spoken number or name closest to its middle pops up on a note."""
+    scene = spec.scenes[i]
+    start, end = scene.start, scene.end
+    words = [w for w in spec.words if start <= w.start < end - 0.4]
+    skip = {str(x).strip().lower() for x in [scene.headline, scene.opts.get("caption"), *[e.text for e in scene.elements],
+                                              *[e.place for e in scene.elements], *scene.focus] if x and str(x).strip()} | (used or set())
+    caps = {w.text.strip(".,!?;:\"'()").lower() for k, w in enumerate(spec.words)
+            if k and not re.search(r"[.!?]$", spec.words[k - 1].text) and w.text[:1].isupper()}
+    cands = note_words(words, skip, caps)
+    events = {start, *[el.at for el in scene.elements if start <= el.at < end],
+              *[ln[0].start for ln in getattr(spec, "lines", []) if ln and start <= ln[0].start < end]}
+    if scene.kind == "photo":
+        events |= {start + 0.9, start + 1.6}
+    notes: list[Element] = []
+    while cands and len(notes) < NOTE_MAX:
+        ev = sorted(events)
+        gaps = [(b - a, a, b) for a, b in zip(ev, [*ev[1:], end]) if b - a > NOTE_GAP]
+        best = None
+        for _, a, b in sorted(gaps, reverse=True):
+            fits = [c for c in cands if a + 0.6 <= c[0] <= b - 0.5]
+            if fits:
+                best = min(fits, key=lambda c: (c[2], abs(c[0] - (a + b) / 2)))
+                break
+        if best is None:
+            break
+        cands.remove(best)
+        events.add(best[0])
+        notes.append(Element(kind="note", text=best[1], at=best[0], opts={"n": len(notes)}))
+    return notes
+
+
 def clouds() -> Image.Image:
     """Soft white clouds, three screens wide; a frame shows the part the wind has reached."""
     global _clouds
@@ -945,6 +1034,13 @@ class FxRenderer(Renderer):
         self.attempts = bw_render.attempt_marks(spec.words) if self.war else []
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
         self.open_view = self.opening_view() if self.LIVELY else None
+        if self.LIVELY:  # a spoken year, number or name on a note wherever nothing else would happen
+            used: set[str] = set()  # a word noted once isn't noted again
+            for i, s in enumerate(spec.scenes):
+                if s.kind in ("map", "photo") and not s.opts.get("globe"):
+                    notes = plan_notes(spec, i, used)
+                    used |= {n.text.lower() for n in notes}
+                    s.elements += notes
         self.beats = {i: self.plan_beats(i) for i, s in enumerate(spec.scenes)
                       if self.LIVELY and s.kind == "map" and not s.opts.get("globe")}
         self._badges: dict[tuple[str, int], Image.Image] = {}
@@ -1285,6 +1381,70 @@ class FxRenderer(Renderer):
         img.alpha_composite(ov)
         return img
 
+    NOTE_SLOTS = ((0.72, 230), (0.28, 230), (0.72, 430), (0.28, 430), (0.72, 640), (0.5, 330), (0.72, 880))  # (x share, y below the headline)
+
+    def note_spot(self, i: int, scene: Scene, el: Element, cam) -> tuple[float, float]:
+        """Where a map note goes: the first slot whose whole note keeps off the flags, the words, a line's named
+        ends, the characters and icons, and the notes already up, for as long as it shows (the camera keeps
+        drifting under it); else the one that overlaps least."""
+        hw, hh = min(W / 2 - 20, hand_font(94).getlength(el.text) / 2 + 60), 90
+        zones = []
+        for when in sorted({el.at, (el.at + scene.end) / 2, scene.end - 0.05}):
+            c = self.camera(i, max(scene.start, when))
+            zones += self.flag_zones(c, scene) + self.text_zones(c, i, scene)
+            for e in scene.elements:
+                if e is el:
+                    continue
+                if e.kind in ("line", "arrow") and e.feature is not None and e.feature_to is not None:
+                    for f in (e.feature, e.feature_to):
+                        fx, fy = c.pt(*f.label_point())
+                        zones.append((fx - 220, fy - 120, fx + 220, fy + 110))
+                elif e.kind in ("icon", "local", "pin", "ring", "highlight", "label") and e.feature is not None and not e.feature.parts:
+                    ex, ey = self._spots.get(id(e)) or self.anchor(c, e)
+                    zones.append((ex - 160, ey - 170, ex + 160, ey + 150))
+                elif e.kind in ("icon", "local") and self._spots.get(id(e)):
+                    ex, ey = self._spots[id(e)]
+                    zones.append((ex - 160, ey - 170, ex + 160, ey + 150))
+        main = self.main[i][0]
+        if main is not None:  # the scene's place: its target or its name
+            for when in (el.at, scene.end - 0.05):
+                mx, my = self.camera(i, max(scene.start, when)).pt(*main.label_point())
+                zones.append((mx - 200, my - 150, mx + 200, my + 130))
+        for e in scene.elements:
+            if e.kind == "note" and e is not el and e.opts.get("_xy"):
+                nx, ny = e.opts["_xy"]
+                nw = min(W / 2 - 20, hand_font(94).getlength(e.text) / 2 + 60)
+                zones.append((nx - nw, ny - hh, nx + nw, ny + hh))
+
+        def overlap(p):
+            return sum(max(0, min(p[0] + hw, z[2]) - max(p[0] - hw, z[0])) * max(0, min(p[1] + hh, z[3]) - max(p[1] - hh, z[1])) for z in zones)
+        slots = [(min(max(W * fx, hw + 20), W - hw - 20), HEADLINE_BOTTOM + dy) for fx, dy in self.NOTE_SLOTS]
+        return min(slots, key=lambda p: (overlap(p) > 0, overlap(p)))
+
+    def note(self, ov: Image.Image, el: Element, xy: tuple[float, float], t: float) -> None:
+        """A spoken number or name on a yellow note that pops in on its word, tilted, bobbing a little."""
+        u = (t - el.at) / 0.35
+        if u <= 0 or not el.text:
+            return
+        f = hand_font(94)
+        tw = int(f.getlength(el.text))
+        pad = 34
+        card = Image.new("RGBA", (tw + 2 * pad, 150), (0, 0, 0, 0))
+        g = ImageDraw.Draw(card)
+        g.rounded_rectangle([0, 0, card.width - 1, card.height - 1], 14, fill=(255, 232, 120, 245), outline=(40, 36, 30, 255), width=5)
+        g.text((card.width / 2, card.height / 2 + 4), el.text, font=f, fill=FIXED["ink"] + (255,), anchor="mm")
+        s = backout(u)
+        card = card.rotate((-5, 4, -3)[el.opts.get("n", 0) % 3], expand=True, resample=Image.BICUBIC)
+        if s < 1:
+            card = card.resize((max(1, int(card.width * s)), max(1, int(card.height * s))), Image.BILINEAR)
+        if card.width > W - 40:
+            k = (W - 40) / card.width
+            card = card.resize((int(card.width * k), int(card.height * k)), Image.BILINEAR)
+        x = min(max(xy[0], card.width / 2 + 20), W - card.width / 2 - 20)
+        y = xy[1] + 4 * math.sin(2.2 * t + el.at)
+        bw_brand.paste(ov, bw_brand.shadow(card, 10, 0.45), int(x - card.width / 2 + 8), int(y - card.height / 2 + 12))
+        bw_brand.paste(ov, card, int(x - card.width / 2), int(y - card.height / 2))
+
     # -- the places' names (the owner, 2026-11-05: scenes where one thing happens look poor) --
 
     NAMED_KINDS = ("highlight", "transfer")  # a place these light up gets its name when nothing else names it
@@ -1597,7 +1757,11 @@ class FxRenderer(Renderer):
                     for f in (e.feature, e.feature_to):
                         fx, fy = cam.pt(*f.label_point())
                         zones.append((fx - 110, fy - 90, fx + 110, fy + 90))
-            for e in scene.elements[:scene.elements.index(el)]:  # an icon or a local placed before this one: not on top of it
+            for e in scene.elements[:scene.elements.index(el)]:  # an icon, a local or a note placed before this one: not on top of it
+                if e.kind == "note" and e.opts.get("_xy"):
+                    nx, ny = e.opts["_xy"]
+                    zones.append((nx - 230, ny - 80, nx + 230, ny + 80))
+                    continue
                 if e.kind in ("icon", "local") and (e.feature is not None or "at" in e.opts):
                     ex, ey = self._spots.get(id(e)) or self.anchor(cam, e)
                     eh = int(e.opts.get("size", LOCAL_SIZE if e.kind == "local" else 190)) * 0.5
@@ -1620,6 +1784,13 @@ class FxRenderer(Renderer):
         return self._spots[key] or xy
 
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
+        if el.kind == "note":
+            if self.cam_clock is not None:  # not on the opening flash-forward's held frames of the outcome
+                return
+            if "_xy" not in el.opts:
+                el.opts["_xy"] = self.note_spot(next(k for k, s in enumerate(self.spec.scenes) if s is scene), scene, el, cam)
+            self.note(ov, el, el.opts["_xy"], t)
+            return
         if el.kind == "icon":
             i = next(k for k, s in enumerate(self.spec.scenes) if s is scene)
             xy = self.anchor(cam, el)
@@ -2219,6 +2390,13 @@ class FxRenderer(Renderer):
                 self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]),
                                                       **{"lively": self.LIVELY, **self.photo_options(scene)})
             img = self.photos[i].frame(t)
+            notes = [el for el in scene.elements if el.kind == "note"]
+            if notes:
+                ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
+                for el in notes:  # below the print (bw_photos.PhotoScene) and the captions band
+                    n = el.opts.get("n", 0)
+                    self.note(ov, el, ((W * 0.34, W * 0.68, W * 0.5)[n % 3], (1640, 1640, 1800)[n % 3]), t)
+                img.alpha_composite(ov)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         if scene.opts.get("year"):

@@ -151,7 +151,7 @@ def _research():
                                                          bw_script.Source(2, "https://www.mnhs.org/angle", "MNHS", SOURCE_2)])
 
 
-def _draft(narration_words: int = 70, quote_ok: bool = True) -> bw_script.Draft:
+def _draft(narration_words: int = 105, quote_ok: bool = True) -> bw_script.Draft:
     filler = " ".join(["The map shows the lake and the border clearly."] * ((narration_words - 20) // 9))
     scenes = [
         bw_script.SceneDraft(kind="map", narration="There is a notch on top of Minnesota.", focus=["Lake of the Woods"],
@@ -2233,3 +2233,22 @@ def test_a_short_never_shows_one_thing_alone_and_closes_on_a_ding(world):
                                      "scenes": [{"kind": "map", "narration": "Russia sold Alaska.", "react": "Wow!"}]}, words)
     assert ("ding" in [name for _, name, _ in bw_sfx.events(spec)]) and max(at for at, name, _ in bw_sfx.events(spec) if name == "ding") == pytest.approx(2.55)
     assert spec.duration == pytest.approx(2.3 + bw_channel.LOOP_HOLD)
+
+
+def test_a_still_moment_gets_a_note_with_the_spoken_number_or_name(world):
+    """Viewers left where nothing moved (a photo held for 5 s; the owner, 2026-11-05): a scene stretch of NOTE_GAP
+    seconds with nothing new gets a note with the number, name or strong word said there, never one the screen
+    already shows and never a dull adjective."""
+    from modules import bw_fx
+
+    said = "In 1850 Congress banned it, and Senator Daniel Voorhees fought the official starvation of 6,000 square miles."
+    words = [bw_render.Word(w, k * 0.5, k * 0.5 + 0.4) for k, w in enumerate(said.split())]
+    found = [(text, pr) for _, text, pr in bw_fx.note_words(words, {"congress"})]
+    assert ("1850", 0) in found and ("6,000 square miles.".rstrip("."), 0) in found and ("Senator Daniel Voorhees", 1) in found
+    assert ("starvation", 2) in found and not any(t in ("official", "Congress") for t, _ in found)
+    spec = bw_render.spec_from_dict({"title": "t", "scenes": [{"kind": "map", "narration": said, "focus": ["Minnesota"]}]}, words)
+    assert bw_render.prepare(spec) == []
+    notes = bw_fx.plan_notes(spec, 0)
+    assert notes and all(n.kind == "note" for n in notes) and len(notes) <= bw_fx.NOTE_MAX
+    times = sorted([0.0, *[n.at for n in notes], spec.scenes[0].end])
+    assert max(b - a for a, b in zip(times, times[1:])) <= bw_fx.NOTE_GAP + 1.5  # no long still stretch left

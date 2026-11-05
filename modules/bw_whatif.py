@@ -47,11 +47,11 @@ class WhatIfError(ValueError):
 PROMPT = """You write a YouTube Short for Borderline Why: geography and history told with animated maps. This one is a
 WHAT IF episode: "{question}"
 
-THE NARRATION ({min_words}-{max_words} words, about 25-30 seconds read aloud; with the mascot the Short is 30-40 seconds and never over 60:
+THE NARRATION ({min_words}-{max_words} words, about 38-45 seconds read aloud; with the mascot the Short is 45-55 seconds and never over 60:
 short Shorts get watched to the end and replayed)
 - Start straight away with the question or the real turning point. No greeting, no "Did you know", no "Let's dive in".
-- First, the real history up to the turning point in 1-2 short sentences (under 8 seconds): who owned what and the
-  moment it could have gone the other way. Viewers leave during a long setup: the what-if starts by second 8. Only
+- First, the real history up to the turning point in 2-3 short sentences (about 10 seconds), told on the moving map:
+  who owned what and the moment it could have gone the other way; the what-if starts by second 12. Only
   well-known facts you are sure of; never invent a number, a date, a name or a quote.
 - Then the what-if: one clear, plausible chain of consequences, told as a guess, never as fact ("might", "would
   probably", "nobody can know, but..."). Keep it grounded in the real geography and the situation of the time.

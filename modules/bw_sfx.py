@@ -19,7 +19,7 @@ import numpy as np
 RATE = 44100
 MIN_GAP = 0.22  # seconds between two sounds
 GAIN = {"pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20, "cash": 0.24}
-POP_KINDS = ("pin", "icon", "label", "ring", "pole", "counter")
+POP_KINDS = ("pin", "icon", "label", "ring", "pole", "counter", "note")
 LINE_KINDS = ("arrow", "line", "route")
 
 
