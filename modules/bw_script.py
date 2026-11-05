@@ -20,7 +20,7 @@ from urllib.parse import unquote, urlparse
 
 from pydantic import BaseModel, Field, model_validator
 
-from modules import bw_fx, bw_geo, bw_render, bw_series
+from modules import bw_fx, bw_geo, bw_local, bw_render, bw_series
 from modules.bw_topics import Topic
 
 logger = logging.getLogger(__name__)
@@ -415,7 +415,8 @@ must be the whole narration.
   tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
   local (one of the channel's own characters standing on "place", for the people the narration names: "icon" is
-  a person from the icon list (citizen, farmer, settlers, king, soldier, merchant, worker, scholar, explorer...),
+  citizen, farmer, settler, king or soldier (these act out the mood with their own faces), else another person
+  from the icon list (merchant, worker, scholar, sailor, queen...),
   "text" a 1-3 word caption like "a villager"; they pop in on "cue" and react on "react", a later word of the
   scene, with "mood": shocked (a border moved over them), sad (they lost the land), grin (they won), smug, think,
   smile. Use 1-3 in the video, one per scene at most, only where the narration names people.
@@ -784,7 +785,7 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a pole needs a flag")
             if e.kind == "local" and e.mood.strip() and e.mood.strip().lower() not in LOCAL_MOODS:
                 problems.append(f"scene {i}: a local's mood is one of {', '.join(LOCAL_MOODS)}")
-            if e.kind == "local" and e.icon.strip() and not bw_fx.icon_code(e.icon):
+            if e.kind == "local" and e.icon.strip() and not bw_fx.icon_code(e.icon) and not bw_local.family(e.icon):
                 problems.append(f"scene {i}: unknown local {e.icon!r} (use a person from the icon list)")
             if e.kind == "army" and not (e.place.strip() and e.to.strip()):
                 problems.append(f"scene {i}: an army needs a place it starts from and a place it marches \"to\"")

@@ -2167,7 +2167,20 @@ def test_a_local_is_one_of_the_owners_characters():
     variant GIF when the owner drew one, the professor's surprised head for his outfits, else none (an emote pops)."""
     from modules import bw_local
 
-    assert bw_local.character("farmer") == "farmer_working" and bw_local.character("") == "citizen_walking"
-    assert bw_local.character("no such person") == "citizen_walking"
+    assert bw_local.character("merchant") == "merchant_counting_coins"  # a person without moods: its GIF
+    assert bw_local.character("") == bw_local.character("no such person") == "@citizen"
+    # the mood families (<name>_happy/_surprised/_sad): plural and other words for the same person find them
+    assert [bw_local.character(n) for n in ("farmer", "settlers", "colonist", "king", "army", "villager")] == \
+        ["@farmer", "@settler", "@settler", "@king", "@soldier", "@citizen"]
+    fam = bw_local.family_frames("farmer", 250)
+    assert set(fam) == {"happy", "surprised", "sad"}
+    heights = [frames[0].getchannel("A").getbbox() for frames, _ in fam.values()]
+    assert max(b[3] - b[1] for b in heights) - min(b[3] - b[1] for b in heights) <= 3  # the person keeps its size
+    from PIL import Image
+    calm, played, rest = (Image.new("RGBA", (600, 600)) for _ in range(3))
+    bw_local.draw(calm, "@farmer", (300, 300), 250, 1.0, 0.0, "grin", 2.0)
+    bw_local.draw(played, "@farmer", (300, 300), 250, 2.6, 0.0, "grin", 2.0)
+    bw_local.draw(rest, "@farmer", (300, 300), 250, 9.0, 0.0, "grin", 2.0)
+    assert calm.tobytes() != played.tobytes() != rest.tobytes()  # the stance, the happy jump, its last frame
     assert bw_local.variant("scholar_writing", "shocked") == "surprised"  # the professor's surprised head
-    assert bw_local.variant("farmer_working", "shocked") is None  # the farmer has none yet: a burst pops over his head
+    assert bw_local.variant("sailor_waving", "shocked") is None  # the sailor has none yet: a burst pops over his head
