@@ -88,4 +88,4 @@ def draw(ov: Image.Image, code: str, xy: tuple[float, float], size: int, t: floa
             px = max(4, int(size * 0.42 * es))
             badge, _ = bw_fx.icon_frame(bw_fx.icon_code(emote) or emote, px, t - mood_at)
             badge = badge.rotate(8 * math.sin(3 * t), resample=Image.BILINEAR)
-            ov.alpha_composite(badge, (int(x + w * 0.28 - badge.width / 2), int(y - h / 2 - badge.height * 0.45 + 4 * math.sin(2.8 * t))))
+            ov.alpha_composite(badge, (int(x - w * 0.3 - badge.width / 2), int(y - h / 2 - badge.height * 0.7 + 4 * math.sin(2.8 * t))))
