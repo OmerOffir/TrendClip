@@ -157,11 +157,15 @@ def _draft(narration_words: int = 70, quote_ok: bool = True) -> bw_script.Draft:
         bw_script.SceneDraft(kind="map", narration="There is a notch on top of Minnesota.", focus=["Lake of the Woods"],
                              elements=[bw_script.ElementDraft(kind="highlight", place="Minnesota", cue="Minnesota")]),
         bw_script.SceneDraft(kind="card", narration="In 1783 a treaty used an old map.", title="1783"),
-        bw_script.SceneDraft(kind="map", narration=filler, focus=["Minnesota"]),
+        bw_script.SceneDraft(kind="map", narration=filler, focus=["Minnesota"],
+                             elements=[bw_script.ElementDraft(kind="highlight", place="Minnesota", cue="map"),
+                                       bw_script.ElementDraft(kind="label", place="Lake of the Woods", cue="lake")]),
         bw_script.SceneDraft(kind="map", narration="A line due west never met the river.", focus=["Mississippi River"],
-                             elements=[bw_script.ElementDraft(kind="parallel", value=49.4, color="red")]),
+                             elements=[bw_script.ElementDraft(kind="parallel", value=49.4, color="red"),
+                                       bw_script.ElementDraft(kind="highlight", place="Mississippi River", cue="river")]),
         bw_script.SceneDraft(kind="map", narration="So the border dropped south to the 49th parallel.", focus=["Canada"],
-                             elements=[bw_script.ElementDraft(kind="stamp", text="Patched", color="gold")]),
+                             elements=[bw_script.ElementDraft(kind="stamp", text="Patched", color="gold"),
+                                       bw_script.ElementDraft(kind="highlight", place="Canada", cue="south")]),
     ]
     claims = [
         bw_script.ClaimDraft(claim="Only by land through Canada", source_id=1, quote="can only be reached by land through Canada"),
@@ -2210,3 +2214,22 @@ def test_a_short_speaks_faster_and_loops_without_the_outro(monkeypatch, tmp_path
     spec = bw_render.spec_from_dict({"title": "t", "hold": bw_channel.LOOP_HOLD, "scenes": [{"kind": "map", "narration": "Russia sold Alaska."}]},
                                     [bw_render.Word("Russia", 0.0, 0.4), bw_render.Word("sold", 0.4, 0.8), bw_render.Word("Alaska.", 0.8, 1.4)])
     assert spec.duration == pytest.approx(1.4 + bw_channel.LOOP_HOLD)
+
+
+def test_a_short_never_shows_one_thing_alone_and_closes_on_a_ding(world):
+    """One thing on the screen at a time looked poor (the owner, 2026-11-05): a Short's map scene after the first needs
+    two elements (long chapters and attempts don't); a looping Short ends on a small bell after the last word said."""
+    from modules import bw_long, bw_sfx, bw_whatif
+
+    draft = _draft()
+    assert bw_script.check(draft, _research(), _find(world)) == []
+    draft.scenes[3].elements = draft.scenes[3].elements[:1]
+    problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
+    assert "map scene 4 shows too little" in problems
+    assert bw_long.CHAPTER.map_elements == 0 and bw_whatif.ATTEMPT_LIMITS.map_elements == 0 and bw_whatif.LIMITS.map_elements == 2
+    words = [bw_render.Word("Russia", 0.0, 0.4), bw_render.Word("sold", 0.4, 0.8), bw_render.Word("Alaska.", 0.8, 1.4),
+             bw_render.Word("Wow!", 1.8, 2.3, "panda")]
+    spec = bw_render.spec_from_dict({"title": "t", "hold": bw_channel.LOOP_HOLD, "brand": True,
+                                     "scenes": [{"kind": "map", "narration": "Russia sold Alaska.", "react": "Wow!"}]}, words)
+    assert ("ding" in [name for _, name, _ in bw_sfx.events(spec)]) and max(at for at, name, _ in bw_sfx.events(spec) if name == "ding") == pytest.approx(2.55)
+    assert spec.duration == pytest.approx(2.3 + bw_channel.LOOP_HOLD)

@@ -398,8 +398,10 @@ class Check(BaseModel):
 SCENE_RULES = """THE SCENES ({min_scenes}-{max_scenes})
 Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
 must be the whole narration.
-- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (1-5 per scene; something new
-  should appear in every scene so the screen is never still):
+- map scenes show places. "focus" = the 1-3 places the camera frames. Elements (2-5 per map scene after the first,
+  cued on different words, so at least two things happen in every scene: the place lighting up, then a label, an
+  icon or a local reacting; something new in every scene so the screen is never still; a line only between two
+  places the narration names):
   highlight (fill a country, state/province or lake, draw a river, or ring a small place), label (a name on the map),
   pin (a marker with a short text), ring (a pulsing circle round a small place), line (a dashed line from place to
   "to"), arrow (a movement from place to "to"), parallel / meridian (a line of latitude / longitude: "value"),
@@ -687,6 +689,7 @@ class Limits:
     max_lines: int = 2  # the mascot's asks and reacts (the outro's line comes on top)
     spoken_words: int = SPOKEN_WORDS  # the narration and the mascot's lines together (0: no limit)
     max_photos: int = 5
+    map_elements: int = 2  # a map scene's elements at least, after the first (0: no minimum)
     min_claims: int = 4
     min_cited: int = 2
 
@@ -715,6 +718,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
         problems.append("banned phrases: " + ", ".join(bad))
     if not limits.min_scenes <= len(draft.scenes) <= limits.max_scenes:
         problems.append(f"{len(draft.scenes)} scenes (wanted {limits.min_scenes}-{limits.max_scenes})")
+    if limits.map_elements:  # one thing on the screen at a time looked poor (the owner, 2026-11-05)
+        thin = [str(k + 1) for k, sc in enumerate(draft.scenes) if k and sc.kind == "map" and len(sc.elements) < limits.map_elements]
+        if thin:
+            problems.append(f"map scene{'s' if len(thin) > 1 else ''} {', '.join(thin)} show{'' if len(thin) > 1 else 's'} too little: "
+                            f"give every map scene after the first at least {limits.map_elements} elements on different cue words "
+                            "(the place lighting up, then a label, an icon or a local)")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
     if any(k not in ("map", "card", "board", "photo") for k in kinds):
         problems.append("a scene kind is not map, card, board or photo")

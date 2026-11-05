@@ -1278,10 +1278,56 @@ class FxRenderer(Renderer):
                 self.pen_line(ov, d, cam, i, el, t)
             else:
                 self.element(ov, d, cam, el, t, scene)
+        if not globe:
+            self.names(ov, d, cam, i, t)
         if self._hand is not None and self.cam_clock is None:  # not on the flash-forward's held frames: a hand that
             bw_brand.draw_hand(ov, self._hand, t)  # never moves looks stuck (the owner, 2026-11-04)
         img.alpha_composite(ov)
         return img
+
+    # -- the places' names (the owner, 2026-11-05: scenes where one thing happens look poor) --
+
+    NAMED_KINDS = ("highlight", "transfer")  # a place these light up gets its name when nothing else names it
+    MAX_NAMES = 2  # a scene's names at most (the ends of a line on top)
+
+    def names(self, ov: Image.Image, d, cam, i: int, t: float) -> None:
+        """A map scene's places named on the map: the place a highlight or transfer lights up (when no label, pin,
+        text, marker or character already names it or stands there) gets its name a moment later; a line or arrow
+        gets a pin and the name at each end, so a red line always says what it joins."""
+        scene = self.spec.scenes[i]
+        if scene.kind != "map":
+            return
+        key = lambda f: f.name.strip().lower()
+        taken = {key(el.feature) for el in scene.elements if el.feature is not None and (
+            el.kind in ("label", "pin", "ring", "icon", "local", "pole") or (el.kind in self.NAMED_KINDS and el.text))}
+        main, marked = self.main[i]
+        if main is not None and not marked:  # the attention marker already points at it and names it
+            taken.add(key(main))
+        stood = [xy for el in scene.elements if el.kind in ("icon", "local") and el.at <= t + 0.5
+                 and (xy := self._spots.get(id(el)) or (self.anchor(cam, el) if el.feature is not None else None))]
+        crowded = lambda xy: any(math.hypot(xy[0] - q[0], xy[1] - q[1]) < 230 for q in stood)  # a character or icon there
+        named = 0
+        for el in sorted(scene.elements, key=lambda e: e.at):
+            if el.kind in ("line", "arrow") and el.feature is not None and el.feature_to is not None:
+                for k, (feat, at) in enumerate(((el.feature, el.at + 0.2), (el.feature_to, el.at + 1.0))):
+                    a = ramp(t, at, 0.4)
+                    if a <= 0:
+                        continue
+                    x, y = cam.pt(*feat.label_point())
+                    r = 13 * backout((t - at) / 0.4)
+                    d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 255, 255, int(255 * a)), outline=(0, 0, 0, int(255 * a)), width=4)
+                    if key(feat) not in taken and not crowded((x, y)):
+                        text(ov, (x, y + (58 if k else -58)), feat.name.upper(), 42, a=a, max_width=W - 80)
+                    taken.add(key(feat))
+            elif el.kind in self.NAMED_KINDS and el.feature is not None and key(el.feature) not in taken and named < self.MAX_NAMES:
+                taken.add(key(el.feature))
+                xy = cam.pt(*el.feature.label_point())
+                if crowded(xy):
+                    continue
+                named += 1
+                a = ramp(t, el.at + 0.6, 0.4)
+                if a > 0:
+                    text(ov, xy, el.feature.name.upper(), 46, a=a, max_width=W - 80)
 
     # -- the marker hand (modules.bw_brand) --
 
@@ -1546,6 +1592,11 @@ class FxRenderer(Renderer):
             ref = min(scene.end - 0.05, max([el.at, *[e.at + 0.7 for e in busy]]))
             cam = self.globe_cam(i, ref) if scene.opts.get("globe") else self.camera(i, ref)
             zones = self.flag_zones(cam, scene) + self.text_zones(cam, i, scene)
+            for e in scene.elements:  # a line's or an arrow's ends, with their pins and names (names)
+                if e.kind in ("line", "arrow") and e.feature is not None and e.feature_to is not None:
+                    for f in (e.feature, e.feature_to):
+                        fx, fy = cam.pt(*f.label_point())
+                        zones.append((fx - 110, fy - 90, fx + 110, fy + 90))
             for e in scene.elements[:scene.elements.index(el)]:  # an icon or a local placed before this one: not on top of it
                 if e.kind in ("icon", "local") and (e.feature is not None or "at" in e.opts):
                     ex, ey = self._spots.get(id(e)) or self.anchor(cam, e)

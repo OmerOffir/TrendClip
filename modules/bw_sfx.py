@@ -108,6 +108,9 @@ def events(spec) -> list[tuple[float, str, float]]:
                 found.append((el.at, "whoosh", 0.0))
             elif el.kind in LINE_KINDS:
                 found.append((el.at, "whoosh", 0.0))
+    if getattr(spec, "hold", 0) and spec.scenes and spec.scenes[-1].kind != "end" and spec.words:  # a looping Short: a
+        last = max([w.end for w in spec.words] + [ln[-1].end for ln in (getattr(spec, "lines", None) or []) if ln])
+        found.append((last + 0.25, "ding", 0.0))  # small bell closes it after the last word said, so it doesn't just stop
     if getattr(spec, "style", "") == "war":  # "Attempt 2" slamming in (bw_fx.FxRenderer.attempt_tag)
         from modules import bw_render
 

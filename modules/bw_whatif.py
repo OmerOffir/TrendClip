@@ -32,7 +32,7 @@ SESSIONS_SHOWN = 10
 LIMITS = Limits(min_claims=0, min_cited=0)
 # an attempts Short runs about 75-90 s: each attempt is a fresh mini-story, so viewers stay for the next one
 ATTEMPT_WORDS = (150, 195)
-ATTEMPT_LIMITS = Limits(min_words=ATTEMPT_WORDS[0], max_words=ATTEMPT_WORDS[1], min_scenes=8, max_scenes=32, max_cards=0,
+ATTEMPT_LIMITS = Limits(map_elements=0, min_words=ATTEMPT_WORDS[0], max_words=ATTEMPT_WORDS[1], min_scenes=8, max_scenes=32, max_cards=0,
                         spoken_words=215, max_photos=4, max_boards=1, min_claims=0, min_cited=0)
 FORMAT = bw_manual.JSON_FORMAT.replace(
     '  "claims": [{"claim": "One fact the narration states.", "source_id": 1, "quote": "the exact words copied from source 1"}],',

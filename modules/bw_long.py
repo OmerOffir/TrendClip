@@ -41,7 +41,7 @@ from modules.bw_script import ClaimDraft, Draft, Limits, Research, SceneDraft, S
 logger = logging.getLogger(__name__)
 
 CHAPTERS = (5, 8)
-CHAPTER = Limits(min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1,
+CHAPTER = Limits(map_elements=0, min_words=150, max_words=400, min_scenes=5, max_scenes=24, max_cards=3, first_map=False, min_claims=3, min_cited=1,
                  max_photos=6, max_boards=3, max_lines=4, first_words=0, card_words=0, no_setup=False,
                  spoken_words=0)
 TOTAL_WORDS = (1100, 2400)  # about 8-16 minutes with the narrator

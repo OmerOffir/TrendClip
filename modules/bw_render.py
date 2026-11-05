@@ -939,7 +939,7 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     chains, mix = ["[1:a]apad[v]"], ["[v]"]
     if music is not None and music.is_file():
         cmd += ["-stream_loop", "-1", "-i", str(music)]
-        fade = 1.5 if spec.scenes and spec.scenes[-1].kind == "end" else 0.4  # a looping Short keeps its music to the cut
+        fade = 1.5  # the music fades out over the last moment, with or without the outro
         chains.append(f"[2:a]volume={music_volume:.3f},afade=t=out:st={max(0.0, spec.duration - fade):.2f}:d={fade}[m]")
         mix.append("[m]")
     sfx = None

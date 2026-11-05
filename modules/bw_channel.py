@@ -42,7 +42,8 @@ DEFAULT_LEAD = 8  # hours before the slot the video is made, so there is time to
 POST_WINDOW = timedelta(hours=6)  # a slot's upload missed by more than this (bot was off) waits for a button
 MIN_SECONDS, MAX_SECONDS = 22.0, 60.0  # aimed at 30-40 s since 2026-11-05 (bw_script.MAX_WORDS, SPOKEN_WORDS); longer ones lost half their viewers
 SHORT_PACE = 1.12  # a Short's voice (narrator and mascot) this much quicker than a long video's (BW_SHORT_PACE; the owner asked for higher energy, 2026-11-05)
-LOOP_HOLD = 0.35  # a Short without the outro ends this soon after its last word, so the replay starts at once
+LOOP_HOLD = 1.4  # a Short without the outro runs on this long after its last word (a ding, the music fading out) and
+# loops; 0.35 s felt cut off (the owner, 2026-11-05)
 # an attempts Short (modules.bw_whatif, the war map) is a list of fast mini-stories: 70-90 s, like the 6M-view one
 LONGER = {"attempts": (50.0, 95.0)}
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
