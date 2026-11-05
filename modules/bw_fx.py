@@ -1791,7 +1791,8 @@ class FxRenderer(Renderer):
                     ox = sum(o[0] for o in near) / len(near)
                     xy0 = (max(180, min(W - 180, ox + (320 if ox < W / 2 else -320))), xy0[1])
                     xy = xy0
-            if hits(xy0):
+            off = local and not (half + 10 <= xy0[0] <= W - half - 10 and HEADLINE_BOTTOM + half <= xy0[1] <= H - half)
+            if hits(xy0) or off:  # a side whose country lies outside the close-up (Egypt behind a Sinai view) steps into the frame
                 taken = [self._spots[id(e)] for e in scene.elements if self._spots.get(id(e))]
                 x, y = xy0
                 sizes = [int(el.opts.get("size", 190))]

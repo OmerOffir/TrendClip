@@ -2166,6 +2166,17 @@ def test_a_local_stands_on_the_map_and_changes_face_on_the_react_word(world, fx_
     assert (lx, ly) != (0, 0) and (abs(lx - ix) > 150 or abs(ly - iy) > 150)  # the local moved off the icon
     el = bw_script.ElementDraft(kind="local", place="Minnesota", mood="angry", react="map")
     assert el.mood == "angry" and "angry" not in bw_script.LOCAL_MOODS and "grin" in bw_script.LOCAL_MOODS  # the check names the moods
+    # a side whose country lies outside the close-up (Egypt behind a Sinai view, 2026-11-06): it steps into the frame
+    data = _spec_dict()
+    data["scenes"][2]["elements"] = [{"kind": "local", "place": "Paris", "cue": "stayed", "react": "stayed", "icon": "general",
+                                       "flag": "Flag of France.svg", "say": "Still here."}]
+    spec = bw_render.spec_from_dict(data, words)
+    assert bw_render.prepare(spec) == []
+    far = next(e for e in spec.scenes[2].elements if e.kind == "local")
+    r = bw_fx.FxRenderer(spec)
+    r.scene_frame(2, far.at + 0.5)
+    fx, fy = r._spots[id(far)]
+    assert 100 <= fx <= bw_render.W - 100 and bw_fx.HEADLINE_BOTTOM <= fy <= bw_render.H - 100
 
 
 def test_a_local_is_one_of_the_owners_characters():
