@@ -2235,20 +2235,20 @@ def test_a_short_never_shows_one_thing_alone_and_closes_on_a_ding(world):
     assert spec.duration == pytest.approx(2.3 + bw_channel.LOOP_HOLD)
 
 
-def test_a_still_moment_gets_a_note_with_the_spoken_number_or_name(world):
-    """Viewers left where nothing moved (a photo held for 5 s; the owner, 2026-11-05): a scene stretch of NOTE_GAP
-    seconds with nothing new gets a note with the number, name or strong word said there, never one the screen
-    already shows and never a dull adjective."""
+def test_a_still_moment_gets_the_gif_of_a_spoken_word(world):
+    """Viewers left where nothing moved (the owner, 2026-11-05: the eye needs something new all the time; use our
+    GIFs, not written notes): a stretch of GIF_GAP seconds with nothing new gets the owner's GIF of a word said in
+    it, on that word; never an emote for a word with a second meaning, never the same GIF twice in a scene."""
     from modules import bw_fx
 
-    said = "In 1850 Congress banned it, and Senator Daniel Voorhees fought the official starvation of 6,000 square miles."
+    said = "In 1850 the king signed a treaty, sold the land, and sent his army to cross the river by ship."
     words = [bw_render.Word(w, k * 0.5, k * 0.5 + 0.4) for k, w in enumerate(said.split())]
-    found = [(text, pr) for _, text, pr in bw_fx.note_words(words, {"congress"})]
-    assert ("1850", 0) in found and ("6,000 square miles.".rstrip("."), 0) in found and ("Senator Daniel Voorhees", 1) in found
-    assert ("starvation", 2) in found and not any(t in ("official", "Congress") for t, _ in found)
+    gifs = {code for _, code, _ in bw_fx.gif_words(words)}
+    assert {"scroll", "money_bag", "ship"} <= gifs and "cross" not in gifs
     spec = bw_render.spec_from_dict({"title": "t", "scenes": [{"kind": "map", "narration": said, "focus": ["Minnesota"]}]}, words)
     assert bw_render.prepare(spec) == []
-    notes = bw_fx.plan_notes(spec, 0)
-    assert notes and all(n.kind == "note" for n in notes) and len(notes) <= bw_fx.NOTE_MAX
-    times = sorted([0.0, *[n.at for n in notes], spec.scenes[0].end])
-    assert max(b - a for a, b in zip(times, times[1:])) <= bw_fx.NOTE_GAP + 1.5  # no long still stretch left
+    added = bw_fx.plan_gifs(spec, 0)
+    assert added and all(e.kind == "icon" and e.opts["auto"] for e in added) and len(added) <= bw_fx.GIF_MAX
+    assert len({e.opts["icon"] for e in added}) == len(added)
+    times = sorted([0.0, *[e.at for e in added], spec.scenes[0].end])
+    assert max(b - a for a, b in zip(times, times[1:])) <= bw_fx.GIF_GAP + 1.5
