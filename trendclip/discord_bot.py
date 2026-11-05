@@ -520,6 +520,7 @@ class TrendClipBot(discord.Client):
         self.borderlinewhy_jobs(at)
         self.pricetagwhy_jobs(at)
         self.cleanup_job(at)
+        self.after_publish_jobs(at)
         if not self.settings.discord_channel_id:
             return
         # The time-critical work first (a slot's post, the emergency video), then the rest. After a restart the
@@ -810,6 +811,69 @@ class TrendClipBot(discord.Client):
         channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(
             self.settings.discord_channel_id)
         await channel.send(f"🧹 {report.summary()}.")
+
+    def after_publish_jobs(self, at: datetime) -> None:
+        """Scheduled uploads (an hour before their slot, publish.EARLY_UPLOAD) whose publish time has come: once
+        public, the comment goes up and the channel hears it."""
+        from modules import bw_channel, pw_channel
+
+        for name, folder in (("sq", self.settings.output_dir), ("bw", bw_channel.out_root()), ("pw", pw_channel.out_root())):
+            try:
+                due = publish.due_later(folder, at)
+            except Exception:  # noqa: BLE001 - never let one channel stop the others
+                logger.exception("After-publish check failed for %s", name)
+                continue
+            for entry in due:
+                self._spawn(self.after_publish(name, folder, entry, at))
+
+    async def after_publish(self, name: str, folder: Path, entry: dict, at: datetime) -> None:
+        from modules import bw_channel, pw_channel
+
+        key, settings = entry["key"], self.settings
+        module = {"bw": bw_channel, "pw": pw_channel}.get(name)
+        try:
+            state = await asyncio.to_thread(module.after_publish, key) if module else \
+                await asyncio.to_thread(assistant.after_publish, settings, key)
+        except Exception:  # noqa: BLE001 - tried again in a few minutes
+            logger.exception("After-publish of %s %s failed", name, key)
+            state = False
+        if state is None:
+            return
+        if state is False:
+            if not await asyncio.to_thread(publish.again, folder, entry, at):
+                text = f"⚠️ A scheduled video ({key}) still isn't public 6 hours after its time: check it in YouTube Studio."
+                await self._after_publish_say(name, text)
+            return
+        if module:
+            info = await asyncio.to_thread(module.load_info, key) or {}
+            record = (info.get("uploads") or {}).get("youtube") or {}
+            line = module.comment_line(record)
+            text = f"🟢 **{info.get('title', key)}** is public now: {record.get('url', '')}" + (f"\n{line}" if line else "")
+            await self._after_publish_say(name, text)
+            return
+        short = await asyncio.to_thread(shorts.get_short, settings, key)
+        record = short.uploads.get("youtube") or {}
+        lines = [f"🟢 **{short.title}** is public now: {record.get('url', '')}"]
+        comment = assistant.pinned_comment(settings, key)
+        if comment and publish.can_comment():
+            try:
+                await asyncio.to_thread(publish.post_comment, settings, key, comment)
+                lines.append("   💬 Comment posted. Pin it on YouTube (⋮ → Pin); the API can't.")
+            except Exception as err:  # noqa: BLE001 - the video is up; only the comment failed
+                lines.append(f"   The comment didn't go through: {err}")
+        await self._after_publish_say(name, "\n".join(lines))
+
+    async def _after_publish_say(self, name: str, text: str) -> None:
+        from modules import bw_channel, pw_channel
+
+        try:
+            if name in ("bw", "pw"):
+                await asyncio.to_thread({"bw": bw_channel, "pw": pw_channel}[name].announce_text, clip_text(text), self.settings)
+            elif self.settings.discord_channel_id:
+                channel = self.get_channel(self.settings.discord_channel_id) or await self.fetch_channel(self.settings.discord_channel_id)
+                await channel.send(clip_text(text), suppress_embeds=True)
+        except Exception:  # noqa: BLE001 - only the message failed
+            logger.exception("After-publish message failed")
 
     def _spawn(self, work) -> None:
         task = asyncio.create_task(work)
@@ -1157,14 +1221,19 @@ class TrendClipBot(discord.Client):
                 await channel.send(clip_text(f"⏰ {slot}: " + "\n".join(notes)))
             return
         names = " and ".join(PLATFORM_NAMES[p] for p in go)
-        await channel.send(clip_text(f"🚀 **{slot}: posting \"{short.title}\" on {names}** (planned for now)."))
+        # An hour early: uploaded private, YouTube makes it public at the slot (publish.EARLY_UPLOAD).
+        publish_at = publish.scheduled(planner.slot_time(settings, day, slot), assistant.now(settings))
+        when = "goes public at the slot" if publish_at else "planned for now"
+        await channel.send(clip_text(f"🚀 **{slot}: posting \"{short.title}\" on {names}** ({when})."))
         lines, retry = [], []
         if "youtube" in go:
             try:
                 record = await self.run_job(channel, "YouTube upload",
-                                            lambda p: assistant.upload_now(settings, item.short, p), self.upload_lock)
-                lines.append(f"▶️ YouTube: {record['url']}")
-                if record.get("privacy") != "public":
+                                            lambda p: assistant.upload_now(settings, item.short, p, publish_at), self.upload_lock)
+                lines.append(f"▶️ YouTube: {record['url']} ({publish.privacy_note(record)})")
+                if record.get("scheduled_for"):
+                    lines.append("   💬 The comment goes up when it turns public.")
+                elif record.get("privacy") != "public":
                     lines.append(f"   YouTube set it to **{record.get('privacy')}**: make it public in Studio "
                                  f"<{record['studio_url']}>")
                 comment = assistant.pinned_comment(settings, item.short)

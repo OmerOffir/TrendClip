@@ -149,8 +149,8 @@ def test_approve_veto_and_upload_at_the_slot(tmp_path, monkeypatch):
     monkeypatch.setattr("trendclip.publish.upload_file", lambda path, req, short, progress, client: uploaded.append(req) or
                         {"video_id": "v1", "url": "https://youtu.be/v1", "privacy": req.privacy})
     monkeypatch.setattr(pw_channel, "announce_upload", lambda *a, **k: None)
-    early = pw_channel.approve("2026-11-01_1900", settings, tmp_path, now=datetime(2026, 11, 1, 18, 0, tzinfo=settings.tz), youtube=object())
-    assert early["record"] is None and not uploaded  # goes out at its slot
+    early = pw_channel.approve("2026-11-01_1900", settings, tmp_path, now=datetime(2026, 11, 1, 17, 59, tzinfo=settings.tz), youtube=object())
+    assert early["record"] is None and not uploaded  # goes out at its slot (uploaded an hour before)
     late = pw_channel.publish_if_allowed("2026-11-01_1900", out_dir=tmp_path, youtube=object())
     assert late["url"] == "https://youtu.be/v1" and uploaded[0].category_id == "27"
     assert pw_channel.load_info("2026-11-01_1900", tmp_path)["uploads"]["youtube"]["video_id"] == "v1"

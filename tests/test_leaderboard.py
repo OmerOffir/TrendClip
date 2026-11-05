@@ -253,7 +253,7 @@ def test_leaderboard_reminder_at_its_time():
     from trendclip import assistant
 
     s = Settings(youtube_api_key="k", discord_leaderboard_time="13:30", discord_reminder_minutes=0,
-                 emergency_video=False, auto_produce=False)
+                 emergency_video=False, auto_produce=False, auto_post=False)
     at = datetime(2026, 10, 14, 13, 31, tzinfo=s.tz)
     assert [r.kind for r in assistant.due_reminders(s, at, set())] == ["morning", "leaderboard"]
 

@@ -148,31 +148,33 @@ def test_reminders_fire_once_in_their_window(settings):
     morning = assistant.due_reminders(settings, at(settings, 10), set())
     assert [r.key for r in morning] == ["2026-10-07 morning"]
     assert assistant.due_reminders(settings, at(settings, 16, 31), set()) == []  # summary missed by > 6 h
-    slot = assistant.due_reminders(settings, at(settings, 14), {"2026-10-07 morning"})
+    slot = assistant.due_reminders(settings, at(settings, 13), {"2026-10-07 morning"})
     assert [(r.kind, r.slot) for r in slot] == [("slot", "14:30")]
-    post = assistant.due_reminders(settings, at(settings, 14, 30), {"2026-10-07 morning"})
+    # an hour early: uploaded private, scheduled for 14:30 (publish.EARLY_UPLOAD)
+    assert [r.kind for r in assistant.due_reminders(settings, at(settings, 13, 29), {"2026-10-07 morning", "2026-10-07 14:30"})] == []
+    post = assistant.due_reminders(settings, at(settings, 13, 30), {"2026-10-07 morning", "2026-10-07 14:30"})
     assert [(r.kind, r.slot, r.key) for r in post] == [("post", "14:30", "2026-10-07 14:30 post")]
-    sent = {"2026-10-07 morning", "2026-10-07 14:30 post"}
+    sent = {"2026-10-07 morning", "2026-10-07 14:30", "2026-10-07 14:30 post"}
     assert assistant.due_reminders(settings, at(settings, 14, 31), sent) == []  # posted once
     assert [r.kind for r in assistant.due_reminders(settings, at(settings, 16, 29), {"2026-10-07 morning"})] == \
         ["post"]  # the bot was off at 14:30: it still posts within 2 h
-    late = assistant.due_reminders(settings, at(settings, 22, 45), {"2026-10-07 morning"})
+    late = assistant.due_reminders(settings, at(settings, 21, 45), {"2026-10-07 morning"})
     assert [r.key for r in late] == ["2026-10-07 23:00"]
     quiet = settings.with_overrides(discord_reminder_minutes=0, auto_post=False)
-    assert assistant.due_reminders(quiet, at(settings, 22, 45), {"2026-10-07 morning"}) == []
+    assert assistant.due_reminders(quiet, at(settings, 21, 45), {"2026-10-07 morning"}) == []
     assert assistant.due_reminders(quiet, at(settings, 23, 0), {"2026-10-07 morning"}) == []
 
 
-def test_an_empty_slot_gets_an_emergency_video_an_hour_before(settings):
-    seen = {"2026-10-07 morning"}
-    assert [r.kind for r in assistant.due_reminders(settings, at(settings, 13, 29), seen)] == []
-    due = assistant.due_reminders(settings, at(settings, 13, 30), seen)
+def test_an_empty_slot_gets_an_emergency_video_two_hours_before(settings):
+    seen = {"2026-10-07 morning"}  # two hours: before the slot's early upload
+    assert [r.kind for r in assistant.due_reminders(settings, at(settings, 12, 29), seen)] == []
+    due = assistant.due_reminders(settings, at(settings, 12, 30), seen)
     assert [(r.kind, r.slot, r.key) for r in due] == [("emergency", "14:30", "2026-10-07 14:30 emergency")]
-    assert assistant.due_reminders(settings, at(settings, 13, 31), seen | {"2026-10-07 14:30 emergency"}) == []
+    assert assistant.due_reminders(settings, at(settings, 12, 31), seen | {"2026-10-07 14:30 emergency"}) == []
     assistant.plan_short(settings, add_short(settings, "a.mp4"), DAY, "23:00")
     assert "emergency" not in [r.kind for r in assistant.due_reminders(settings, at(settings, 22), seen)]
     off = settings.with_overrides(emergency_video=False)
-    assert assistant.due_reminders(off, at(settings, 13, 30), seen) == []
+    assert assistant.due_reminders(off, at(settings, 12, 30), seen) == []
 
 
 def _emergency_bot(settings, made, posted):
@@ -634,7 +636,7 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
     monkeypatch.setattr(assistant, "pinned_comment", lambda s, f: "Answer below 👇")
     commented, ran = [], []
     monkeypatch.setattr(publish, "post_comment", lambda s, f, text: commented.append(text))
-    monkeypatch.setattr(assistant, "upload_now", lambda s, f, p: {"url": "https://youtu.be/v1", "privacy": "public"})
+    monkeypatch.setattr(assistant, "upload_now", lambda s, f, p, at=None: {"url": "https://youtu.be/v1", "privacy": "public"})
     monkeypatch.setattr(instagram, "post_reel", lambda *a, **kw: ran.append("Instagram"))  # never: YouTube only
 
     class Channel:
@@ -661,6 +663,8 @@ def test_a_planned_short_posts_itself_at_its_time_and_reports(settings, monkeypa
             except Exception as err:
                 raise discord_bot.JobFailed(str(err)) from err
 
+    Bot.settings_ = settings  # the test's settings (the class body would see the fixture function)
+    monkeypatch.setattr(assistant, "now", lambda s: planner.slot_time(s, item.date, "14:30"))
     channel = Channel()
     asyncio.run(Bot().auto_post(channel, item.date, "14:30"))
     assert item.platforms == ["youtube", "tiktok"]  # a plan item saved with Instagram drops it
@@ -866,6 +870,9 @@ def test_reminders_run_posts_first_and_never_wait_for_the_morning_summary(settin
             pass
 
         def cleanup_job(self, at):
+            pass
+
+        def after_publish_jobs(self, at):
             pass
 
         async def morning_summary(self, channel, day):

@@ -43,6 +43,12 @@ ANALYTICS_SCOPE = SCOPES[3]
 GAMING_CATEGORY = "20"
 YT_TITLE_MAX, YT_TAGS_MAX_CHARS, CAPTION_MAX = 100, 450, 2200
 MIN_SCHEDULE_MINUTES, MAX_SCHEDULE_DAYS = 15, 180
+# Every channel's bot uploads a slot's video this long before the slot, private and scheduled for the slot (the owner,
+# 2026-11-05): YouTube has processed it and the thumbnail is set again before the first viewer sees it.
+EARLY_UPLOAD = timedelta(hours=1)
+LATER_FILE = "after_publish.json"  # in each channel's output folder: the work left for when a scheduled video goes public
+LATER_RETRY = timedelta(minutes=10)
+LATER_GIVE_UP = timedelta(hours=6)
 Privacy = Literal["private", "unlisted", "public"]
 
 # Google answers with the scopes actually granted, which may be a superset; don't treat that as an error.
@@ -572,6 +578,88 @@ def processed(youtube, video_id: str) -> bool | None:
     if not items:
         return None
     return (items[0].get("processingDetails") or {}).get("processingStatus") == "succeeded"
+
+
+def scheduled(post_at: datetime | None, now: datetime | None = None) -> datetime | None:
+    """The publishAt for a slot's upload: the slot itself while YouTube can still schedule it (MIN_SCHEDULE_MINUTES
+    ahead, plus a minute for the upload), else None: the video goes out public now (a late or retried upload)."""
+    if post_at is None:
+        return None
+    now = now or datetime.now(timezone.utc)
+    return post_at if post_at - now >= timedelta(minutes=MIN_SCHEDULE_MINUTES + 1) else None
+
+
+def privacy_note(record: dict[str, Any]) -> str:
+    """"public", or "private, public at 14:30" for a scheduled upload (Israel time)."""
+    at = record.get("scheduled_for")
+    if not at or record.get("privacy") != "private":
+        return str(record.get("privacy") or "?")
+    from .config import get_settings
+
+    when = datetime.fromisoformat(at.replace("Z", "+00:00")).astimezone(get_settings().tz)
+    return f"private, public at {when:%H:%M}"
+
+
+def is_public(youtube, video_id: str) -> bool | None:
+    """True once the video is public, False while not, None when YouTube can't say."""
+    try:
+        items = youtube.videos().list(part="status", id=video_id).execute().get("items") or []
+    except Exception as err:  # noqa: BLE001 - the API down: unknown
+        logger.debug("Privacy of %s unknown: %s", video_id, err)
+        return None
+    return (items[0].get("status") or {}).get("privacyStatus") == "public" if items else None
+
+
+def _read_later(path: Path) -> list[dict[str, Any]]:
+    import json
+
+    try:
+        return list(json.loads(path.read_text()))
+    except (OSError, ValueError):
+        return []
+
+
+def _write_later(path: Path, entries: list[dict[str, Any]]) -> None:
+    import json
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(entries, indent=1))
+    tmp.replace(path)
+
+
+def later(folder: Path, key: str, record: dict[str, Any]) -> bool:
+    """Note a scheduled upload: its comment (and the "public now" message) wait for its publish time. False when
+    the record isn't scheduled."""
+    at = record.get("scheduled_for")
+    if not at or not record.get("video_id"):
+        return False
+    path = Path(folder) / LATER_FILE
+    entries = [e for e in _read_later(path) if e.get("key") != key]
+    entries.append({"key": key, "video_id": record["video_id"], "at": at, "first": at})
+    _write_later(path, entries)
+    return True
+
+
+def due_later(folder: Path, now: datetime | None = None) -> list[dict[str, Any]]:
+    """The scheduled uploads whose publish time has come (taken off the list: `again` puts one back)."""
+    now = now or datetime.now(timezone.utc)
+    path = Path(folder) / LATER_FILE
+    entries = _read_later(path)
+    due = [e for e in entries if datetime.fromisoformat(e["at"].replace("Z", "+00:00")) <= now]
+    if due:
+        _write_later(path, [e for e in entries if e not in due])
+    return due
+
+
+def again(folder: Path, entry: dict[str, Any], now: datetime | None = None) -> bool:
+    """Still not public: check again in LATER_RETRY, unless LATER_GIVE_UP has passed since its publish time (False)."""
+    now = now or datetime.now(timezone.utc)
+    if now - datetime.fromisoformat(entry["first"].replace("Z", "+00:00")) > LATER_GIVE_UP:
+        return False
+    path = Path(folder) / LATER_FILE
+    _write_later(path, [*_read_later(path), {**entry, "at": (now + LATER_RETRY).isoformat()}])
+    return True
 
 
 def keep_thumbnail(client: Callable[[], Any], video_id: str, path: Path, on_set: Callable[[str], None] | None = None) -> threading.Thread:

@@ -451,12 +451,15 @@ def due_makes(settings, at: datetime, sent: set[str], out_dir: Path | None = Non
 
 
 def due_posts(settings, at: datetime, sent: set[str]) -> list[Job]:
-    """Jobs whose slot has come (within POST_WINDOW) and whose upload was not tried yet."""
+    """Jobs whose upload time has come (publish.EARLY_UPLOAD before the slot: private, scheduled for the slot; up to
+    POST_WINDOW after it) and whose upload was not tried yet."""
+    from trendclip import publish
+
     if not auto_post():
         return []
     at = at.astimezone(settings.tz)
-    return [job for day in (at.date() - timedelta(days=1), at.date()) for job in jobs_for(settings, day)
-            if job.post_key not in sent and job.post_at <= at < job.post_at + POST_WINDOW and not on_hold(job.day)]
+    return [job for day in (at.date() - timedelta(days=1), at.date(), at.date() + timedelta(days=1)) for job in jobs_for(settings, day)
+            if job.post_key not in sent and job.post_at - publish.EARLY_UPLOAD <= at < job.post_at + POST_WINDOW and not on_hold(job.day)]
 
 
 def slot_state(job: Job, info: dict | None, now: datetime, script: Path | None = None) -> str:
@@ -863,16 +866,17 @@ def note_thumbnail(key: str, status: str, out_dir: Path | None = None) -> None:
         doctor.alert_thumbnail("pw", key, status, title=(info or {}).get("title", ""))
 
 
-def upload_request(info: dict, privacy: str | None = None):
+def upload_request(info: dict, privacy: str | None = None, publish_at: datetime | None = None):
     from trendclip import publish
 
-    return publish.YouTubeUploadRequest(
+    return publish.YouTubeUploadRequest(publish_at=publish_at,
         title=info["title"][: publish.YT_TITLE_MAX], description=(info.get("description") or "")[:5000],
         tags=[t for t in info.get("hashtags", []) if t], privacy=privacy or upload_privacy(), category_id=CATEGORY, as_short=True)
 
 
 def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, youtube=None, out_dir: Path | None = None,
-           settings=None) -> dict[str, Any]:
+           settings=None, publish_at: datetime | None = None) -> dict[str, Any]:
+    """`publish_at`: uploaded private, YouTube makes it public then; the comment waits for that (after_publish)."""
     from trendclip import publish
 
     info = load_info(key, out_dir)
@@ -885,7 +889,7 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
     if youtube is None and not connected():
         raise publish.PublishError("Connect the Price Tag Why YouTube channel first (dashboard → Price Tag Why → Connect YouTube)")
     client = youtube or publish._youtube(TOKEN)
-    record = publish.upload_file(video_file(key, out_dir), upload_request(info, privacy), True, progress, client)
+    record = publish.upload_file(video_file(key, out_dir), upload_request(info, privacy, publish_at), True, progress, client)
     if thumb := thumb_path(key, out_dir):
         progress(0.99, "Setting the thumbnail")
         record["thumbnail"] = set_thumbnail(client, record["video_id"], thumb)
@@ -895,9 +899,27 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
         publish.keep_thumbnail((lambda: youtube) if youtube is not None else (lambda: publish._youtube(TOKEN)), record["video_id"], thumb,
                                lambda status: note_thumbnail(key, status, out_dir))
     progress(1.0, "Uploaded")
-    comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
+    if not publish.later(out_root(out_dir), key, record):  # a scheduled video can't take a comment until it is public
+        comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
     return record
+
+
+def after_publish(key: str, out_dir: Path | None = None, youtube=None) -> bool | None:
+    """A scheduled upload's publish time has come: True once it is public (the comment is posted now), False while
+    YouTube hasn't made it public yet (or can't say), None when the video is gone or vetoed (nothing left to do)."""
+    from trendclip import publish
+
+    info = load_info(key, out_dir)
+    record = ((info or {}).get("uploads") or {}).get("youtube") or {}
+    if not record.get("video_id") or is_vetoed(info):
+        return None
+    if not publish.is_public(youtube or publish._youtube(TOKEN), record["video_id"]):
+        return False
+    record["privacy"] = "public"
+    save_info(info, out_dir)
+    comment(info, youtube, out_dir)
+    return True
 
 
 # --------------------------------------------------------------------------- the comment to pin
@@ -977,7 +999,10 @@ def publish_if_allowed(key: str, progress=lambda f, m: None, out_dir: Path | Non
         return None
     if found := (info.get("uploads") or {}).get("youtube"):
         return found
-    return upload(key, None, progress, youtube, out_dir, settings)
+    from trendclip import publish
+
+    post_at = datetime.fromisoformat(info["job"]["post_at"]) if (info.get("job") or {}).get("post_at") else None
+    return upload(key, None, progress, youtube, out_dir, settings, publish.scheduled(post_at))
 
 
 def approve(key: str, settings=None, out_dir: Path | None = None, now: datetime | None = None, youtube=None) -> dict[str, Any]:
@@ -992,7 +1017,9 @@ def approve(key: str, settings=None, out_dir: Path | None = None, now: datetime 
     save_info(info, out_dir)
     post_at = datetime.fromisoformat(info["job"]["post_at"]) if info.get("job") else None
     found = None
-    if post_at is not None and settings is not None and (now or assistant.now(settings)) >= post_at and auto_post():
+    from trendclip import publish
+
+    if post_at is not None and settings is not None and (now or assistant.now(settings)) >= post_at - publish.EARLY_UPLOAD and auto_post():
         found = publish_if_allowed(key, out_dir=out_dir, youtube=youtube, settings=settings)
     return {"title": info["title"], "record": found, "post_at": post_at}
 
@@ -1008,7 +1035,7 @@ def veto(key: str, out_dir: Path | None = None, youtube=None) -> dict[str, Any]:
     info.pop("approved", None)
     found = (info.get("uploads") or {}).get("youtube") or {}
     hidden = False
-    if found.get("video_id") and found.get("privacy") != "private":
+    if found.get("video_id") and (found.get("privacy") != "private" or found.get("scheduled_for")):
         from googleapiclient.errors import HttpError
 
         youtube = youtube or publish._youtube(TOKEN)
@@ -1018,6 +1045,7 @@ def veto(key: str, out_dir: Path | None = None, youtube=None) -> dict[str, Any]:
             save_info(info, out_dir)
             raise publish.PublishError(publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the change")) from err
         found["privacy"] = "private"
+        found.pop("scheduled_for", None)  # the schedule is gone too
         hidden = True
     save_info(info, out_dir)
     return {"key": key, "title": info.get("title", key), "uploaded": bool(found), "hidden": hidden}
@@ -1080,8 +1108,10 @@ def announce_video(info: dict, settings=None, out_dir: Path | None = None) -> st
 
 
 def announce_upload(info: dict, found: dict, settings=None) -> str | None:
+    from trendclip import publish
+
     lb, b = channel_common.link_button, channel_common.button
-    text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({found.get('privacy', '?')}): {found.get('url', '')}"
+    text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({publish.privacy_note(found)}): {found.get('url', '')}"
     if line := comment_line(found):
         text += "\n" + line
     return announce_text(text, settings, channel_common.rows(

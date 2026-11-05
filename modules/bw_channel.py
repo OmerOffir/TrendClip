@@ -152,12 +152,13 @@ def due_makes(settings, at: datetime, sent: set[str], out_dir: Path | None = Non
 
 
 def due_posts(settings, at: datetime, sent: set[str]) -> list[Job]:
-    """Jobs whose slot has come (within POST_WINDOW) and whose upload was not tried yet."""
+    """Jobs whose upload time has come (publish.EARLY_UPLOAD before the slot: private, scheduled for the slot; up to
+    POST_WINDOW after it) and whose upload was not tried yet."""
     if not auto_post():
         return []
     at = at.astimezone(settings.tz)
-    return [job for day in (at.date() - timedelta(days=1), at.date()) for job in jobs_for(settings, day)
-            if job.post_key not in sent and job.post_at <= at < job.post_at + POST_WINDOW]
+    return [job for day in (at.date() - timedelta(days=1), at.date(), at.date() + timedelta(days=1)) for job in jobs_for(settings, day)
+            if job.post_key not in sent and job.post_at - publish.EARLY_UPLOAD <= at < job.post_at + POST_WINDOW]
 
 
 def next_job(settings, at: datetime, days: int = 3) -> Job | None:
@@ -828,16 +829,18 @@ def display_title(info: dict, out_dir: Path | None = None, number: int | None = 
     return f"{title} ({bw_series.label(series_of(info), number)} next)" if number else title
 
 
-def upload_request(info: dict, privacy: str | None = None, out_dir: Path | None = None, number: int | None = None) -> publish.YouTubeUploadRequest:
-    return publish.YouTubeUploadRequest(
+def upload_request(info: dict, privacy: str | None = None, out_dir: Path | None = None, number: int | None = None,
+                   publish_at: datetime | None = None) -> publish.YouTubeUploadRequest:
+    return publish.YouTubeUploadRequest(publish_at=publish_at,
         title=youtube_title(info, out_dir, number)[: publish.YT_TITLE_MAX], description=(info.get("description") or "")[:5000],
         tags=[t for t in info.get("hashtags", []) if t], privacy=privacy or upload_privacy(), category_id=CATEGORY, as_short=True)
 
 
 def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, youtube=None, out_dir: Path | None = None,
-           settings=None) -> dict[str, Any]:
+           settings=None, publish_at: datetime | None = None) -> dict[str, Any]:
     """Upload the Short. A series episode takes its number now (bw_series: it never skips a number for a video that
-    didn't go out), then the channel posts the "what next" comment for the owner to pin."""
+    didn't go out), then the channel posts the "what next" comment for the owner to pin. `publish_at`: uploaded
+    private, YouTube makes it public then; the comment waits for that (after_publish)."""
     info = load_info(key, out_dir)
     if info is None:
         raise publish.PublishError(f"No Borderline Why video {key}")
@@ -848,7 +851,7 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
     series = "" if info.get("episode") else series_of(info)
     number = bw_series.reserve(out_root(out_dir), series, key) if series else None
     try:
-        record = publish.upload_file(video_path(key, out_dir), upload_request(info, privacy, out_dir, number), True, progress, client)
+        record = publish.upload_file(video_path(key, out_dir), upload_request(info, privacy, out_dir, number, publish_at), True, progress, client)
     except BaseException:
         if number:
             bw_series.release(out_root(out_dir), series, key)
@@ -865,9 +868,25 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
         publish.keep_thumbnail((lambda: youtube) if youtube is not None else (lambda: publish._youtube(TOKEN)), record["video_id"], thumb,
                                lambda status: note_thumbnail(key, status, out_dir))
     progress(1.0, "Uploaded")
-    comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
+    if not publish.later(out_root(out_dir), key, record):  # a scheduled video can't take a comment until it is public
+        comment(info, youtube, out_dir)  # its own client: it checks the login may comment first
     announce_upload(info, record, settings)
     return record
+
+
+def after_publish(key: str, out_dir: Path | None = None, youtube=None) -> bool | None:
+    """A scheduled upload's publish time has come: True once it is public (the comment is posted now), False while
+    YouTube hasn't made it public yet (or can't say), None when the video is gone or vetoed (nothing left to do)."""
+    info = load_info(key, out_dir)
+    record = ((info or {}).get("uploads") or {}).get("youtube") or {}
+    if not record.get("video_id") or is_vetoed(info):
+        return None
+    if not publish.is_public(youtube or publish._youtube(TOKEN), record["video_id"]):
+        return False
+    record["privacy"] = "public"
+    save_info(info, out_dir)
+    comment(info, youtube, out_dir)
+    return True
 
 
 def thumbnail(key: str, out_dir: Path | None = None) -> Path | None:
@@ -964,7 +983,8 @@ def publish_if_allowed(key: str, progress=lambda f, m: None, out_dir: Path | Non
         return None
     if record := (info.get("uploads") or {}).get("youtube"):
         return record
-    return upload(key, None, progress, youtube, out_dir, settings)
+    post_at = datetime.fromisoformat(info["job"]["post_at"]) if (info.get("job") or {}).get("post_at") else None
+    return upload(key, None, progress, youtube, out_dir, settings, publish.scheduled(post_at))
 
 
 def approve(key: str, settings=None, out_dir: Path | None = None, now: datetime | None = None, youtube=None) -> dict[str, Any]:
@@ -977,7 +997,7 @@ def approve(key: str, settings=None, out_dir: Path | None = None, now: datetime 
     save_info(info, out_dir)
     post_at = datetime.fromisoformat(info["job"]["post_at"]) if info.get("job") else None
     record = None
-    if post_at is not None and settings is not None and (now or assistant.now(settings)) >= post_at and auto_post():
+    if post_at is not None and settings is not None and (now or assistant.now(settings)) >= post_at - publish.EARLY_UPLOAD and auto_post():
         record = publish_if_allowed(key, out_dir=out_dir, youtube=youtube, settings=settings)
     title = (load_info(key, out_dir) or info)["title"] if record else info["title"]  # numbered by the upload
     return {"title": title, "record": record, "post_at": post_at}
@@ -992,7 +1012,7 @@ def veto(key: str, out_dir: Path | None = None, youtube=None) -> dict[str, Any]:
     info.pop("approved", None)
     record = (info.get("uploads") or {}).get("youtube") or {}
     hidden = False
-    if record.get("video_id") and record.get("privacy") != "private":
+    if record.get("video_id") and (record.get("privacy") != "private" or record.get("scheduled_for")):
         from googleapiclient.errors import HttpError
 
         youtube = youtube or publish._youtube(TOKEN)
@@ -1002,6 +1022,7 @@ def veto(key: str, out_dir: Path | None = None, youtube=None) -> dict[str, Any]:
             save_info(info, out_dir)
             raise publish.PublishError(publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the change")) from err
         record["privacy"] = "private"
+        record.pop("scheduled_for", None)  # the schedule is gone too
         hidden = True
     save_info(info, out_dir)
     return {"key": key, "title": info.get("title", key), "uploaded": bool(record), "hidden": hidden}
@@ -1086,7 +1107,7 @@ def comment_line(record: dict) -> str:
 def announce_upload(info: dict, record: dict, settings=None) -> str | None:
     lb = channel_common.link_button
     b = channel_common.button
-    text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({record.get('privacy', '?')}): {record.get('url', '')}"
+    text = f"⬆️ **{info.get('title', info.get('key', ''))}** is on YouTube ({publish.privacy_note(record)}): {record.get('url', '')}"
     if line := comment_line(record):
         text += "\n" + line
     if str(record.get("thumbnail") or "").startswith("not set"):

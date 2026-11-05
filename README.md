@@ -644,6 +644,13 @@ On its own the bot posts to `DISCORD_CHANNEL_ID`:
   progress, then the links. If a platform fails, you get the error and a **Retry** button. A
   platform it's already on is skipped. TikTok has no upload API, so the message reminds you to post
   it there. If the bot was off at the slot time, it still posts when it's back, up to 2 h late.
+- **every channel uploads a slot's video an hour early** (since 2026-11-05: SideQuestLogic, Borderline Why,
+  Price Tag Why): private, scheduled for the slot (`publish.EARLY_UPLOAD`), so YouTube has processed it and the
+  thumbnail is set again before anyone sees it; YouTube makes it public at the slot itself. The comment to pin
+  goes up once it is public (the bot checks every minute, then every 10 min, gives up after 6 h with a warning),
+  with a "public now" message. An upload later than 16 min before its slot goes out public at once. Approve a
+  Borderline Why / Price Tag Why video at least an hour before its slot; the slot heads-up and the emergency
+  video come before the early upload.
   Items made outside TrendClip, and videos no longer on the machine, are only reported;
 - **the production run** (`AUTO_PRODUCE=true`, at `AUTO_PRODUCE_TIME`, default 10:15): every morning
   the bot makes a video for each empty slot of tomorrow (and of today when the slot is still 3+ hours

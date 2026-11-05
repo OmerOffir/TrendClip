@@ -27,7 +27,7 @@ DISCORD_FILE_LIMIT = 10 * 1024 * 1024  # servers without boosts
 MORNING_WINDOW = timedelta(hours=6)  # a summary missed by more than this (bot was off) is skipped
 PRODUCE_LEAD = timedelta(hours=3)  # the production run also fills today's slots that are at least this far away
 POST_WINDOW = timedelta(hours=2)  # a slot's automatic post missed by more than this (bot was off) is skipped
-EMERGENCY_LEAD = timedelta(hours=1)  # an empty slot gets its emergency video this long before it
+EMERGENCY_LEAD = timedelta(hours=2)  # an empty slot gets its emergency video this long before it (before the early upload)
 
 
 def _noop(_frac: float | None, _msg: str) -> None:
@@ -271,7 +271,8 @@ def _render_script(settings: Settings, clip: video_downloader.BackgroundClip, sc
 # --------------------------------------------------------------------------- YouTube
 
 
-def upload_request(settings: Settings, filename: str, privacy: publish.Privacy = "public") -> publish.YouTubeUploadRequest:
+def upload_request(settings: Settings, filename: str, privacy: publish.Privacy = "public",
+                   publish_at: datetime | None = None) -> publish.YouTubeUploadRequest:
     """What the Upload tab would send: the Short's saved texts (template the first time), series links."""
     short = publish.texts_for(settings, filename)
     texts = publish.PlatformTexts.model_validate(short.texts)
@@ -281,11 +282,32 @@ def upload_request(settings: Settings, filename: str, privacy: publish.Privacy =
         description=publish.youtube_description(texts.youtube, texts.credit, series["links"] if series else ""),
         tags=texts.youtube.tags,
         privacy=privacy,
+        publish_at=publish_at,
     )
 
 
-def upload_now(settings: Settings, filename: str, progress: ProgressFn = _noop) -> dict[str, Any]:
-    return publish.upload_youtube(settings, filename, upload_request(settings, filename, "public"), progress)
+def upload_now(settings: Settings, filename: str, progress: ProgressFn = _noop,
+               publish_at: datetime | None = None) -> dict[str, Any]:
+    """`publish_at`: uploaded private, YouTube makes it public then (the slot's early upload); the pinned comment
+    waits for that (after_publish)."""
+    record = publish.upload_youtube(settings, filename, upload_request(settings, filename, "public", publish_at), progress)
+    publish.later(settings.output_dir, filename, record)
+    return record
+
+
+def after_publish(settings: Settings, filename: str, youtube=None) -> bool | None:
+    """A scheduled upload's publish time has come: True once it is public (its record says so now), False while not
+    yet (or YouTube can't say), None when the Short is gone."""
+    try:
+        record = shorts.get_short(settings, filename).uploads.get("youtube") or {}
+    except (ValueError, FileNotFoundError, OSError):
+        return None
+    if not record.get("video_id"):
+        return None
+    if not publish.is_public(youtube or publish._youtube(), record["video_id"]):
+        return False
+    shorts.update_short(settings, filename, lambda s: s.uploads["youtube"].__setitem__("privacy", "public"))
+    return True
 
 
 def pinned_comment(settings: Settings, filename: str) -> str:
@@ -389,13 +411,14 @@ def due_reminders(settings: Settings, at: datetime, sent: set[str]) -> list[Remi
         for slot in planner.SLOTS:
             when = planner.slot_time(settings, day, slot)
             key = f"{day.isoformat()} {slot}"
+            when -= publish.EARLY_UPLOAD  # the heads-up comes before the early upload
             if key not in sent and when - lead <= at < when:
                 out.append(Reminder(key=key, kind="slot", day=day, slot=slot))
     if settings.auto_post:
         for slot in planner.SLOTS:
             when = planner.slot_time(settings, day, slot)
             key = post_key(day, slot)
-            if key not in sent and when <= at < when + POST_WINDOW:
+            if key not in sent and when - publish.EARLY_UPLOAD <= at < when + POST_WINDOW:  # private, scheduled for `when`
                 out.append(Reminder(key=key, kind="post", day=day, slot=slot))
     return out
 

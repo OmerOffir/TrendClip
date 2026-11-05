@@ -330,7 +330,9 @@ def test_jobs_and_due_times(settings, tmp_path, monkeypatch):
     assert bw_channel.due_makes(settings, early, set(), tmp_path) == []
     assert bw_channel.due_makes(settings, job.start, set(), tmp_path) == [job]
     assert bw_channel.due_makes(settings, job.start, {job.make_key}, tmp_path) == []
-    assert bw_channel.due_posts(settings, job.post_at - timedelta(minutes=1), set()) == []
+    # an hour early: uploaded private, scheduled for the slot
+    assert bw_channel.due_posts(settings, job.post_at - timedelta(minutes=61), set()) == []
+    assert bw_channel.due_posts(settings, job.post_at - timedelta(minutes=60), set()) == [job]
     assert bw_channel.due_posts(settings, job.post_at + timedelta(minutes=5), set()) == [job]
     assert bw_channel.due_posts(settings, job.post_at + bw_channel.POST_WINDOW, set()) == []
     assert job.make_key.startswith("2026-11-02")  # the sent log prunes by the date prefix
@@ -409,8 +411,8 @@ def test_approval_gates_the_upload(settings, tmp_path, world, monkeypatch):
     monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
     yt = FakeYouTube()
     assert bw_channel.publish_if_allowed(job.key, out_dir=tmp_path, youtube=yt) is None  # not approved yet
-    result = bw_channel.approve(job.key, settings, tmp_path, now=job.post_at - timedelta(hours=1), youtube=yt)
-    assert result["record"] is None and uploads == []  # before the slot: it waits
+    result = bw_channel.approve(job.key, settings, tmp_path, now=job.post_at - timedelta(hours=2), youtube=yt)
+    assert result["record"] is None and uploads == []  # before the slot's early upload: it waits
     record = bw_channel.publish_if_allowed(job.key, out_dir=tmp_path, youtube=yt)
     assert record["url"] == "https://youtu.be/abc" and uploads[0].category_id == "27" and uploads[0].privacy == "public"
     assert bw_channel.publish_if_allowed(job.key, out_dir=tmp_path, youtube=yt) == record  # never twice
@@ -2252,3 +2254,34 @@ def test_a_still_moment_gets_the_gif_of_a_spoken_word(world):
     assert len({e.opts["icon"] for e in added}) == len(added)
     times = sorted([0.0, *[e.at for e in added], spec.scenes[0].end])
     assert max(b - a for a, b in zip(times, times[1:])) <= bw_fx.GIF_GAP + 1.5
+
+
+def test_a_slot_upload_goes_up_an_hour_early_scheduled_and_comments_once_public(settings, tmp_path, world, monkeypatch):
+    from datetime import datetime, timezone
+
+    job, info, _ = _make(settings, tmp_path, world)
+    soon = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(hours=1)
+    info = bw_channel.load_info(job.key, tmp_path)
+    info["job"]["post_at"] = soon.isoformat()
+    bw_channel.save_info(info, tmp_path)
+    uploads, comments = [], []
+
+    def fake_upload(path, req, as_short, progress, youtube):
+        uploads.append(req)
+        return {"video_id": "abc", "url": "https://youtu.be/abc", "privacy": "private",
+                "scheduled_for": req.publish_at.strftime("%Y-%m-%dT%H:%M:%SZ")}
+
+    monkeypatch.setattr(bw_channel.publish, "upload_file", fake_upload)
+    monkeypatch.setattr(bw_channel, "announce_upload", lambda *a, **k: None)
+    monkeypatch.setattr(bw_channel, "comment", lambda info, youtube=None, out_dir=None: comments.append(info["key"]))
+    record = bw_channel.publish_if_allowed(job.key, out_dir=tmp_path, youtube=FakeYouTube())
+    assert uploads[0].publish_at == soon and record["privacy"] == "private"
+    assert comments == []  # a private video can't take the comment yet
+    assert bw_channel.publish.due_later(tmp_path, soon - timedelta(minutes=1)) == []
+    due = bw_channel.publish.due_later(tmp_path, soon)
+    assert [e["key"] for e in due] == [job.key] and bw_channel.publish.due_later(tmp_path, soon) == []
+    monkeypatch.setattr(bw_channel.publish, "is_public", lambda yt, vid: False)
+    assert bw_channel.after_publish(job.key, tmp_path, FakeYouTube()) is False and comments == []
+    monkeypatch.setattr(bw_channel.publish, "is_public", lambda yt, vid: True)
+    assert bw_channel.after_publish(job.key, tmp_path, FakeYouTube()) is True and comments == [job.key]
+    assert bw_channel.load_info(job.key, tmp_path)["uploads"]["youtube"]["privacy"] == "public"
