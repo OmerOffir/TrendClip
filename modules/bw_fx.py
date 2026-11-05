@@ -1732,6 +1732,8 @@ class FxRenderer(Renderer):
             elif e.kind in ("line", "arrow") and e.text and e.feature_to is not None:
                 x1, y1 = cam.pt(*e.feature_to.label_point())
                 words(((x + x1) / 2, (y + y1) / 2 - 50), e.text, 46)
+            elif e.kind == "battle":  # the clash: its ring, explosions and smoke, and its name over it
+                zones.append((x - 180, y - 250 if e.text else y - 180, x + 180, y + 150))
         for e in scene.elements:  # what a country's character says, in its bubble over its head
             if e.kind == "local" and e.opts.get("say") and e is not skip:
                 size = int(e.opts.get("size", LOCAL_SIZE))

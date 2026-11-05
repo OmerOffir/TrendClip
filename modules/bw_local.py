@@ -67,6 +67,7 @@ POP = 0.4  # seconds of the hop when a mood changes
 BADGE_R = 44  # the flag badge at a country's shoulder (radius, at LOCAL_SIZE; scaled with the character)
 SAY_WORDS = 5  # the most words a country says in one bubble
 SAY_PX = 56  # the bubble's hand lettering
+HEADLINE_CLEAR = 380  # a bubble never rises into the headline band (bw_fx.HEADLINE_BOTTOM + a little)
 _discs: dict[tuple[str, int], Image.Image] = {}
 
 
@@ -258,6 +259,11 @@ def bubble_box(say: str, head: tuple[float, float], width: int = 1080, lean: int
     cx = head[0] + side * (bw / 2 - 40 if lean else 90)  # away from the other side: the box clear of its bubble
     x0 = int(min(max(30, cx - bw / 2), width - 30 - bw))
     y1 = int(head[1] - tail - 10)
+    if y1 - bh < HEADLINE_CLEAR:  # a character standing high: the bubble sits beside its head, under the headline
+        y0 = int(max(HEADLINE_CLEAR, head[1] - bh / 2 + 30))
+        x0 = int(head[0] + 70 if side > 0 else head[0] - 70 - bw)
+        x0 = int(min(max(30, x0), width - 30 - bw))
+        return (x0, y0, x0 + bw, y0 + bh)
     return (x0, y1 - bh, x0 + bw, y1)
 
 
@@ -268,12 +274,22 @@ def say(ov: Image.Image, text: str, head: tuple[float, float], t: float, since: 
         return
     x0, y0, x1, y1 = bubble_box(text, head, ov.width, lean)
     bw, bh, tail = x1 - x0, y1 - y0, 46
-    m = 14
-    shape = Image.new("L", (bw + 2 * m, bh + 2 * m + tail), 0)
+    m = 14 + tail
+    shape = Image.new("L", (bw + 2 * m, bh + 2 * m), 0)
     ds = ImageDraw.Draw(shape)
     ds.rounded_rectangle([m, m, m + bw, m + bh], radius=34, fill=255)
-    tx = int(min(max(head[0], x0 + 50), x1 - 50)) - x0 + m  # the tail points down at the head
-    ds.polygon([(tx - 26, m + bh - 4), (tx + 26, m + bh - 4), (tx, m + bh + tail)], fill=255)
+    if y1 <= head[1] - 20:  # the box above the head: the tail points down at it
+        tx = int(min(max(head[0], x0 + 50), x1 - 50)) - x0 + m
+        tip = (tx, m + bh + tail)
+        ds.polygon([(tx - 26, m + bh - 4), (tx + 26, m + bh - 4), tip], fill=255)
+    else:  # beside the head: the tail points sideways at it from the nearer edge
+        ty = int(min(max(head[1] + 20, y0 + 40), y1 - 40)) - y0 + m
+        if head[0] < x0:
+            tip = (m - tail, ty)
+            ds.polygon([(m + 4, ty - 24), (m + 4, ty + 24), tip], fill=255)
+        else:
+            tip = (m + bw + tail, ty)
+            ds.polygon([(m + bw - 4, ty - 24), (m + bw - 4, ty + 24), tip], fill=255)
     layer = Image.new("RGBA", shape.size, (30, 32, 40, 0))
     layer.putalpha(shape.filter(ImageFilter.MaxFilter(9)))  # the ink outline
     layer.paste(Image.new("RGBA", shape.size, (255, 255, 255, 255)), (0, 0), shape)
@@ -281,8 +297,9 @@ def say(ov: Image.Image, text: str, head: tuple[float, float], t: float, since: 
     k = 0.6 + 0.4 * s
     if abs(k - 1) > 0.01:
         layer = layer.resize((max(1, int(layer.width * k)), max(1, int(layer.height * k))), Image.BILINEAR)
-    tip = ((tx) * k, (m + bh + tail) * k)  # it grows from the tail's tip on the head
-    px, py = int(head[0] - tip[0]), int(head[1] - tip[1] + 2 * math.sin(2.4 * t))
+    tip = (tip[0] * k, tip[1] * k)  # it grows from the tail's tip on the head
+    anchor = (x0 - m + tip[0] / k, y0 - m + tip[1] / k)  # where the tip lands on the frame at full size
+    px, py = int(anchor[0] - tip[0]), int(anchor[1] - tip[1] + 2 * math.sin(2.4 * t))
     sh = layer.getchannel("A").point(lambda v: int(v * 0.35))
     shadow = Image.new("RGBA", layer.size, (0, 0, 0, 0))
     shadow.putalpha(sh)
