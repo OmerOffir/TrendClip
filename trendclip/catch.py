@@ -47,11 +47,11 @@ CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1620), 600
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
           "Empty hands don't count. How many times? I won't tell. Ready? Here comes the first. Keep your eyes open. Don't blink. "
-          "Still watching? Pros only. Catch them all? What emojis did the zombie hold? Comment every one below! "
-          "Level {next} drops next. Subscribe so you don't miss it!")
+          "Still watching? Pros only. Catch them all? What emojis did the zombie hold? Comment every one below!")
 WINDOW = ("Ready", "Catch")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
+END_CARD = "Comment every emoji · Level {next} next"  # the series hook on the card, not spoken (see quiz.GAMER_END_CARD)
 PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
           "Hint: pause and step frames, most last 2 frames. Empty hands don't count. How many? That's the game.\n"
           "🏆 All of them = 10 leaderboard points. Level {next} drops next!")
@@ -103,7 +103,7 @@ def script(settings: Settings, game: str, *, format: str = "short", rng: random.
                            title_card=CARD.format(level=level))
     out = quiz._script(settings, game, "builtin", "gamer", format, text, HOOK.format(game=name), flashes, answer,
                        PINNED.format(next=level + 1), pack, on_screen=f"The zombie holds: {answer}",
-                       card=CARD.format(level=level), end_card=quiz.LOOP_CARD)
+                       card=CARD.format(level=level), end_card=END_CARD.format(next=level + 1))
     return out.model_copy(update={"catch": emojis, "reactions": []})
 
 

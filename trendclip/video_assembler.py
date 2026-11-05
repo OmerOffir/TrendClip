@@ -44,6 +44,7 @@ WIDTH, HEIGHT = 1080, 1920
 LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
 LANDSCAPE_OVERLAY_SCALE = 0.72
 TAIL_SECONDS = 2.0  # the video ends this long after the last spoken word (the voice is padded with silence)
+LAST_FRAMES = 2  # a last-frame text (the answer) shows on this many frames: seen by pausing, never by watching
 # Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
 LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
                        "title_chars": 26}
@@ -264,13 +265,18 @@ def _resolve_color(color: str) -> str:
 
 
 def wrap_title(text: str, max_chars: int = 14, max_lines: int = 3) -> list[str]:
+    """`text` in lines of at most `max_chars`; a lone "-" or "·" forces a line break ("LEVEL 16 - FAKE MOB?")."""
     lines: list[str] = []
     for word in text.split():
-        if lines and len(lines[-1]) + 1 + len(word) <= max_chars:
+        if word in ("-", "·"):
+            lines.append("")
+        elif lines and lines[-1] and len(lines[-1]) + 1 + len(word) <= max_chars:
             lines[-1] += " " + word
+        elif lines and not lines[-1]:
+            lines[-1] = word
         else:
             lines.append(word)
-    return lines[:max_lines]
+    return [line for line in lines if line][:max_lines]
 
 
 PULSE_MS = 250
@@ -364,14 +370,16 @@ def fit_flash(text: str, font_size: int, max_width: float, font_file: Path | Non
 
 
 def flash_event(text: str, start: float, end: float, pos: tuple[int, int] | None = None, color: str = "",
-                size: int | None = None, lines: list[str] | None = None) -> str:
+                size: int | None = None, lines: list[str] | None = None, cut: bool = False) -> str:
     """Quiz step ('+18', 'CLUE 1', '?') that slams in big in the middle of the screen (or at `pos`), in the
     caption highlight colour or `color`. `size` / `lines` (fit_flash): a smaller font and explicit line
-    breaks for text that would run off the frame."""
+    breaks for text that would run off the frame. `cut`: full size at once, no fade or pop (a text that
+    lasts two frames would never be seen otherwise)."""
     at = rf"\pos({pos[0]},{pos[1]})" if pos else ""
     tint = rf"\1c{_resolve_color(color)}&" if color else ""
     shrink = rf"\fs{size}" if size else ""
-    anim = rf"{{{at}{tint}{shrink}\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)}}"
+    motion = "" if cut else r"\fad(40,120)\fscx40\fscy40\t(0,110,\fscx118\fscy118)\t(110,210,\fscx100\fscy100)"
+    anim = rf"{{{at}{tint}{shrink}{motion}}}"
     body = r"\N".join(_ass_text(line, True) for line in (lines or [text]))
     return f"Dialogue: 2,{_ass_time(start)},{_ass_time(end)},Flash,,0,0,0,,{anim}{body}"
 
@@ -410,6 +418,9 @@ def create_karaoke_ass_file(
     cover_size: int = 140,
     cover_y: float = 0.5,  # its centre, as a share of the height
     tail_seconds: float = TAIL_SECONDS,  # how long the video runs after the last word
+    tail_text: str = "",  # a flash held through the tail, after the captions are gone (the question again: the loop)
+    last_frame_text: str = "",  # a flash on the last LAST_FRAMES frames only (the answer: pause to see it)
+    fps: int = 30,
     extra_styles: list[str] | None = None,  # more "Style: ..." lines ("{font}" in them is the font's name)
     extra_events: list[str] | None = None,  # more "Dialogue: ..." lines (a ranking's list on screen)
 ) -> Path:
@@ -472,6 +483,20 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             pos = (size[0] // 2, round(centre))
         events.append(flash_event(f.text, f.start, f.end, pos, getattr(f, "color", ""),
                                   fs if fs < flash_size else None, lines if len(lines) > 1 else None))
+
+    if words and (tail_text.strip() or last_frame_text.strip()):
+        last = words[-1].end
+        finish = last + tail_seconds
+        blink = LAST_FRAMES / fps
+        pos = (size[0] // 2, round(size[1] * (flash_y or 0.5)))
+        if tail_text.strip():
+            fs, lines = fit_flash(tail_text, flash_size, max_flash_width, font_file)
+            events.append(flash_event(tail_text, round(last + hold_seconds + 0.1, 3), round(finish - blink, 3), pos, "",
+                                      fs if fs < flash_size else None, lines if len(lines) > 1 else None))
+        if last_frame_text.strip():
+            fs, lines = fit_flash(last_frame_text, flash_size, max_flash_width, font_file)
+            events.append(flash_event(last_frame_text, round(finish - blink, 3), round(finish, 3), pos, "green",
+                                      fs if fs < flash_size else None, lines if len(lines) > 1 else None, cut=True))
 
     events += list(extra_events or [])
     for ci, chunk in enumerate(chunks):
@@ -837,7 +862,7 @@ def assemble_video(
         if font_file:
             shutil.copyfile(font_file, fonts_dir / font_file.name)
         ass_path = create_karaoke_ass_file(timestamps_data, work_dir / "subs.ass", font=font_name, tail_seconds=tail_seconds,
-                                           **subtitle_style)
+                                           fps=fps, **subtitle_style)
 
         tmp_out = output.with_name(output.stem + ".rendering.mp4")
         cmd = [ffmpeg, "-y", "-hide_banner", "-loglevel", "error", "-nostats", "-progress", "pipe:1"]

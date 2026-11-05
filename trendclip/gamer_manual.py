@@ -38,6 +38,7 @@ Answer with ONLY one JSON object (no text before or after it, no code fence), sh
       "correct": "the right answer",
       "fact": "One or two sentences proving it, with the real numbers or names.",
       "short_name": "MINECRAFT",
+      "headline": "FAKE MOB?",
       "title": "Real Minecraft Players Know This",
       "description": "One or two sentences daring fans to comment the answer.",
       "hashtags": ["#shorts", "#minecraft", "#gaming", "#quiz"],

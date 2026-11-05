@@ -215,3 +215,24 @@ def test_flashes_never_run_off_the_frame(tmp_path):
     assert re.search(r"\\fs\d", second) and "SURVIVAL" in second and "\\pos(540,749)" in second  # shrunk, usual spot
     assert not re.search(r"\\fs\d", third) and third.endswith("?")
 
+
+
+def test_a_gamer_tail_shows_the_question_again_then_the_answer_on_the_last_two_frames(tmp_path):
+    """The tail (2 s after the last word) loops back to frame 0 with the question's tease, and the answer is on
+    the last two frames only: seen by pausing, never by watching through."""
+    from trendclip import quiz, shorts
+
+    words = [va.Word("Got", 0.0, 0.3), va.Word("it?", 0.3, 0.7)]
+    path = va.create_karaoke_ass_file(words, tmp_path / "s.ass", title_card="LEVEL 16 - FAKE MOB?", tail_seconds=2.0,
+                                      tail_text="FAKE MOB?", last_frame_text="Wraith", fps=30, flash_y=0.39)
+    text = path.read_text(encoding="utf-8")
+    assert "0:00:00.00,0:00:03.00,Title" in text and r"\N".join(["LEVEL 16", "FAKE MOB?"]) in text
+    tail = next(line for line in text.splitlines() if "FAKE MOB?" in line and ",Flash," in line)
+    answer = next(line for line in text.splitlines() if "WRAITH" in line)
+    assert "0:00:01.05,0:00:02.63,Flash" in tail  # after the last caption, until the answer
+    assert "0:00:02.63,0:00:02.70,Flash" in answer and r"\fad" not in answer and r"\1c" in answer  # 2 frames, green, no pop-in
+    req = shorts.RenderRequest(script="Got it?", clip="mc.mp4", game="Minecraft", mode="gamer", answer="Wraith",
+                               title_card="LEVEL 16 - FAKE MOB?", flashes=[quiz.Flash(word="Got", text="?")])
+    assert shorts.tail_texts(req) == {"tail_text": "FAKE MOB?", "last_frame_text": "Wraith"}
+    assert shorts.tail_texts(req.model_copy(update={"catch": ["🎲", "🍕", "🎈"]})) == {}  # the zombie's answer is emoji
+    assert shorts.tail_texts(req.model_copy(update={"mode": "trivia"})) == {}

@@ -64,7 +64,7 @@ def test_a_manual_question_becomes_the_next_level_over_its_own_game(tmp_path, mo
     monkeypatch.setattr(assistant, "_render_script", lambda settings, c, script, progress, mode: rendered.update(
         clip=c, script=script, mode=mode) or "short")
     assert assistant.create_gamer_short(s, "Minecraft", gamer(), "number") == "short"
-    assert rendered["mode"] == "gamer" and rendered["script"].title_card == "LEVEL 1 - MINECRAFT FANS ONLY"
+    assert rendered["mode"] == "gamer" and rendered["script"].title_card == "LEVEL 1 - HOW MANY?"
     assert rendered["script"].model == "manual" and quiz.history(s, "gamer")[0]["shape"] == "number"
     other = clip(tmp_path, "GTA V / Online", "gta.mp4")
     monkeypatch.setattr(assistant, "fresh_clip", lambda *a, **k: other)
@@ -160,12 +160,10 @@ def test_questions_titles_and_banners_from_hand_written_answers_are_cleaned(tmp_
     assert quiz.gamer_title("GTA Fans Always Miss This", gta) == "GTA Fans Always Miss This"
     assert quiz.gamer_title("Real Minecraft Players Know This Level 4", "Minecraft") == "Real Minecraft Players Know This"
     assert quiz.gamer_title("GTA V Fans: Level 6 🎮", gta) == "GTA V Fans"
-    assert quiz.gamer_card(3, "BETA ENDING", gta) == "LEVEL 3 - GTA V FANS ONLY"
-    assert quiz.gamer_card(3, "CS2", "Counter-Strike 2") == "LEVEL 3 - CS2 FANS ONLY"
     s = make_settings(tmp_path)
     sid = gamer_manual.start(s, gta, random.Random(1))["id"]
     view = gamer_manual.answer(s, sid, candidates(gamer(question=long, trap="Trevor", distractor="Michael", correct="Franklin")))
-    assert view["step"] == "write" and "at most 16 words" in view["problems"][0]
+    assert view["step"] == "write" and "at most 10 words" in view["problems"][0]
 
 
 def test_a_gamer_iq_out_of_quota_becomes_a_math_challenge(tmp_path, monkeypatch):

@@ -142,7 +142,9 @@ def quiz_rate(rate: str) -> str:
 def render_style(landscape: bool) -> dict:
     """assemble_video options for a quiz: a large pulsing dare on frame 0, numbers + captions in the middle,
     music at full level from the first frame (a slow fade-in reads as a slow start and viewers swipe)."""
-    style: dict = {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0}
+    # title_pop off: the card is at full size on frame 0 (the frame the feed shows while the Short loads; with
+    # the pop-in it was blank for the first 80 ms and a swipe trigger).
+    style: dict = {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0, "title_pop": False}
     if not landscape:
         style |= {"margin_v": CAPTION_MARGIN, "flash_y": FLASH_Y}
     return style
@@ -507,20 +509,23 @@ class GeminiTriviaSet(BaseModel):
 
 class GeminiGamer(BaseModel):
     question: str = Field(description=(
-        "The question, at most 12 words, naming the game, e.g. 'How many obsidian blocks make the smallest Minecraft "
-        "Nether portal?' (the form only: never reuse an example)."))
+        "The question, at most 9 words, naming the game, e.g. 'Smallest Minecraft Nether portal: how many obsidian?' "
+        "(the form only: never reuse an example)."))
     trap: str = Field(description=(
-        "The answer most casual players pick instinctively, but WRONG, 1 to 4 words, as spoken after 'Is it'. "
+        "The answer most casual players pick instinctively, but WRONG, 1 to 3 words, as spoken after 'Is it'. "
         "For an open question (no options): the part most players forget or get wrong."))
-    distractor: str = Field("", description="A plausible but wrong option, 1 to 4 words, same style. Empty for an open question.")
+    distractor: str = Field("", description="A plausible but wrong option, 1 to 3 words, same style. Empty for an open question.")
     correct: str = Field(description=(
-        "The CORRECT answer, 1 to 4 words, same style. True in the current version of the game, well documented "
+        "The CORRECT answer, 1 to 3 words, same style. True in the current version of the game, well documented "
         "on the game's wiki or by its makers, easy to verify on Google. For an open question: the whole answer as "
         "a comma-separated list with counts, e.g. '3 obsidian, 5 glass, 1 Nether Star', 1 to 6 parts."))
     fact: str = Field(description=(
         "One or two short sentences proving the correct answer with the real numbers or names. Used to build the "
         "hint; the answer itself stays off the video."))
     short_name: str = Field(description="The game's short name in capitals, at most 12 characters, e.g. 'MINECRAFT', 'GTA', 'CS2'.")
+    headline: str = Field("", description=(
+        "The question as a tease for the first frame, 1 to 4 words, capitals, e.g. 'FAKE MOB?', 'WHICH CAME FIRST?', "
+        "'ANVIL = ? INGOTS'. Never an option or the answer in it."))
     title: str = Field(description=(
         "YouTube title, at most 45 characters, no hashtags, never the answer, aimed at the game's fans, e.g. "
         "'Real Minecraft Players Know This' or 'GTA Fans Always Miss This One'. No emoji."))
@@ -557,19 +562,24 @@ GAMER_FORMS = {
     "options": """Each is a speed question with three options: the trap most casual players pick instinctively, a plausible
 distractor, and the correct answer. A real {game} fan should be able to get it, and feel proud; a casual
 player should feel sure of the trap, then doubt it, and comment to argue.
-- Every option short and easy to say, written as spoken after "Is it ...?"; numbers as digits ("16").
-- The question alone, at most 14 words: never the options in it (the video reads "Is it A? B? Or C?").""",
+- Every option 1 to 3 words, easy to say, written as spoken after "Is it ...?"; numbers as digits ("16").
+- The question alone, at most 9 words: never the options in it (the video reads "Is it A? B? Or C?").""",
     OPEN: """Each is an OPEN question: the video reads it, says "No options. Name every part.", counts down, and the
 viewers write the whole answer in the comments, where they correct each other. "correct" is the complete answer
 as a comma-separated list with counts, 1 to 6 parts of 1 to 3 words ("3 obsidian, 5 glass, 1 Nether Star"),
 "trap" the part most players forget or get wrong, "distractor" empty.
-- The question alone, at most 14 words, must make the expected list obvious ("What do you need to craft a
-  Beacon in Minecraft?").""",
+- The question alone, at most 9 words, must make the expected list obvious ("What crafts a Minecraft
+  Beacon?").""",
 }
 
-GAMER_PROMPT = """Write {count} different GAMER IQ questions for a Short (12-15 seconds) about {game}, the
+GAMER_PROMPT = """Write {count} different GAMER IQ questions for a Short (10-12 seconds) about {game}, the
 gameplay playing in the background. Shape: {shape}.
 {form}
+- Speed is everything: viewers swipe during a long question. The question alone at most 9 words, said in
+  about 2 seconds; every option 1 to 3 words. A question a fan can play in one second beats a lore question
+  that needs a setup.
+- headline: the question as a tease in 1 to 4 capital words for the very first frame ("FAKE MOB?",
+  "WHICH CAME FIRST?", "ANVIL = ? INGOTS"), never an option or the answer.
 
 What makes a candidate good:
 - ONE answer is right under the exact wording, on the game's wiki and by every reputable source, with no
@@ -1154,10 +1164,16 @@ def _write_trivia(settings: Settings, game: str, *, notes: str, format: str, pro
 
 GAMER_CANDIDATES = 4
 GAMER_HOOK = "{game} fans only."
-# The close: the comment ask, then the series hook; saying "Subscribe" pops the subscribe button. "Next", not
-# "tomorrow": two levels go out a day.
-GAMER_NEXT = "Level {level} drops next. Subscribe so you don't miss it!"
+# The close is the comment ask and nothing more: the spoken "Level N drops next. Subscribe..." (levels 5-16)
+# was a third of the video with nothing to gain, and the end retention fell from 0.5-0.65 to 0.16-0.29. The
+# next level is named on the end card and in the pinned comment instead.
 OPEN_ASK = "No options. Name every part."
+# The end card: the answer is on the last two frames (pause to see it: a rewatch and a pause are what the
+# retention metric rewards), then the series hook.
+GAMER_END_CARD = "Pause the last frame · for the answer · Level {level} next"
+# The frame-0 tease when the LLM gave none, by shape.
+GAMER_HEADLINES = {"number": "HOW MANY?", "fake": "SPOT THE FAKE", "first": "WHICH CAME FIRST?", OPEN: "NAME EVERY PART"}
+HEADLINE_MAX_WORDS = 4
 
 
 def gamer_level(settings: Settings) -> int:
@@ -1171,7 +1187,10 @@ def pick_gamer_shape(settings: Settings, rng: random.Random) -> str:
     return rng.choice([s for s in GAMER_SHAPES if s not in recent] or list(GAMER_SHAPES))
 
 
-GAMER_MAX_WORDS = 16
+# Viewers left before the first option whenever the question ran long (Level 6: 16 words, 5 s of question,
+# retention 0.72 at 30%; Level 2: 8 words, 1.41). Options the same: "an inverted agent number" is a sentence.
+GAMER_MAX_WORDS = 10  # the prompt asks for 9; one word of slack for "in Minecraft"
+OPTION_MAX_WORDS = 3
 _OPTION_ASK = re.compile(r"^(is it|or|was it|are they)\b", re.I)
 _PURE_DARE = re.compile(r"^(stop|don'?t pause|do not pause|no pausing|quick|think fast|be honest)\b", re.I)
 _GAMER_DARE = re.compile(r"\d+\s*%|\b(stop|don'?t pause|do not pause|five seconds|bet you|nobody|instincts?)\b", re.I)
@@ -1239,6 +1258,8 @@ def gamer_problem(c: GeminiGamer, shape: str) -> str:
     if options is None:
         return (f"the answer must be a list of 2 to {OPEN_PARTS} short parts" if shape == OPEN
                 else "needs three short, different options")
+    if any(len(o.split()) > OPTION_MAX_WORDS for o in options):
+        return f"every option must be at most {OPTION_MAX_WORDS} words"
     if not gamer_question(c.question, options):
         return f"the question alone (without the options) must be at most {GAMER_MAX_WORDS} words"
     return ""
@@ -1256,12 +1277,23 @@ def gamer_title(title: str, game: str) -> str:
     return title
 
 
-def gamer_card(level: int, short_name: str, game: str) -> str:
-    """The frame-0 banner: the level (a series to come back to) and who it is for (the game, never the topic)."""
-    name = " ".join(re.sub(r"[^\w\s&-]", " ", short_name or "").split()).upper()
-    if not name or len(name) > 12 or not set(name.lower().split()) & _game_words(game):
-        name = game_name(game).upper()[:12] or "GAMERS"
-    return f"LEVEL {level} - {name} FANS ONLY"
+def gamer_headline(result: GeminiGamer, shape: str, options: tuple[str, ...] | None = None) -> str:
+    """The frame-0 tease: the LLM's headline (1 to HEADLINE_MAX_WORDS words, no option or answer in it), else the
+    shape's own ("SPOT THE FAKE")."""
+    text = " ".join(re.sub(r"[^\w\s?!=&'-]", " ", getattr(result, "headline", "") or "").split()).upper()
+    words = re.findall(r"[A-Z0-9]+", text)  # "=" and "?" are not words
+    given = [o.lower() for o in (options or ()) if o] + [result.correct.lower()]
+    if (not words or len(words) > HEADLINE_MAX_WORDS or len(text) > 28
+            or any(re.search(rf"\b{re.escape(o)}\b", text, re.I) for o in given if len(o) > 1)):
+        return GAMER_HEADLINES.get(shape, GAMER_HEADLINES["number"])
+    return text
+
+
+def gamer_card(level: int, headline: str) -> str:
+    """The frame-0 banner, full size on the very first frame: the level (a series to come back to) on one line,
+    the question's tease on the next. The old "MINECRAFT FANS ONLY" said nothing to a viewer deciding whether to
+    swipe; the game is in the picture already."""
+    return f"LEVEL {level} - {headline}"
 
 
 def gamer_asked(settings: Settings) -> list[str]:
@@ -1336,7 +1368,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
         items = open_items(result.correct)
         correct, trap = ", ".join(items), result.trap.strip()
         hint = safe_hint(result.hint, *items) or f"{len(items)} different parts, counts matter"
-        lines = [question, OPEN_ASK, COUNTDOWN, end, GAMER_NEXT.format(level=level + 1)]
+        lines = [question, OPEN_ASK, COUNTDOWN, end]
         flashes.append(Flash(word="No", text="NO OPTIONS"))
         seen = f"Answer: {correct}" + (f" (most forget: {trap})" if trap else "") + f". {result.fact.strip()}"
         pin = (f"{question} Name every part. 👇\nHint: {hint}.\n🏆 First complete answer gets 10 leaderboard points. "
@@ -1348,7 +1380,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
         hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
         asks = [f"Is it {shuffled[0]}?", f"{shuffled[1][:1].upper()}{shuffled[1][1:]}?", f"Or {shuffled[2]}?"]
         # Like the trivia trap: the question is the first word spoken.
-        lines = [question, *asks, COUNTDOWN, end, GAMER_NEXT.format(level=level + 1)]
+        lines = [question, *asks, COUNTDOWN, end]
         for letter, option, said in zip("ABC", shuffled, ("Is it ", "", "Or ")):
             name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
             label = f"{letter}) {name[:1].upper()}{name[1:]}"
@@ -1362,7 +1394,8 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
     flashes += [*COUNTDOWN_FLASHES, got_it(end)]
     pack = result.model_copy(update={"title": f"{gamer_title(result.title, game)} | Level {level} 🎮"})
     script = _script(settings, game, model, "gamer", format, " ".join(lines), GAMER_HOOK.format(game=game), flashes,
-                     correct, pin, pack, on_screen=seen, card=gamer_card(level, result.short_name, game), end_card=LOOP_CARD)
+                     correct, pin, pack, on_screen=seen, card=gamer_card(level, gamer_headline(result, shape, options)),
+                     end_card=GAMER_END_CARD.format(level=level + 1))
     return script.model_copy(update={"reactions": [Reaction(word="Three", mood="suspicious")]})
 
 

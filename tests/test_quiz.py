@@ -408,7 +408,8 @@ def test_quiz_layout_pulses_the_hook_and_keeps_the_middle_band(tmp_path):
     text = path.read_text(encoding="utf-8")
     assert rf"\pos(540,{round(1920 * quiz.FLASH_Y)})" in text and text.count(r"\3c") > 4
     assert f",{quiz.CAPTION_MARGIN},1" in text  # karaoke style MarginV
-    assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0}
+    assert quiz.render_style(True) == {"title_pulse": True, "title_chars": 16, "title_size": 148, "music_fade_in": 0.0,
+                                       "title_pop": False}  # the card is at full size on frame 0
     assert "afade=t=in" not in va.music_filter(20, 0.15, 0.0) and "afade=t=in:d=0.80" in va.music_filter(20, 0.15)
 
 
@@ -655,7 +656,32 @@ def gamer(question="How many obsidian blocks make the smallest Nether portal", t
         question=question, trap=trap, distractor=distractor, correct=correct,
         fact=kw.pop("fact", "Corners are optional, so 10 obsidian blocks are enough."),
         short_name=kw.pop("short_name", "Minecraft"), title=kw.pop("title", "Real Minecraft Players Know This 🧱"),
-        description="Comment it!", hashtags=["#minecraft", "#shorts"], hint=kw.pop("hint", "fewer than a full frame"))
+        description="Comment it!", hashtags=["#minecraft", "#shorts"], hint=kw.pop("hint", "fewer than a full frame"),
+        headline=kw.pop("headline", ""))
+
+
+def test_a_gamer_level_is_short_enough_to_play_in_a_second():
+    """Viewers left before the first option whenever the question ran long (Level 6, 16 words, held 0.72 at
+    30% of the video; Level 2, 8 words, 1.41): the question is at most 10 words and every option at most 3."""
+    long = gamer("What is the secret meaning behind the name of the JB700 classic car in GTA 5",
+                 "horsepower", "agent number", "initials")
+    assert quiz.gamer_problem(long, "number") == "the question alone (without the options) must be at most 10 words"
+    wordy = gamer(correct="an inverted agent number")
+    assert quiz.gamer_problem(wordy, "number") == "every option must be at most 3 words"
+    assert quiz.gamer_problem(gamer("Find the fake Minecraft mob", "Zoglin", "Stray", "Wraith"), "fake") == ""
+
+
+def test_the_frame_zero_card_teases_the_question_never_the_answer():
+    opts = ("14", "12", "10")
+    assert quiz.gamer_headline(gamer(headline="Nether portal = ? blocks"), "number", opts) == "NETHER PORTAL = ? BLOCKS"
+    assert quiz.gamer_headline(gamer(headline="is it 10 blocks?"), "number", opts) == "HOW MANY?"  # names the answer
+    assert quiz.gamer_headline(gamer(headline="the smallest portal you can make"), "number", opts) == "HOW MANY?"  # too long
+    assert quiz.gamer_headline(gamer(), "fake", opts) == "SPOT THE FAKE"
+    assert quiz.gamer_headline(gamer(), "first", opts) == "WHICH CAME FIRST?"
+    assert quiz.gamer_headline(gamer(), "open", ()) == "NAME EVERY PART"
+    assert quiz.gamer_card(16, "FAKE MOB?") == "LEVEL 16 - FAKE MOB?"
+    assert va.wrap_title("LEVEL 16 - FAKE MOB?", max_chars=16) == ["LEVEL 16", "FAKE MOB?"]  # the dash breaks the line
+    assert va.wrap_title("LEVEL 2 - MINECRAFT FANS ONLY", max_chars=14) == ["LEVEL 2", "MINECRAFT FANS", "ONLY"]
 
 
 def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, monkeypatch):
@@ -668,9 +694,11 @@ def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, m
     assert "wiki" in seen["prompts"][1]  # the game check, not the general trivia one
     assert result.mode == "gamer" and result.answer == "10" and result.game == "Minecraft"
     assert result.script.startswith("How many obsidian blocks make the smallest Nether portal? Is it ")
-    # The close asks for the answer, then hooks the next level and says Subscribe (the button pops there).
-    assert result.script.endswith("Got it? Drop your answer below! Level 2 drops next. Subscribe so you don't miss it!")
-    assert result.title_card == "LEVEL 1 - MINECRAFT FANS ONLY"
+    # The close asks for the answer and stops: the spoken "Level 2 drops next. Subscribe..." cost a third of the
+    # video; the next level is on the end card, with the pause-to-see answer, and in the pinned comment.
+    assert result.script.endswith("Three. Two. One. Got it? Drop your answer below!")
+    assert result.end_card == "Pause the last frame · for the answer · Level 2 next"
+    assert result.title_card == "LEVEL 1 - HOW MANY?"  # no headline from the LLM: the shape's tease
     assert result.title == "Real Minecraft Players Know This | Level 1 🎮"  # Gemini's emoji is dropped
     assert "Level 2 drops next!" in result.pinned_comment and "10 leaderboard points" in result.pinned_comment
     assert "Hint: fewer than a full frame." in result.pinned_comment
@@ -678,8 +706,8 @@ def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, m
 
     again = quiz.write_quiz(s, "GTA V / Online", "gamer", rng=random.Random(1), client=gamer_client(
         [[gamer("Which car is NOT in GTA V", "Pegassi Zentorno", "Grotti Turismo R", "Ferrari Enzo",
-                short_name="", title="GTA Fans Always Miss This")]], ["1: PASS"]))
-    assert again.title_card == "LEVEL 2 - GTA V FANS ONLY" and again.title.endswith("| Level 2 🎮")
+                short_name="", title="GTA Fans Always Miss This", headline="fake GTA car?")]], ["1: PASS"]))
+    assert again.title_card == "LEVEL 2 - FAKE GTA CAR?" and again.title.endswith("| Level 2 🎮")
     history = quiz.history(s, "gamer")
     assert [h["level"] for h in history] == ["1", "2"] and history[1]["game"] == "GTA V / Online"
     assert history[0]["shape"] != history[1]["shape"] or len(quiz.GAMER_SHAPES) == 1

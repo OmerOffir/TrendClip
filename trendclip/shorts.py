@@ -330,6 +330,16 @@ def pick_voice(settings: Settings, requested: str | None, engine: str | None = N
     return default_voice(settings, engine)
 
 
+def tail_texts(req: RenderRequest) -> dict[str, str]:
+    """A Gamer IQ level's tail: the question's tease again after the last word (the loop back to frame 0) and the
+    answer on the last two frames (seen by pausing). Not for a catch level (its answer is emoji, which the flash
+    font can't draw, and the zombie is the game)."""
+    if req.mode != "gamer" or req.catch or not req.answer.strip():
+        return {}
+    _, dash, headline = req.title_card.partition(" - ")
+    return {"tail_text": headline.strip() if dash else "", "last_frame_text": req.answer.strip()[:40]}
+
+
 def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
                  voice_from: Path | None = None) -> ShortVideo:
     """`voice_from`: an existing voiceover MP3 (+ .words.json) with the same script, voice and speed."""
@@ -380,6 +390,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
         flashes=flashes, landscape=req.aspect == "landscape",
         **(quiz.render_style(req.aspect == "landscape") if req.flashes else {}),
+        **tail_texts(req),
     )
 
     credit = credit_line(meta)
