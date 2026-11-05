@@ -697,7 +697,7 @@ def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, m
     # The close asks for the answer and stops: the spoken "Level 2 drops next. Subscribe..." cost a third of the
     # video; the next level is on the end card, with the pause-to-see answer, and in the pinned comment.
     assert result.script.endswith("Three. Two. One. Got it? Drop your answer below!")
-    assert result.end_card == "Pause the last frame · for the answer · Level 2 next"
+    assert result.end_card == "Pause the last frame · for the answer"
     assert result.title_card == "LEVEL 1 - HOW MANY?"  # no headline from the LLM: the shape's tease
     assert result.title == "Real Minecraft Players Know This | Level 1 🎮"  # Gemini's emoji is dropped
     assert "Level 2 drops next!" in result.pinned_comment and "10 leaderboard points" in result.pinned_comment

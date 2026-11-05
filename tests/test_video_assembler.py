@@ -234,5 +234,6 @@ def test_a_gamer_tail_shows_the_question_again_then_the_answer_on_the_last_two_f
     req = shorts.RenderRequest(script="Got it?", clip="mc.mp4", game="Minecraft", mode="gamer", answer="Wraith",
                                title_card="LEVEL 16 - FAKE MOB?", flashes=[quiz.Flash(word="Got", text="?")])
     assert shorts.tail_texts(req) == {"tail_text": "FAKE MOB?", "last_frame_text": "Wraith"}
-    assert shorts.tail_texts(req.model_copy(update={"catch": ["🎲", "🍕", "🎈"]})) == {}  # the zombie's answer is emoji
+    # the zombie's answer is emoji: no tail texts, only the quick end
+    assert shorts.tail_texts(req.model_copy(update={"catch": ["🎲", "🍕", "🎈"]})) == {"tail_seconds": 0.6}
     assert shorts.tail_texts(req.model_copy(update={"mode": "trivia"})) == {}

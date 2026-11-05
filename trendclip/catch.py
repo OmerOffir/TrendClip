@@ -51,7 +51,8 @@ SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, e
 WINDOW = ("Ready", "Catch")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
-END_CARD = "Comment every emoji · Level {next} next"  # the series hook on the card, not spoken (see quiz.GAMER_END_CARD)
+END_CARD = "Comment every emoji"  # no "Level N next" or subscribe: the video ends on the ask (the owner, 2026-11-05)
+TAIL = 0.6  # seconds after "below!" (not the usual 2 s): a quick end that loops back to the zombie banner
 PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
           "Hint: pause and step frames, most last 2 frames. Empty hands don't count. How many? That's the game.\n"
           "🏆 All of them = 10 leaderboard points. Level {next} drops next!")

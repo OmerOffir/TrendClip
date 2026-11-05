@@ -1170,7 +1170,7 @@ GAMER_HOOK = "{game} fans only."
 OPEN_ASK = "No options. Name every part."
 # The end card: the answer is on the last two frames (pause to see it: a rewatch and a pause are what the
 # retention metric rewards), then the series hook.
-GAMER_END_CARD = "Pause the last frame · for the answer · Level {level} next"
+GAMER_END_CARD = "Pause the last frame · for the answer"  # no "Level N next" (the owner, 2026-11-05)
 # The frame-0 tease when the LLM gave none, by shape.
 GAMER_HEADLINES = {"number": "HOW MANY?", "fake": "SPOT THE FAKE", "first": "WHICH CAME FIRST?", OPEN: "NAME EVERY PART"}
 HEADLINE_MAX_WORDS = 4

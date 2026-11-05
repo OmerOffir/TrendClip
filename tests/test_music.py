@@ -145,3 +145,8 @@ def test_story_mode_skips_watching(tmp_path, monkeypatch):
                                         client=SimpleNamespace(models=Models(), files=None))
     assert result.mode == "story" and not result.watched_clip
     assert all(isinstance(c, str) for c in seen["contents"])
+
+
+def test_music_filter_short_fade_for_a_quick_end():
+    assert "afade=t=out:st=29.40:d=0.60" in video_assembler.music_filter(30, 0.16, fade_seconds=0.6)
+    assert "afade=t=out:st=28.50:d=1.50" in video_assembler.music_filter(30, 0.16)

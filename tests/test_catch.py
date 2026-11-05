@@ -47,7 +47,7 @@ def test_the_catch_script_holds_a_few_emoji_never_says_how_many_and_asks_for_the
     assert result.answer == " ".join(result.catch) and result.choices == []
     assert result.script.startswith("Minecraft fans only. A zombie is hiding in this video, more than once,")
     assert result.script.endswith("Catch them all? What emojis did the zombie hold? Comment every one below!")
-    assert result.end_card == "Comment every emoji · Level 3 next"  # the series hook is on the card, never spoken
+    assert result.end_card == "Comment every emoji"  # no next level, no subscribe
     assert not re.search(r"\b(three|four|five|six) times\b", result.script + result.pinned_comment)  # the count is the game
     assert result.title == "Can You Catch The Zombie? | Level 2 🎮" and result.title_card == "LEVEL 2 - CATCH THE ZOMBIE"
     assert "All of them = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment

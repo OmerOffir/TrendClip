@@ -627,9 +627,9 @@ def video_filter(fit: Literal["crop", "blur"], fps: int, size: tuple[int, int] =
 VOICE_LEVEL = "highpass=f=80,loudnorm=I=-14:TP=-1.5:LRA=11,aresample=48000,aformat=sample_rates=48000:channel_layouts=mono"
 
 
-def music_filter(duration: float, volume: float, fade_in: float = 0.8) -> str:
+def music_filter(duration: float, volume: float, fade_in: float = 0.8, fade_seconds: float = 1.5) -> str:
     """Input 2 (music) under input 1 (voice): fade in/out, duck while the voice speaks → [aout]."""
-    fade_out = max(duration - 1.5, 0)
+    fade_out = max(duration - fade_seconds, 0)
     fade = f"afade=t=in:d={fade_in:.2f}," if fade_in > 0 else ""
     return (
         # Mono voice levelled to -14 LUFS, copied to both channels (a plain stereo upmix costs ~3 dB).
@@ -638,7 +638,7 @@ def music_filter(duration: float, volume: float, fade_in: float = 0.8) -> str:
         # EDM track and a quiet lo-fi one.
         "[2:a]loudnorm=I=-14:TP=-2:LRA=11,"
         f"aresample=48000,aformat=sample_rates=48000:channel_layouts=stereo,volume={volume:.3f},"
-        f"{fade}afade=t=out:st={fade_out:.2f}:d=1.5[bed];"
+        f"{fade}afade=t=out:st={fade_out:.2f}:d={fade_seconds:.2f}[bed];"
         # Gentle ducking: the music dips ~3-4 dB under speech and swells back in the pauses.
         "[bed][key]sidechaincompress=threshold=0.05:ratio=3:attack=20:release=400[ducked];"
         "[voice][ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]"
@@ -875,7 +875,7 @@ def assemble_video(
         audio_out = "[aout]"
         if music is not None:
             cmd += ["-stream_loop", "-1", "-ss", f"{music_start:.2f}", "-i", str(Path(music).resolve())]
-            graph += ";" + music_filter(voice_len, music_volume, music_fade_in)
+            graph += ";" + music_filter(voice_len, music_volume, music_fade_in, min(1.5, max(tail_seconds, 0.4)))
         else:
             graph += f";[1:a]{VOICE_LEVEL},apad,pan=stereo|c0=c0|c1=c0[aout]"
         current = "base"
