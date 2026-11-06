@@ -43,6 +43,8 @@ MAX_CARDS = 1  # a Short's static title cards: the first card lost viewers in 4 
 FIRST_WORDS = 12  # scene 1, about 3-4 s: viewers left where a long opening scene ended
 CARD_WORDS = 10  # a card's narration, about 4 s
 # Scene 2 opening on a setup line ("This is Point Roberts") lost 30-40 points of retention between 3 s and 10 s
+LEGEND_WORDS = re.compile(r"\b(legend|legends|legendary|myth|rumou?r|folklore|locals say|people say|some say|one story|the story goes|"
+                          r"is said|are said|supposedly|allegedly|according to lore|tradition holds|as the tale goes)\b", re.I)
 SETUP = re.compile(r"^\W*(this is|these are|this place is|it is called|it's called|they are called|meet|here is|here's|"
                    r"welcome to|say hello)\b", re.I)
 PHOTO_COUNT = "3-4 in the video, at most 5"
@@ -386,6 +388,8 @@ class Draft(BaseModel):
                                            "2 seconds: the outcome (0: no flash-forward).")
     hook_before: str = Field("", description="1-3 words stamped on the first map during the flash-forward (\"Day 0\").")
     hook_after: str = Field("", description="1-3 words stamped on the flashed outcome (\"Day 85\").")
+    legend: str = Field("", description="The narration's one legend sentence, word for word, marked as a legend "
+                                        "(\"the legend says\", \"locals say\"); '' when the video tells none.")
     scenes: list[SceneDraft] = Field(default_factory=list)
     claims: list[ClaimDraft] = Field(default_factory=list)
     description: str = Field("", description="2-3 sentences for the YouTube description: the answer in short.")
@@ -543,6 +547,11 @@ short Shorts get watched to the end and replayed)
   information that helps answer the question. Never add a side fact (an older history, a famous name, a trivia
   detail) just because a source mentions it or to cite another source; if the only other source covers side
   details, cite it for a fact that matters or leave it out. Keep uncertainty where the sources are uncertain ("about", "historians think").
+- ONE LEGEND, when the sources mention one: the most colourful popular story about the case (the kings who gambled
+  the villages away at chess, the drunk surveyor), in one sentence, marked as a legend in words ("the legend says",
+  "locals say", "one story goes", "some say"), never told as fact. Copy that sentence into "legend". A character
+  may tell it in its bubble ("I won it at chess!") with the mascot answering ("That's the legend, anyway."). People
+  stay for a story they haven't heard (the owner, 2026-11-06); a video with no legend in its sources has none.
 - Numbers as digits (1783, 49th, 123).
 
 """ + HOOK_RULES + SCENE_RULES + """THE CLAIMS
@@ -778,6 +787,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
     if limits.first_words and draft.scenes and words(draft.scenes[0].narration) > limits.first_words:
         problems.append(f"scene 1 is {words(draft.scenes[0].narration)} words (at most {limits.first_words}: one short line, "
                         "the question or the surprise)")
+    if legend := draft.legend.strip():  # the video's one legend: in the narration, and told as a legend
+        if " ".join(legend.split()).lower() not in " ".join(text.split()).lower():
+            problems.append("legend is not a sentence of the narration (copy the legend's sentence word for word)")
+        elif not LEGEND_WORDS.search(legend):
+            problems.append("the legend sentence is told as fact: mark it as a legend in words (\"the legend says\", "
+                            "\"locals say\", \"one story goes\")")
     if limits.no_setup and len(draft.scenes) > 1 and SETUP.match(draft.scenes[1].narration):
         problems.append("scene 2 opens on a setup line (\"This is ...\", \"It is called ...\"): open it on the strangest fact or "
                         "the first part of the answer")
@@ -895,6 +910,8 @@ def series_note(topic: Topic) -> str:
     """The lines that tell the writer what the topic brings: the absurd detail the video opens on (the owner's LLM
     picked it with the topic), and that this Short is the next episode of a numbered series ("" when neither)."""
     hook = f'Open the video on this detail (scene 1): "{topic.hook.strip()}"' if getattr(topic, "hook", "").strip() else ""
+    if getattr(topic, "legend", "").strip():
+        hook += ("\n" if hook else "") + f'Its legend, to tell as a legend in one sentence: "{topic.legend.strip()}"'
     series = topic.episode_of
     if not series:
         return hook

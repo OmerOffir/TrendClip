@@ -193,6 +193,15 @@ def test_check_catches_quotes_length_places_and_hype(world):
     assert "did you know" in problems
     short = _draft(narration_words=40)
     assert any("words (wanted" in p for p in bw_script.check(short, _research(), _find(world)))
+    # the one legend (the owner, 2026-11-06): a sentence of the narration, told as a legend
+    told = _draft()
+    told.scenes[1].narration = "Locals say a drunk surveyor drew the notch."
+    told.legend = "Locals say a drunk surveyor drew the notch."
+    assert not [p for p in bw_script.check(told, _research(), _find(world)) if "legend" in p]
+    told.legend = "A drunk surveyor drew the whole notch."
+    assert any("not a sentence of the narration" in p for p in bw_script.check(told, _research(), _find(world)))
+    told.scenes[1].narration = told.legend
+    assert any("told as fact" in p for p in bw_script.check(told, _research(), _find(world)))
 
 
 def test_check_takes_boards_and_the_mascot_lines(world):

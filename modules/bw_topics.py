@@ -90,6 +90,7 @@ class Topic(BaseModel):
     source: str = "seed"  # seed | gemini | llm (your own, pasted) | manual (added on the dashboard: goes first)
     series: str | None = None  # its numbered series (modules.bw_series), "" none, None not said (judged by its words)
     hook: str = ""  # the one absurd concrete detail the video opens on (the owner's LLM gives it; "" unknown)
+    legend: str = ""  # the legend or popular story attached to the case, told as a legend ("" none)
 
     @property
     def episode_of(self) -> str:
@@ -252,6 +253,7 @@ class Proposal(BaseModel):
     series: str = Field("", description="'Weird Borders' when the question is about " + bw_series.SERIES[bw_series.WEIRD_BORDERS]
                         + "; else ''.")
     hook: str = Field("", description="The one absurd concrete detail the video opens on, in a short sentence.")
+    legend: str = Field("", description="The legend, rumour or popular story attached to the case, in one sentence; '' when there is none.")
 
 
 class Proposals(BaseModel):
@@ -276,6 +278,10 @@ Propose 20 new questions. Each must:
 - come with ONE absurd concrete detail that fits in a sentence and opens the video ("a pope drew a line through
   the ocean", "the border runs through the hotel bar", "162 pieces of land"): a number, an object, a blunder, a
   person. Put it in "hook". A topic with no such detail is out;
+- bring the LEGEND when one exists: the rumour or popular story people tell about the case (the kings who gambled
+  the villages away at chess, the surveyor who was drunk, the border moved for a bar). One sentence in "legend",
+  "" when there is none. The video tells it as a legend ("the legend says"), never as fact, so it needs a page that
+  mentions it, not proof;
 - avoid active wars, ongoing ethnic conflicts and current elections.
 
 The channel runs a numbered series, "Weird Borders": {series_rule}. Make at least half of the
@@ -312,7 +318,8 @@ def keep(out_dir: Path, proposals: list[Proposal], source: str, check=None) -> l
             continue
         if title and title not in used:
             series = bw_series.normalize(p.series) if p.series.strip() else None  # unsaid: judged by its words
-            new.append(Topic(question=p.question.strip(), article=title, source=source, series=series, hook=p.hook.strip()))
+            new.append(Topic(question=p.question.strip(), article=title, source=source, series=series, hook=p.hook.strip(),
+                             legend=p.legend.strip()))
             used.append(title)
     with _lock:
         state = load(out_dir)

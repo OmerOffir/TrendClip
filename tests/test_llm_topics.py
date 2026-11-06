@@ -53,7 +53,8 @@ def test_borderline_why_prompt_and_paste(tmp_path):
     assert "Propose 20 new questions" in prompt and "Toledo War" in prompt and "Llívia" in prompt and '"topics"' in prompt
 
     answer = {"topics": [
-        {"question": "Why is Alaska's capital unreachable by road?", "article": "Juneau", "hook": "A state capital with no road in or out."},
+        {"question": "Why is Alaska's capital unreachable by road?", "article": "Juneau", "hook": "A state capital with no road in or out.",
+         "legend": "Locals say the road was never built so politicians could not be chased out."},
         {"question": "Why does Llívia sit inside France?", "article": "Llívia"},  # a seed already
         {"question": "Why is there a fake country?", "article": "Nowhere Land"},  # no article
         {"question": "Why does Point Nemo exist?", "article": "point nemo"},
@@ -66,6 +67,8 @@ def test_borderline_why_prompt_and_paste(tmp_path):
     assert left[0].hook == "A state capital with no road in or out." and left[1].hook == ""  # the absurd detail travels with the topic
     assert 'Open the video on this detail (scene 1): "A state capital with no road in or out."' in bw_script.series_note(left[0])
     assert "Open the video" not in bw_script.series_note(left[1])
+    assert 'Its legend, to tell as a legend in one sentence: "Locals say' in bw_script.series_note(left[0]) and left[1].legend == ""
+    assert "bring the LEGEND" in prompt
     assert "a story most viewers have NOT heard" in prompt and "ONE absurd concrete detail" in prompt  # the owner, 2026-11-06
     assert bw_topics.llm_add(tmp_path, json.dumps(answer), check=titles.get)["added"] == []  # never twice
     with pytest.raises(bw_topics.LLMTopicsError, match="no topics"):
