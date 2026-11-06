@@ -126,11 +126,13 @@ def all_topics(state: TopicState) -> list[Topic]:
 
 
 def remaining(out_dir: Path) -> list[Topic]:
-    """The topics still to make: the ones added by hand first, then the seeds, then Gemini's."""
+    """The topics still to make: the ones added by hand first, then the owner's LLM's (chosen for the channel's
+    current bet, 2026-11-06), then the seeds, then Gemini's."""
     state = load(out_dir)
     done = set(state.used) | set(state.rejected)
     left = [t for t in all_topics(state) if t.article not in done]
-    left = [t for t in left if t.source == "manual"] + [t for t in left if t.source != "manual"]
+    rank = {"manual": 0, "llm": 1}
+    left = sorted(left, key=lambda t: rank.get(t.source, 2))  # a stable sort keeps each group's own order
     picked = state.next.removeprefix("topic:") if state.next.startswith("topic:") else ""
     return [t for t in left if t.article == picked] + [t for t in left if t.article != picked]
 

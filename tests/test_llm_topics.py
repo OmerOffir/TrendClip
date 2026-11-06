@@ -62,7 +62,7 @@ def test_borderline_why_prompt_and_paste(tmp_path):
     out = bw_topics.llm_add(tmp_path, json.dumps(answer), check=titles.get)
     assert out == {"added": ["Why is Alaska's capital unreachable by road?", "Why does Point Nemo exist?"], "skipped": 2}
     left = bw_topics.remaining(tmp_path)
-    assert [(t.article, t.source) for t in left[-2:]] == [("Juneau, Alaska", "llm"), ("Pole of inaccessibility", "llm")]
+    assert [(t.article, t.source) for t in left[:2]] == [("Juneau, Alaska", "llm"), ("Pole of inaccessibility", "llm")]  # your LLM's topics go before the seeds (2026-11-06)
     assert bw_topics.llm_add(tmp_path, json.dumps(answer), check=titles.get)["added"] == []  # never twice
     with pytest.raises(bw_topics.LLMTopicsError, match="no topics"):
         bw_topics.llm_add(tmp_path, '{"topics": []}')
