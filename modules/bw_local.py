@@ -64,7 +64,9 @@ FAMILY_NAMES = {"villager": "citizen", "person": "citizen", "migrant": "citizen"
                 "guard": "character", "guards": "character", "sentry": "character", "border_guard": "character", "policeman": "character",
                 "nomads": "nomad", "herder": "nomad", "herders": "nomad", "bedouin": "nomad", "bedouins": "nomad", "shepherd": "nomad",
                 "priests": "priest", "monk": "priest", "monks": "priest", "bishop": "priest", "missionary": "priest", "missionaries": "priest",
-                "church": "priest", "abbot": "priest"}
+                "church": "priest", "abbot": "priest", "pope": "priest",
+                "president": "diplomat", "prime_minister": "diplomat", "senator": "diplomat", "governor": "diplomat", "mayor": "diplomat",
+                "viceroy": "king", "duke": "king", "prince": "king", "captain": "general", "pirate": "chief", "navigator": "fisherman"}
 LOOKS = ("arab",)  # a family's other looks: <name>_<look>_blue / _red
 POSES = ("pointing", "arguing")  # a side family's poses: <name>_<pose>_<coat>
 SIDE_COLORS = {"a": "blue", "b": "red"}  # a side family's coat by the script's side letter (any other letter: blue)
