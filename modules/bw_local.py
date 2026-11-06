@@ -61,7 +61,10 @@ FAMILY_NAMES = {"villager": "citizen", "person": "citizen", "migrant": "citizen"
                 "chieftain": "chief", "tribe": "chief", "elder": "chief", "fishermen": "fisherman", "sailor": "fisherman",
                 "kid": "child", "children": "child", "boy": "child", "girl": "child", "woman": "village_woman", "women": "village_woman",
                 "mother": "village_woman", "villager_woman": "village_woman", "smith": "blacksmith", "worker": "blacksmith", "workers": "blacksmith",
-                "guard": "character", "guards": "character", "sentry": "character", "border_guard": "character", "policeman": "character"}
+                "guard": "character", "guards": "character", "sentry": "character", "border_guard": "character", "policeman": "character",
+                "nomads": "nomad", "herder": "nomad", "herders": "nomad", "bedouin": "nomad", "bedouins": "nomad", "shepherd": "nomad",
+                "priests": "priest", "monk": "priest", "monks": "priest", "bishop": "priest", "missionary": "priest", "missionaries": "priest",
+                "church": "priest", "abbot": "priest"}
 LOOKS = ("arab",)  # a family's other looks: <name>_<look>_blue / _red
 POSES = ("pointing", "arguing")  # a side family's poses: <name>_<pose>_<coat>
 SIDE_COLORS = {"a": "blue", "b": "red"}  # a side family's coat by the script's side letter (any other letter: blue)

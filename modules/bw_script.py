@@ -421,8 +421,9 @@ must be the whole narration.
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
   local (one of the channel's own characters standing on "place": "icon" is citizen, farmer, settler, king or
   soldier (these act out the mood with their own faces), or diplomat, general, merchant, sultan, emperor, chief,
-  fisherman, child, village_woman, blacksmith or guard (a uniformed man who argues with both hands and points
-  across the border on a shouted line, one ending in "!"); add _arab for a Middle Eastern or North African side
+  fisherman, child, village_woman, blacksmith, nomad (herders, steppe and desert peoples), priest (the church, a
+  mission, a monastery) or guard (a uniformed man who argues with both hands and points across the border on a
+  shouted line, one ending in "!"); add _arab for a Middle Eastern or North African side
   (general_arab, merchant_arab, sultan_arab, village_woman_arab...) (drawn in the side's coat: "color" a is blue, b is red, so the two
   sides of a story always read apart; use these for a treaty, an army's command, a company, a non-European ruler, a
   people without a modern flag, a coast, the next generation, the town), else another person from the icon list

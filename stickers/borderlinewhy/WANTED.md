@@ -8,13 +8,19 @@ Any `NAME_happy` or `NAME_blue` dropped into this folder becomes a character the
 
 diplomat, general, merchant, sultan, emperor, chief, fisherman, child, village_woman, blacksmith: blue + red.
 
+## Received 2026-11-06 (thanks!)
+
+The Arab look for all ten side families (`NAME_arab_blue/red`), and pointing poses: `general_arab_pointing_blue/red`,
+`merchant_arab_pointing_blue/red`, `emperor_arab_pointing_blue/red` (the crowned one), `nomad_pointing_blue/red`,
+`priest_pointing_blue/red`. The nomad and the priest are new characters the script can name.
+
 ## Still wanted
 
 | file | why |
 |---|---|
-| `NAME_pointing.gif` for any family | the argument pose: one arm pointing sideways, mouth open ("Mine!"). The code already plays it for a shouted line (one ending in "!") once the file exists |
-| `nomad_blue.gif` / `nomad_red.gif` | herders, steppe and desert peoples: headscarf, staff, a goat or camel by the feet |
-| `priest_blue.gif` / `priest_red.gif` | the church, a mission, a monastery (many border stories) |
+| `nomad_blue.gif` / `nomad_red.gif`, `priest_blue.gif` / `priest_red.gif` | their calm stance: today they only have the pointing pose, so they point whatever they say |
+| `general_pointing_blue/red.gif`, `king_pointing_blue/red.gif`, `merchant_pointing_blue/red.gif` | the pointing pose in the European look (the 2026-11-06 ones are in the Arab look, so they went to the `_arab` families) |
+| `NAME_arguing_blue/red.gif` for any family | the quieter argument pose (both hands up) the guard has; plays for a line that isn't shouted |
 | `NAME_sad.gif` for the side families | a side that lost (optional: today the clip's gesture plays whatever the mood) |
 
 ## Received 2026-11-05 night
