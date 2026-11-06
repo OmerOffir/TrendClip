@@ -219,7 +219,7 @@ def test_flashes_never_run_off_the_frame(tmp_path):
 
 def test_a_gamer_tail_shows_the_question_again_then_the_answer_on_the_last_two_frames(tmp_path):
     """The tail (2 s after the last word) loops back to frame 0 with the question's tease, and the answer is on
-    the last two frames only: seen by pausing, never by watching through."""
+    one frame, 8 frames before the end (never the last, which a loop holds): seen by pausing."""
     from trendclip import quiz, shorts
 
     words = [va.Word("Got", 0.0, 0.3), va.Word("it?", 0.3, 0.7)]
@@ -229,8 +229,11 @@ def test_a_gamer_tail_shows_the_question_again_then_the_answer_on_the_last_two_f
     assert "0:00:00.00,0:00:03.00,Title" in text and r"\N".join(["LEVEL 16", "FAKE MOB?"]) in text
     tail = next(line for line in text.splitlines() if "FAKE MOB?" in line and ",Flash," in line)
     answer = next(line for line in text.splitlines() if "WRAITH" in line)
-    assert "0:00:01.05,0:00:02.63,Flash" in tail  # after the last caption, until the answer
-    assert "0:00:02.63,0:00:02.70,Flash" in answer and r"\fad" not in answer and r"\1c" in answer  # 2 frames, green, no pop-in
+    # finish 2.7 s = frame 81; the answer on frame 73 (2.433 s): from 2.417 to 2.45, the tease around it
+    assert "0:00:01.05,0:00:02.42,Flash" in tail  # after the last caption, until the answer
+    assert "0:00:02.42,0:00:02.45,Flash" in answer and r"\fad" not in answer and r"\1c" in answer  # 1 frame, green, no pop-in
+    back = [line for line in text.splitlines() if "FAKE MOB?" in line and ",Flash," in line][1]
+    assert "0:00:02.45,0:00:02.70,Flash" in back and r"\fad" not in back  # the tease again at once, to the end
     req = shorts.RenderRequest(script="Got it?", clip="mc.mp4", game="Minecraft", mode="gamer", answer="Wraith",
                                title_card="LEVEL 16 - FAKE MOB?", flashes=[quiz.Flash(word="Got", text="?")])
     assert shorts.tail_texts(req) == {"tail_text": "FAKE MOB?", "last_frame_text": "Wraith"}

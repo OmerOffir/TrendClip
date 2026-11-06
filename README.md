@@ -295,7 +295,7 @@ The dashboard's **Create** tab turns a downloaded clip into a finished Short:
    question is at most 10 words and every option at most 3 (viewers left before the first option of a long
    one), nothing is spoken after "Drop your answer below!" (the spoken "Level N drops next, subscribe" cut
    the end retention in half), the tease is shown again after the last word so a replay feels natural, and
-   the answer is on the last two frames only, "Pause the last frame for the answer" on the end card (no "Level N next" on any end card). A Catch
+   the answer is on one frame only, 8 frames before the end (never the last frame, which a loop holds on screen), "The answer flashes for one frame" on the end card (no "Level N next" on any end card). A Catch
    the Zombie level ends 0.6 s after "Comment every one below!" so it loops. The
    questions are fact-checked on Google against the game's wiki; a quiz without a game uses a random
    clip and asks about its game (it is never moved to a "themed" background). `AUTO_PICK_DAILY_GAME=Minecraft`

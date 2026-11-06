@@ -44,7 +44,10 @@ WIDTH, HEIGHT = 1080, 1920
 LANDSCAPE = (1920, 1080)  # long videos: 16:9 (YouTube treats them as regular videos, not Shorts)
 LANDSCAPE_OVERLAY_SCALE = 0.72
 TAIL_SECONDS = 2.0  # the video ends this long after the last spoken word (the voice is padded with silence)
-LAST_FRAMES = 2  # a last-frame text (the answer) shows on this many frames: seen by pausing, never by watching
+# The answer shows on ONE frame, ANSWER_FROM_END frames before the end, the tease back on the frames after it: not
+# on the last frame, which a loop or a stopped player keeps on screen for a moment (the owner, 2026-11-06: the
+# answer on the last 2 frames was too easy to see). Seen by pausing or stepping frames, never by watching.
+ANSWER_FROM_END = 8
 # Karaoke / title sizes for the 16:9 canvas (the 9:16 defaults are the create_karaoke_ass_file arguments).
 LANDSCAPE_SUBTITLES = {"font_size": 96, "margin_v": 80, "outline": 8, "title_size": 92, "top_margin": 60,
                        "title_chars": 26}
@@ -419,7 +422,7 @@ def create_karaoke_ass_file(
     cover_y: float = 0.5,  # its centre, as a share of the height
     tail_seconds: float = TAIL_SECONDS,  # how long the video runs after the last word
     tail_text: str = "",  # a flash held through the tail, after the captions are gone (the question again: the loop)
-    last_frame_text: str = "",  # a flash on the last LAST_FRAMES frames only (the answer: pause to see it)
+    last_frame_text: str = "",  # a flash on one frame near the end (ANSWER_FROM_END: the answer, pause to see it)
     fps: int = 30,
     extra_styles: list[str] | None = None,  # more "Style: ..." lines ("{font}" in them is the font's name)
     extra_events: list[str] | None = None,  # more "Dialogue: ..." lines (a ranking's list on screen)
@@ -487,15 +490,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     if words and (tail_text.strip() or last_frame_text.strip()):
         last = words[-1].end
         finish = last + tail_seconds
-        blink = LAST_FRAMES / fps
         pos = (size[0] // 2, round(size[1] * (flash_y or 0.5)))
+        # The answer's frame k (at k / fps): shown from half a frame before it to half a frame after, so only that
+        # frame has it whatever the subtitle clock rounds to.
+        k = round(finish * fps) - ANSWER_FROM_END
+        a0, a1 = round((k - 0.5) / fps, 3), round((k + 0.5) / fps, 3)
+        answer = last_frame_text.strip() and a0 > last
         if tail_text.strip():
             fs, lines = fit_flash(tail_text, flash_size, max_flash_width, font_file)
-            events.append(flash_event(tail_text, round(last + hold_seconds + 0.1, 3), round(finish - blink, 3), pos, "",
-                                      fs if fs < flash_size else None, lines if len(lines) > 1 else None))
-        if last_frame_text.strip():
+            size_, split = fs if fs < flash_size else None, lines if len(lines) > 1 else None
+            start = round(last + hold_seconds + 0.1, 3)
+            events.append(flash_event(tail_text, start, a0 if answer else round(finish, 3), pos, "", size_, split))
+            if answer:  # back at once after the answer's frame, as if it never left
+                events.append(flash_event(tail_text, a1, round(finish, 3), pos, "", size_, split, cut=True))
+        if answer:
             fs, lines = fit_flash(last_frame_text, flash_size, max_flash_width, font_file)
-            events.append(flash_event(last_frame_text, round(finish - blink, 3), round(finish, 3), pos, "green",
+            events.append(flash_event(last_frame_text, a0, a1, pos, "green",
                                       fs if fs < flash_size else None, lines if len(lines) > 1 else None, cut=True))
 
     events += list(extra_events or [])

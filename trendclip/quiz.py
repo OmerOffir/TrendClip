@@ -1168,9 +1168,9 @@ GAMER_HOOK = "{game} fans only."
 # was a third of the video with nothing to gain, and the end retention fell from 0.5-0.65 to 0.16-0.29. The
 # next level is named on the end card and in the pinned comment instead.
 OPEN_ASK = "No options. Name every part."
-# The end card: the answer is on the last two frames (pause to see it: a rewatch and a pause are what the
+# The end card: the answer is on one frame near the end (pause to see it: a rewatch and a pause are what the
 # retention metric rewards), then the series hook.
-GAMER_END_CARD = "Pause the last frame · for the answer"  # no "Level N next" (the owner, 2026-11-05)
+GAMER_END_CARD = "The answer flashes · for one frame"  # no "Level N next" (the owner, 2026-11-05)
 # The frame-0 tease when the LLM gave none, by shape.
 GAMER_HEADLINES = {"number": "HOW MANY?", "fake": "SPOT THE FAKE", "first": "WHICH CAME FIRST?", OPEN: "NAME EVERY PART"}
 HEADLINE_MAX_WORDS = 4

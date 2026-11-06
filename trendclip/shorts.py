@@ -332,7 +332,7 @@ def pick_voice(settings: Settings, requested: str | None, engine: str | None = N
 
 def tail_texts(req: RenderRequest) -> dict[str, Any]:
     """A Gamer IQ level's tail: the question's tease again after the last word (the loop back to frame 0) and the
-    answer on the last two frames (seen by pausing). Not for a catch level (its answer is emoji, which the flash
+    answer on one frame near the end (seen by pausing). Not for a catch level (its answer is emoji, which the flash
     font can't draw, and the zombie is the game): it only gets the short catch.TAIL."""
     if req.catch:
         return {"tail_seconds": catch.TAIL}
