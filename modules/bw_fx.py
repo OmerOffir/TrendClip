@@ -1446,6 +1446,8 @@ class FxRenderer(Renderer):
                        for z in zones)
         slots = [(W * fx, HEADLINE_BOTTOM + dy - 360) if scene.headline else (W * fx, dy) for fx, dy in self.GIF_SLOTS]
         slots = [(x, max(y, (HEADLINE_BOTTOM if scene.headline else 0) + half + 20)) for x, y in slots]
+        wide = _icon_width(str(el.opts.get("icon") or ""), int(el.opts.get("size", 190))) * 0.5 + 10 if el.opts.get("icon") else half
+        slots = [(max(wide, min(W - wide, x)), y) for x, y in slots]  # a wide GIF (the cannon) whole on the screen
         return min(slots, key=lambda p: (overlap(p) > 0, overlap(p)))
 
     # -- the places' names (the owner, 2026-11-05: scenes where one thing happens look poor) --
