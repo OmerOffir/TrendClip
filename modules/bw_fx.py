@@ -1067,6 +1067,7 @@ class FxRenderer(Renderer):
                       if self.LIVELY and s.kind == "map" and not s.opts.get("globe")}
         self._badges: dict[tuple[str, int], Image.Image] = {}
         self._spots: dict[int, tuple[float, float] | None] = {}  # icon_spot: an icon moved off a flag or words
+        self._bubbles: list | None = None  # fx_map_frame: the sides' speech bubbles, drawn last, over every GIF
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
@@ -1387,17 +1388,25 @@ class FxRenderer(Renderer):
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
         d = ImageDraw.Draw(ov)
         self._hand = None
+        self._bubbles = []
         if not globe:
             self.attention(ov, cam, i, t)
             self.pulse(ov, cam, i, t)
         pen = None if globe else self.pens.get(i)
-        for el in scene.elements:
+        # an added GIF (a cannon on "war") goes under everything: never over a side, its flag or its words (the owner,
+        # 2026-11-06); then the scene's own elements in order
+        for el in sorted(scene.elements, key=lambda e: 0 if e.kind == "icon" and e.opts.get("auto") else 1):
             if el is pen:
                 self.pen_line(ov, d, cam, i, el, t)
             else:
                 self.element(ov, d, cam, el, t, scene)
         if not globe:
             self.names(ov, d, cam, i, t)
+        from modules import bw_local
+
+        for args in self._bubbles:  # what the sides say, over every GIF, army and name
+            bw_local.say(ov, *args)
+        self._bubbles = None
         if self._hand is not None and self.cam_clock is None:  # not on the flash-forward's held frames: a hand that
             bw_brand.draw_hand(ov, self._hand, t)  # never moves looks stuck (the owner, 2026-11-04)
         img.alpha_composite(ov)
@@ -1683,6 +1692,11 @@ class FxRenderer(Renderer):
                 x, y = self.anchor(cam, e)
                 hgt, fw = e.opts.get("height", 230), int(e.opts.get("width", 190))
                 zones.append((x - 12, y - hgt, x + fw + 8, y + 10))
+                continue
+            if e.kind == "highlight" and e.opts.get("_badge") and e.feature is not None:  # a war side's badge and its stem
+                x, y = cam.pt(*e.feature.label_point())
+                r = 62 + 10
+                zones.append((x - r, max(r + 30, y - r - 80) - r, x + r, y + 14))
                 continue
             if e.kind != "highlight" or not e.opts.get("flag") or e.feature is None:
                 continue
@@ -1974,7 +1988,11 @@ class FxRenderer(Renderer):
         if el.text:
             text(ov, (xy[0], xy[1] + size * 0.62), el.text.upper(), 44, a=min(1.0, max(0.0, u - 0.5)), max_width=W - 80)
         if el.opts.get("say") and self.cam_clock is None:  # what it says, on the react word (not on the flash-forward)
-            bw_local.say(ov, str(el.opts["say"]), self.head_of(el, xy, size), t, react, el.opts.get("_lean"))
+            args = (str(el.opts["say"]), self.head_of(el, xy, size), t, react, el.opts.get("_lean"))
+            if self._bubbles is not None:  # fx_map_frame draws it last, over every GIF and army
+                self._bubbles.append(args)
+            else:
+                bw_local.say(ov, *args)
 
     def head_of(self, el: Element, xy: tuple[float, float], size: int) -> tuple[float, float]:
         """The top of a local's head (where its speech bubble's tail points)."""

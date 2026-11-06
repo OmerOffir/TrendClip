@@ -2059,6 +2059,46 @@ def test_the_war_map_draws_sides_armies_battles_and_years(world, fx_offline):
     assert "stamp" in sounds and "whoosh" in sounds  # the battle's thud, the army's whoosh
 
 
+def test_a_sides_bubble_is_drawn_over_an_added_gif_and_an_icon_keeps_off_a_sides_badge(world, fx_offline, monkeypatch):
+    """The owner (2026-11-06): the cannon GIF of "war" stood on the general's bubble, and the planes hid behind
+    Egypt's flag badge. An added GIF goes under everything and the bubbles go last; a war side's badge (and its
+    stem) is a zone an icon on that country keeps off."""
+    from modules import bw_fx, bw_local
+
+    data = _spec_dict()
+    data["scenes"][2]["elements"] = [{"kind": "local", "place": "Paris", "cue": "stayed", "react": "stayed", "icon": "general",
+                                       "flag": "Flag of France.svg", "say": "Still here."}]
+    words = _words(" ".join(s["narration"] for s in data["scenes"]))
+    spec = bw_render.spec_from_dict(data, words)
+    assert bw_render.prepare(spec) == []
+    scene = spec.scenes[2]
+    local = next(e for e in scene.elements if e.kind == "local")
+    r = fx_offline.FxRenderer(spec)
+    scene.elements.append(bw_render.Element(kind="icon", at=local.at, text="", opts={"icon": "war", "auto": True, "n": 0, "size": 240}))
+    order = []
+    monkeypatch.setattr(bw_local, "say", lambda *a, **k: order.append("say"))
+    monkeypatch.setattr(r, "icon", lambda ov, el, xy, t, flip=False: order.append("gif" if el.opts.get("auto") else "icon"))
+    r.scene_frame(2, r.react_time(local, scene) + 0.5)
+    assert order and order.index("gif") < order.index("say")  # the GIF under, the bubble over
+    # the war map: a side's badge waves over its country, so an icon there steps aside
+    data = _fx_dict()
+    data["style"] = "war"
+    data["scenes"][0]["elements"] += [{"kind": "highlight", "place": "Canada", "color": "b"},  # a country: it gets a badge
+                                      {"kind": "icon", "place": "Canada", "icon": "plane", "cue": "notch"}]
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    side = next(e for e in spec.scenes[0].elements if e.kind == "highlight" and e.place == "Canada")
+    icon = next(e for e in spec.scenes[0].elements if e.kind == "icon")
+    assert side.opts.get("_badge")
+    r.scene_frame(0, icon.at + 0.5)
+    cam = r.camera(0, icon.at + 0.5)
+    zone = next(z for z in r.flag_zones(cam, spec.scenes[0]) if z[2] - z[0] < 200)  # the badge's box, stem included
+    ix, iy = r._spots.get(id(icon)) or r.anchor(cam, icon)
+    half = 190 * 0.65
+    assert not (ix + half > zone[0] and ix - half < zone[2] and iy + half > zone[1] and iy - half < zone[3])
+
+
 def test_the_war_map_counts_the_attempts_and_keeps_its_armies_on_screen(world, fx_offline):
     words = _words("Attempt 1 began. The second try failed. Attempt number three too. Then the third time again.")
     marks = bw_render.attempt_marks(words)
