@@ -2080,6 +2080,11 @@ def test_a_sides_bubble_is_drawn_over_an_added_gif_and_an_icon_keeps_off_a_sides
     monkeypatch.setattr(r, "icon", lambda ov, el, xy, t, flip=False: order.append("gif" if el.opts.get("auto") else "icon"))
     r.scene_frame(2, r.react_time(local, scene) + 0.5)
     assert order and order.index("gif") < order.index("say")  # the GIF under, the bubble over
+    gif = scene.elements[-1]  # and never touching the bubble's words: the side took its place first (the owner, 2026-11-06)
+    gx, gy = gif.opts["_xy"]
+    bub = bw_local.bubble_box("Still here.", r.head_of(local, r._spots[id(local)], bw_fx.LOCAL_SIZE), bw_render.W, local.opts.get("_lean"))
+    half = 240 * 0.62
+    assert not (gx + half > bub[0] and gx - half < bub[2] and gy + half > bub[1] and gy - half < bub[3])
     # the war map: a side's badge waves over its country, so an icon there steps aside
     data = _fx_dict()
     data["style"] = "war"

@@ -1419,10 +1419,16 @@ class FxRenderer(Renderer):
         lights up, a line's ends, the characters and icons, and the GIFs already added, for as long as it shows,
         the camera drifting under it); else the one that overlaps least. Never over the mascot or the captions."""
         half = int(el.opts.get("size", 190)) * 0.62
+        for e in scene.elements:  # the sides take their places first: a bubble's words stay clear of every GIF
+            if e.kind == "local" and id(e) not in self._spots:
+                x, y = self.anchor(self.camera(i, max(scene.start, e.at)), e)
+                self.icon_spot(i, scene, e, (x, y - int(e.opts.get("size", LOCAL_SIZE)) * 0.42) if e.feature is not None else (x, y))
         zones = []
+        bubbles = []
         for when in sorted({el.at, (el.at + scene.end) / 2, scene.end - 0.05}):
             c = self.camera(i, max(scene.start, when))
             zones += self.flag_zones(c, scene) + self.text_zones(c, i, scene)
+            bubbles += self.bubble_zones(c, scene)
             for e in scene.elements:
                 if e is el or e.feature is None:
                     continue
@@ -1448,6 +1454,8 @@ class FxRenderer(Renderer):
         slots = [(x, max(y, (HEADLINE_BOTTOM if scene.headline else 0) + half + 20)) for x, y in slots]
         wide = _icon_width(str(el.opts.get("icon") or ""), int(el.opts.get("size", 190))) * 0.5 + 10 if el.opts.get("icon") else half
         slots = [(max(wide, min(W - wide, x)), y) for x, y in slots]  # a wide GIF (the cannon) whole on the screen
+        touches = lambda p: any(p[0] + wide > z[0] and p[0] - wide < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in bubbles)
+        slots = [p for p in slots if not touches(p)] or slots  # never on words in a bubble (the owner, 2026-11-06)
         return min(slots, key=lambda p: (overlap(p) > 0, overlap(p)))
 
     # -- the places' names (the owner, 2026-11-05: scenes where one thing happens look poor) --
@@ -1750,7 +1758,18 @@ class FxRenderer(Renderer):
                 words(((x + x1) / 2, (y + y1) / 2 - 50), e.text, 46)
             elif e.kind == "battle":  # the clash: its ring, explosions and smoke, and its name over it
                 zones.append((x - 180, y - 250 if e.text else y - 180, x + 180, y + 150))
-        for e in scene.elements:  # what a country's character says, in its bubble over its head
+        zones += self.bubble_zones(cam, scene, skip)
+        if not scene.opts.get("globe"):  # the captions (off while the mascot talks, but its bubble sits there then)
+            zones.append((0, bw_render.CAPTION_Y - 80, W, bw_render.CAPTION_Y + 80))
+        return zones
+
+    def bubble_zones(self, cam, scene: Scene, skip: Element | None = None) -> list[tuple[float, float, float, float]]:
+        """Where words in a bubble are: what a country's character says over its head, and the mascot's bubble while
+        it talks in this scene. Nothing may touch these, under or over (the owner, 2026-11-06)."""
+        from modules import bw_local
+
+        zones = []
+        for e in scene.elements:
             if e.kind == "local" and e.opts.get("say") and e is not skip:
                 size = int(e.opts.get("size", LOCAL_SIZE))
                 spot = self._spots.get(id(e))
@@ -1758,8 +1777,6 @@ class FxRenderer(Renderer):
                 if not spot and e.feature is not None:
                     ey -= size * 0.42
                 zones.append(bw_local.bubble_box(str(e.opts["say"]), self.head_of(e, (ex, ey), size), W, e.opts.get("_lean")))
-        if not scene.opts.get("globe"):  # the captions (off while the mascot talks, but its bubble sits there then)
-            zones.append((0, bw_render.CAPTION_Y - 80, W, bw_render.CAPTION_Y + 80))
         if self.spec.brand and any(ln and ln[0].who == bw_brand.PANDA and ln[-1].end > scene.start and ln[0].start < scene.end
                                    for ln in self.spec.lines):
             cx, feet = bw_brand.mascot_spot()
@@ -1795,7 +1812,15 @@ class FxRenderer(Renderer):
             half = int(el.opts.get("size", LOCAL_SIZE)) * 0.65 if local else int(el.opts.get("size", 190)) * 0.65
             if el.kind == "icon" and el.opts.get("icon"):  # the owner's flat GIFs (a cannon, a ship) draw wider than tall
                 half = max(half, _icon_width(str(el.opts["icon"]), int(el.opts.get("size", 190))) * 0.5 + 8)
-            hits = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
+            body = lambda p: any(p[0] + half > z[0] and p[0] - half < z[2] and p[1] + half > z[1] and p[1] - half < z[3] for z in zones)
+            if local and el.opts.get("say"):  # its bubble's words too: never on a flag, a badge or other words (the owner, 2026-11-06)
+                from modules import bw_local
+
+                def hits(p):
+                    b = bw_local.bubble_box(str(el.opts["say"]), self.head_of(el, p, int(el.opts.get("size", LOCAL_SIZE))), W, el.opts.get("_lean"))
+                    return body(p) or any(b[2] > z[0] and b[0] < z[2] and b[3] > z[1] and b[1] < z[3] for z in zones)
+            else:
+                hits = body
             xy0 = xy if el.feature is None else self.anchor(cam, el)
             if local and el.feature is not None:
                 xy0 = (xy0[0], xy0[1] - int(el.opts.get("size", LOCAL_SIZE)) * 0.42)  # the feet on the place (element)
