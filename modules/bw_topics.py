@@ -261,6 +261,11 @@ Propose 20 new questions. Each must:
 - be a real, well-documented case with an English Wikipedia article (give its exact title);
 - be shown well on a map (places, borders, lines, movements);
 - have a surprising but true answer that fits in 60 seconds;
+- be a QUARREL between two sides that each had a flag (two countries, an empire and a colony, a kingdom and
+  a republic): the video tells it as their argument, each side speaks for itself, and it ends by asking the
+  viewer whose side they are on. Prefer stories with a sore loser, a cheeky winner, a swap that looks absurd
+  today, or a line someone drew drunk, late, or by mistake. Skip cases with no second side (a lone geographic
+  oddity nobody fought over);
 - avoid active wars, ongoing ethnic conflicts and current elections.
 
 The channel runs a numbered series, "Weird Borders": {series_rule}. Make at least half of the
