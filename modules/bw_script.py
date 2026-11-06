@@ -500,8 +500,11 @@ must be the whole narration.
 
 # A Short's opening and its history scenes (the Short prompts: here, modules.bw_whatif; bw_week reuses PROMPT)
 HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
-- Scene 1 is one short line (at most """ + str(FIRST_WORDS) + """ words, about 3 seconds) over the striking map: the
-  question or the surprise.
+- Scene 1 is one short line (at most """ + str(FIRST_WORDS) + """ words, about 3 seconds) over the striking map: THE
+  SURPRISE, not the bare question. The title on screen already asks "Why does Brazil speak Portuguese?"; the first
+  line gives the absurd concrete detail that makes a viewer stop ("A pope drew a line through the ocean, and Brazil
+  speaks Portuguese because of it.", "162 pieces of land changed countries in one night."). Never open on
+  "Why did..." or "Why does..." alone (the owner, 2026-11-06: nine scripts in a row opened that way).
 - Scene 2 already pays something off: the strangest fact or the first part of the answer. Never a setup line like
   "This is Point Roberts." or "It is called Pheasant Island." (the map already shows its name).
 - The title is a short question under 45 characters that names the place ("Why Does Kentucky Own This Island?"):
@@ -513,7 +516,7 @@ HOOK_RULES = """THE FIRST 5 SECONDS decide whether people stay
   hook_scene is the number of a later map scene whose finished map shows the outcome (the pirates gone, the border
   drawn, the land in its new owner's flag, the what-if's new map); hook_after is 1-3 words stamped on it ("Day 85",
   "SOLD", "1867"); hook_before is 1-3 words stamped on the opening map ("Day 0", "1803"), or empty. Scene 1's line is
-  the question that outcome answers ("How did Rome clear the sea in 3 months?").
+  the surprise that outcome explains ("Rome cleared the whole sea of pirates in 3 months.").
 
 HISTORY ON THE MAP, NOT ON CARDS
 - Tell the history while the map moves: the treaty or border line drawing itself across the map (line, route,
@@ -889,11 +892,13 @@ def verify(client, model: str, draft: Draft, res: Research, progress=lambda m: N
 
 
 def series_note(topic: Topic) -> str:
-    """The line that tells the writer this Short is the next episode of a numbered series ("" when it isn't)."""
+    """The lines that tell the writer what the topic brings: the absurd detail the video opens on (the owner's LLM
+    picked it with the topic), and that this Short is the next episode of a numbered series ("" when neither)."""
+    hook = f'Open the video on this detail (scene 1): "{topic.hook.strip()}"' if getattr(topic, "hook", "").strip() else ""
     series = topic.episode_of
     if not series:
-        return ""
-    return (f'This Short is the next episode of the channel\'s numbered series "{series}" ({bw_series.SERIES[series]}). '
+        return hook
+    return (hook + "\n" if hook else "") + (f'This Short is the next episode of the channel\'s numbered series "{series}" ({bw_series.SERIES[series]}). '
             f"Viewers follow the series, so make the weirdness of the map the hook. {bw_series.HINTS.get(series, '')} "
             f"Keep the title the plain question: "
             f'never write "{series}" or an episode number in it (the channel adds "| {series} #N" at the upload).')

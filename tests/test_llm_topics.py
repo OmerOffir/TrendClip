@@ -9,7 +9,7 @@ import json
 import pytest
 
 from db import repository
-from modules import bw_channel, bw_topics, fetcher
+from modules import bw_channel, bw_script, bw_topics, fetcher
 
 TODAY = dt.date(2026, 10, 29)
 CASES = {"cases": [
@@ -53,7 +53,7 @@ def test_borderline_why_prompt_and_paste(tmp_path):
     assert "Propose 20 new questions" in prompt and "Toledo War" in prompt and "Llívia" in prompt and '"topics"' in prompt
 
     answer = {"topics": [
-        {"question": "Why is Alaska's capital unreachable by road?", "article": "Juneau"},
+        {"question": "Why is Alaska's capital unreachable by road?", "article": "Juneau", "hook": "A state capital with no road in or out."},
         {"question": "Why does Llívia sit inside France?", "article": "Llívia"},  # a seed already
         {"question": "Why is there a fake country?", "article": "Nowhere Land"},  # no article
         {"question": "Why does Point Nemo exist?", "article": "point nemo"},
@@ -63,6 +63,10 @@ def test_borderline_why_prompt_and_paste(tmp_path):
     assert out == {"added": ["Why is Alaska's capital unreachable by road?", "Why does Point Nemo exist?"], "skipped": 2}
     left = bw_topics.remaining(tmp_path)
     assert [(t.article, t.source) for t in left[:2]] == [("Juneau, Alaska", "llm"), ("Pole of inaccessibility", "llm")]  # your LLM's topics go before the seeds (2026-11-06)
+    assert left[0].hook == "A state capital with no road in or out." and left[1].hook == ""  # the absurd detail travels with the topic
+    assert 'Open the video on this detail (scene 1): "A state capital with no road in or out."' in bw_script.series_note(left[0])
+    assert "Open the video" not in bw_script.series_note(left[1])
+    assert "a story most viewers have NOT heard" in prompt and "ONE absurd concrete detail" in prompt  # the owner, 2026-11-06
     assert bw_topics.llm_add(tmp_path, json.dumps(answer), check=titles.get)["added"] == []  # never twice
     with pytest.raises(bw_topics.LLMTopicsError, match="no topics"):
         bw_topics.llm_add(tmp_path, '{"topics": []}')

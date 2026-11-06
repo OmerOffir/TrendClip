@@ -89,6 +89,7 @@ class Topic(BaseModel):
     article: str
     source: str = "seed"  # seed | gemini | llm (your own, pasted) | manual (added on the dashboard: goes first)
     series: str | None = None  # its numbered series (modules.bw_series), "" none, None not said (judged by its words)
+    hook: str = ""  # the one absurd concrete detail the video opens on (the owner's LLM gives it; "" unknown)
 
     @property
     def episode_of(self) -> str:
@@ -250,6 +251,7 @@ class Proposal(BaseModel):
     article: str = Field(description="The exact title of the English Wikipedia article that answers it.")
     series: str = Field("", description="'Weird Borders' when the question is about " + bw_series.SERIES[bw_series.WEIRD_BORDERS]
                         + "; else ''.")
+    hook: str = Field("", description="The one absurd concrete detail the video opens on, in a short sentence.")
 
 
 class Proposals(BaseModel):
@@ -268,6 +270,12 @@ Propose 20 new questions. Each must:
   viewer whose side they are on. Prefer stories with a sore loser, a cheeky winner, a swap that looks absurd
   today, or a line someone drew drunk, late, or by mistake. Skip cases with no second side (a lone geographic
   oddity nobody fought over);
+- be a story most viewers have NOT heard: skip the famous trivia every geography channel has done (why the US
+  bought Alaska, why Brazil speaks Portuguese, why the Vatican is a country, the Panama Canal). Prefer the small,
+  odd and forgotten (India's 162 enclaves, Andorra's two foreign princes, a village sold for a barrel of wine);
+- come with ONE absurd concrete detail that fits in a sentence and opens the video ("a pope drew a line through
+  the ocean", "the border runs through the hotel bar", "162 pieces of land"): a number, an object, a blunder, a
+  person. Put it in "hook". A topic with no such detail is out;
 - avoid active wars, ongoing ethnic conflicts and current elections.
 
 The channel runs a numbered series, "Weird Borders": {series_rule}. Make at least half of the
@@ -304,7 +312,7 @@ def keep(out_dir: Path, proposals: list[Proposal], source: str, check=None) -> l
             continue
         if title and title not in used:
             series = bw_series.normalize(p.series) if p.series.strip() else None  # unsaid: judged by its words
-            new.append(Topic(question=p.question.strip(), article=title, source=source, series=series))
+            new.append(Topic(question=p.question.strip(), article=title, source=source, series=series, hook=p.hook.strip()))
             used.append(title)
     with _lock:
         state = load(out_dir)
