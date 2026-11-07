@@ -509,11 +509,14 @@ must be the whole narration.
   then a small place inside it that gets circled (["Namibia", "Caprivi Strip"]). No focus, no elements. Never the
   first scene.
 - photo scenes ({photo_count}) show a real picture: "photo" is the exact title of the English Wikipedia article
-  whose main picture shows what the narration names: a person ("Benjamin Franklin"), a landmark or place
-  ("Victoria Falls", "Angle Inlet"), an old map or object ("Mitchell Map"), an animal ("Walleye"). "caption": 1-5
-  words written under it; "headline" optional; "focus" optional (a map of it is shown if the picture can't be found).
-  People hold on to a face or a real place: use photos for the people, landmarks and objects the story names, and
-  keep the pictures changing: never more than 3 map scenes in a row without a photo, board or card between them.
+  whose main picture shows what the narration names: a PERSON ("Benjamin Franklin"), a famous building or object
+  ("Mitchell Map", "Lateran Palace"), an animal ("Walleye"). Never a landscape, a river, a mountain, a coast or a
+  sea: a still landscape is exactly where viewers leave (the Amur River photo in the China Short), so show that
+  place on the map, moving. "caption": 1-5 words written under it; "headline" optional; "focus" optional (a map of
+  it is shown if the picture can't be found). A photo scene can hold 1-2 locals (no place): the story's people with
+  "flag", one "say" each and "react" on the word they say it, standing small on the picture's bottom edge, so
+  the still picture talks. Keep the pictures changing: never more than 3 map scenes in a row without a photo,
+  board or card between them.
 - a compare scene (a split screen, at most one) shows 2-3 places side by side in narrow satellite strips, so a
   size or a distance is compared at a glance instead of the camera jumping across the world: the story's place
   first, then the famous ones it is measured against ("3 km, while Portugal and Denmark bridged 12 and 16 km").
@@ -530,8 +533,10 @@ must be the whole narration.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
   it?", "Ruined? How?"); put asks where a viewer would wonder, never on the first scene. Its LAST line picks the
-  fight for the comments: a "react" after the last scene that asks the viewer whose side they are on ("So... Team
-  France or Team Britain?", "Who got robbed here, Senegal or Gambia?"), naming the two sides.
+  fight for the comments, in EVERY video (a series and a "Shaped Like This" too): a "react" after the last scene
+  that asks the viewer a question with two answers, named in the line, joined by "or" ("So... Team France or Team
+  Britain?", "Who got robbed here, Senegal or Gambia?", "Should China get its rooster head back, yes or no?").
+  Never a summary ("So it's a rooster carved by treaties.") as the last line: a viewer answers a question.
   Otherwise "react" is a one-line reaction just after a scene ("So Germany traded Zanzibar... for a waterfall?").
   3-12 words, casual and curious, no new facts, no greeting, no "subscribe". Its lines are not part of the narration:
   the narration must read as a whole without them.
@@ -827,6 +832,11 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
     if limits.spoken_words and spoken > limits.spoken_words:
         problems.append(f"the narration and the mascot's lines are {spoken} words together (at most {limits.spoken_words}, "
                         "so the Short stays under 60 seconds): cut the least needed sentence")
+    if lines:  # the last word goes to the viewer: a question with two answers (the China Short's summary got 0 comments)
+        i, k, line = lines[-1]
+        if not (k == "react" and i == len(draft.scenes) and line.endswith("?") and re.search(r"\bor\b", line, re.I)):
+            problems.append("the mascot's last line must be a react on the last scene asking the viewer a question with "
+                            "two answers joined by \"or\" (\"Team France or Team Britain?\", \"yes or no?\")")
     for i, k, line in lines:
         if not 2 <= words(line) <= 12:
             problems.append(f"scene {i}: the mascot's {k} is {words(line)} words (wanted 3-12)")

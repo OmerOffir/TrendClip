@@ -2622,7 +2622,8 @@ class FxRenderer(Renderer):
         if scene.kind == "photo" and scene.opts.get("_photo"):
             if i not in self.photos:
                 self.photos[i] = bw_photos.PhotoScene(scene, scene.opts["_photo"], sum(s.kind == "photo" for s in self.spec.scenes[:i]),
-                                                      **{"lively": self.LIVELY, **self.photo_options(scene)})
+                                                      **{"lively": self.LIVELY, **self.photo_options(scene),
+                                                         "react": lambda el, sc=scene: self.react_time(el, sc)})
             img = self.photos[i].frame(t)
             added = [el for el in scene.elements if el.kind == "icon" and el.opts.get("auto")]
             if added:

@@ -145,6 +145,9 @@ def credits(photos: list[Photo]) -> str:
 
 # --------------------------------------------------------------------------- the photo scene
 
+CAST_SPOTS = {1: (0.74,), 2: (0.52, 0.84)}  # across the frame: clear of the mascot's corner on the left
+CAST_SIZE = 230  # smaller than on a stage (400): the picture is what the scene shows
+
 
 class PhotoScene:
     """A photo scene's frames: the picture blurred to fill the frame, and the picture itself as a taped print with a
@@ -155,7 +158,7 @@ class PhotoScene:
     ZOOM = 0.22  # how far the picture pushes in over the scene
     UNDERLINE_AT, GUEST_AT, MARK_AT = 0.9, 1.6, 1.8  # seconds after the scene starts
 
-    def __init__(self, scene, photo: Photo, k: int = 0, lively: bool = True, guest: bool = True, mark=None):
+    def __init__(self, scene, photo: Photo, k: int = 0, lively: bool = True, guest: bool = True, mark=None, react=None):
         from PIL import Image, ImageFilter
 
         from modules import bw_render
@@ -182,8 +185,38 @@ class PhotoScene:
         # mark(card, photo_box, seconds) draws on the print what the narration is about and returns the pen's tip
         # while it draws, or None (Price Tag Why's photo marks, modules.pw_render.photo_mark)
         self.mark = mark
-        guest = bw_fx.character_for(" ".join([scene.narration, self.caption])) if lively and guest else ""
+        # the story's people standing on the print's bottom edge, small so the picture shows, each with its flag and
+        # its line (the owner, 2026-11-07: a still photo is where viewers left; the characters move and talk on it)
+        self.cast = [el for el in scene.elements if el.kind == "local"][:2]
+        self.react = react  # when a character says its line: bw_fx.FxRenderer.react_time
+        guest = bw_fx.character_for(" ".join([scene.narration, self.caption])) if lively and guest and not self.cast else ""
         self.guest = bw_fx.icon_code(guest) if guest else ""
+
+    def draw_cast(self, ov, t: float, bottom: float) -> None:
+        """The scene's one or two characters on the print's bottom edge (above the captions), popping in on their
+        cue, flag at the shoulder, each line in its bubble on its word until the next one is said."""
+        from modules import bw_fx, bw_local, bw_render
+
+        W = bw_render.W
+        size = CAST_SIZE if bw_render.LAYOUT == "portrait" else 190
+        bubbles = []
+        for el, fx in zip(self.cast, CAST_SPOTS[len(self.cast)]):
+            code = bw_local.character(str(el.opts.get("icon") or ""), el.color or "a")
+            tall = round(size * 1.3) if code.startswith("@") else size
+            xy = (W * fx, min(bottom - tall * 0.2, bw_render.CAPTION_Y - 90 - tall * 0.5))
+            said = self.react(el) if self.react else el.at + 0.9
+            mood = str(el.opts.get("mood") or "")
+            bw_local.draw(ov, code, xy, size, t, el.at, mood, said if mood else None, flip=bool(el.opts.get("flip")))
+            flag = bw_fx.usable_flag(str(el.opts["flag"])) if el.opts.get("flag") else ""
+            if flag:
+                bw_local.badge(ov, flag, xy, tall, t, el.at)
+            if el.opts.get("say"):
+                bubbles.append((str(el.opts["say"]), (xy[0], xy[1] - tall * 0.5 + 6), t, said, -1 if fx > 0.6 else 1))
+        bubbles.sort(key=lambda b: b[3])
+        for k, args in enumerate(bubbles):  # over the picture; a line stays until the next one is said
+            if k + 1 < len(bubbles) and t >= bubbles[k + 1][3]:
+                continue
+            bw_local.say(ov, *args)
 
     def frame(self, t: float):
         from PIL import Image, ImageDraw
@@ -247,6 +280,8 @@ class PhotoScene:
                 gy = max(y + px * 0.3, (bw_fx.HEADLINE_BOTTOM + px / 2) if sc.headline else px / 2 + 20) + 4 * math.sin(2.4 * t)
                 bw_brand.paste(ov, bw_brand.shadow(im, 8, 0.4), int(gx - im.width / 2 + 6), int(gy - im.height / 2 + 10))
                 bw_brand.paste(ov, im, int(gx - im.width / 2), int(gy - im.height / 2))
+        if self.cast:
+            self.draw_cast(ov, t, y + card.height)
         if line_at is not None and pop >= 1:  # the hand on the underline's tip (the print is turned by its angle)
             th = math.radians(self.angle)
             cx0, cy0 = (self.size[0] + 2 * border) / 2, (self.size[1] + border + strip) / 2

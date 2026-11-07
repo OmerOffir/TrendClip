@@ -208,7 +208,7 @@ def test_check_takes_boards_and_the_mascot_lines(world):
     draft = _draft()
     draft.scenes[1] = bw_script.SceneDraft(kind="board", narration="In 1783 a treaty used an old map.", ask="Wait, how did that happen?",
                                            board_write=["The 1783 map", "A lake shaped like an egg"], board_draw=["Minnesota"])
-    draft.scenes[4].react = "So a bad map made the notch?"
+    draft.scenes[4].react = "So who messed up, Britain or America?"
     assert bw_script.check(draft, _research(), _find(world)) == []
     script = bw_script.to_spec_dict(draft)
     assert script["scenes"][1]["board"] == {"write": ["The 1783 map", "A lake shaped like an egg"], "draw": ["Minnesota"]}
@@ -1749,7 +1749,7 @@ def test_a_make_shows_its_progress_in_the_plan(settings, tmp_path, world):
 def test_the_whole_short_stays_under_a_minute(world):
     draft = _draft()
     draft.scenes[2].ask = "Wait, how does a map make a notch like that?"
-    draft.scenes[4].react = "So one wrong lake shape gave Minnesota its notch?"
+    draft.scenes[4].react = "Fair border or bad map, which one?"
     assert bw_script.check(draft, _research(), _find(world)) == []  # 2 lines, within the words
     draft.scenes[3].ask = "Hold on, why did nobody check the river first?"
     problems = " | ".join(bw_script.check(draft, _research(), _find(world)))
@@ -2662,3 +2662,41 @@ def test_a_split_screen_needs_two_or_three_strips():
     draft.scenes[2].elements = [strip(kind="build", icon="wall", place="Minnesota", to="Canada"), strip(kind="highlight", place="Canada")]
     assert any("a strip's build is a bridge" in p for p in problems())
     assert "a compare scene (a split screen" in bw_script.SCENE_RULES
+
+
+
+def test_the_mascots_last_line_asks_the_viewer_a_two_way_question(world):
+    draft = _draft()
+    draft.scenes[4].react = "So it's a rooster carved by treaties."  # the China Short's summary: 0 comments
+    problems = bw_script.check(draft, _research(), _find(world))
+    assert any("last line must be a react on the last scene" in p for p in problems)
+    draft.scenes[4].react = "Should China get its rooster head back, yes or no?"
+    assert not any("last line" in p for p in bw_script.check(draft, _research(), _find(world)))
+    assert "Never a landscape, a river" in bw_script.PROMPT and "in EVERY video" in bw_script.PROMPT
+
+
+def test_the_storys_people_talk_on_a_photo(world, fx_offline, tmp_path):
+    from PIL import Image
+
+    from modules import bw_local, bw_photos
+
+    art = tmp_path / "face.jpg"
+    Image.new("RGB", (800, 1000), (90, 140, 200)).save(art)
+    photo = bw_photos.Photo(art, "File:A face.jpg", "https://commons.wikimedia.org/wiki/File:A", "Someone", "CC BY-SA 4.0")
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"], "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "photo", "narration": "The king signed the deal and smiled.", "photo": "A face", "caption": "The king",
+         "elements": [{"kind": "local", "icon": "citizen", "cue": "king", "react": "smiled", "say": "Deal!", "flag": "Flag of France.svg"}]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    bw_render.fetch_photos(spec, find=lambda q: photo, paint=lambda q: None)
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    said = []
+    real = bw_local.say
+    bw_local.say = lambda ov, text, *a, **k: said.append(text) or real(ov, text, *a, **k)
+    try:
+        r.frame(spec.scenes[1].end - 0.1)
+    finally:
+        bw_local.say = real
+    ps = r.photos[1]
+    assert len(ps.cast) == 1 and ps.guest == "" and said == ["Deal!"]
