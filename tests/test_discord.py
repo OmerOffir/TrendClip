@@ -906,3 +906,20 @@ def test_reminders_run_posts_first_and_never_wait_for_the_morning_summary(settin
         await asyncio.gather(*bot.jobs)
 
     asyncio.run(run())
+
+
+def test_wait_for_network_retries_until_dns(monkeypatch):
+    from trendclip import discord_bot
+
+    calls = []
+
+    def fake_getaddrinfo(host, port):
+        calls.append(host)
+        if len(calls) < 3:
+            raise OSError("Temporary failure in name resolution")
+        return [("ok",)]
+
+    monkeypatch.setattr(discord_bot.socket, "getaddrinfo", fake_getaddrinfo)
+    slept = []
+    discord_bot.wait_for_network(sleep=slept.append)
+    assert len(calls) == 3 and slept == [discord_bot.NETWORK_RETRY] * 2

@@ -9,12 +9,15 @@ import asyncio
 import io
 import logging
 import random
+import socket
 import sys
+import time
 import uuid
 from datetime import date as Day, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Literal
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import tasks
@@ -2733,8 +2736,34 @@ def main(argv: list[str] | None = None) -> int:
     if not settings.discord_guild_id:
         logger.warning("DISCORD_GUILD_ID is not set: commands are registered globally and anyone who adds "
                        "the bot could use it")
-    TrendClipBot(settings).run(settings.discord_bot_token.get_secret_value(), log_handler=None)
-    return 0
+    token = settings.discord_bot_token.get_secret_value()
+    # After a power cut the service starts before the network is up: one failed login used to end the
+    # bot (and with it every upload) until someone restarted it. Wait for the network and try again.
+    while True:
+        wait_for_network()
+        try:
+            TrendClipBot(settings).run(token, log_handler=None)
+            return 0
+        except (OSError, aiohttp.ClientConnectionError) as err:
+            logger.warning("Could not reach Discord (%s); trying again in %d s", err, NETWORK_RETRY)
+            time.sleep(NETWORK_RETRY)
+
+
+NETWORK_RETRY = 15
+
+
+def wait_for_network(host: str = "discord.com", sleep=time.sleep) -> None:
+    """Return once host resolves; the first boot minutes have no DNS yet."""
+    said = False
+    while True:
+        try:
+            socket.getaddrinfo(host, 443)
+            return
+        except OSError:
+            if not said:
+                logger.warning("No network yet (cannot resolve %s); waiting", host)
+                said = True
+            sleep(NETWORK_RETRY)
 
 
 if __name__ == "__main__":
