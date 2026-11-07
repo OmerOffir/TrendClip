@@ -2,7 +2,7 @@
 times in the gameplay (three to six, and the video never says how many, so viewers watch to the end), each time
 holding a different random emoji, small and anywhere in the upper part of the screen, for 0.4 s, then four frames, then two.
 Empty-handed decoys pop up too (they don't count), so stepping frame by frame finds more zombies than answers.
-The video ends by asking which emojis it held; all of them right scores on the leaderboard. Viewers pause and
+The video ends on "Catch them all?" with the ask on the end card; all of them right scores on the leaderboard. Viewers pause and
 replay to catch them, which is the point.
 
 The level is picked in quiz._write_gamer: on CATCH_GAME's videos, once no catch level sits in the last
@@ -47,12 +47,14 @@ CARD_AT, CARD_UNTIL, CARD_CENTER, CARD_BOX = 0.2, 3.0, (WIDTH // 2, 1620), 600
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. A zombie is hiding in this video, more than once, each time holding a different emoji. "
           "Empty hands don't count. How many times? I won't tell. Ready? Here comes the first. Keep your eyes open. Don't blink. "
-          "Still watching? Pros only. Catch them all? What emojis did the zombie hold? Comment every one below!")
+          "Still watching? Pros only. Catch them all?")
+# Ends on "Catch them all?": the spoken "What emojis did the zombie hold? Comment every one below!" was 3.3 s after
+# the last zombie (the owner, 2026-11-07, like the Gamer IQ close). The ask stays on the end card.
 WINDOW = ("Ready", "Catch")  # the pops happen between these two spoken words
 TITLE = "Can You Catch The Zombie? | Level {level} 🎮"
 CARD = "LEVEL {level} - CATCH THE ZOMBIE"
 END_CARD = "Comment every emoji"  # no "Level N next" or subscribe: the video ends on the ask (the owner, 2026-11-05)
-TAIL = 0.6  # seconds after "below!" (not the usual 2 s): a quick end that loops back to the zombie banner
+TAIL = 0.6  # seconds after "Catch them all?" (not the usual 2 s): a quick end that loops back to the zombie banner
 PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
           "Hint: pause and step frames, most last 2 frames. Empty hands don't count. How many? That's the game.\n"
           "🏆 All of them = 10 leaderboard points. Level {next} drops next!")
@@ -185,7 +187,7 @@ def plan(settings: Settings, emojis: list[str], words: list[Word], seed: str = "
     rng = random.Random(seed or " ".join(emojis))
     total = words[-1].end
     begin = max(_word_time(words, WINDOW[0], True, MARGIN), MARGIN)
-    close = min(_word_time(words, WINDOW[1], True, total - MARGIN), total - MARGIN)
+    close = min(_word_time(words, WINDOW[1], True, total - MARGIN), total)  # "Catch them all?" is the last line now
     if close - begin < 3.0:  # the voice is faster than expected: use the middle of the video
         begin, close = MARGIN, max(total - MARGIN, MARGIN + 3.0)
     images = sprites(settings, emojis)
