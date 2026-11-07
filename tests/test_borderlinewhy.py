@@ -2430,10 +2430,13 @@ def test_a_trip_back_in_time_rewinds_into_the_old_year_and_plays_it_as_old_film_
     r = bw_render.Renderer(spec)
     start, end = spec.scenes[1].start, spec.scenes[2].end
     assert r.era.rewinding(start + 0.3) and not r.era.rewinding(start + bw_era.REWIND + 0.1)
-    old = np.asarray(r.frame((start + bw_era.REWIND + end) / 2), dtype=float)[300:1300]
-    assert old[..., 0].mean() > old[..., 2].mean() + 25  # sepia
     plain = bw_render.spec_from_dict(data, _words(narration))
     bw_render.prepare(plain)
+    mid = (start + bw_era.REWIND + end) / 2
+    old, then = (np.asarray(x.frame(mid), dtype=float)[300:1300] for x in (r, bw_render.Renderer(plain)))
+    warmth = lambda a: a[..., 0].mean() - a[..., 2].mean()
+    assert warmth(old) > warmth(then) + 15  # an old warm print
+    assert (old.max(axis=2) - old.min(axis=2)).mean() > 0.4 * (then.max(axis=2) - then.min(axis=2)).mean()  # still in colour
     at = spec.scenes[3].end - 0.1
     now, before = (np.asarray(x.frame(at), dtype=float)[300:1300] for x in (r, bw_render.Renderer(plain)))
     assert abs(now - before).mean() < 1  # the colour is back

@@ -1,6 +1,6 @@
 """Borderline Why's trip back in time (the owner's idea, 2026-11-07): when the story jumps to an old year, the video
 rewinds like a tape (the last seconds play backward fast, the locals and the panda walking backward, tape lines
-and a rewind sign), then the past scenes play as old film (sepia, grain, flicker, scratches) until the narration
+and a rewind sign), then the past scenes play as an old colour print (faded warm colours, a soft vignette, fine grain) until the narration
 comes back to today, where the colour returns.
 
 Only once per video, and only for a stretch of at most MAX_SCENES scenes starting at the first scene (not the
@@ -125,31 +125,26 @@ class Era:
         if self._vig is None or self._vig.shape[:2] != (h, w):
             yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
             d = ((xx - w / 2) / (w * 0.62)) ** 2 + ((yy - h / 2) / (h * 0.6)) ** 2
-            self._vig = np.clip(1 - 0.38 * d, 0.5, 1)[..., None]
+            self._vig = np.clip(1 - 0.28 * d, 0.62, 1)[..., None]
         return self._vig
 
     def grade(self, img: Image.Image, t: float) -> Image.Image:
-        """The past scenes as old film; the frame unchanged outside them."""
+        """The past scenes as an old colour print (the frame unchanged outside them): the colours kept but faded and
+        warm, the blacks lifted, a soft vignette and a fine grain. No black-and-white, flicker or scratches: the
+        sepia film was hard on the eyes (the owner, 2026-11-07)."""
         k = self.strength(t)
         if k <= 0:
             return img
         mode = img.mode
         a = np.asarray(img.convert("RGB"), dtype=np.float32)
         h, w, _ = a.shape
-        frame = int(t * 30)
-        rng = np.random.default_rng(frame)
-        lum = a @ np.array([0.30, 0.59, 0.11], dtype=np.float32)
-        sepia = np.stack([lum * 1.10 + 34, lum * 0.97 + 22, lum * 0.76 + 6], axis=-1)
-        sepia = (sepia - 128) * 1.05 + 128  # the borders still read
-        sepia *= self.vignette(w, h) * (1 + 0.04 * math.sin(frame * 2.1) + rng.uniform(-0.02, 0.02))  # flicker
-        sepia += rng.normal(0, 11, (h // 3 + 1, w // 3 + 1, 1)).repeat(3, 0).repeat(3, 1)[:h, :w]  # grain
-        old = Image.fromarray(np.clip(sepia, 0, 255).astype(np.uint8))
-        d = ImageDraw.Draw(old)
-        for _ in range(rng.integers(0, 3)):  # scratches down the film
-            x = int(rng.uniform(40, w - 40))
-            d.line([(x, 0), (x + int(rng.uniform(-8, 8)), h)], fill=(235, 225, 200), width=int(rng.integers(1, 3)))
-        if rng.uniform() < 0.25:  # a speck of dust
-            x, y, r = rng.uniform(0, w), rng.uniform(0, h), rng.uniform(3, 9)
-            d.ellipse([x - r, y - r, x + r, y + r], fill=(30, 22, 12))
+        rng = np.random.default_rng(int(t * 30))
+        gray = a.mean(axis=2, keepdims=True)
+        a = gray + (a - gray) * 0.72  # the colours faded, not gone
+        a = a * np.array([1.04, 0.98, 0.84], dtype=np.float32) + np.array([16, 10, 0], dtype=np.float32)  # warm, yellowed
+        a = a * 0.9 + 18  # lifted blacks, softer whites, like a print in the sun
+        a *= self.vignette(w, h)
+        a += rng.normal(0, 5, (h // 2 + 1, w // 2 + 1, 1)).repeat(2, 0).repeat(2, 1)[:h, :w]  # a fine grain
+        old = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
         out = Image.blend(img.convert("RGB"), old, k)
         return out.convert(mode)
