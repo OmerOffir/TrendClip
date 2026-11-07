@@ -1071,6 +1071,7 @@ class FxRenderer(Renderer):
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
+        self.stages: dict[int, Any] = {}  # the stage scenes' pictures and casts (modules.bw_stage), made on first use
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
         self.pens = {i: (self.war_pen(s) if self.war else bw_brand.pen_target(s)) for i, s in enumerate(spec.scenes)
                      if spec.brand and s.kind == "map" and not s.opts.get("globe")}
@@ -2510,6 +2511,12 @@ class FxRenderer(Renderer):
                     n = el.opts.get("n", 0)
                     self.icon(ov, el, ((W * 0.3, W * 0.7, W * 0.5)[n % 3], 1700), t)
                 img.alpha_composite(ov)
+        elif scene.kind == "stage" and scene.opts.get("_painting"):  # off the map, into an old painting (modules.bw_stage)
+            if i not in self.stages:
+                from modules import bw_stage
+
+                self.stages[i] = bw_stage.Stage.from_scene(scene, scene.opts["_painting"].path, lambda el: self.react_time(el, scene))
+            img = self.stages[i].frame(t)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         if scene.opts.get("year"):

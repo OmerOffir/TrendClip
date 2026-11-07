@@ -354,7 +354,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card | board | photo")
+    kind: str = Field(description="map | card | board | photo | stage")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -366,6 +366,8 @@ class SceneDraft(BaseModel):
     board_draw: list[str] = Field(default_factory=list, description="board: 0-2 places whose outline the hand sketches; the last is circled.")
     photo: str = Field("", description="photo: the English Wikipedia article whose main picture to show.")
     caption: str = Field("", description="photo: 1-5 words written under the picture.")
+    painting: str = Field("", description="stage: the moment an old painting shows, as a museum would title it "
+                                          "(\"Hannibal crossing the Alps\", \"Purchase of Manhattan\").")
     year: str = Field("", description="map: a year or span (\"1812\", \"1838-39\") that slams in big as the scene starts, "
                                       "then stays as a small tag (a new step of the story; the war-map format).")
     ask: str = Field("", description="The mascot's short question, said just before this scene (optional).")
@@ -487,6 +489,12 @@ must be the whole narration.
   words written under it; "headline" optional; "focus" optional (a map of it is shown if the picture can't be found).
   People hold on to a face or a real place: use photos for the people, landmarks and objects the story names, and
   keep the pictures changing: never more than 3 map scenes in a row without a photo, board or card between them.
+- a stage scene (at most one, and most videos have none) leaves the map for the story's big moment, when a famous
+  old painting or engraving of THAT moment exists (a crossing, a battle, a siege, a signing, a purchase; before
+  about 1900): "painting" names what the painting shows, as a museum would title it ("Hannibal crossing the Alps",
+  "Purchase of Manhattan", "Fall of Constantinople"). Its elements are 1-2 locals only (no place: they stand in the
+  painting, big): the story's people with "flag", one "say" each, "react" on the word they say it. "focus" names
+  the place (the map is shown if no painting is found). "year" optional. Never the first scene.
 - The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
@@ -721,6 +729,7 @@ class Limits:
     max_lines: int = 2  # the mascot's asks and reacts (the outro's line comes on top)
     spoken_words: int = SPOKEN_WORDS  # the narration and the mascot's lines together (0: no limit)
     max_photos: int = 5
+    max_stages: int = 1
     map_elements: int = 2  # a map scene's elements at least, after the first (0: no minimum)
     min_claims: int = 4
     min_cited: int = 2
@@ -735,7 +744,14 @@ def _find_photo(query: str):
     return bw_photos.find(query)
 
 
-def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHORT, photo_find=_find_photo) -> list[str]:
+def _find_painting(query: str):
+    from modules import bw_stage
+
+    return bw_stage.find_painting(query)
+
+
+def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHORT, photo_find=_find_photo,
+          paint_find=_find_painting) -> list[str]:
     """Everything wrong with a draft (empty = good to record)."""
     problems: list[str] = []
     text = narration(draft)
@@ -757,8 +773,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                             f"give every map scene after the first at least {limits.map_elements} elements on different cue words "
                             "(the place lighting up, then a label, an icon or a local)")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card", "board", "photo") for k in kinds):
-        problems.append("a scene kind is not map, card, board or photo")
+    if any(k not in ("map", "card", "board", "photo", "stage") for k in kinds):
+        problems.append("a scene kind is not map, card, board, photo or stage")
+    if kinds.count("stage") > limits.max_stages:
+        problems.append(f"{kinds.count('stage')} stage scenes (at most {limits.max_stages}: the story's one big moment)")
+    if kinds and kinds[0] == "stage":
+        problems.append("the first scene can't be a stage (it is the thumbnail: a map)")
     if kinds.count("photo") > limits.max_photos:
         problems.append(f"{kinds.count('photo')} photo scenes (at most {limits.max_photos})")
     if kinds.count("board") > limits.max_boards:
@@ -815,6 +835,15 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
             elif photo_find(s.photo) is None:
                 problems.append(f"photo scene {i}: no picture found for {s.photo!r} (use the exact title of an English "
                                 "Wikipedia article that has a photo or painting)")
+        if s.kind.strip().lower() == "stage":
+            cast = [e for e in s.elements if e.kind == "local"]
+            if not 1 <= len(cast) <= 2 or len(cast) != len(s.elements):
+                problems.append(f"stage scene {i}: its elements are 1-2 locals and nothing else (they stand in the painting)")
+            if not s.painting.strip():
+                problems.append(f"stage scene {i} names no painting")
+            elif paint_find is not None and paint_find(s.painting) is None:
+                problems.append(f"stage scene {i}: no old painting found for {s.painting!r} (name the moment as a museum "
+                                "would title its painting, or make it a map scene)")
         if s.kind.strip().lower() == "board":
             if not [w for w in s.board_write if w.strip()]:
                 problems.append(f"board scene {i} has no board_write")

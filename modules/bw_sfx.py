@@ -97,6 +97,8 @@ def events(spec) -> list[tuple[float, str, float]]:
             found.append((scene.start, "paper", 0.0))
         elif scene.kind == "board":
             found.append((scene.start + 0.3, "marker", min(1.8, max(0.4, (scene.end - scene.start) * 0.5))))
+        elif scene.kind == "stage":  # off the map, into the painting (modules.bw_stage)
+            found.append((scene.start, "whoosh", 0.0))
         elif scene.kind == "photo":  # the print popping in with its flash, then the character (bw_photos.PhotoScene)
             found += [(scene.start, "paper", 0.0), (scene.start + 1.6, "pop", 0.0)]
         if scene.opts.get("year"):  # the year slamming in (bw_fx.FxRenderer.year)

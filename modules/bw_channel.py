@@ -432,7 +432,8 @@ def with_credits(description: str, spec: bw_render.Spec) -> str:
     """The description with the credits of the Wikimedia pictures the video shows (modules.bw_photos)."""
     from modules import bw_photos
 
-    credits = bw_photos.credits([s.opts["_photo"] for s in spec.scenes if s.kind == "photo" and s.opts.get("_photo")])
+    credits = bw_photos.credits([s.opts["_photo"] for s in spec.scenes if s.kind == "photo" and s.opts.get("_photo")]
+                                + [s.opts["_painting"] for s in spec.scenes if s.kind == "stage" and s.opts.get("_painting")])
     return f"{description}\n\n{credits}" if credits else description
 
 

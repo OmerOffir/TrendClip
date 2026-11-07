@@ -879,12 +879,24 @@ class Renderer:
 # --------------------------------------------------------------------------- the video
 
 
-def fetch_photos(spec: Spec, find=None) -> None:
+def fetch_photos(spec: Spec, find=None, paint=None) -> None:
     """Each photo scene's picture (modules.bw_photos) in opts["_photo"]; a scene whose picture can't be found becomes
     a map of its focus, or a card with its caption."""
     if find is None:
         from modules.bw_photos import find
     for scene in spec.scenes:
+        if scene.kind == "stage" and not scene.opts.get("_painting"):  # an old painting of the moment (modules.bw_stage)
+            from modules import bw_stage
+
+            query = str(scene.opts.get("painting") or "")
+            painting = (paint or bw_stage.find_painting)(query) if query else None
+            if painting is not None:
+                scene.opts["_painting"] = painting
+            elif scene.focus:
+                scene.kind = "map"
+            else:
+                scene.kind, scene.title = "card", scene.title or query
+            continue
         if scene.kind != "photo" or scene.opts.get("_photo"):
             continue
         photo = find(str(scene.opts.get("photo") or scene.opts.get("caption") or ""))

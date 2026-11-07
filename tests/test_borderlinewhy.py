@@ -2449,3 +2449,76 @@ def test_a_trip_back_in_time_rewinds_into_the_old_year_and_plays_it_as_old_film_
     assert bw_era.stretch(one) == [1] and not bw_era.fits(one, [])  # one old scene is a date, not a trip
     assert bw_era.stretch(bw_render.spec_from_dict({**data, "scenes": data["scenes"][:1] + [{**data["scenes"][1], "headline": "2015"}]},
                                                    _words(narration))) == []  # a recent year is not the past
+
+
+def test_a_stage_scene_leaves_the_map_for_an_old_painting(world, fx_offline, tmp_path):
+    from PIL import Image
+
+    from modules import bw_channel, bw_photos
+
+    art = tmp_path / "painting.jpg"
+    Image.new("RGB", (900, 1300), (170, 60, 200)).save(art)
+    painting = bw_photos.Photo(art, "File:Crossing the lake (1866).jpg", "https://commons.wikimedia.org/wiki/File:X", "A. Painter", "Public domain")
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "stage", "narration": "Then the surveyors crossed the frozen lake.", "focus": ["Lake of the Woods"],
+         "painting": "Surveyors crossing the lake", "year": "1783", "elements": [
+             {"kind": "local", "icon": "citizen", "cue": "surveyors", "react": "frozen", "say": "So cold.", "flag": "Flag of France.svg"}]},
+        {"kind": "map", "narration": "And the line stayed.", "focus": ["Minnesota"]}]}
+    words = _words(" ".join(s["narration"] for s in data["scenes"]))
+    spec = bw_render.spec_from_dict(data, words)
+    bw_render.fetch_photos(spec, find=lambda q: None, paint=lambda q: painting if "crossing" in q else None)
+    assert bw_render.prepare(spec) == [] and spec.scenes[1].kind == "stage"
+    r = fx_offline.FxRenderer(spec)
+    stage = spec.scenes[1]
+    assert not [e for e in stage.elements if e.opts.get("auto")]  # no added GIFs on a painting
+    mid = np.asarray(r.frame((stage.start + stage.end) / 2), dtype=float)
+    assert abs(mid[500:700, 100:300].mean(axis=(0, 1)) - (170, 60, 200)).max() < 40  # the painting fills the frame
+    assert np.asarray(r.frame(stage.end + 1.0), dtype=float)[500:700, 100:300, 1].mean() > 100  # back on the (green) map
+    assert "Crossing the lake (1866) by A. Painter (Public domain)" in bw_channel.with_credits("About it.", spec)
+    assert (stage.start, "whoosh", 0.0) in bw_sfx.events(spec)
+    # no painting found: the moment shows on the map
+    plain = bw_render.spec_from_dict(data, words)
+    bw_render.fetch_photos(plain, find=lambda q: None, paint=lambda q: None)
+    assert plain.scenes[1].kind == "map"
+
+
+def test_a_stage_needs_a_painting_and_only_its_characters():
+    draft = _draft()
+    local = bw_script.ElementDraft(kind="local", icon="citizen", say="So cold.", cue="treaty", react="map")
+    draft.scenes[1] = bw_script.SceneDraft(kind="stage", narration=draft.scenes[1].narration, painting="Treaty of Paris signing",
+                                           elements=[local])
+    found = lambda q: object()
+    problems = lambda d, paint=found: [p for p in bw_script.check(d, _research(), lambda n: True, paint_find=paint) if "stage" in p]
+    assert problems(draft) == []
+    assert problems(draft, lambda q: None) and "no old painting found" in problems(draft, lambda q: None)[0]
+    draft.scenes[1].elements.append(bw_script.ElementDraft(kind="icon", icon="money_bag"))
+    assert "1-2 locals and nothing else" in problems(draft)[0]
+    draft.scenes[1].elements.pop()
+    draft.scenes[0] = draft.scenes[1]
+    assert any("first scene can't be a stage" in p for p in problems(draft))
+    assert "stage | " not in bw_script.SCENE_RULES and "a stage scene (at most one" in bw_script.SCENE_RULES
+
+
+def test_the_painting_is_an_old_work_of_art_of_that_moment():
+    from modules import bw_stage
+
+    def info(title, made, cats="Paintings", w=1200, h=1600, licence="Public domain", desc=""):
+        return {"title": title, "mime": "image/jpeg", "width": w, "height": h, "extmetadata": {
+            "DateTimeOriginal": {"value": made}, "LicenseShortName": {"value": licence},
+            "Categories": {"value": cats}, "ImageDescription": {"value": desc}}}
+
+    infos = [
+        info("File:Hannibal crossing the Alps map.png", "1900"),  # a map
+        info("File:Hannibal crossing the Alps 2019.jpg", "2019", cats="Photographs"),  # a photo of today
+        info("File:Hannibal letter.jpg", "1700", cats="Documents"),  # a page of text
+        info("File:Comic History of Rome Hannibal crossing the Alps.jpg", "1850", cats="Engravings"),  # a caricature
+        info("File:Hannibal crossing the Alps, engraving.jpg", "1881", cats="Engravings"),
+        info("File:Leutemann - Hannibals Übergang über die Alpen.jpg", "1866", cats="Oil paintings",
+             desc="Hannibal's crossing of the Alps"),
+        info("File:Elephants in a zoo.jpg", "1890"),  # not the moment
+    ]
+    assert bw_stage._pick("Hannibal crossing the Alps", infos)["title"].startswith("File:Leutemann")  # in colour wins
+    assert bw_stage._pick("Hannibal crossing the Alps", infos[:5])["title"] == "File:Hannibal crossing the Alps, engraving.jpg"
+    assert bw_stage._pick("Hannibal crossing the Alps", infos[:4]) is None
