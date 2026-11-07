@@ -2409,3 +2409,34 @@ def test_the_countries_are_the_characters(world):
     draft.scenes[4].elements.append(bw_script.ElementDraft(kind="local", place="Canada", icon="farmer", cue="border"))
     assert any("3 locals" in p for p in bw_script.check(draft, _research(), _find(world)))
     assert "say" in bw_script.SCENE_RULES and "Team" in bw_script.SCENE_RULES
+
+
+def test_a_trip_back_in_time_rewinds_into_the_old_year_and_plays_it_as_old_film_until_today(world):
+    from modules import bw_era
+
+    data = {"title": "Why?", "seed": 2, "theme": "atlas", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"]},
+        {"kind": "map", "narration": "Back then a surveyor came.", "focus": ["Minnesota"], "headline": "1783"},
+        {"kind": "map", "narration": "He drew a line north.", "focus": ["Canada"]},
+        {"kind": "map", "narration": "Today the notch is still there.", "focus": ["Minnesota"]},
+    ]}
+    narration = " ".join(s["narration"] for s in data["scenes"])
+    spec = bw_render.spec_from_dict(data, _words(narration))
+    assert bw_render.prepare(spec) == []
+    assert bw_era.stretch(spec) == [1, 2]  # from the old year until the narration says today
+    assert bw_render.Renderer(spec).era is None  # off unless the channel turns it on (BW_REWIND)
+    assert all(e[1] != "rewind" for e in bw_sfx.events(spec))
+    spec.rewind = True
+    r = bw_render.Renderer(spec)
+    start, end = spec.scenes[1].start, spec.scenes[2].end
+    assert r.era.rewinding(start + 0.3) and not r.era.rewinding(start + bw_era.REWIND + 0.1)
+    old = np.asarray(r.frame((start + bw_era.REWIND + end) / 2), dtype=float)[300:1300]
+    assert old[..., 0].mean() > old[..., 2].mean() + 25  # sepia
+    plain = bw_render.spec_from_dict(data, _words(narration))
+    bw_render.prepare(plain)
+    at = spec.scenes[3].end - 0.1
+    now, before = (np.asarray(x.frame(at), dtype=float)[300:1300] for x in (r, bw_render.Renderer(plain)))
+    assert abs(now - before).mean() < 1  # the colour is back
+    assert (start, "rewind", 0.0) in bw_sfx.events(spec)
+    assert bw_era.stretch(bw_render.spec_from_dict({**data, "scenes": data["scenes"][:1] + [{**data["scenes"][1], "headline": "2015"}]},
+                                                   _words(narration))) == []  # a recent year is not the past

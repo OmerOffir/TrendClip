@@ -150,6 +150,7 @@ class Spec:
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
     hold: float = 0.0  # with an outro: seconds after the last word, in place of TAIL (modules.bw_brand.END_HOLD)
     sfx: bool = False  # mix modules.bw_sfx's sound effects under the voice (Borderline Why turns it on)
+    rewind: bool = False  # the trip back in time: a tape rewind into the old years, old film till today (modules.bw_era)
     # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
     # "before": the words stamped on the first map, "after": the words stamped on the outcome}
     hook: dict[str, Any] = field(default_factory=dict)
@@ -494,6 +495,11 @@ class Renderer:
                 groups.append(cur)
                 cur = []
         self.groups = groups
+        self.era = None
+        if spec.rewind:
+            from modules import bw_era
+
+            self.era = bw_era.Era(spec) if bw_era.stretch(spec) else None
 
     def color(self, role: str) -> tuple[int, int, int]:
         return self.pal.get(role) or self.pal["a"]
@@ -849,6 +855,10 @@ class Renderer:
     def frame(self, t: float) -> Image.Image:
         i = self.scene_at(t)
         scene = self.spec.scenes[i]
+        if self.era is not None and self.era.rewinding(t):  # the tape rewinding into the past (modules.bw_era)
+            img = self.era.rewind(self, t)
+            self.captions(img, t)
+            return img.convert("RGB")
         hooked = self.hook_frame(t) if i == 0 else None
         img = hooked or self.scene_frame(i, t)
         if hooked is None and i == 0 and self.hook_scene() is not None and t < HOOK_END + HOOK_FADE:
@@ -856,6 +866,8 @@ class Renderer:
             img = Image.blend(last.convert(img.mode), img, ramp(t, HOOK_END, HOOK_FADE))
         if hooked is None and i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
             img = Image.blend(self.scene_frame(i - 1, t), img, ramp(t, scene.start, FADE))
+        if self.era is not None:  # the past as old film, under the mascot and the captions
+            img = self.era.grade(img, t)
         self.overlay(img, t)
         self.captions(img, t)
         return img.convert("RGB")

@@ -18,7 +18,7 @@ import numpy as np
 
 RATE = 44100
 MIN_GAP = 0.22  # seconds between two sounds
-GAIN = {"pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20, "cash": 0.24}
+GAIN = {"rewind": 0.26, "pop": 0.30, "stamp": 0.55, "whoosh": 0.22, "paper": 0.28, "marker": 0.12, "ding": 0.20, "cash": 0.24}
 POP_KINDS = ("pin", "icon", "label", "ring", "pole", "counter")
 LINE_KINDS = ("arrow", "line", "route")
 
@@ -67,6 +67,14 @@ def sound(name: str, seconds: float = 0.0) -> np.ndarray:
         t = _t(length)
         strokes = (np.sin(2 * np.pi * 7 * t) > -0.2).astype(float)
         x = (_noise(length, 4) - _smooth(_noise(length, 4), 3)) * _smooth(strokes, 400)
+    elif name == "rewind":  # a tape spinning back: a warbling whine that rises, with hiss (modules.bw_era)
+        from modules import bw_era
+
+        t = _t(bw_era.REWIND)
+        freq = 300 + 1400 * (t / t[-1]) ** 1.6 + 60 * np.sin(2 * np.pi * 13 * t)
+        whine = np.sin(2 * np.pi * np.cumsum(freq) / RATE) + 0.35 * np.sin(2 * np.pi * np.cumsum(freq * 2.01) / RATE)
+        hiss = _noise(bw_era.REWIND, 6) - _smooth(_noise(bw_era.REWIND, 6), 3)
+        x = (whine * 0.8 + hiss * 0.35) * np.minimum(1, t / 0.08) * np.minimum(1, (t[-1] - t) / 0.1 + 0.05)
     elif name == "ding":  # a small bell
         t = _t(0.9)
         x = (np.sin(2 * np.pi * 1320 * t) + 0.4 * np.sin(2 * np.pi * 2640 * t) + 0.2 * np.sin(2 * np.pi * 3960 * t)) * np.exp(-t * 5)
@@ -117,6 +125,12 @@ def events(spec) -> list[tuple[float, str, float]]:
 
         flip = bw_render.HOOK_FLIP if hook.get("before") else 0.0
         found = [e for e in found if abs(e[0] - flip) >= MIN_GAP] + [(flip, "whoosh", 0.0)]
+    if getattr(spec, "rewind", False):  # the tape rewinding into the past (modules.bw_era): nothing else under it
+        from modules import bw_era
+
+        if past := bw_era.stretch(spec):
+            at = spec.scenes[past[0]].start
+            found = [e for e in found if not at - MIN_GAP < e[0] < at + bw_era.REWIND] + [(at, "rewind", 0.0)]
     found += list(getattr(spec, "sfx_extra", None) or [])  # a channel's own moments (modules.pw_render.sounds)
     found.sort(key=lambda e: (e[0], e[1] not in ("stamp", "cash")))  # a stamp or a cash ring wins a tie
     kept: list[tuple[float, str, float]] = []

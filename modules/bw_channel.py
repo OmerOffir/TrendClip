@@ -442,6 +442,11 @@ def outro_on() -> bool:
     return _on("BW_OUTRO", "0")
 
 
+def rewind_on() -> bool:
+    """The trip back in time (modules.bw_era): a tape rewind into an old year, old film till today. BW_REWIND=on."""
+    return _on("BW_REWIND", "0")
+
+
 def sfx_on() -> bool:
     """The code-made sound effects under the voice (modules.bw_sfx); BW_SFX=off drops them."""
     return _on("BW_SFX")
@@ -737,6 +742,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         words = fit_voice(work / "voice.mp3", words, spec.duration, fit)
         spec = bw_render.spec_from_dict(script, words)
     spec.sfx = sfx_on()
+    spec.rewind = rewind_on()
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
