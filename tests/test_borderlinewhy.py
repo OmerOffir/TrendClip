@@ -2441,5 +2441,11 @@ def test_a_trip_back_in_time_rewinds_into_the_old_year_and_plays_it_as_old_film_
     now, before = (np.asarray(x.frame(at), dtype=float)[300:1300] for x in (r, bw_render.Renderer(plain)))
     assert abs(now - before).mean() < 1  # the colour is back
     assert (start, "rewind", 0.0) in bw_sfx.events(spec)
+    assert bw_era.fits(spec, []) and bw_era.fits(spec, [False, False, True])
+    assert not bw_era.fits(spec, [True]) and not bw_era.fits(spec, [False, True])  # spaced out
+    spec.style = "war"
+    assert not bw_era.fits(spec, [])  # a war map's whole story is the past
+    one = bw_render.spec_from_dict({**data, "scenes": data["scenes"][:2] + data["scenes"][3:]}, _words(narration))
+    assert bw_era.stretch(one) == [1] and not bw_era.fits(one, [])  # one old scene is a date, not a trip
     assert bw_era.stretch(bw_render.spec_from_dict({**data, "scenes": data["scenes"][:1] + [{**data["scenes"][1], "headline": "2015"}]},
                                                    _words(narration))) == []  # a recent year is not the past

@@ -21,6 +21,8 @@ REWIND = 0.9  # seconds the tape rewinds, at the start of the first past scene
 SPAN = 6.0  # seconds of the video it rewinds through
 OLD = 40  # a year at least this long ago is "the past"
 MAX_SCENES = 3
+MIN_SCENES = 2  # a single old-year scene is a date, not a trip back
+SPACING = 2  # never in two videos close together: at most one in three
 FADE_IN, FADE_OUT = 0.3, 0.45
 TODAY = re.compile(r"\b(today|nowadays|now|modern|still)\b", re.I)
 YEAR = re.compile(r"\b(1\d{3}|20\d{2})s?\b")
@@ -50,6 +52,13 @@ def stretch(spec) -> list[int]:
             out.append(j)
         return out
     return []
+
+
+def fits(spec, recent: list[bool]) -> bool:
+    """Used with taste (the owner, 2026-11-07: "not in every video"): a real trip of at least MIN_SCENES scenes,
+    not on a war map (its whole story is the past already), and not when one of the last SPACING videos had it
+    (`recent`: newest first, whether each used it)."""
+    return len(stretch(spec)) >= MIN_SCENES and getattr(spec, "style", "") != "war" and not any(recent[:SPACING])
 
 
 def ramp(t: float, a: float, length: float) -> float:

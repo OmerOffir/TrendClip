@@ -443,7 +443,8 @@ def outro_on() -> bool:
 
 
 def rewind_on() -> bool:
-    """The trip back in time (modules.bw_era): a tape rewind into an old year, old film till today. BW_REWIND=on."""
+    """The trip back in time (modules.bw_era): a tape rewind into an old year, an old colour print till today, in the
+    videos where it fits (bw_era.fits). BW_REWIND=on."""
     return _on("BW_REWIND", "0")
 
 
@@ -742,10 +743,13 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         words = fit_voice(work / "voice.mp3", words, spec.duration, fit)
         spec = bw_render.spec_from_dict(script, words)
     spec.sfx = sfx_on()
-    spec.rewind = rewind_on()
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
+    if rewind_on():  # the trip back in time, with taste: a real stretch in the past, spaced out (modules.bw_era)
+        from modules import bw_era
+
+        spec.rewind = bw_era.fits(spec, [bool(v.get("rewind")) for v in videos(out_dir, bw_era.SPACING)])
     track = pick_music(settings, lambda m: progress(None, m), script.get("kind", ""), spec.duration, out_dir)
     music_path = None
     if track is not None:
@@ -762,6 +766,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         "words": bw_script.words(script["narration"]), "theme": spec.theme, "music": {"title": track.title} if track else None,
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         "job": {"day": job.day.isoformat(), "slot": job.slot, "post_at": job.post_at.isoformat(timespec="minutes")},
+        "rewind": spec.rewind,
     }
     info["check"] = check_video(info)
     save_info(info, out_dir)
