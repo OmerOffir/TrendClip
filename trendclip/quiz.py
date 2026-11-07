@@ -1170,7 +1170,7 @@ GAMER_HOOK = "{game} fans only."
 OPEN_ASK = "No options. Name every part."
 # The end card: the answer is on one frame near the end (pause to see it: a rewatch and a pause are what the
 # retention metric rewards), then the series hook.
-GAMER_END_CARD = "The answer flashes · for one frame"  # no "Level N next" (the owner, 2026-11-05)
+GAMER_END_CARD = "Drop your answer · it flashes for one frame"  # no "Level N next" (2026-11-05); no spoken ask (2026-11-07)
 # The frame-0 tease when the LLM gave none, by shape.
 GAMER_HEADLINES = {"number": "HOW MANY?", "fake": "SPOT THE FAKE", "first": "WHICH CAME FIRST?", OPEN: "NAME EVERY PART"}
 HEADLINE_MAX_WORDS = 4
@@ -1361,14 +1361,15 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
     question = gamer_question(result.question, options) if options is not None else ""
     if not question:
         raise sw.ScriptError(f"The question can't be made ({gamer_problem(result, shape)}): {result.question!r}")
-    end = LOOP_END_SHORT
+    # No spoken close: Level 19 lost a third of its viewers on "Got it? Drop your answer below!" after the countdown
+    # (the owner, 2026-11-07). The ask is on the end card; the video ends on "One." and loops.
     flashes = [Flash(word=question.split()[0], text="?")]
     if shape == OPEN:
         # No options: the viewers write the whole list and correct each other; the first complete one wins.
         items = open_items(result.correct)
         correct, trap = ", ".join(items), result.trap.strip()
         hint = safe_hint(result.hint, *items) or f"{len(items)} different parts, counts matter"
-        lines = [question, OPEN_ASK, COUNTDOWN, end]
+        lines = [question, OPEN_ASK, COUNTDOWN]
         flashes.append(Flash(word="No", text="NO OPTIONS"))
         seen = f"Answer: {correct}" + (f" (most forget: {trap})" if trap else "") + f". {result.fact.strip()}"
         pin = (f"{question} Name every part. 👇\nHint: {hint}.\n🏆 First complete answer gets 10 leaderboard points. "
@@ -1380,7 +1381,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
         hint = safe_hint(result.hint, correct, trap, distractor) or hint_from_fact(result.fact, correct, trap, distractor)
         asks = [f"Is it {shuffled[0]}?", f"{shuffled[1][:1].upper()}{shuffled[1][1:]}?", f"Or {shuffled[2]}?"]
         # Like the trivia trap: the question is the first word spoken.
-        lines = [question, *asks, COUNTDOWN, end]
+        lines = [question, *asks, COUNTDOWN]
         for letter, option, said in zip("ABC", shuffled, ("Is it ", "", "Or ")):
             name = re.sub(r"^(the|an?) ", "", option, flags=re.I)
             label = f"{letter}) {name[:1].upper()}{name[1:]}"
@@ -1391,7 +1392,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
                f"Level {level + 1} drops next!")
     if record:
         _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))
-    flashes += [*COUNTDOWN_FLASHES, got_it(end)]
+    flashes += COUNTDOWN_FLASHES
     pack = result.model_copy(update={"title": f"{gamer_title(result.title, game)} | Level {level} 🎮"})
     script = _script(settings, game, model, "gamer", format, " ".join(lines), GAMER_HOOK.format(game=game), flashes,
                      correct, pin, pack, on_screen=seen, card=gamer_card(level, gamer_headline(result, shape, options)),

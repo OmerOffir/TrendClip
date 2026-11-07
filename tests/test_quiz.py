@@ -696,13 +696,13 @@ def test_gamer_iq_asks_about_the_background_game_as_a_numbered_level(tmp_path, m
     assert result.script.startswith("How many obsidian blocks make the smallest Nether portal? Is it ")
     # The close asks for the answer and stops: the spoken "Level 2 drops next. Subscribe..." cost a third of the
     # video; the next level is on the end card, with the pause-to-see answer, and in the pinned comment.
-    assert result.script.endswith("Three. Two. One. Got it? Drop your answer below!")
-    assert result.end_card == "The answer flashes · for one frame"
+    assert result.script.endswith("Three. Two. One.")  # no spoken ask (the owner, 2026-11-07): it's on the end card
+    assert result.end_card == "Drop your answer · it flashes for one frame"
     assert result.title_card == "LEVEL 1 - HOW MANY?"  # no headline from the LLM: the shape's tease
     assert result.title == "Real Minecraft Players Know This | Level 1 🎮"  # Gemini's emoji is dropped
     assert "Level 2 drops next!" in result.pinned_comment and "10 leaderboard points" in result.pinned_comment
     assert "Hint: fewer than a full frame." in result.pinned_comment
-    assert [f.text for f in result.flashes][4:] == ["3", "2", "1", "GOT IT?"]
+    assert [f.text for f in result.flashes][4:] == ["3", "2", "1"]
 
     again = quiz.write_quiz(s, "GTA V / Online", "gamer", rng=random.Random(1), client=gamer_client(
         [[gamer("Which car is NOT in GTA V", "Pegassi Zentorno", "Grotti Turismo R", "Ferrari Enzo",
@@ -739,7 +739,7 @@ def test_an_open_gamer_question_has_no_options_and_wants_the_whole_list(tmp_path
     assert result.script.startswith("What do you need to craft a Beacon in Minecraft? No options. Name every part. Three.")
     assert " Is it " not in result.script and result.choices == []
     assert result.answer == "5 glass, 3 obsidian, 1 Nether Star"
-    assert [f.text for f in result.flashes] == ["?", "NO OPTIONS", "3", "2", "1", "GOT IT?"]
+    assert [f.text for f in result.flashes] == ["?", "NO OPTIONS", "3", "2", "1"]
     assert "Name every part. 👇" in result.pinned_comment and "Hint: 3 different parts, counts matter." in result.pinned_comment
     assert "Nether Star" not in result.pinned_comment and "First complete answer" in result.pinned_comment
     assert "most forget: the Nether Star" in result.on_screen
