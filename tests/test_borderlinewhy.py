@@ -2522,3 +2522,64 @@ def test_the_painting_is_an_old_work_of_art_of_that_moment():
     assert bw_stage._pick("Hannibal crossing the Alps", infos)["title"].startswith("File:Leutemann")  # in colour wins
     assert bw_stage._pick("Hannibal crossing the Alps", infos[:5])["title"] == "File:Hannibal crossing the Alps, engraving.jpg"
     assert bw_stage._pick("Hannibal crossing the Alps", infos[:4]) is None
+
+
+def test_a_bridge_spans_the_closest_shores_and_a_measure_says_how_far():
+    from modules import bw_build, bw_geo
+
+    def square(name, x0, y0, x1, y1, *more):
+        corners = np.array([[x0, y0], [x1, y0], [x1, y1], [x0, y1], [x0, y0]], dtype=float)
+        rings = [np.concatenate([np.linspace(a, b, 60, endpoint=False) for a, b in zip(corners, corners[1:])])]  # a dense outline
+        parts = [bw_geo.Part([r], (float(r[:, 0].min()), float(r[:, 1].min()), float(r[:, 0].max()), float(r[:, 1].max())))
+                 for r in rings + [np.array(m, dtype=float) for m in more]]
+        return bw_geo.Feature("region", name, parts=parts)
+
+    island = square("Island", 15.0, 38.0, 15.6, 38.3)
+    main = square("Main", 15.627, 38.1, 16.2, 38.6)  # 0.027 degrees of sea between them: about 2.4 km
+    p, q = bw_build.closest(island, main)
+    assert p[0] == pytest.approx(15.6) and q[0] == pytest.approx(15.627) and 2.0 < bw_build.km(p, q) < 2.6
+    # a part of one that touches the other over land (Ceuta on Morocco) is no shore: the crossing is over the sea
+    exclave = [[16.2, 38.2], [16.3, 38.2], [16.3, 38.3], [16.2, 38.3], [16.2, 38.2]]
+    p, q = bw_build.closest(square("Island", 15.0, 38.0, 15.6, 38.3, exclave), main)
+    assert p[0] == pytest.approx(15.6)
+    assert bw_build.km((-0.1276, 51.5072), (2.3522, 48.8566)) == pytest.approx(344, abs=5)  # London to Paris
+    el = bw_render.Element("measure", place="Island", to="Main", feature=island, feature_to=main)
+    big, small = bw_build.length_label(el)
+    assert big.endswith(" KM") and small.startswith("(") and small.endswith(" MI)")
+    assert bw_build.length_label(bw_render.Element("measure", text="3 km", feature=island, feature_to=main)) == ("3 KM", "")
+    # on screen a narrow strait's bridge is drawn as a readable symbol, reaching onto both shores
+    a, b = bw_build.stretch((100, 100), (110, 100), bw_build.MIN_BRIDGE)
+    assert b[0] - a[0] == pytest.approx(bw_build.MIN_BRIDGE) and (a[0] + b[0]) / 2 == pytest.approx(105)
+
+
+def test_structures_drop_and_build_on_the_map(world, fx_offline):
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "map", "narration": "They planned a bridge and measured the gap, then built a wall.", "focus": ["Minnesota"],
+         "elements": [{"kind": "build", "icon": "bridge", "place": "Minnesota", "to": "Lake of the Woods", "cue": "bridge"},
+                      {"kind": "measure", "place": "Minnesota", "to": "Paris", "cue": "measured"},
+                      {"kind": "build", "icon": "wall", "points": ["Minnesota", "Paris"], "cue": "wall"}]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    bridge, measure, wall = spec.scenes[1].elements[:3]
+    assert len(wall.opts["coords"]) == 2 and bridge.feature_to is not None and measure.feature_to is not None
+    before = np.asarray(r.frame(bridge.at - 0.05), dtype=float)
+    after = np.asarray(r.frame(wall.at + 2.0), dtype=float)
+    assert abs(after - before).mean() > 1  # something was drawn
+    found = bw_sfx.events(spec)
+    assert (bridge.at + 0.45, "stamp", 0.0) in found and (wall.at, "whoosh", 0.0) in found
+
+
+def test_a_build_needs_its_kind_and_its_ends():
+    draft = _draft()
+    scene = draft.scenes[2]
+    scene.elements.append(bw_script.ElementDraft(kind="build", icon="tower", place="Minnesota", to="Canada", cue="map"))
+    scene.elements.append(bw_script.ElementDraft(kind="build", icon="wall", place="Minnesota", cue="map"))
+    scene.elements.append(bw_script.ElementDraft(kind="measure", place="Minnesota", cue="map"))
+    problems = bw_script.check(draft, _research(), lambda n: True)
+    assert any("bridge, wall, fence or canal" in p for p in problems)
+    assert any("a build needs" in p for p in problems)
+    assert any("a measure needs the two places" in p for p in problems)
+    assert "build (a structure drawn on the map" in bw_script.SCENE_RULES

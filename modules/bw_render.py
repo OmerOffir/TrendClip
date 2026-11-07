@@ -72,7 +72,7 @@ ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.tt
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
-                 "transfer", "counter", "army", "battle", "local")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+                 "transfer", "counter", "army", "battle", "local", "build", "measure")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
 MIN_ON_SCREEN = 2.0  # seconds an icon, a flag pole or a local stays before its scene cuts away (a late cue pops in earlier)
 STAY_KINDS = ("icon", "pole", "local")
 NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter", "local")  # their place, if any, is optional
@@ -177,7 +177,7 @@ def resolve(spec: Spec, find: Callable[[str], bw_geo.Feature | None] = bw_geo.re
         if scene.kind != "map":
             continue
         for el in scene.elements:
-            if el.kind == "route":
+            if el.kind == "route" or (el.kind == "build" and el.opts.get("points")):  # a wall from city to city too
                 coords = []
                 for name in el.opts.get("points") or []:
                     if not isinstance(name, str):
@@ -195,7 +195,7 @@ def resolve(spec: Spec, find: Callable[[str], bw_geo.Feature | None] = bw_geo.re
             el.feature = find(el.place) if el.place else None
             if el.feature is None:
                 missing.append(el.place or f"({el.kind} without a place)")
-            if el.kind in ("line", "arrow", "army"):
+            if el.kind in ("line", "arrow", "army", "build", "measure"):
                 el.feature_to = find(el.to) if el.to else None
                 if el.feature_to is None:
                     missing.append(el.to or f"({el.kind} without an end)")
@@ -287,7 +287,19 @@ def plan_views(spec: Spec) -> None:
         for el in scene.elements:
             if el.kind == "parallel" and el.value is not None and boxes:
                 boxes.append((boxes[0][0], el.value, boxes[0][2], el.value))
-        scene.view = fit_view(boxes, min_span=1.5 if all(f.kind == "place" for f in feats) else 0.25) if boxes else (prev or (0.0, 20.0, 3.0))
+        short = []  # a bridge or a measure across a narrow strait: the camera comes close to it (modules.bw_build)
+        for el in scene.elements:
+            if el.kind in ("build", "measure") and (el.feature is not None and el.feature_to is not None or el.opts.get("coords")):
+                from modules import bw_build
+
+                path = bw_build.ends(el)
+                xs, ys = [p[0] for p in path], [p[1] for p in path]
+                if path and max(max(xs) - min(xs), max(ys) - min(ys)) < bw_build.CLOSE_SPAN:
+                    short.append((min(xs), min(ys), max(xs), max(ys)))
+        if short:
+            scene.view = fit_view(short, min_span=bw_build.CLOSE_SPAN)
+        else:
+            scene.view = fit_view(boxes, min_span=1.5 if all(f.kind == "place" for f in feats) else 0.25) if boxes else (prev or (0.0, 20.0, 3.0))
         prev = scene.view
     first = next((s.view for s in spec.scenes if s.view), (0.0, 20.0, 3.0))
     for scene in spec.scenes:

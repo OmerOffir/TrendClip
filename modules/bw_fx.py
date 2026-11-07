@@ -1912,6 +1912,20 @@ class FxRenderer(Renderer):
             return
         elif el.kind == "sketch":
             self.sketch_on_map(ov, cam, el, t)
+        elif el.kind in ("build", "measure"):  # a bridge, wall, fence or canal; a measured distance (modules.bw_build)
+            from modules import bw_build
+
+            path = [cam.pt(*p) for p in bw_build.ends(el)]
+            if len(path) < 2:
+                return
+            kind = str(el.opts.get("icon") or "").lower()
+            if el.kind == "measure":
+                bridged = any(e.kind == "build" and e.feature is el.feature and e.feature_to is el.feature_to for e in scene.elements)
+                bw_build.measure(ov, path[0], path[-1], *bw_build.length_label(el), t, el.at, clear=bridged)
+            elif kind == "bridge":
+                bw_build.bridge(ov, path[0], path[-1], t, el.at)
+            elif kind in bw_build.STRUCTURES:
+                bw_build.builds(ov, path, kind, t, el.at)
         elif el.kind == "highlight" and el.opts.get("_badge") and el.feature is not None:  # a war-map side's flag
             self.flag_badge(ov, cam.pt(*el.feature.label_point()), el.opts["_badge"], t, el.at, r=62)
         elif el.kind == "highlight" and el.opts.get("flag"):

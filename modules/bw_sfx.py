@@ -116,6 +116,11 @@ def events(spec) -> list[tuple[float, str, float]]:
                 found.append((el.at, "whoosh", 0.0))
             elif el.kind in LINE_KINDS:
                 found.append((el.at, "whoosh", 0.0))
+            elif el.kind == "build":  # a bridge lands with a thud; a wall, fence or canal builds with a whoosh
+                bridge = str(el.opts.get("icon") or "").lower() == "bridge"
+                found.append((el.at + (0.45 if bridge else 0.0), "stamp" if bridge else "whoosh", 0.0))
+            elif el.kind == "measure":  # its length pops in once the line is drawn
+                found.append((el.at + 0.7, "pop", 0.0))
     # No bell at the end (the owner, 2026-11-07: the "ting" on every video's end goes): a looping Short just loops.
     if getattr(spec, "style", "") == "war":  # "Attempt 2" slamming in (bw_fx.FxRenderer.attempt_tag)
         from modules import bw_render

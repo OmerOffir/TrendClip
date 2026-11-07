@@ -327,9 +327,9 @@ LOCAL_MOODS = ("shocked", "sad", "grin", "smug", "think", "smile")  # a local's 
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter | army | battle | local")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter | army | battle | local | build | measure")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
-    to: str = Field("", description="line / arrow / army: where it ends.")
+    to: str = Field("", description="line / arrow / army / build / measure: where it ends.")
     value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W); counter: the number.")
     text: str = Field("", description="A short label, 1-4 words (stamp: 1-2 words).")
     color: str = Field("a", description="a | b | c | gold | red | white")
@@ -338,8 +338,9 @@ class ElementDraft(BaseModel):
                                        "transfer: the new owner's flag; army: the flag its units carry; battle: the attacker's flag.")
     from_flag: str = Field("", description="transfer: the old owner's flag (give both flags or neither); battle: the defender's flag.")
     count: int = Field(0, description="army: how many units march (3-9; 0: 5).")
-    icon: str = Field("", description="icon / route / local: one name from the icon list (local: a person).")
-    points: list[str] = Field(default_factory=list, description="route: 2-5 places in the order the path goes.")
+    icon: str = Field("", description="icon / route / local: one name from the icon list (local: a person); "
+                                       "build: bridge | wall | fence | canal.")
+    points: list[str] = Field(default_factory=list, description="route / build: 2-5 places in the order the path goes.")
     mood: str = Field("", description="local: how they feel once the react word is said: shocked | sad | grin | smug | think | smile.")
     react: str = Field("", description="local: the word of this scene's narration their mood changes on.")
     say: str = Field("", description="local: what the character says on the react word, 1-5 words in a speech bubble (a country's voice).")
@@ -425,6 +426,14 @@ must be the whole narration.
   the whole line with {{n}} where the number goes ("Day {{n}}", "{{n}}+ ships"); 2-3 counters in one scene stack into a
   tally, like "500 ships", "120,000 soldiers", "5,000 horsemen"). Use 1-4 counters in the video for the numbers the
   story turns on (sizes, distances, armies, prices, days); never for a year (a year goes in the headline).
+  build (a structure drawn on the map: "icon" bridge | wall | fence | canal; between "place" and "to", the two
+  shores it joins, named as the map knows them: provinces or cities facing each other ("Messina" to "Reggio
+  Calabria", "Denmark" to "Sweden"; the bridge spans them where they are closest), or along "points" (a wall from
+  place to place: ["Carlisle", "Newcastle upon Tyne"]); a bridge drops onto the map, a wall builds itself; the
+  scene's "focus" is those two shores so the camera is close. Use it whenever the story is about something built,
+  planned or never built: a bridge, a border wall, a fence, a canal), measure (a dashed line between "place" and
+  "to" at their closest edges that draws itself, then its length along it; "text" is the distance as the narration
+  says it ("3 KM"), else the map's own km and miles. Use it when a distance is the surprise: "only 3 km apart").
   local (one of the channel's own characters standing on "place": "icon" is citizen, farmer, settler, king or
   soldier (these act out the mood with their own faces), or diplomat, general, merchant, sultan, emperor, chief,
   fisherman, child, village_woman, blacksmith, nomad (herders, steppe and desert peoples), priest (the church, a
@@ -871,6 +880,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a character says {words(e.say)} words (at most {bw_local.SAY_WORDS}: one short line in its bubble)")
             if e.kind == "army" and not (e.place.strip() and e.to.strip()):
                 problems.append(f"scene {i}: an army needs a place it starts from and a place it marches \"to\"")
+            if e.kind == "build" and e.icon.strip().lower() not in ("bridge", "wall", "fence", "canal"):
+                problems.append(f"scene {i}: a build's icon is bridge, wall, fence or canal")
+            if e.kind == "build" and not ((e.place.strip() and e.to.strip()) or len([p for p in e.points if p.strip()]) >= 2):
+                problems.append(f"scene {i}: a build needs a \"place\" and \"to\", or 2-5 \"points\" along its path")
+            if e.kind == "measure" and not (e.place.strip() and e.to.strip()):
+                problems.append(f"scene {i}: a measure needs the two places it measures between (\"place\" and \"to\")")
             if e.kind == "battle" and not e.place.strip():
                 problems.append(f"scene {i}: a battle needs its place")
             if e.kind == "transfer" and (not e.place.strip() or bool(e.flag.strip()) != bool(e.from_flag.strip())):
