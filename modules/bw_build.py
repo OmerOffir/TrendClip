@@ -339,7 +339,8 @@ def builds(ov: Image.Image, pts: list[tuple[float, float]], kind: str, t: float,
     ov.alpha_composite(lay)
 
 
-def measure(ov: Image.Image, p0, p1, big: str, small: str, t: float, at: float, clear: bool = False) -> None:
+def measure(ov: Image.Image, p0, p1, big: str, small: str, t: float, at: float, clear: bool = False,
+            bounds: tuple[float, float] | None = None) -> None:
     """A dashed white line that draws itself between the two points, ticks at its ends, then its length along it."""
     u = ease((t - at) / DRAW)
     if u <= 0:
@@ -382,5 +383,6 @@ def measure(ov: Image.Image, p0, p1, big: str, small: str, t: float, at: float, 
     if abs(nx) > 0.8:  # a north-south line: the words beside it, to the left when there is room
         side = 1 if nx > 0 and (p0[0] + p1[0]) / 2 > ov.width * 0.4 else -1 if nx > 0 else 1
     mx, my = (p0[0] + p1[0]) / 2 + nx * side * gap, (p0[1] + p1[1]) / 2 + ny * side * gap
-    mx = min(max(tag.width / 2 + 20, mx), ov.width - tag.width / 2 - 20)
+    lo, hi = bounds or (0, ov.width)  # inside its strip on a split screen
+    mx = min(max(lo + tag.width / 2 + 12, mx), hi - tag.width / 2 - 12)
     ov.alpha_composite(tag, (int(mx - tag.width / 2), int(my - tag.height / 2)))

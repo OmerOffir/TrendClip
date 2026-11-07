@@ -344,6 +344,7 @@ class ElementDraft(BaseModel):
     mood: str = Field("", description="local: how they feel once the react word is said: shocked | sad | grin | smug | think | smile.")
     react: str = Field("", description="local: the word of this scene's narration their mood changes on.")
     say: str = Field("", description="local: what the character says on the react word, 1-5 words in a speech bubble (a country's voice).")
+    title: str = Field("", description="compare: the strip's caption under its flag, 1-3 words (\"Øresund Bridge\").")
 
     @model_validator(mode="after")
     def _plain_kind(self):
@@ -355,7 +356,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card | board | photo | stage")
+    kind: str = Field(description="map | card | board | photo | stage | compare")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -498,6 +499,12 @@ must be the whole narration.
   words written under it; "headline" optional; "focus" optional (a map of it is shown if the picture can't be found).
   People hold on to a face or a real place: use photos for the people, landmarks and objects the story names, and
   keep the pictures changing: never more than 3 map scenes in a row without a photo, board or card between them.
+- a compare scene (a split screen, at most one) shows 2-3 places side by side in narrow satellite strips, so a
+  size or a distance is compared at a glance instead of the camera jumping across the world: the story's place
+  first, then the famous ones it is measured against ("3 km, while Portugal and Denmark bridged 12 and 16 km").
+  Its elements are its strips, in order, each a measure or a bridge (build, "icon" bridge) between "place" and
+  "to", or a highlight of one "place"; "title" is the strip's 1-3 word caption ("Øresund Bridge"); cue each strip
+  on the word that names it. Use it whenever the narration compares places, never the first scene.
 - a stage scene (at most one, and most videos have none) leaves the map for the story's big moment, when a famous
   old painting or engraving of THAT moment exists (a crossing, a battle, a siege, a signing, a purchase; before
   about 1900): "painting" names what the painting shows, as a museum would title it ("Hannibal crossing the Alps",
@@ -782,8 +789,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                             f"give every map scene after the first at least {limits.map_elements} elements on different cue words "
                             "(the place lighting up, then a label, an icon or a local)")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card", "board", "photo", "stage") for k in kinds):
-        problems.append("a scene kind is not map, card, board, photo or stage")
+    if any(k not in ("map", "card", "board", "photo", "stage", "compare") for k in kinds):
+        problems.append("a scene kind is not map, card, board, photo, stage or compare")
+    if kinds.count("compare") > 1:
+        problems.append(f"{kinds.count('compare')} split screens (at most one: the comparison the story turns on)")
+    if kinds and kinds[0] == "compare":
+        problems.append("the first scene can't be a split screen (it is the thumbnail: a map)")
     if kinds.count("stage") > limits.max_stages:
         problems.append(f"{kinds.count('stage')} stage scenes (at most {limits.max_stages}: the story's one big moment)")
     if kinds and kinds[0] == "stage":
@@ -844,6 +855,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
             elif photo_find(s.photo) is None:
                 problems.append(f"photo scene {i}: no picture found for {s.photo!r} (use the exact title of an English "
                                 "Wikipedia article that has a photo or painting)")
+        if s.kind.strip().lower() == "compare":
+            strips = [e for e in s.elements if e.kind in ("measure", "build", "highlight")]
+            if not 2 <= len(strips) <= 3 or len(strips) != len(s.elements):
+                problems.append(f"split screen {i}: its elements are 2-3 strips, each a measure, a bridge (build) or a highlight")
+            if any(e.kind == "build" and e.icon.strip().lower() != "bridge" for e in strips):
+                problems.append(f"split screen {i}: a strip's build is a bridge")
         if s.kind.strip().lower() == "stage":
             cast = [e for e in s.elements if e.kind == "local"]
             if not 1 <= len(cast) <= 2 or len(cast) != len(s.elements):

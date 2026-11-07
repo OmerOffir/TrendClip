@@ -1055,6 +1055,8 @@ class FxRenderer(Renderer):
                         el.opts["_badge"] = self._side_flags.setdefault(el.feature.name, usable_flag(el.feature.name))
         self.attempts = bw_render.attempt_marks(spec.words) if self.war else []
         self.main = [main_place(s) if s.kind == "map" else (None, False) for s in spec.scenes]
+        if self.LIVELY and not self.war:
+            self.arrival_flags()
         self.open_view = self.opening_view() if self.LIVELY else None
         if self.LIVELY:  # one of the owner's GIFs, on the word it shows, wherever nothing else would happen
             recent: set[str] = set()
@@ -1075,6 +1077,7 @@ class FxRenderer(Renderer):
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
         self.stages: dict[int, Any] = {}  # the stage scenes' pictures and casts (modules.bw_stage), made on first use
+        self.compares: dict[int, Any] = {}  # the split screens' strips (modules.bw_compare)
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
         self.pens = {i: (self.war_pen(s) if self.war else bw_brand.pen_target(s)) for i, s in enumerate(spec.scenes)
                      if spec.brand and s.kind == "map" and not s.opts.get("globe")}
@@ -1118,6 +1121,93 @@ class FxRenderer(Renderer):
                     nxt.elements.append(Element(kind="army", place=el.place, to=el.to, color=el.color, at=nxt.start - 5.0,
                                                 feature=el.feature, feature_to=el.feature_to, opts={**el.opts, "_held": True}))
 
+    # -- arriving somewhere new (the owner, 2026-11-07: a jump to another part of the map looked empty) --
+
+    ARRIVE_EMPTY = 0.9  # seconds after a map scene starts with nothing of its own on screen: its places' flags rise
+
+    def arrival_flags(self) -> None:
+        """A map scene the camera flies to from another part of the world gets its places' flags on poles at once
+        (one or two: the countries of its focus), unless something of its own already shows in its first moments."""
+        scenes = self.spec.scenes
+        prev = None
+        for i, s in enumerate(scenes):
+            if s.kind != "map" or s.opts.get("globe") or not s.view:
+                continue
+            here, before, prev = s.view, prev, s.view
+            if before is None or i == 0:
+                continue
+            k = max(0.2, math.cos(math.radians(here[1])))
+            width = W / (here[2] * k)  # degrees of longitude on screen
+            moved = math.hypot((here[0] - before[0]) * k, here[1] - before[1]) > width * 0.8 or max(here[2], before[2]) > 4 * min(here[2], before[2])
+            busy = any(el.at < s.start + self.ARRIVE_EMPTY and el.kind not in ("highlight",) for el in s.elements)
+            if not moved or busy or any(el.kind in ("pole", "local") for el in s.elements):
+                continue
+            seen: list[str] = []
+            cam = Cam(*self.views[i])
+            taken: list[tuple[float, float]] = []  # the flags keep clear of each other
+            built: list[tuple[float, float]] = []  # and of what the scene builds or draws
+            from modules import bw_build
+
+            for el in s.elements:
+                if el.kind in ("build", "measure", "route", "line", "arrow") and (el.feature is not None or el.opts.get("coords")):
+                    try:
+                        pts = [cam.pt(*p) for p in (bw_build.ends(el) if el.kind in ("build", "measure") else
+                                                     (el.opts.get("coords") or [el.feature.label_point()]))]
+                    except Exception:  # noqa: BLE001 - nothing to keep clear of
+                        continue
+                    if el.kind in ("build", "measure") and el.feature is not None and el.feature_to is not None and not el.opts.get("coords"):
+                        pts = list(bw_build.span(cam, el, bw_build.MIN_BRIDGE))
+                    for a, b in zip(pts, pts[1:] or pts):  # every 60 px along it
+                        n = max(1, int(math.hypot(b[0] - a[0], b[1] - a[1]) / 60))
+                        for k in range(n + 1):  # its line, and the towers and battlements that rise above it
+                            px, py = a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n
+                            built += [(px, py), (px, py - 60), (px, py - 120)]
+            for name in s.focus:
+                f = bw_geo.resolve(name)
+                country = (f.name if f is not None and f.kind == "country" else (f.country if f is not None else "")) or ""
+                if not country or country in seen:
+                    continue
+                flag = usable_flag(country)
+                spot = (self.land_spot(cam, f, taken, built) or self.land_spot(cam, f, taken, built, margin=0.5)) if flag else None
+                if spot is not None:
+                    seen.append(country)
+                    taken.append(cam.pt(*spot))
+                    s.elements.append(Element(kind="pole", place=name, at=s.start + 0.2 + 0.25 * len(seen),
+                                              opts={"flag": flag, "at": list(spot), "_arrival": True}))
+                if len(seen) == 2:
+                    break
+
+    @staticmethod
+    def land_spot(cam, f, taken: list[tuple[float, float]], built: list[tuple[float, float]] = (),
+                  margin: float = 1.0) -> tuple[float, float] | None:
+        """Where a place's flag pole stands on screen: its label point when that is well inside the frame, else
+        the point of its land in view nearest the middle (a close view of Øresund shows only an edge of Denmark),
+        away from the other flags and the mascot's corner. None when none of it is on screen."""
+        from modules import bw_build
+
+        if f is None:
+            return None
+        def good(x, y):
+            return (140 <= x <= W - 260 and MAP_TOP + 120 <= y <= MAP_BOTTOM - 60 and not (x < 470 and y > 1000)
+                    and all(math.hypot(x - a, y - b) > 330 for a, b in taken)
+                    and not any(x - 70 * margin <= a <= x + 200 + 50 * margin and y - 240 - 50 * margin <= b <= y + 40 * margin
+                                for a, b in built))  # the pole and its flag's box
+        lx, ly = cam.pt(*f.label_point())
+        if good(lx, ly) and (not f.parts or bw_build.inside(f, *f.label_point())):
+            return tuple(f.label_point())
+        best = None
+        for y in range(MAP_TOP + 120, MAP_BOTTOM - 60, 60):
+            for x in range(140, W - 260, 60):
+                if not good(x, y):
+                    continue
+                lonlat = cam.lonlat(x, y)
+                if f.parts and not bw_build.inside(f, *lonlat):
+                    continue
+                score = math.hypot(x - W / 2, y - CY)
+                if best is None or score < best[0]:
+                    best = (score, lonlat)
+        return tuple(best[1]) if best else None
+
     # -- cameras --
 
     def moved(self, j: int, u: float) -> tuple[float, float, float]:
@@ -1142,7 +1232,17 @@ class FxRenderer(Renderer):
                 if span is not None:
                     level, i0, i1, j0, j1 = span
                     keys |= {(level, a, b) for a in range(i0, i1 + 1) for b in range(j0, j1 + 1)}
+        for i, s in enumerate(self.spec.scenes):  # a split screen's strips cut from their own tiles
+            if s.kind == "compare":
+                keys |= self.compare_of(i).tiles()
         self.sat.fetch(keys, progress)
+
+    def compare_of(self, i: int):
+        if i not in self.compares:
+            from modules import bw_compare
+
+            self.compares[i] = bw_compare.Compare(self.spec.scenes[i], self.sat)
+        return self.compares[i]
 
     def camera(self, i: int, t: float) -> Cam:
         t = self.cam_time(i, t)
@@ -2531,6 +2631,8 @@ class FxRenderer(Renderer):
                     n = el.opts.get("n", 0)
                     self.icon(ov, el, ((W * 0.3, W * 0.7, W * 0.5)[n % 3], 1700), t)
                 img.alpha_composite(ov)
+        elif scene.kind == "compare":  # two or three satellite strips side by side (modules.bw_compare)
+            img = self.compare_of(i).frame(t)
         elif scene.kind == "stage" and scene.opts.get("_painting"):  # off the map, into an old painting (modules.bw_stage)
             if i not in self.stages:
                 from modules import bw_stage

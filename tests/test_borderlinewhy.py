@@ -2611,3 +2611,47 @@ def test_a_bridge_crosses_from_land_to_land_not_along_the_shore():
     spain = land("West", [[14.0, 38.0], [15.5, 38.0], [15.6, 38.3], [14.0, 38.3]], rock)
     p, _ = bw_build.closest(spain, east)
     assert p[0] < 15.7
+
+
+def test_a_split_screen_shows_places_side_by_side_and_a_jump_raises_flags(world, fx_offline):
+    from modules import bw_compare
+
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "compare", "narration": "Compare the lake and the river and the state.", "elements": [
+            {"kind": "measure", "place": "Minnesota", "to": "Lake of the Woods", "text": "3 KM", "title": "The notch", "cue": "Compare"},
+            {"kind": "highlight", "place": "Mississippi River", "cue": "river"},
+            {"kind": "highlight", "place": "Canada", "title": "Up north", "cue": "state"}]},
+        {"kind": "map", "narration": "Far away in Paris nobody knew.", "focus": ["Paris"], "elements": [
+            {"kind": "pin", "place": "Paris", "cue": "nobody"}]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = fx_offline.FxRenderer(spec)
+    split = spec.scenes[1]
+    c = r.compare_of(1)
+    assert isinstance(c, bw_compare.Compare) and len(c.strips) == 3 and c.width == bw_render.W // 3
+    assert c.strips[0].title == "The notch" and c.strips[2].names == ["Canada"]
+    img = np.asarray(r.frame(split.start + 1.5), dtype=float)
+    x = c.width  # the white line between the first two strips
+    assert img[1500:1600, x - 2:x + 2].mean() > 200
+    assert (split.start, "whoosh", 0.0) in bw_sfx.events(spec)
+    # the camera flies from Minnesota to Paris and nothing shows at first: France's flag rises on a pole
+    paris = spec.scenes[2]
+    flags = [e for e in paris.elements if e.opts.get("_arrival")]
+    assert [e.opts["flag"] for e in flags] == ["Flag of France.svg"] and flags[0].at < paris.start + 0.6
+
+
+def test_a_split_screen_needs_two_or_three_strips():
+    draft = _draft()
+    strip = lambda **k: bw_script.ElementDraft(cue="map", **k)
+    draft.scenes[2] = bw_script.SceneDraft(kind="compare", narration=draft.scenes[2].narration,
+                                           elements=[strip(kind="measure", place="Minnesota", to="Canada", title="A"),
+                                                     strip(kind="highlight", place="Canada")])
+    problems = lambda: [p for p in bw_script.check(draft, _research(), lambda n: True) if "split screen" in p]
+    assert problems() == []
+    draft.scenes[2].elements = draft.scenes[2].elements[:1]
+    assert "2-3 strips" in problems()[0]
+    draft.scenes[2].elements = [strip(kind="build", icon="wall", place="Minnesota", to="Canada"), strip(kind="highlight", place="Canada")]
+    assert any("a strip's build is a bridge" in p for p in problems())
+    assert "a compare scene (a split screen" in bw_script.SCENE_RULES

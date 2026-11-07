@@ -174,7 +174,7 @@ def resolve(spec: Spec, find: Callable[[str], bw_geo.Feature | None] = bw_geo.re
     """Look up every place the scenes name; returns the names that could not be found (empty = fine)."""
     missing: list[str] = []
     for scene in spec.scenes:
-        if scene.kind != "map":
+        if scene.kind not in ("map", "compare"):  # a split screen's strips name their places too (modules.bw_compare)
             continue
         for el in scene.elements:
             if el.kind == "route" or (el.kind == "build" and el.opts.get("points")):  # a wall from city to city too
