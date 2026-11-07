@@ -2583,3 +2583,31 @@ def test_a_build_needs_its_kind_and_its_ends():
     assert any("a build needs" in p for p in problems)
     assert any("a measure needs the two places" in p for p in problems)
     assert "build (a structure drawn on the map" in bw_script.SCENE_RULES
+
+
+def test_a_bridge_crosses_from_land_to_land_not_along_the_shore():
+    from modules import bw_build, bw_geo
+
+    def land(name, corners, *more):
+        def dense(c):
+            c = np.array(c + [c[0]], dtype=float)
+            return np.concatenate([np.linspace(a, b, 40, endpoint=False) for a, b in zip(c, c[1:])])
+        rings = [dense(corners)] + [dense(m) for m in more]
+        return bw_geo.Feature("region", name, parts=[bw_geo.Part([r], (float(r[:, 0].min()), float(r[:, 1].min()),
+                                                                       float(r[:, 0].max()), float(r[:, 1].max()))) for r in rings])
+
+    # an island to the west whose north-east tip sits just north of the mainland's west tip: the narrowest gap runs
+    # north-south, but the lands lie west and east of each other
+    west = land("West", [[14.0, 38.0], [15.5, 38.0], [15.6, 38.3], [14.0, 38.3]])
+    east = land("East", [[15.62, 38.0], [16.5, 38.0], [16.5, 38.5], [15.62, 38.26]])
+    el = bw_render.Element("build", place="West", to="East", feature=west, feature_to=east, opts={"icon": "bridge"})
+    e, n = bw_build.heading(el)
+    assert e > 0.8 and abs(n) < 0.6  # it runs west to east, from land to land
+    cam = bw_render.Cam(15.6, 38.2, 900.0)
+    a, b = bw_build.span(cam, el, bw_build.MIN_BRIDGE)
+    assert bw_build.inside(west, *cam.lonlat(*a)) and bw_build.inside(east, *cam.lonlat(*b))
+    # a speck of rock a country keeps off the other's coast is no shore (Spain's rocks off Morocco)
+    rock = [[16.0, 38.29], [16.002, 38.29], [16.002, 38.292], [16.0, 38.292]]
+    spain = land("West", [[14.0, 38.0], [15.5, 38.0], [15.6, 38.3], [14.0, 38.3]], rock)
+    p, _ = bw_build.closest(spain, east)
+    assert p[0] < 15.7

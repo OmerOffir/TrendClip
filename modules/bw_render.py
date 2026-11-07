@@ -296,6 +296,7 @@ def plan_views(spec: Spec) -> None:
                 xs, ys = [p[0] for p in path], [p[1] for p in path]
                 if path and max(max(xs) - min(xs), max(ys) - min(ys)) < bw_build.CLOSE_SPAN:
                     short.append((min(xs), min(ys), max(xs), max(ys)))
+                    el.opts["_close"] = True  # bw_fx.vary_views keeps this close view
         if short:
             scene.view = fit_view(short, min_span=bw_build.CLOSE_SPAN)
         else:

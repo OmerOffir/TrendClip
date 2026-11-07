@@ -984,6 +984,9 @@ def vary_views(scenes: list[Scene]) -> list[tuple[float, float, float] | None]:
             continue
         run = run + 1 if s.view == last and not s.opts.get("globe") else 0
         last = s.view
+        if any(el.kind in ("build", "measure") and el.opts.get("_close") for el in s.elements):
+            out.append(s.view)  # close on a narrow crossing: a wide cut would shrink the bridge to a speck
+            continue
         lon, lat, ppd = s.view
         z, (sx, sy) = ZOOMS[run % len(ZOOMS)], SHIFTS[run % len(SHIFTS)]
         p = max(2.5, ppd * z)
@@ -1919,11 +1922,14 @@ class FxRenderer(Renderer):
             if len(path) < 2:
                 return
             kind = str(el.opts.get("icon") or "").lower()
+            two = el.feature is not None and el.feature_to is not None and not el.opts.get("coords")
             if el.kind == "measure":
                 bridged = any(e.kind == "build" and e.feature is el.feature and e.feature_to is el.feature_to for e in scene.elements)
-                bw_build.measure(ov, path[0], path[-1], *bw_build.length_label(el), t, el.at, clear=bridged)
+                a, b = bw_build.span(cam, el, bw_build.MIN_MEASURE) if two else bw_build.stretch(path[0], path[-1], bw_build.MIN_MEASURE)
+                bw_build.measure(ov, a, b, *bw_build.length_label(el), t, el.at, clear=bridged)
             elif kind == "bridge":
-                bw_build.bridge(ov, path[0], path[-1], t, el.at)
+                a, b = bw_build.span(cam, el, bw_build.MIN_BRIDGE) if two else bw_build.stretch(path[0], path[-1], bw_build.MIN_BRIDGE)
+                bw_build.bridge(ov, a, b, t, el.at)
             elif kind in bw_build.STRUCTURES:
                 bw_build.builds(ov, path, kind, t, el.at)
         elif el.kind == "highlight" and el.opts.get("_badge") and el.feature is not None:  # a war-map side's flag

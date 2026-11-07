@@ -54,8 +54,14 @@ def backout(u: float) -> float:
 # --------------------------------------------------------------------------- where it stands
 
 
-def _rings(f) -> list[np.ndarray]:
-    return [np.asarray(p.rings[0], dtype=float) for p in f.parts if p.rings and len(p.rings[0])]
+def _rings(f, main: bool = False) -> list[np.ndarray]:
+    """The outlines of a place's parts; `main`: only its mainland and the islands chained to it (bw_geo's main box),
+    so Spain is Spain, not the rocks it keeps off the Moroccan coast."""
+    box = f.bbox(True) if main else None
+    area = lambda b: (b[2] - b[0]) * (b[3] - b[1])
+    least = 0.02 * max((area(p.bbox) for p in f.parts), default=0.0) if main else 0.0  # a speck of rock is no shore
+    keep = lambda b: box is None or (b[0] <= box[2] and b[2] >= box[0] and b[1] <= box[3] and b[3] >= box[1] and area(b) >= least)
+    return [np.asarray(p.rings[0], dtype=float) for p in f.parts if p.rings and len(p.rings[0]) and keep(p.bbox)]
 
 
 def _near(a: np.ndarray, box: tuple[float, float, float, float], pad: float) -> np.ndarray:
@@ -86,8 +92,8 @@ def closest(fa, fb, most: int = 3000) -> tuple[tuple[float, float], tuple[float,
     strait, not Ceuta's fence. A place that is only a point is that point."""
     if not fa.parts or not fb.parts:
         return tuple(fa.label_point()), tuple(fb.label_point())
-    near = lambda f, other: [r for r in (_near(r, other.bbox(False), 2.0) for r in _rings(f)) if len(r)]
-    ra, rb = near(fa, fb) or _rings(fa), near(fb, fa) or _rings(fb)
+    near = lambda f, other: [r for r in (_near(r, other.bbox(False), 2.0) for r in _rings(f, True)) if len(r)]
+    ra, rb = near(fa, fb) or _rings(fa, True), near(fb, fa) or _rings(fb, True)
     thin = lambda rs: [r[:: max(1, sum(map(len, rs)) // most)] for r in rs]
     ra, rb = thin(ra), thin(rb)
     k = math.cos(math.radians(float(np.mean([r[:, 1].mean() for r in ra + rb]))))
@@ -119,6 +125,69 @@ def ends(el) -> list[tuple[float, float]]:
             path = []
         el.opts["_path"] = path
     return el.opts["_path"]
+
+
+LOCAL_KM = 30.0  # how much of each shore's land decides which way the crossing runs
+
+
+def heading(el) -> tuple[float, float]:
+    """The way a bridge crosses, as a unit (east, north) vector: from the land round one end to the land round the
+    other (each shore's outline within LOCAL_KM of the crossing, averaged). The exact narrowest line can run along
+    the coast (Messina's runs north-south), and a bridge drawn that way at a readable size lay on the shore."""
+    if "_dir" not in el.opts:
+        p, q = ends(el)[:1] + ends(el)[-1:]
+        k = math.cos(math.radians((p[1] + q[1]) / 2))
+        def land(f, c):
+            if not f.parts:
+                return np.asarray(c, dtype=float)
+            v = np.concatenate(_rings(f))
+            dist = np.hypot((v[:, 0] - c[0]) * 111.0 * k, (v[:, 1] - c[1]) * 111.0)
+            near = v[dist < LOCAL_KM]
+            return near.mean(axis=0) if len(near) else np.asarray(c, dtype=float)
+        a, b = land(el.feature, p), land(el.feature_to, q)
+        e, n = (b[0] - a[0]) * 111.0 * k, (b[1] - a[1]) * 111.0
+        if math.hypot(e, n) < 1e-6:
+            e, n = (q[0] - p[0]) * 111.0 * k, (q[1] - p[1]) * 111.0
+        size = math.hypot(e, n) or 1.0
+        el.opts["_dir"] = (e / size, n / size)
+    return el.opts["_dir"]
+
+
+def inside(f, lon: float, lat: float) -> bool:
+    """Whether a point is on a place's land (even-odd over its outlines)."""
+    hit = False
+    for part in f.parts:
+        b = part.bbox
+        if not (b[0] <= lon <= b[2] and b[1] <= lat <= b[3]):
+            continue
+        for ring in part.rings:
+            r = np.asarray(ring, dtype=float)
+            x0, y0, x1, y1 = r[:-1, 0], r[:-1, 1], r[1:, 0], r[1:, 1]
+            cross = ((y0 > lat) != (y1 > lat)) & (lon < (x1 - x0) * (lat - y0) / np.where(y1 == y0, 1e-12, y1 - y0) + x0)
+            hit ^= bool(np.count_nonzero(cross) % 2)
+    return hit
+
+
+def span(cam, el, least: float) -> tuple[tuple[float, float], tuple[float, float]]:
+    """A bridge's or measure's two ends on screen: across the water from land to land (heading), as long as the
+    real crossing or `least` pixels, whichever is more, slid along itself (still over the crossing) so that each
+    end rests on its own shore's land."""
+    path = ends(el)
+    p, q = path[0], path[-1]
+    (x0, y0), (x1, y1) = cam.pt(*p), cam.pt(*q)
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+    e, n = heading(el)
+    L = max(least, math.hypot(x1 - x0, y1 - y0))
+    real = math.hypot(x1 - x0, y1 - y0)
+    room = max(0.0, (L - real) / 2 - 10)  # how far it may slide and still cover the whole crossing
+    best, best_score = 0.0, -1
+    for s in np.linspace(-room, room, 15) if room > 0 else [0.0]:
+        a = (mx + e * (s - L / 2), my - n * (s - L / 2))
+        b = (mx + e * (s + L / 2), my - n * (s + L / 2))
+        score = inside(el.feature, *cam.lonlat(*a)) + inside(el.feature_to, *cam.lonlat(*b))
+        if score > best_score or (score == best_score and abs(s) < abs(best)):
+            best, best_score = float(s), score
+    return (mx + e * (best - L / 2), my - n * (best - L / 2)), (mx + e * (best + L / 2), my - n * (best + L / 2))
 
 
 def length_label(el) -> tuple[str, str]:
@@ -199,7 +268,6 @@ def bridge(ov: Image.Image, p0, p1, t: float, at: float) -> None:
     u = (t - at) / DROP
     if u <= 0:
         return
-    p0, p1 = stretch(p0, p1, MIN_BRIDGE)
     if p1[0] < p0[0]:
         p0, p1 = p1, p0  # drawn left to right, so its towers stand up
     L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
@@ -277,7 +345,6 @@ def measure(ov: Image.Image, p0, p1, big: str, small: str, t: float, at: float, 
     if u <= 0:
         return
     d = ImageDraw.Draw(ov)
-    p0, p1 = stretch(p0, p1, MIN_MEASURE)
     L = math.hypot(p1[0] - p0[0], p1[1] - p0[1])
     if L < 4:
         return
