@@ -786,10 +786,16 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
         # small place (or one that is only a point) still shows the lakes and borders round it
         ppd = max(2.5, min(min(W, H) / 2.5, W * (0.42 if portrait else 0.2) / max(1e-4, (x1 - x0) * k), H * 0.3 / max(1e-4, y1 - y0)))
         r.views[0] = (lon - (spot[0] - W / 2) / (ppd * k), lat - (bw_render.CY - spot[1]) / ppd, ppd)
+        r.names = lambda *a, **k: None  # the thumbnail names the sides itself, clear of the circle and the text
         img = r.scene_frame(0, 3.8).convert("RGB")
         cam = r.camera(0, 3.8)
-        rx = max(90.0, (x1 - x0) * k * ppd / 2 + 60)
-        ry = max(70.0, (y1 - y0) * ppd / 2 + 50)
+        # the circle where the camera really drew the place, round its middle: the camera keeps inside the world map
+        # (a big northern country like China slides up, so the planned spot was open sea: the owner, 2026-11-07), and
+        # a country that big is ringed at its heart, not round a box of islands as wide as the screen
+        (px0, py0), (px1, py1) = cam.pt(x0, y1), cam.pt(x1, y0)
+        spot = cam.pt(*feat.label_point()) if feat.parts else ((px0 + px1) / 2, (py0 + py1) / 2)
+        rx = min(max(90.0, (px1 - px0) / 2 + 60), W * 0.3, max(90.0, min(spot[0], W - spot[0]) - 30))  # whole on screen
+        ry = min(max(70.0, (py1 - py0) / 2 + 50), H * 0.16)
     else:
         img = bw_fx.FxRenderer(spec).scene_frame(0, 1.0).convert("RGB")
         rx, ry = 160.0, 120.0
@@ -827,6 +833,7 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
             d.text(at, line, font=f, fill=gold if n == 0 else white, stroke_width=16, stroke_fill=(0, 0, 0), anchor="la")
             box = d.textbbox(at, line, font=f, stroke_width=16, anchor="la")  # the font's real extent (they differ by machine)
             right, bottom = (box[2], box[3]) if n == 0 else (max(right, box[2]), box[3])
+    ry = max(70.0, min(ry, spot[1] - bottom - 30))  # the circle stays under the text
     loop = bw_fx.FxRenderer.egg(spot[0], spot[1], rx, ry, seed=3)
     bw_brand.marker(ov, loop, bw_brand.RED, 22)
     end = (W * 0.2, bottom + 30) if portrait else (min(right - 120, W * 0.5), bottom + 30)  # from under the text
