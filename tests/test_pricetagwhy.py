@@ -826,7 +826,7 @@ def test_the_videos_move_faster_tight_pauses_sounds_and_no_elevator_music(tmp_pa
     pw_render.restyle(spec)
     pw_render.PwRenderer(spec)
     kinds = {name for _, name, _ in spec.sfx_extra}
-    assert {"whoosh", "pop", "marker", "cash", "ding"} <= kinds
+    assert {"whoosh", "pop", "marker", "cash"} <= kinds and "ding" not in kinds
     assert all(at >= 0.05 for at, _, _ in spec.sfx_extra)  # nothing for what is already drawn on the first frame
     assert bw_sfx.sfx_track(spec, tmp_path / "sfx.wav").stat().st_size > 1000
 

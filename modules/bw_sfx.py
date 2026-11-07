@@ -1,6 +1,6 @@
 """Borderline Why sound effects, made in code (no files to license): a pop when a pin, icon or label appears, a
 thud for a stamp, a whoosh when a flag fills a place or a place changes hands, paper for a title card, a marker
-scratch while the whiteboard is written, and a bell on the end card.
+scratch while the whiteboard is written (no bell at the end: the owner, 2026-11-07).
 
 sfx_track(spec, out) writes one WAV the length of the video with every sound at its moment (the element's `at`,
 set when the scenes are aligned to the voice); bw_render.render mixes it under the voice when spec.sfx is on
@@ -89,8 +89,6 @@ def events(spec) -> list[tuple[float, str, float]]:
             found.append((scene.start, "paper", 0.0))
         elif scene.kind == "board":
             found.append((scene.start + 0.3, "marker", min(1.8, max(0.4, (scene.end - scene.start) * 0.5))))
-        elif scene.kind == "end":
-            found.append((scene.start + 0.2, "ding", 0.0))
         elif scene.kind == "photo":  # the print popping in with its flash, then the character (bw_photos.PhotoScene)
             found += [(scene.start, "paper", 0.0), (scene.start + 1.6, "pop", 0.0)]
         if scene.opts.get("year"):  # the year slamming in (bw_fx.FxRenderer.year)
@@ -108,9 +106,7 @@ def events(spec) -> list[tuple[float, str, float]]:
                 found.append((el.at, "whoosh", 0.0))
             elif el.kind in LINE_KINDS:
                 found.append((el.at, "whoosh", 0.0))
-    if getattr(spec, "hold", 0) and spec.scenes and spec.scenes[-1].kind != "end" and spec.words:  # a looping Short: a
-        last = max([w.end for w in spec.words] + [ln[-1].end for ln in (getattr(spec, "lines", None) or []) if ln])
-        found.append((last + 0.25, "ding", 0.0))  # small bell closes it after the last word said, so it doesn't just stop
+    # No bell at the end (the owner, 2026-11-07: the "ting" on every video's end goes): a looping Short just loops.
     if getattr(spec, "style", "") == "war":  # "Attempt 2" slamming in (bw_fx.FxRenderer.attempt_tag)
         from modules import bw_render
 

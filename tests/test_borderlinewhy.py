@@ -2307,7 +2307,7 @@ def test_a_short_speaks_faster_and_loops_without_the_outro(monkeypatch, tmp_path
 
 def test_a_short_never_shows_one_thing_alone_and_closes_on_a_ding(world):
     """One thing on the screen at a time looked poor (the owner, 2026-11-05): a Short's map scene after the first needs
-    two elements (long chapters and attempts don't); a looping Short ends on a small bell after the last word said."""
+    two elements (long chapters and attempts don't); a looping Short ends with no bell (the owner, 2026-11-07)."""
     from modules import bw_long, bw_sfx, bw_whatif
 
     draft = _draft()
@@ -2320,7 +2320,7 @@ def test_a_short_never_shows_one_thing_alone_and_closes_on_a_ding(world):
              bw_render.Word("Wow!", 1.8, 2.3, "panda")]
     spec = bw_render.spec_from_dict({"title": "t", "hold": bw_channel.LOOP_HOLD, "brand": True,
                                      "scenes": [{"kind": "map", "narration": "Russia sold Alaska.", "react": "Wow!"}]}, words)
-    assert ("ding" in [name for _, name, _ in bw_sfx.events(spec)]) and max(at for at, name, _ in bw_sfx.events(spec) if name == "ding") == pytest.approx(2.55)
+    assert "ding" not in [name for _, name, _ in bw_sfx.events(spec)]
     assert spec.duration == pytest.approx(2.3 + bw_channel.LOOP_HOLD)
 
 

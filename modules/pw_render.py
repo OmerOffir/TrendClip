@@ -569,7 +569,6 @@ class Drawn(bw_brand.Board):
             self.put_text("This is called", (self.W / 2, ly), 54, INK)
             self.items[-1]["cue"] = "called"
             self.put_text(lesson.upper(), (self.W / 2, lesson_y), lesson_px, GREEN)
-            self.items[-1]["sfx"] = "ding"
             self.mood(n - 1, "smug", "thumb", ref=len(self.items) - 1)  # the idea has a name: thumbs up
             half = bw_fx.hand_font(lesson_px).getlength(lesson.upper()) / 2 + 36
             self.put_line(wobble(densify(pw_draw.rrect(self.W / 2 - half, lesson_y - lesson_px * 0.62, self.W / 2 + half, lesson_y + lesson_px * 0.62, 24)), seed=8), GREEN, 10, 0.5)
@@ -685,7 +684,7 @@ class Drawn(bw_brand.Board):
 
 def sounds(spec: bw_render.Spec, boards: dict[int, bw_brand.Board]) -> list[tuple[float, str, float]]:
     """The channel's sound moments (modules.bw_sfx mixes them, thinned): a whoosh on every cut, the marker while a
-    drawing is drawn, a pop when words are written, a cash ring when a counted figure lands, a ding on the idea's name."""
+    drawing is drawn, a pop when words are written, a cash ring when a counted figure lands (no ding on the idea's name, the owner 2026-11-07)."""
     found: list[tuple[float, str, float]] = []
     for i, scene in enumerate(spec.scenes):
         if i > 0 and scene.kind != "follow":
