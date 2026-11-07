@@ -65,10 +65,10 @@ short Shorts get watched to the end and replayed)
 
 THE TITLE: the what-if question, under 45 characters (the feed cuts longer ones), starting with "What if" ("What If
 Alaska Was Still Russian?").
-cover_text: 3-7 words for the first frame. description: 2-3 sentences saying what really happened and what the
-video imagines. "claims": leave it an empty list (a what-if has no sources to quote).
+cover_text: 3-7 words for the first frame. description: the story style below (THE DESCRIPTION), saying what
+really happened and what the video imagines. "claims": leave it an empty list (a what-if has no sources to quote).
 
-""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + """Today is {today}. Write in English.
+""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + bw_script.DESCRIPTION_RULES + """Today is {today}. Write in English.
 """
 
 
@@ -108,10 +108,10 @@ THE WAR MAP (this Short is drawn on it: a pale paper map, each side in one solid
 - No cards. Photos only for a famous face or place (0-3), a board only for a plan worth writing out (0-1).
 
 THE TITLE: under 50 characters, the count and the surprise ("4 Times the US Tried to Take Canada").
-cover_text: 3-6 words for the first frame. description: 2-3 sentences saying what the attempts were. "claims": leave
+cover_text: 3-6 words for the first frame. description: the story style below (THE DESCRIPTION), telling the attempts. "claims": leave
 it an empty list.
 
-""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + """Today is {today}. Write in English.
+""" + bw_script.HOOK_RULES + bw_script.SCENE_RULES + bw_script.DESCRIPTION_RULES + """Today is {today}. Write in English.
 """
 
 

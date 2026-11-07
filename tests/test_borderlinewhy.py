@@ -283,13 +283,20 @@ def test_a_draft_the_checker_keeps_flagging_drops_the_topic_with_what_it_flagged
     assert len(scripted["prompts"]) == 1 + bw_script.CHECK_FIXES
 
 
-def test_description_lists_sources_and_credits():
-    text = bw_script.description({"question": "Why?", "description": "Because.", "hashtags": ["borders"],
-                                  "sources": [{"title": "MNHS", "url": "https://mnhs.org"}]}, "@BorderlineWhy")
-    assert "Sources:\n- MNHS: https://mnhs.org" in text
-    assert "Natural Earth" in text and "#borders" in text and "@BorderlineWhy" in text
-    assert "NASA" in text and "CC BY 4.0" in text  # the satellite look's pictures are credited
+def test_the_description_tells_the_story_with_emojis_and_hashtags_and_no_sources():
+    # the owner, 2026-11-07: like the geography Shorts that do well, a story with emojis, no source list, many hashtags
+    old = bw_script.description({"question": "Why?", "description": "Because.", "hashtags": ["Strait of Messina", "#borders"],
+                                 "sources": [{"title": "MNHS", "url": "https://mnhs.org"}]}, "@BorderlineWhy")
+    assert old.startswith("🌍 Why?\n\nBecause.")  # a script written before the story style: its question leads
+    assert "Sources" not in old and "mnhs.org" not in old and "No AI" not in old
+    assert "🔔 Follow @BorderlineWhy" in old and "#straitofmessina #borders #geography" in old
+    tags = [w for w in old.split() if w.startswith("#")]
+    assert len(tags) == len(set(tags)) <= bw_script.MAX_TAGS and "#shorts" in tags
+    assert old.rstrip().endswith(bw_script.CREDITS)  # the licences' credits, last and short
+    story = bw_script.description({"question": "Why?", "description": "🌍 Did you know a line splits the animals? 🦘🐅"})
+    assert story.startswith("🌍 Did you know") and "Why?" not in story
     assert "NASA" not in bw_script.description({"look": "flat"})
+    assert "THE DESCRIPTION" in bw_script.PROMPT and "No sources" in bw_script.DESCRIPTION_RULES
 
 
 def test_page_text_keeps_paragraphs_and_drops_scripts():
@@ -380,7 +387,7 @@ def test_make_records_the_video(settings, tmp_path, world):
     assert rendered and rendered[0].scenes[0].view is not None
     saved = bw_channel.load_info(job.key, tmp_path)
     assert saved["title"] == SCRIPT["title"] and saved["check"] == []
-    assert "Sources:" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 - bw_render.TAIL + bw_channel.LOOP_HOLD)  # no outro: it loops
+    assert "Sources:" not in saved["description"] and "#" in saved["description"] and saved["duration_seconds"] == pytest.approx(45.0 - bw_render.TAIL + bw_channel.LOOP_HOLD)  # no outro: it loops
     assert (tmp_path / job.key / "script.json").is_file()
     assert bw_channel.videos(tmp_path)[0]["key"] == job.key
     assert "Northwest Angle" in bw_topics.load(tmp_path).used  # the script's topic is never made again
@@ -508,7 +515,7 @@ def test_tab_endpoints(tmp_path, monkeypatch, settings, world):
     client = TestClient(app)
     body = client.get("/api/borderlinewhy/videos").json()
     assert body["videos"][0]["key"] == job.key and body["videos"][0]["state"] == "approved"
-    assert "Sources:" in body["videos"][0]["youtube"]["description"]
+    assert "🔔 Follow" in body["videos"][0]["youtube"]["description"]
     assert client.get(f"/api/borderlinewhy/videos/{job.key}/video.mp4").status_code == 200
     assert client.get("/api/borderlinewhy/videos/nope/video.mp4").status_code == 404
     approved = client.post(f"/api/borderlinewhy/videos/{job.key}/approve").json()
@@ -1053,7 +1060,7 @@ def test_long_video_links_chapters_and_description():
     times = bw_long.chapter_times(bw_render.Spec(scenes, []))
     assert times == [(0.0, "Hook"), (95.5, "The treaty"), (200, "Today")]
     text = bw_long.description({"question": "Why?", "description": "Because.", "sources": [{"title": "A", "url": "https://a"}]}, times)
-    assert "Chapters:\n0:00 Hook\n1:35 The treaty\n3:20 Today\n\nSources:" in text
+    assert "Chapters:\n0:00 Hook\n1:35 The treaty\n3:20 Today\n\n🔔 Follow" in text
 
 
 def test_long_video_draws_landscape_with_banners_and_a_thumbnail(world, fx_offline, tmp_path, portrait_after):
@@ -2476,7 +2483,7 @@ def test_a_stage_scene_leaves_the_map_for_an_old_painting(world, fx_offline, tmp
     mid = np.asarray(r.frame((stage.start + stage.end) / 2), dtype=float)
     assert abs(mid[500:700, 100:300].mean(axis=(0, 1)) - (170, 60, 200)).max() < 40  # the painting fills the frame
     assert np.asarray(r.frame(stage.end + 1.0), dtype=float)[500:700, 100:300, 1].mean() > 100  # back on the (green) map
-    assert "Crossing the lake (1866) by A. Painter (Public domain)" in bw_channel.with_credits("About it.", spec)
+    assert bw_channel.with_credits("About it.", spec) == "About it."  # a public-domain painting needs no credit
     assert (stage.start, "whoosh", 0.0) in bw_sfx.events(spec)
     # no painting found: the moment shows on the map
     plain = bw_render.spec_from_dict(data, words)

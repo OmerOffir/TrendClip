@@ -91,8 +91,10 @@ def test_photo_credits():
     p = bw_photos.Photo(Path("x.jpg"), "File:Walleye (Sander vitreus).jpg", "https://commons.wikimedia.org/wiki/File:W.jpg",
                         "Some One", "CC BY-SA 4.0")
     text = bw_photos.credits([p, p])
-    assert text.count("Walleye (Sander vitreus) by Some One (CC BY-SA 4.0)") == 1 and text.startswith("Pictures:")
+    assert text.count("Walleye (Sander vitreus) by Some One (CC BY-SA 4.0)") == 1 and text.startswith("Photo: ")
     assert bw_photos.credits([]) == ""
+    old = bw_photos.Photo(Path("y.jpg"), "File:Old map.jpg", "https://commons.wikimedia.org/wiki/File:Y.jpg", "Someone", "Public domain")
+    assert bw_photos.credits([old]) == ""  # public domain needs no credit
 
 
 @pytest.mark.parametrize("lines", [2, 3])

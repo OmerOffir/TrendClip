@@ -133,10 +133,14 @@ def find(query: str) -> Photo | None:
     return None
 
 
+FREE_OF_CREDIT = re.compile(r"^(public domain|pd\b|pd-|cc0|no restrictions)", re.I)
+
+
 def credits(photos: list[Photo]) -> str:
-    """The description's picture credits."""
-    seen = list({p.file: p for p in photos}.values())
-    return ("Pictures: Wikimedia Commons\n" + "\n".join(f"- {p.credit()}" for p in seen)) if seen else ""
+    """The description's picture credits: one short line per picture whose licence asks for one (CC BY, CC BY-SA);
+    public-domain and CC0 pictures need none (the owner, 2026-11-07: no long credit lists)."""
+    seen = [p for p in {p.file: p for p in photos}.values() if not FREE_OF_CREDIT.match(p.license or "")]
+    return "\n".join(f"Photo: {p.credit()}" for p in seen)
 
 
 # --------------------------------------------------------------------------- the photo scene

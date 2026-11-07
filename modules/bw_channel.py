@@ -429,12 +429,13 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
 
 
 def with_credits(description: str, spec: bw_render.Spec) -> str:
-    """The description with the credits of the Wikimedia pictures the video shows (modules.bw_photos)."""
+    """The description with the credits the Wikimedia pictures it shows ask for (modules.bw_photos): only those
+    whose licence wants one (CC BY, CC BY-SA), one short line each; public-domain paintings and photos need none."""
     from modules import bw_photos
 
     credits = bw_photos.credits([s.opts["_photo"] for s in spec.scenes if s.kind == "photo" and s.opts.get("_photo")]
                                 + [s.opts["_painting"] for s in spec.scenes if s.kind == "stage" and s.opts.get("_painting")])
-    return f"{description}\n\n{credits}" if credits else description
+    return f"{description}\n{credits}" if credits else description
 
 
 def outro_on() -> bool:
@@ -762,7 +763,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     info = {
         "key": job.key, "title": bw_series.strip(script["title"]), "series": script_series(script), "kind": script.get("kind", ""), "question": script.get("question", ""), "article": script.get("article", ""),
         "origin": origin, "description": with_credits(bw_script.description(script, handle()), spec),
-        "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:6],
+        "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:15],
         "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
         "words": bw_script.words(script["narration"]), "theme": spec.theme, "music": {"title": track.title} if track else None,
         "created_at": datetime.now().replace(microsecond=0).isoformat(),

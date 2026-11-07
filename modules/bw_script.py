@@ -396,13 +396,28 @@ class Draft(BaseModel):
                                         "(\"the legend says\", \"locals say\"); '' when the video tells none.")
     scenes: list[SceneDraft] = Field(default_factory=list)
     claims: list[ClaimDraft] = Field(default_factory=list)
-    description: str = Field("", description="2-3 sentences for the YouTube description: the answer in short.")
-    hashtags: list[str] = Field(default_factory=list, description="3-5 hashtags without #.")
+    description: str = Field("", description="The YouTube description (see THE DESCRIPTION): 3 short paragraphs, "
+                                             "60-110 words, with fitting emojis; no sources, links or hashtags in it.")
+    hashtags: list[str] = Field(default_factory=list, description="10-15 hashtags without #, the specific ones first "
+                                                                  "(the places, people and thing the story is about).")
 
 
 class Check(BaseModel):
     unsupported: list[str] = Field(default_factory=list, description="Statements in the narration the sources do not support.")
 
+
+# The owner, 2026-11-07, pointing at a geography Short's description: tell the story with emojis, list no sources
+# ("nobody writes them"), and many hashtags.
+DESCRIPTION_RULES = """THE DESCRIPTION
+"description" is what a viewer reads under the Short, written like a story, never like a report:
+- 3 short paragraphs, 60-110 words: first the surprising question or fact ("🌍 Did you know ...?"), then the story
+  in short (what happened, and the twist), then one line that closes it or asks the viewer something.
+- 4-8 emojis that fit, each next to the thing it shows (🦏 rhinos, 🌋 volcanoes, 🇮🇹 Italy, ⚔️ a war), never a row of them.
+- No sources, no links, no hashtags, no "in this video", no "subscribe" (the channel adds its own follow line).
+"hashtags": 10-15 without #, the specific ones first (the places, the people, the thing: "wallaceline", "bali",
+"strait of messina" as "straitofmessina"), then 2-4 broader ones about the topic ("biodiversity", "borders").
+
+"""
 
 # The scene rules a Short and a long video's chapter share (modules.bw_long)
 SCENE_RULES = """THE SCENES ({min_scenes}-{max_scenes})
@@ -578,7 +593,7 @@ short Shorts get watched to the end and replayed)
   stay for a story they haven't heard (the owner, 2026-11-06); a video with no legend in its sources has none.
 - Numbers as digits (1783, 49th, 123).
 
-""" + HOOK_RULES + SCENE_RULES + """THE CLAIMS
+""" + HOOK_RULES + SCENE_RULES + DESCRIPTION_RULES + """THE CLAIMS
 List every fact the narration states (5-12 claims). For each, the id of the source that supports it and an EXACT
 quote copied from that source (no changes, no "..."). At least two different sources must back facts that matter
 to the answer. If no second source supports anything that matters, set usable to false.
@@ -1012,7 +1027,7 @@ def finish(draft: Draft, res: Research) -> dict[str, Any]:
         "claims": [c.model_dump() for c in draft.claims],
         "sources": [{"id": s.id, "url": s.url, "title": s.title} for s in res.sources if s.id in used],
         "description": draft.description.strip(),
-        "hashtags": [h.strip().lstrip("#").replace(" ", "") for h in draft.hashtags if h.strip()][:5],
+        "hashtags": [h.strip().lstrip("#").replace(" ", "") for h in draft.hashtags if h.strip()][:15],
     }
 
 
@@ -1110,23 +1125,28 @@ def _finish_draft(client, model: str, prompt: str, draft: "Draft", fixes: dict[s
         _save_draft(kept, draft, fixes)
 
 
+GENERAL_TAGS = ("geography", "history", "maps", "map", "geographyfacts", "historyfacts", "didyouknow", "facts", "learn",
+                "geoshorts", "historyshorts", "borders", "shorts")
+MAX_TAGS = 25  # YouTube ignores every hashtag of a description with more than 60; a long list reads as spam
+CREDITS = "Map: NASA Blue Marble, Natural Earth. Icons: Noto Emoji by Google (CC BY 4.0)."
+EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
+
+
 def description(script: dict[str, Any], handle: str = "") -> str:
-    """The YouTube description: the question, the short answer, the sources, the map credit, hashtags."""
-    tags = list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps", "shorts"]))[:7]
-    lines = [script.get("question", ""), "", script.get("description", "")]
-    if script.get("kind") == "whatif":  # modules.bw_whatif: no sources to list, and it says it is a guess
-        lines += ["", "A what-if: the real history up to the turning point, then one possible guess at what might have "
-                  "happened. Nobody knows for sure."]
-    elif script.get("kind") == "attempts":  # modules.bw_whatif's attempts format: no source list
-        pass
-    else:
-        lines += ["", "Sources:"] + [f"- {s['title']}: {s['url']}" for s in script.get("sources", [])]
-    if script.get("look", "satellite") == "satellite":
-        lines += ["", "Maps: NASA Blue Marble and Natural Earth (public domain). Flags: Wikimedia Commons. Icons: Noto Emoji "
-                  "by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0). No AI-generated images."]
-    else:
-        lines += ["", "Maps drawn from Natural Earth (public domain). No AI-generated images."]
+    """The YouTube description, the way geography Shorts write it (the owner, 2026-11-07): the story with emojis,
+    a follow line, many hashtags, and at the end only the credits the licences ask for. No source list."""
+    text = (script.get("description") or "").strip()
+    lead = (script.get("question") or "").strip()
+    if lead and not EMOJI.search(text):  # a script written before the story style: its question leads
+        text = f"🌍 {lead}\n\n{text}" if text else f"🌍 {lead}"
+    lines = [text]
+    if script.get("kind") == "whatif":  # modules.bw_whatif: it says it is a guess
+        lines += ["", "🤔 A what-if: the real history up to the turning point, then one possible guess. Nobody knows for sure."]
     if handle:
-        lines += ["", f"More map mysteries: {handle}"]
+        lines += ["", f"🔔 Follow {handle} for a new map mystery every day!"]
+    own = [re.sub(r"[^\w]", "", t.lower()) for t in script.get("hashtags") or []]
+    tags = list(dict.fromkeys([t for t in own if t] + list(GENERAL_TAGS)))[:MAX_TAGS]
     lines += ["", " ".join(f"#{t}" for t in tags)]
+    if script.get("look", "satellite") == "satellite":
+        lines += ["", CREDITS]
     return "\n".join(lines).strip()

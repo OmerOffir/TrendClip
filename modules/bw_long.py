@@ -126,7 +126,8 @@ THE STORY
   true to the story ("CAN'T DRIVE HERE?", "WHO OWNS THIS?", "A BORDER BY MISTAKE?"); not the title, not the cover_text.
   thumb_icon (optional): one icon from this list that says the story at a glance, shown beside the place: {icons}.
 - Each chapter: title (2-5 words), question, and beats (3-6 points it covers, each ending with its source ids, e.g. [1][3]).
-- description: 2-3 sentences for YouTube. hashtags: 3-5 without #.
+- description: a story for YouTube in 3 short paragraphs (60-110 words) with 4-8 fitting emojis, each next to the
+  thing it shows; no sources, links or hashtags in it. hashtags: 10-15 without #, the specific ones first.
 
 ANSWER FORMAT
 {{"usable": true, "reject_reason": "", "title": "Why ... ?", "cover_text": "...", "thumb_text": "...?", "thumb_icon": "",
@@ -600,7 +601,8 @@ def description(script: dict[str, Any], times: list[tuple[float, str]]) -> str:
     text = re.sub(r" ?#shorts\b", "", bw_script.description(script, bw_channel.handle()))
     if len(times) >= 3:
         block = "Chapters:\n" + "\n".join(f"{stamp(t)} {title}" for t, title in times)
-        text = text.replace("Sources:", block + "\n\nSources:", 1)
+        follow = "\n\n🔔 Follow"  # after the story, before the follow line and the hashtags
+        text = text.replace(follow, "\n\n" + block + follow, 1) if follow in text else text.replace("\n\n#", "\n\n" + block + "\n\n#", 1)
     return text
 
 
