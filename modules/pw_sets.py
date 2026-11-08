@@ -26,7 +26,7 @@ from PIL import Image, ImageDraw
 
 from modules import bw_render
 from modules.bw_render import H, W, Scene
-from modules.pw_world import GOLD, GREEN, INK, RED, SS, WHITE, big_text, cue_time, ease, font, put, shrink
+from modules.pw_world import GOLD, GREEN, INK, RED, SS, WHITE, big_text, cue_time, ease, font, pill, put, racing, shrink
 
 # --------------------------------------------------------------------------- the board game
 
@@ -303,8 +303,308 @@ class Board:
         return img
 
 
-SETS: dict[str, Any] = {"board": Board}
-HOW = {"board": ('{"draw": "board", "title": the game\'s name on the board (14 characters at most), "houses": a word '
-                 'the little houses pop on, "start": 0-39 (the token\'s square; it passes GO, "+$200", 40 - start '
-                 'squares later at 0.36 s a square)} = a board game seen from above on a table, a token hopping round, '
-                 'dice rolling (any board-game story)')}
+# --------------------------------------------------------------------------- the factory line
+
+BELT = 1090  # the top of the conveyor belt: things ride on it
+SPACING, SPEED = 290, 240  # px between things, px a second
+ITEMS = ("box", "bottle", "burger", "shoe", "can", "bag")
+
+
+@lru_cache(maxsize=32)
+def item(name: str, label: str = "") -> Image.Image:
+    """A product riding the line (about 200 x 200, standing on its bottom edge)."""
+    s = SS
+    img = Image.new("RGBA", (220 * s, 230 * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    lw = 5 * s
+
+    def B(x0, y0, x1, y1):
+        return [x0 * s, y0 * s, x1 * s, y1 * s]
+
+    if name == "bottle":
+        d.rounded_rectangle(B(78, 10, 142, 50), radius=8 * s, fill=RED, outline=INK, width=lw)
+        d.polygon([(84 * s, 48 * s), (136 * s, 48 * s), (160 * s, 110 * s), (160 * s, 226 * s), (60 * s, 226 * s),
+                   (60 * s, 110 * s)], fill=(120, 70, 50), outline=INK, width=lw)
+        d.rectangle(B(60, 130, 160, 180), fill=RED, outline=INK, width=4 * s)
+        d.line([(80 * s, 70 * s), (70 * s, 120 * s)], fill=(255, 255, 255, 140), width=6 * s)
+    elif name == "burger":
+        d.chord(B(20, 60, 200, 200), 180, 360, fill=(236, 160, 70), outline=INK, width=lw)
+        for k, (y, color) in enumerate(((128, (90, 190, 80)), (148, (250, 210, 60)), (164, (120, 70, 50)))):
+            d.rounded_rectangle(B(14, y, 206, y + 22), radius=10 * s, fill=color, outline=INK, width=4 * s)
+        d.rounded_rectangle(B(22, 186, 198, 226), radius=16 * s, fill=(236, 160, 70), outline=INK, width=lw)
+        for x, y in ((70, 96), (110, 84), (150, 98), (92, 112)):
+            d.ellipse(B(x - 5, y - 3, x + 5, y + 3), fill=(255, 240, 200))
+    elif name == "shoe":
+        d.polygon([(30 * s, 120 * s), (90 * s, 110 * s), (130 * s, 150 * s), (200 * s, 170 * s), (204 * s, 210 * s),
+                   (26 * s, 210 * s)], fill=(70, 160, 230), outline=INK, width=lw)
+        d.rectangle(B(24, 200, 206, 226), fill=WHITE, outline=INK, width=lw)
+        for x in (100, 125, 150):
+            d.line([(x * s, 140 * s), ((x + 16) * s, 128 * s)], fill=WHITE, width=5 * s)
+    elif name == "can":
+        d.rounded_rectangle(B(56, 40, 164, 226), radius=14 * s, fill=(220, 60, 60), outline=INK, width=lw)
+        d.ellipse(B(56, 30, 164, 56), fill=(210, 214, 224), outline=INK, width=lw)
+        d.rectangle(B(56, 110, 164, 150), fill=WHITE, outline=INK, width=4 * s)
+    elif name == "bag":
+        d.polygon([(40 * s, 70 * s), (180 * s, 70 * s), (196 * s, 226 * s), (24 * s, 226 * s)], fill=(250, 230, 200),
+                  outline=INK, width=lw)
+        d.arc(B(76, 20, 144, 110), 180, 360, fill=INK, width=6 * s)
+    else:  # box: a game or product box with its name on the lid
+        d.rectangle(B(14, 90, 206, 226), fill=(200, 60, 60), outline=INK, width=lw)
+        d.polygon([(14 * s, 90 * s), (44 * s, 60 * s), (220 * s - 4 * s, 60 * s), (206 * s, 90 * s)], fill=(230, 90, 80),
+                  outline=INK, width=lw)
+        d.rectangle(B(30, 116, 190, 200), fill=WHITE, outline=INK, width=4 * s)
+    if label and name in ("box", "can", "bottle", "bag"):
+        box = {"box": (30, 116, 190, 200), "can": (56, 110, 164, 150), "bottle": (60, 130, 160, 180), "bag": (40, 130, 180, 190)}[name]
+        size = 34
+        f = font(size * s, "Black")
+        while size > 12 and f.getlength(label) > (box[2] - box[0] - 14) * s:
+            size -= 2
+            f = font(size * s, "Black")
+        d.text(((box[0] + box[2]) / 2 * s, (box[1] + box[3]) / 2 * s), label, font=f, fill=INK if name in ("box", "bag") else RED,
+               anchor="mm")
+    return shrink(img)
+
+
+@lru_cache(maxsize=2)
+def factory_wall() -> Image.Image:
+    """The factory behind the line: a blue-grey wall, tall windows with light, hanging lamps, the belt's frame."""
+    img = Image.new("RGB", (W, H), (96, 110, 150))
+    big = Image.new("RGBA", (W * SS, H * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(big)
+    for x in (270, 810):  # the lamps' light first: what is drawn later must not be wiped by its see-through fill
+        d.polygon([((x - 66) * SS, 212 * SS), ((x + 66) * SS, 212 * SS), ((x + 260) * SS, BELT * SS), ((x - 260) * SS, BELT * SS)],
+                  fill=(255, 236, 170, 40))
+    for y in range(0, BELT, 90):  # wall panels
+        d.line([(0, y * SS), (W * SS, y * SS)], fill=(84, 96, 136, 255), width=3 * SS)
+    for x0 in (90, 600):  # windows
+        d.rectangle([x0 * SS, 220 * SS, (x0 + 390) * SS, 760 * SS], fill=(196, 218, 240), outline=INK, width=6 * SS)
+        for k in (1, 2):
+            d.line([((x0 + 130 * k) * SS, 220 * SS), ((x0 + 130 * k) * SS, 760 * SS)], fill=INK, width=5 * SS)
+        d.line([(x0 * SS, 490 * SS), ((x0 + 390) * SS, 490 * SS)], fill=INK, width=5 * SS)
+    for x in (270, 810):  # lamps and their light
+        d.line([(x * SS, 0), (x * SS, 150 * SS)], fill=INK, width=4 * SS)
+        d.polygon([((x - 70) * SS, 210 * SS), ((x + 70) * SS, 210 * SS), ((x + 40) * SS, 150 * SS), ((x - 40) * SS, 150 * SS)],
+                  fill=(60, 66, 90), outline=INK, width=4 * SS)
+    d.rectangle([0, (BELT + 60) * SS, W * SS, H * SS], fill=(62, 66, 92, 255))  # the floor
+    for x in range(60, W, 240):  # the line's legs
+        d.rectangle([(x - 14) * SS, (BELT + 60) * SS, (x + 14) * SS, (BELT + 330) * SS], fill=(150, 156, 176), outline=INK, width=4 * SS)
+    img.paste(shrink(big), (0, 0), shrink(big))
+    return img
+
+
+@lru_cache(maxsize=1)
+def coin_sprite() -> Image.Image:
+    s = SS
+    img = Image.new("RGBA", (64 * s, 64 * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse([4 * s, 4 * s, 60 * s, 60 * s], fill=GOLD, outline=INK, width=5 * s)
+    d.text((32 * s, 33 * s), "$", font=font(34 * s, "Black"), fill=INK, anchor="mm")
+    return shrink(img)
+
+
+class Line:
+    """A factory line: the product rides the belt out of a press, a counter runs, coins fly to whoever gets a cut."""
+
+    def __init__(self, opts: dict[str, Any], scene: Scene, words: list[bw_render.Word]):
+        self.scene = scene
+        self.item = str(opts.get("item") or "box") if str(opts.get("item")) in ITEMS else "box"
+        self.label = str(opts.get("label") or "")[:12].upper()
+        self.count = str(opts.get("count") or "")
+        self.count_from = str(opts.get("from") or "0")
+        self.count_label = str(opts.get("count_label") or "")[:22].upper()
+        self.to = str(opts.get("coins_to") or "")[:16].upper()
+        self.coins_at = cue_time(scene, words, opts.get("coins"), 2) if opts.get("coins") else None
+
+    def x_of(self, k: int, t: float) -> float:
+        return -160 + k * SPACING + (t - self.scene.start + 3) * SPEED % SPACING
+
+    def sounds(self) -> list[tuple[float, str, float]]:
+        return [(self.coins_at, "cash", 0.0)] if self.coins_at is not None else []
+
+    def draw(self, t: float) -> Image.Image:
+        img = factory_wall().copy()
+        d = ImageDraw.Draw(img)
+        local = t - self.scene.start
+        shift = local * SPEED
+        d.rounded_rectangle([-20, BELT, W + 20, BELT + 60], radius=28, fill=(60, 60, 76), outline=INK, width=5)
+        for k in range(-1, W // 120 + 2):  # belt marks and rollers turning with it
+            x = k * 120 + shift % 120
+            d.line([(x, BELT + 8), (x - 20, BELT + 52)], fill=(90, 90, 110), width=4)
+        for x in range(30, W, 120):
+            d.ellipse([x - 22, BELT + 8, x + 22, BELT + 52], fill=(170, 174, 190), outline=INK, width=4)
+            a = shift / 22
+            d.line([(x - 16 * math.cos(a), BELT + 30 - 16 * math.sin(a)), (x + 16 * math.cos(a), BELT + 30 + 16 * math.sin(a))],
+                   fill=INK, width=4)
+        sprite = item(self.item, self.label)
+        n = W // SPACING + 3
+        for k in range(n):
+            x = -180 + (k * SPACING + shift) % (n * SPACING)
+            bump = 4 * abs(math.sin((x / 120) * math.pi))
+            put(img, sprite, (x, BELT + 4 - bump), anchor="b", scale=1.3)
+            if self.coins_at is not None and t >= self.coins_at:  # every product passing the middle pays a coin
+                passed = (x - W * 0.5) / SPEED
+                if 0 <= passed < 0.9:
+                    u = passed / 0.9
+                    tx, ty = W - 190, 640
+                    cx = W * 0.5 + (tx - W * 0.5) * u
+                    cy = BELT - 300 + (ty - BELT + 300) * u - 260 * math.sin(math.pi * u)
+                    put(img, coin_sprite(), (cx, cy), scale=1.6 - 0.5 * u)
+        # the press the products come out of (on the left)
+        d.rounded_rectangle([-30, BELT - 330, 200, BELT + 20], radius=16, fill=(230, 170, 60), outline=INK, width=6)
+        for k in range(5):
+            d.polygon([(-30 + k * 50, BELT - 330), (-6 + k * 50, BELT - 330), (-30 + k * 50 + 50, BELT - 290), (-54 + k * 50 + 50, BELT - 290)],
+                      fill=INK)
+        d.rectangle([150, BELT - 220, 206, BELT - 10], fill=(40, 40, 52))
+        stamp_y = BELT - 300 + 40 * abs(math.sin(local * math.pi * SPEED / SPACING))
+        d.rectangle([40, stamp_y, 120, stamp_y + 60], fill=(150, 156, 176), outline=INK, width=4)
+        if self.to:
+            put(img, pill(self.to, "gold", 52), (W - 190, 640))
+        if self.count:
+            u = min(1.0, local / max(0.8, self.scene.end - self.scene.start - 0.6))
+            text = racing(self.count_from, self.count, u) if u < 1 else self.count
+            panel_y = 520
+            d.rounded_rectangle([110, panel_y - 120, W - 110, panel_y + 110], radius=28, fill=(34, 30, 50), outline=INK, width=6)
+            if self.count_label:
+                put(img, pill(self.count_label, "light", 34), (W / 2, panel_y - 120))
+            sp = big_text(text, 120, GOLD)
+            put(img, sp, (W / 2, panel_y + 12), scale=min(1.0, (W - 280) / sp.width))
+        return img
+
+
+# --------------------------------------------------------------------------- the newspaper
+
+PAPER_W, PAPER_H = 860, 1040
+PAPER_Y = 820
+SPIN = 0.75  # seconds the paper takes to spin in
+
+
+@lru_cache(maxsize=8)
+def newspaper(name: str, date: str, headline: str, picture: str) -> Image.Image:
+    """A front page: the masthead, the date line, the headline in big black letters, a photo, columns of text."""
+    from modules import pw_world
+
+    s = SS
+    w, h = PAPER_W * s, PAPER_H * s
+    img = Image.new("RGBA", (w + 30 * s, h + 30 * s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([16 * s, 18 * s, w + 16 * s, h + 18 * s], fill=(0, 0, 0, 80))
+    d.rectangle([0, 0, w, h], fill=(246, 240, 224), outline=INK, width=6 * s)
+    m = 40 * s
+    d.text((w / 2, 90 * s), name, font=font(74 * s, "Black"), fill=INK, anchor="mm")
+    d.line([(m, 150 * s), (w - m, 150 * s)], fill=INK, width=5 * s)
+    d.line([(m, 196 * s), (w - m, 196 * s)], fill=INK, width=3 * s)
+    d.text((m, 173 * s), date, font=font(26 * s, "Bold"), fill=INK, anchor="lm")
+    d.text((w - m, 173 * s), "PRICE 2¢", font=font(26 * s, "Bold"), fill=INK, anchor="rm")
+    size = 92
+    words = headline.split()
+    while True:
+        f = font(size * s, "Black")
+        lines, cur = [], ""
+        for wd in words:
+            test = (cur + " " + wd).strip()
+            if f.getlength(test) <= w - 2 * m or not cur:
+                cur = test
+            else:
+                lines.append(cur)
+                cur = wd
+        lines.append(cur)
+        if (len(lines) <= 3 and max(f.getlength(x) for x in lines) <= w - 2 * m) or size <= 40:
+            break
+        size -= 4
+    y = 230 * s
+    for ln in lines:
+        d.text((w / 2, y), ln, font=f, fill=INK, anchor="mt")
+        y += size * 1.08 * s
+    y += 24 * s
+    photo_h = h - y - 70 * s
+    px1 = m + (w - 2 * m) * 0.56
+    d.rectangle([m, y, px1, y + photo_h], fill=(214, 206, 188), outline=INK, width=4 * s)
+    pic = None
+    if picture in pw_world.LOOKS:
+        full = pw_world.person(picture, "smile", "hang")
+        pic = full.crop((int(full.width * 0.12), int(full.height * 0.18), int(full.width * 0.88), int(full.height * 0.8)))
+    elif picture in pw_world.PROPS:
+        pic = pw_world.prop(picture, "")
+    elif picture in ITEMS:
+        pic = item(picture, "")
+    if pic is not None:
+        gray = pic.convert("LA").convert("RGBA")
+        gray.putalpha(pic.getchannel("A"))
+        pic = gray.resize((pic.width * s, pic.height * s), Image.LANCZOS)
+        k = min((px1 - m - 30 * s) / pic.width, (photo_h - 30 * s) / pic.height)
+        pic = pic.resize((int(pic.width * k), int(pic.height * k)), Image.LANCZOS)
+        img.paste(pic, (int((m + px1) / 2 - pic.width / 2), int(y + photo_h - pic.height - 8 * s)), pic)
+    for col_x in (px1 + 24 * s,):
+        yy = y + 6 * s
+        while yy < y + photo_h:
+            d.line([(col_x, yy), (w - m, yy)], fill=(150, 146, 136), width=6 * s)
+            yy += 26 * s
+    yy = y + photo_h + 22 * s
+    while yy < h - 24 * s:
+        d.line([(m, yy), (w - m, yy)], fill=(150, 146, 136), width=6 * s)
+        yy += 26 * s
+    return shrink(img)
+
+
+@lru_cache(maxsize=4)
+def sunburst(colors: tuple[tuple[int, int, int], tuple[int, int, int]], angle: int) -> Image.Image:
+    img = Image.new("RGB", (W, H), colors[0])
+    d = ImageDraw.Draw(img)
+    cx, cy, r = W / 2, PAPER_Y, 2400
+    for k in range(24):
+        if k % 2:
+            continue
+        a0 = math.radians(angle + k * 15)
+        a1 = math.radians(angle + (k + 1) * 15)
+        d.polygon([(cx, cy), (cx + r * math.cos(a0), cy + r * math.sin(a0)), (cx + r * math.cos(a1), cy + r * math.sin(a1))],
+                  fill=colors[1])
+    return img
+
+
+class Paper:
+    """A front page spinning in (the old film way) over turning rays, then landing with a thud, slowly pushing in."""
+
+    def __init__(self, opts: dict[str, Any], scene: Scene, words: list[bw_render.Word]):
+        self.scene = scene
+        self.name = str(opts.get("name") or "THE DAILY NEWS")[:18].upper()
+        self.date = str(opts.get("date") or scene.opts.get("year") or "")[:24]
+        self.headline = str(opts.get("headline") or "")[:40].upper()
+        self.picture = str(opts.get("picture") or "")
+        self.mood = "dark" if str(opts.get("mood")) == "bad" else "warm"
+
+    def sounds(self) -> list[tuple[float, str, float]]:
+        return [(self.scene.start + SPIN, "stamp", 0.0)]
+
+    def draw(self, t: float) -> Image.Image:
+        local = max(0.0, t - self.scene.start)
+        colors = ((70, 40, 60), (110, 56, 80)) if self.mood == "dark" else ((236, 140, 50), (250, 180, 70))
+        img = sunburst(colors, int(local * 8) % 30).copy()
+        paper = newspaper(self.name, self.date, self.headline, self.picture)
+        u = min(1.0, local / SPIN)
+        if u < 1:
+            angle = -6 + 720 * (1 - ease(u))
+            scale = 0.08 + 0.92 * ease(u)
+        else:
+            angle = -6 + 1.5 * math.sin(local * 1.3)
+            scale = 1.0 + 0.04 * min(1.0, (local - SPIN) / 4) + (0.05 * math.sin(math.pi * min(1.0, (local - SPIN) / 0.18)) if local - SPIN < 0.18 else 0)
+        put(img, paper, (W / 2, PAPER_Y), scale=scale, angle=angle)
+        return img
+
+
+SETS: dict[str, Any] = {"board": Board, "line": Line, "paper": Paper}
+HOW = {
+    "board": ('{"draw": "board", "title": the game\'s name on the board (14 characters at most), "houses": a word '
+              'the little houses pop on, "start": 0-39 (the token\'s square; it passes GO, "+$200", 40 - start '
+              'squares later at 0.36 s a square)} = a board game seen from above on a table, a token hopping round, '
+              'dice rolling (ONLY a board-game story)'),
+    "line": ('{"draw": "line", "item": ' + "|".join(ITEMS) + ', "label": the name on each product (12 characters at '
+             'most), "count": a figure counting up over the scene ("1,900,000,000"), "from": where it starts ("9"), '
+             '"count_label": what it counts ("DRINKS A DAY", 22 characters at most), "coins": a word from which every '
+             'product pays a coin, "coins_to": who gets the coins ("DARROW")} = a factory line, the product riding '
+             'out of a press (making or selling millions of one thing, a cut of every sale)'),
+    "paper": ('{"draw": "paper", "headline": the front page\'s headline (40 characters at most, capitals), "name": the '
+              'paper\'s name ("THE DAILY NEWS"), "date": the date line ("JUNE 1935"; else the scene\'s year), '
+              '"picture": a look or a prop or an item shown as the photo, "mood": good|bad} = a front page spinning in '
+              'over turning rays (the moment the world heard: a sale, a crash, a record, a scandal, a court case)'),
+}
+SET_MIN, SET_MOST, SET_SCENES = 2, 3, 5  # different sets a story uses; scenes one set may fill; set scenes in all

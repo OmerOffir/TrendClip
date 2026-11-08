@@ -1026,7 +1026,16 @@ def test_a_set_piece_draws_the_story_s_own_thing(monkeypatch):
     spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
     bw_render.align(spec)
     r = pw_world.WorldRenderer(spec)
-    assert set(r.sets) == {0, 2, 4} and isinstance(r.sets[0], pw_sets.Board)
+    assert set(r.sets) == {0, 2, 4, 5, 9} and isinstance(r.sets[0], pw_sets.Board)
+    assert isinstance(r.sets[5], pw_sets.Line) and isinstance(r.sets[9], pw_sets.Paper)
+    for i in (5, 9):  # the line and the paper draw a full frame, early (the paper spinning in) and late
+        assert r.frame(spec.scenes[i].start + 0.2).size == (bw_render.W, bw_render.H)
+        assert r.frame(spec.scenes[i].end - 0.1).mode == "RGB"
+    one = json.loads(json.dumps(script))
+    for sc in one["scenes"]:
+        if (sc.get("set") or {}).get("draw") != "board":
+            sc.pop("set", None)
+    assert any("different set pieces" in p for p in pw_write.problems_of(one))  # two different sets a story
     hook = spec.scenes[0]
     assert r.frame(0.0).size == (bw_render.W, bw_render.H)
     assert r.sets[0].squares(hook.start + 1.0) > r.sets[0].squares(hook.start)  # the token moves

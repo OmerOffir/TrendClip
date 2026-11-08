@@ -462,68 +462,27 @@
     {
       "kind": "world",
       "narration": "First year: four million dollars in sales. Second year: ten million.",
-      "sky": "day",
-      "bars": [
-        {
-          "label": "YEAR 1 SALES",
-          "value": 4,
-          "text": "$4 MILLION",
-          "cue": "first",
-          "color": "gold"
-        },
-        {
-          "label": "YEAR 2 SALES",
-          "value": 10,
-          "text": "$10 MILLION",
-          "cue": "second",
-          "color": "green"
-        }
-      ],
-      "people": [
-        {
-          "name": "SARA",
-          "look": "sara",
-          "x": 0.5,
-          "expr": "grin",
-          "pose": "hip"
-        }
-      ]
+      "set": {
+        "draw": "line",
+        "item": "box",
+        "label": "SPANX",
+        "count": "$10,000,000",
+        "from": "$4,000,000",
+        "count_label": "SALES IN A YEAR"
+      }
     },
     {
       "kind": "world",
       "narration": "2012. Forbes calls her the youngest self-made woman billionaire in the world.",
-      "sky": "sunset",
       "year": "2012",
-      "people": [
-        {
-          "name": "SARA",
-          "look": "sara",
-          "x": 0.3,
-          "expr": "smile",
-          "pose": "hip",
-          "moods": [
-            {
-              "cue": "youngest",
-              "expr": "grin",
-              "pose": "up"
-            }
-          ]
-        }
-      ],
-      "prop": {
-        "draw": "magazine",
-        "x": 0.72,
-        "cue": "forbes",
-        "label": "YOUNGEST SELF-MADE BILLIONAIRE"
-      },
-      "tags": [
-        {
-          "text": "BILLIONAIRE",
-          "cue": "billionaire",
-          "style": "gold",
-          "size": 64
-        }
-      ]
+      "set": {
+        "draw": "paper",
+        "name": "BUSINESS NEWS",
+        "date": "MARCH 2012",
+        "headline": "YOUNGEST SELF-MADE WOMAN BILLIONAIRE",
+        "picture": "sara",
+        "mood": "good"
+      }
     },
     {
       "kind": "world",

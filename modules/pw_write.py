@@ -217,6 +217,15 @@ def world_problems(script: dict) -> list[str]:
         problems.append("a world story is true: no parables here (use the story format for those)")
     if scenes and not any(h.get("from") for h in scenes[0].get("head") or []):
         problems.append("scene 1: the hook's big figure races up from the start money (a head line with \"from\")")
+    used = [sc["set"].get("draw") for sc in scenes if isinstance(sc.get("set"), dict)]
+    if len(set(used)) < pw_sets.SET_MIN:
+        problems.append(f"{len(set(used))} different set pieces (wanted {pw_sets.SET_MIN} or more: "
+                        f"{', '.join(pw_sets.SETS)}; the line and the paper fit almost any story)")
+    for name in sorted(set(used)):
+        if used.count(name) > pw_sets.SET_MOST:
+            problems.append(f"the {name} set fills {used.count(name)} scenes (at most {pw_sets.SET_MOST})")
+    if len(used) > pw_sets.SET_SCENES:
+        problems.append(f"{len(used)} set scenes (at most {pw_sets.SET_SCENES}: the street tells the rest)")
     if scenes and not str(scenes[-1].get("narration") or "").strip().endswith("?"):
         problems.append("the last scene asks the viewer a question (its narration ends with ?)")
 
@@ -268,7 +277,13 @@ def world_problems(script: dict) -> list[str]:
                 problems.append(f"{where}: set.draw is one of {', '.join(pw_sets.SETS)}")
             if len(str(piece.get("title") or "")) > 14:
                 problems.append(f"{where}: set.title is 14 characters at most")
-            cues.append(piece.get("houses"))
+            if piece.get("draw") == "line" and piece.get("item", "box") not in pw_sets.ITEMS:
+                problems.append(f"{where}: set.item is one of {', '.join(pw_sets.ITEMS)}")
+            if piece.get("draw") == "line" and len(str(piece.get("label") or "")) > 12:
+                problems.append(f"{where}: set.label is 12 characters at most")
+            if piece.get("draw") == "paper" and not 3 <= len(str(piece.get("headline") or "")) <= 40:
+                problems.append(f"{where}: set.headline is 3-40 characters")
+            cues += [piece.get("houses"), piece.get("coins")]
             if len(sc.get("head") or []) > 1:
                 problems.append(f"{where}: a set scene has at most one head line (the set fills the middle)")
         for cue in cues:
@@ -639,8 +654,9 @@ A scene's keys (all optional except kind and narration):
   "set": the whole scene drawn as the story's OWN thing instead of the city street, when the story is about one:
     {sets}
     A set scene keeps at most ONE head line (the set fills the middle); people, tags and big figures still work.
-    Use a fitting set in 2-3 scenes (the hook is the best place: things move on the first frame), never in every
-    scene, and never one the story isn't about. No set fits? Leave it out.
+    Use 2 or 3 DIFFERENT sets in every story (the line and the paper fit almost any story; the board only a
+    board-game story), each in 1-3 scenes, at most 5 set scenes in all: the hook is a great place for one (things
+    move on the first frame). Only a set the narration is about at that moment.
   Every "cue" is a word of THAT scene's narration (it appears when the voice says it). Every scene shows something.
   RHYTHM: something new happens on screen at least every {WORLD_GAP} spoken words (about 2 seconds): a person
   appearing, a mood change ("moods"), a tag, a prop, a figure, a stamp. Cue them spread through the sentence, not all

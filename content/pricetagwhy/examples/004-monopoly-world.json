@@ -229,37 +229,20 @@
     {
       "kind": "world",
       "narration": "In 1935, Parker Brothers bought the game, and Darrow got a royalty on every box they sold.",
-      "sky": "day",
       "year": "1935",
-      "people": [
-        {
-          "name": "DARROW",
-          "look": "man",
-          "x": 0.28,
-          "expr": "smile",
-          "pose": "hang",
-          "moods": [
-            {
-              "cue": "royalty",
-              "expr": "grin",
-              "pose": "thumb"
-            }
-          ],
-          "cue": "Darrow"
-        }
-      ],
-      "prop": {
-        "draw": "store",
-        "x": 0.72,
-        "label": "GAMES",
-        "cue": "Parker"
+      "set": {
+        "draw": "line",
+        "item": "box",
+        "label": "MONOPOLY",
+        "coins": "royalty",
+        "coins_to": "DARROW"
       },
-      "tags": [
+      "head": [
         {
           "text": "A CUT OF EVERY BOX",
           "cue": "royalty",
-          "style": "green",
-          "size": 60
+          "color": "white",
+          "size": 84
         }
       ]
     },
@@ -384,37 +367,13 @@
     {
       "kind": "world",
       "narration": "Lizzie died in 1948, almost forgotten. Only a court fight in the 1970s brought her name back.",
-      "sky": "night",
-      "year": "1948",
-      "people": [
-        {
-          "name": "LIZZIE",
-          "look": "woman",
-          "x": 0.5,
-          "expr": "sad",
-          "pose": "hang"
-        }
-      ],
-      "tags": [
-        {
-          "text": "FORGOTTEN",
-          "cue": "forgotten",
-          "style": "dark",
-          "size": 60
-        },
-        {
-          "text": "COURT FIGHT, 1970s",
-          "cue": "court",
-          "style": "light",
-          "size": 56
-        },
-        {
-          "text": "LIZZIE MAGIE, 1904",
-          "cue": "name",
-          "style": "gold",
-          "size": 60
-        }
-      ]
+      "set": {
+        "draw": "paper",
+        "date": "THE 1970s",
+        "headline": "THE WOMAN WHO REALLY INVENTED MONOPOLY",
+        "picture": "woman",
+        "mood": "good"
+      }
     },
     {
       "kind": "world",
