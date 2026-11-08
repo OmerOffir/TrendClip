@@ -511,7 +511,9 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
             script = None
             if info is None and now < job.post_at and not on_hold(day):
                 script = by_name.get(pins.get(job.key)) or (left.pop(0) if left else None)
-            rows.append({**job.view(), "state": slot_state(job, info, now, script), "video": _plan_video(info),
+            prog = make_progress(job.key, out_dir) if info is None else None
+            rows.append({**job.view(), "state": "making" if prog else slot_state(job, info, now, script), "video": _plan_video(info),
+                         "progress": prog,
                          "script": {"file": script.name, "title": (_read(script) or {}).get("title", ""),
                                     "pinned": pins.get(job.key) == script.name} if script else None})
         days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
@@ -815,6 +817,40 @@ def start_make(script_path: Path, key: str, out_dir: Path | None = None, job: Jo
     log = (root / f"{key}.log").open("w")
     return subprocess.Popen(_make_cmd(script_path, key, out_dir, job), cwd=str(PROJECT_ROOT), stdout=log,
                             stderr=subprocess.STDOUT, start_new_session=True)
+
+
+PROGRESS_LINE = re.compile(r"^\[(\d{1,3})%\]\s*(.*)$")
+PROGRESS_STALE = 180  # seconds without a new log line: the make died (a live one writes every few seconds)
+
+
+def make_progress(key: str, out_dir: Path | None = None, now: float | None = None) -> dict[str, Any] | None:
+    """How far a video being made is ({"fraction": 0-1, "message": "Drawing the maps: frame 1200/1741"}), read from its
+    log (output/pricetagwhy/<key>.log, written by the bot's makes and the tab's alike); None when nothing is being made
+    for `key` (finished, failed, or quiet for PROGRESS_STALE)."""
+    log = out_root(out_dir) / f"{key}.log"
+    if not log.is_file() or (now or time.time()) - log.stat().st_mtime > PROGRESS_STALE:
+        return None
+    lines = [ln.strip() for ln in log.read_text(encoding="utf-8", errors="replace").splitlines() if ln.strip()]
+    if not lines or lines[-1].startswith("{") or "Traceback" in "\n".join(lines[-30:]):
+        return None  # finished (the result line) or crashed
+    fraction, message = 0.0, ""
+    for ln in lines:
+        m = PROGRESS_LINE.match(ln)
+        if m:
+            fraction, message = int(m.group(1)) / 100, m.group(2)
+        elif ln.startswith("[] "):
+            message = ln[3:]
+    if fraction >= 1:
+        return None
+    return {"fraction": round(fraction, 2), "message": message.replace("Drawing the maps", "Drawing")}
+
+
+def making_now(out_dir: Path | None = None) -> list[str]:
+    """The keys being made right now (any process), from their logs."""
+    root = out_root(out_dir)
+    if not root.is_dir():
+        return []
+    return sorted(p.stem for p in root.glob("*.log") if make_progress(p.stem, out_dir) is not None)
 
 
 def make_slot(settings, job: Job, out_dir: Path | None = None, run=subprocess.run) -> dict:

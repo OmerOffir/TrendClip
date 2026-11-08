@@ -46,13 +46,19 @@ class UploadRequest(BaseModel):
 
 
 def _making() -> list[str]:
-    return [key for key, proc in _procs.items() if proc.poll() is None]
+    """Videos being made: started from the tab, or by the bot (seen in their logs)."""
+    mine = [key for key, proc in _procs.items() if proc.poll() is None]
+    return sorted({*mine, *pw_channel.making_now()})
+
+
+def _progress() -> dict[str, dict[str, Any]]:
+    return {key: p for key in _making() if (p := pw_channel.make_progress(key))}
 
 
 @router.get("/status")
 def status() -> dict[str, Any]:
     settings = _settings()
-    return {"name": pw_channel.NAME, "handle": pw_channel.handle(), "voice": pw_channel.VOICE, "making": _making(),
+    return {"name": pw_channel.NAME, "handle": pw_channel.handle(), "voice": pw_channel.VOICE, "making": _making(), "progress": _progress(),
             "folder": pw_channel.DIR.is_dir(), "youtube": pw_channel.youtube_status(), "discord": bool(pw_channel.discord_channel_id()),
             "slots": pw_channel.slots(), "lead_hours": pw_channel.lead_hours(), "timezone": settings.timezone,
             "require_approval": pw_channel.require_approval(), "privacy": pw_channel.upload_privacy(),

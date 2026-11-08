@@ -933,3 +933,22 @@ def test_true_world_stories_have_their_own_prompts_topics_and_rules(tmp_path):
     assert "prop.draw" in found and "'banana'" in found and "races up" in found
     done = pw_write.answer("one", json.dumps({"scripts": [{k: v for k, v in example.items() if k != "format"}]}), tmp_path)
     assert done["step"] == "facts" and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "world"
+
+
+def test_a_video_being_made_shows_its_progress_from_its_log(tmp_path):
+    """The Plan shows "Making now… 69%" like Borderline Why (the owner, 2026-11-08), for the bot's makes too."""
+    import os
+    import time
+
+    root = pw_channel.out_root(tmp_path)
+    root.mkdir(parents=True, exist_ok=True)
+    log = root / "2026-11-08_2300.log"
+    log.write_text("[5%] Recording the narration\n[] Recording the narration (Kokoro af_heart)\n[69%] Drawing the maps: frame 1200/1741\n")
+    p = pw_channel.make_progress("2026-11-08_2300", tmp_path)
+    assert p == {"fraction": 0.69, "message": "Drawing: frame 1200/1741"}
+    assert pw_channel.making_now(tmp_path) == ["2026-11-08_2300"]
+    old = time.time() - pw_channel.PROGRESS_STALE - 5
+    os.utime(log, (old, old))
+    assert pw_channel.make_progress("2026-11-08_2300", tmp_path) is None  # a make that went quiet died
+    log.write_text("[95%] Video ready\n[100%] Video ready\n{\"key\": \"2026-11-08_2300\"}\n")
+    assert pw_channel.make_progress("2026-11-08_2300", tmp_path) is None and pw_channel.making_now(tmp_path) == []

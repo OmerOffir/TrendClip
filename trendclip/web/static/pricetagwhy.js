@@ -17,7 +17,7 @@
   const STATES = {
     posted: ["good", "▶️ On YouTube"], approved: ["good", "✅ Approved"], waiting: ["warn", "⏸ Waiting for Approve"],
     vetoed: ["", "🚫 Won't be posted"], blocked: ["warn", "❌ Failed its check"], due: ["", "⏳ Being made"],
-    later: ["", "🕒 Made later"], held: ["", "⏸ On hold"], missed: ["", "Passed, nothing went out"], no_script: ["warn", "✍️ No script left"], sample: ["", "Sample"],
+    later: ["", "🕒 Made later"], making: ["warn", "🏭 Making now…"], held: ["", "⏸ On hold"], missed: ["", "Passed, nothing went out"], no_script: ["warn", "✍️ No script left"], sample: ["", "Sample"],
   };
   const pill = (st) => { const [cls, label] = STATES[st] || ["", st]; return `<span class="pill ${cls}">${label}</span>`; };
   const videoSrc = (key, t) => `/api/pricetagwhy/videos/${encodeURIComponent(key)}/video.mp4?t=${encodeURIComponent(t || "")}`;
@@ -68,8 +68,15 @@
       + (free.length ? `<optgroup label="Scripts (made 6 h before)">${free.map((s) => `<option value="script:${esc(s.file)}">${esc(s.title)}${s.removed ? " (removed)" : ""}</option>`).join("")}</optgroup>` : "");
   }
 
+  const pct = (p) => `${Math.round(((p && p.fraction) || 0) * 100)}%`;
+  const progressBar = (p) => `<span class="pw-progress" title="${esc((p && p.message) || "")}"><span style="width:${pct(p)}"></span></span>`;
+
   function slotRow(day, r, connected, busy, options, topic) {
     const v = r.video;
+    if (r.progress && !v) {
+      return `<div class="pw-slot"><span class="pw-time">${esc(r.slot)}</span><span class="pill warn">🏭 Making now… ${pct(r.progress)}</span>
+        <span class="pw-what">${r.script ? `<b>${esc(r.script.title)}</b> ` : ""}${progressBar(r.progress)} <span class="hint">${esc(r.progress.message || "")}</span></span></div>`;
+    }
     const yt = v && v.youtube;
     const what = v
       ? `<b>${esc(v.title)}</b> <span class="hint">${Math.round(v.duration_seconds || 0)} s${yt ? ` · <a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a>` : ""}</span>
@@ -163,7 +170,7 @@
         + ` · <b>${st.queued}</b> script(s) queued · voice Kokoro ${esc(st.voice)}`
         + (st.auto_make ? "" : " · <b>automatic making is off</b> (PW_AUTO_MAKE)")
         + (st.discord ? " · posted in Discord" : " · <b>no Discord channel</b> (channels/pricetagwhy/channel.env)")
-        + (st.making.length ? ` · <b>making ${esc(st.making.join(", "))}…</b>` : "")
+        + (st.making.length ? ` · <b>making ${st.making.map((k) => `${esc(k)}${st.progress && st.progress[k] ? ` ${pct(st.progress[k])}` : ""}`).join(", ")}…</b>` : "")
         + (st.upload.running ? ` · <b>uploading: ${esc(st.upload.message || "")}</b>` : st.upload.error ? ` · ❌ upload: ${esc(st.upload.error)}` : "");
       renderYouTube(st);
       const options = placeOptions(vids.videos, sc.scripts);
