@@ -500,6 +500,7 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
     """Every slot from `before` days back to `after` days ahead: its video, or the queued script it will be made from."""
     now = now.astimezone(settings.tz)
     pins = load_plan(out_dir)["pins"]
+    samples = samples_by_script(out_dir)
     left = list(queued(out_dir))
     by_name = {p.name: p for p in left}
     left = [p for p in left if p.name not in pins.values()]
@@ -514,11 +515,22 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
                 script = by_name.get(pins.get(job.key)) or (left.pop(0) if left else None)
             prog = make_progress(job.key, out_dir) if info is None else None
             rows.append({**job.view(), "state": "making" if prog else slot_state(job, info, now, script), "video": _plan_video(info),
-                         "progress": prog,
+                         "progress": prog, "sample": samples.get(script.name) if script and info is None else None,
                          "script": {"file": script.name, "title": (_read(script) or {}).get("title", ""),
                                     "pinned": pins.get(job.key) == script.name} if script else None})
         days.append({"day": day.isoformat(), "weekday": day.strftime("%A"), "today": day == now.date(), "slots": rows})
     return days
+
+
+def samples_by_script(out_dir: Path | None = None) -> dict[str, dict]:
+    """The newest good sample made from each script (the Scripts list's "Make a sample"): the Plan shows it on the slot
+    that script is planned for, to watch and put on the slot (2026-11-08: the IKEA sample was made, the slot didn't show it)."""
+    found: dict[str, dict] = {}
+    for v in videos(out_dir):  # newest first
+        name = v.get("script_file")
+        if v["state"] == "sample" and name and name not in found and v.get("has_video") and not v.get("check"):
+            found[name] = {**(_plan_video(v) or {}), "video_t": v.get("video_t", "")}
+    return found
 
 
 def _plan_video(info: dict | None) -> dict | None:

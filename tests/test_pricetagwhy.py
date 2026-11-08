@@ -976,3 +976,19 @@ def test_the_dashboard_writes_true_stories_only(tmp_path):
     assert done["added"] and pw_write.topics(tmp_path)[-1]["format"] == "world"
     html = (pw_channel.PROJECT_ROOT / "trendclip/web/static/index.html").read_text()
     assert '<option value="why">❓ why' not in html and 'id="pwAddFormat" value="world"' in html
+
+
+def test_the_plan_shows_a_sample_made_from_a_slots_script(tmp_path):
+    """The IKEA sample was made from the 23:00 slot's script but the Plan only showed "made at 17:00" with nothing
+    to play (2026-11-08): the newest good sample of each script is found for the Plan."""
+    import json
+
+    root = pw_channel.out_root(tmp_path)
+    for key, at, check in (("sample-1", "2026-11-08T10:20:00", []), ("sample-2", "2026-11-08T10:31:00", []),
+                           ("sample-3", "2026-11-08T10:40:00", ["12 s long"])):
+        (root / key).mkdir(parents=True)
+        (root / key / "video.mp4").write_bytes(b"x")
+        (root / key / "info.json").write_text(json.dumps({"title": "IKEA", "script_file": "ikea.json", "created_at": at,
+                                                          "duration_seconds": 59.4, "check": check}))
+    found = pw_channel.samples_by_script(tmp_path)
+    assert found["ikea.json"]["key"] == "sample-2" and found["ikea.json"]["video_t"]  # the newest one that passed its check

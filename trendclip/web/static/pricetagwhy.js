@@ -73,6 +73,14 @@
 
   function slotRow(day, r, connected, busy, options, topic) {
     const v = r.video;
+    if (r.sample && !v) {  // a sample was made from this slot's script: watch it, put it on the slot
+      const sm = r.sample;
+      return `<div class="pw-slot"><span class="pw-time">${esc(r.slot)}</span><span class="pill good">🎬 Made as a sample</span>
+        <span class="pw-what"><b>${esc(sm.title)}</b> <span class="hint">${Math.round(sm.duration_seconds || 0)} s · not on the slot yet: 📌 Use it here, then Approve</span></span>
+        <button type="button" class="btn-secondary" data-watch="${esc(sm.key)}" data-t="${esc(sm.video_t || sm.created_at)}">▶ Watch</button>
+        <button type="button" class="btn-primary" data-use-sample="${esc(day)} ${esc(r.slot)} ${esc(sm.key)}" ${busy ? "disabled" : ""}>📌 Use it here</button>
+        ${r.script ? `<button type="button" class="btn-secondary" data-script-remove="${esc(r.script.file)}" title="The script leaves the plan (it stays in the Scripts list)">✕ Remove</button>` : ""}</div>`;
+    }
     if (r.progress && !v) {
       return `<div class="pw-slot"><span class="pw-time">${esc(r.slot)}</span><span class="pill warn">🏭 Making now… ${pct(r.progress)}</span>
         <span class="pw-what">${r.script ? `<b>${esc(r.script.title)}</b> ` : ""}${progressBar(r.progress)} <span class="hint">${esc(r.progress.message || "")}</span></span></div>`;
@@ -384,6 +392,10 @@
     if (d.upload) {
       if (!window.confirm(`Upload this video to Price Tag Why now, as ${state.status ? state.status.privacy : "public"}?`)) return;
       return act(() => post(`/api/pricetagwhy/videos/${encodeURIComponent(d.upload)}/upload`, {}));
+    }
+    if (d.useSample) {
+      const [day, slot, video] = d.useSample.split(" ");
+      return act(() => post("/api/pricetagwhy/plan/place", { day, slot, video }));
     }
     if (d.watch) {
       const box = t.closest(".pw-day").querySelector(".pw-watch");
