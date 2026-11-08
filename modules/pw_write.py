@@ -32,6 +32,7 @@ WORLD_WORDS = (140, 215)  # 55-75 s
 WORLD_SCENES = (7, 14)
 WORLD_SCENE_WORDS = 30
 WORLD_TEXT = 26  # characters on a pill or a headline line
+WORLD_GAP = 7  # words (about 2 s of the voice) at most without something new on screen (the owner, 2026-11-08)
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 70, 100  # about 30-38 s with the channel's voice (1.1x): 45-50 s ones lost most viewers
 STORY_WORDS = (130, 190)  # 50-75 s: long enough for the next number to pull, short enough for the algorithm (a 300-word one ran 123 s)
@@ -273,9 +274,39 @@ def world_problems(script: dict) -> list[str]:
         for cue in cues:
             if cue not in (None, "") and not said(sc, cue):
                 problems.append(f"{where}: the cue {cue!r} is not a word of this scene's narration")
+        gap = world_gap(sc, cues) if not piece else None  # a set piece moves all the time
+        if gap:
+            a, b, said_words = gap
+            problems.append(f"{where}: nothing new happens from {said_words[a]!r} to {said_words[b - 1]!r} ({b - a} words, "
+                            f"over 2 seconds): cue a thing, a tag or a mood (expr/pose) on a word in between")
         if not (people or prop or texts or piece or sc.get("big") or sc.get("grid") or sc.get("stamps")):
             problems.append(f"{where}: shows nothing (give it people, a prop, a figure or a tag)")
     return problems
+
+
+def world_gap(scene: dict, cues: list[Any]) -> tuple[int, int, list[str]] | None:
+    """The first stretch of more than WORLD_GAP spoken words with nothing new on screen: (from, to, the words).
+    A moment is the scene's start or a cued thing (an uncued thing pops in at the start); people standing still
+    from the scene before are not a moment."""
+    said_words = str(scene.get("narration") or "").split()
+    spoken = [re.sub(r"[^\w$]", "", w.lower()) for w in said_words]
+    marks = {0, len(spoken)}
+    for h in scene.get("head") or []:  # a figure racing up moves until it lands on its cue
+        if h.get("from"):
+            tok = re.sub(r"[^\w$]", "", str(h.get("cue") or "").lower())
+            land = next((i for i, w in enumerate(spoken) if tok and (w == tok or (len(tok) > 2 and w.startswith(tok)))), 0)
+            marks.update(range(land + 1))
+    for cue in cues:
+        tok = re.sub(r"[^\w$]", "", str(cue or "").lower())
+        if tok:
+            k = next((i for i, w in enumerate(spoken) if w == tok or (len(tok) > 2 and w.startswith(tok))), None)
+            if k is not None:
+                marks.add(k)
+    marks_ = sorted(marks)
+    for a, b in zip(marks_, marks_[1:]):
+        if b - a > WORLD_GAP:
+            return a, b, said_words
+    return None
 
 
 MATH_NUMBER = re.compile(r"[$€£]?\s*([\d][\d,]*(?:\.\d+)?)")
@@ -611,6 +642,9 @@ A scene's keys (all optional except kind and narration):
     Use a fitting set in 2-3 scenes (the hook is the best place: things move on the first frame), never in every
     scene, and never one the story isn't about. No set fits? Leave it out.
   Every "cue" is a word of THAT scene's narration (it appears when the voice says it). Every scene shows something.
+  RHYTHM: something new happens on screen at least every {WORLD_GAP} spoken words (about 2 seconds): a person
+  appearing, a mood change ("moods"), a tag, a prop, a figure, a stamp. Cue them spread through the sentence, not all
+  on the last word; a person who was already there in the scene before does not count. A set scene moves by itself.
 - "sources": 2 or more real pages (news, the company, interviews; never Wikipedia), "claims": every fact and figure,
   each with 2 or more source numbers. Nothing invented: no made-up quotes, no guessed numbers, no "probably".
 - "comment": the question pinned under the video (the last scene's question + 👇). "title": the YouTube title with

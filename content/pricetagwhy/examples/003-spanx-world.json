@@ -233,6 +233,11 @@
           "pose": "chin",
           "moods": [
             {
+              "cue": "pantyhose",
+              "expr": "smile",
+              "pose": "point"
+            },
+            {
               "cue": "idea",
               "expr": "grin",
               "pose": "up"
@@ -246,6 +251,12 @@
         "cue": "cuts"
       },
       "tags": [
+        {
+          "text": "UNDER WHITE PANTS",
+          "cue": "white",
+          "style": "light",
+          "size": 52
+        },
         {
           "text": "THE IDEA",
           "cue": "idea",
@@ -369,7 +380,14 @@
           "look": "sara",
           "x": 0.28,
           "expr": "grin",
-          "pose": "hip"
+          "pose": "hip",
+          "moods": [
+            {
+              "cue": "room",
+              "expr": "smug",
+              "pose": "thumb"
+            }
+          ]
         },
         {
           "name": "BUYER",
@@ -393,6 +411,12 @@
         "cue": "seven"
       },
       "tags": [
+        {
+          "text": "NEIMAN MARCUS",
+          "cue": "Neiman",
+          "style": "dark",
+          "size": 52
+        },
         {
           "text": "7 STORES",
           "cue": "stores",
@@ -475,8 +499,15 @@
           "name": "SARA",
           "look": "sara",
           "x": 0.3,
-          "expr": "grin",
-          "pose": "up"
+          "expr": "smile",
+          "pose": "hip",
+          "moods": [
+            {
+              "cue": "youngest",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
         }
       ],
       "prop": {
@@ -484,7 +515,15 @@
         "x": 0.72,
         "cue": "forbes",
         "label": "YOUNGEST SELF-MADE BILLIONAIRE"
-      }
+      },
+      "tags": [
+        {
+          "text": "BILLIONAIRE",
+          "cue": "billionaire",
+          "style": "gold",
+          "size": 64
+        }
+      ]
     },
     {
       "kind": "world",
@@ -582,7 +621,14 @@
           "look": "sara",
           "x": 0.5,
           "expr": "think",
-          "pose": "chin"
+          "pose": "chin",
+          "moods": [
+            {
+              "cue": "bet",
+              "expr": "smug",
+              "pose": "point"
+            }
+          ]
         }
       ],
       "tags": [

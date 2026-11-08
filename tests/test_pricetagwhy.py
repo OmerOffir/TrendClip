@@ -1032,3 +1032,18 @@ def test_a_set_piece_draws_the_story_s_own_thing(monkeypatch):
     assert r.sets[0].squares(hook.start + 1.0) > r.sets[0].squares(hook.start)  # the token moves
     go = r.sets[0].passes_go()
     assert go and any(abs(at - go[0]) < 1e-6 and name == "cash" for at, name, _ in spec.sfx_extra)
+
+
+def test_something_new_happens_every_two_seconds():
+    """The owner (2026-11-08): a scene sat empty for seconds (Philadelphia, 1932, before Darrow came in). A world
+    scene with more than WORLD_GAP spoken words without a new thing on screen is sent back, naming the words."""
+    from modules import pw_write
+
+    scene = {"narration": "In 1932, in the Great Depression, an out of work salesman named Charles Darrow learned it.",
+             "people": [{"name": "DARROW", "look": "man", "cue": "Charles"}]}
+    assert pw_write.world_gap(scene, ["Charles"]) is not None
+    assert pw_write.world_gap(scene, ["Charles", "Depression"]) is None
+    racing = {"narration": "Five thousand dollars and one pair of scissors became a billion dollar company today.",
+              "head": [{"text": "$1 BILLION", "from": "$5,000", "cue": "billion"}]}
+    assert pw_write.world_gap(racing, []) is None  # the figure racing up is moving all along
+    assert "RHYTHM" in pw_write.world_rules()
