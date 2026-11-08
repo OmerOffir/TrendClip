@@ -5,7 +5,8 @@ about half of it shows. It never shows whole. A timer counts the seconds, so vie
 
 The pictures are the game's own renders from the Minecraft Wiki (Mojang's game content, the same as the gameplay
 behind it; never fan art), fetched once into assets/reveal/ with catalog.json. Asked for by "reveal" or "guess the
-picture" in the Create tab's notes; it needs no Gemini.
+picture" in the Create tab's notes, and on Minecraft levels once in REVEAL_EVERY, after Catch the Zombie (the
+owner, 2026-11-08); it needs no Gemini.
 """
 
 from __future__ import annotations
@@ -61,9 +62,22 @@ DESCRIPTION = "A {game} {kind} hides behind the blocks. Guess it before it shows
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#guessthepicture", "#quiz"]
 
 
-def wanted(notes: str = "") -> bool:
+def wanted(notes: str = "", settings: Settings | None = None, game: str = "") -> bool:
+    """A Guess the Picture level now: asked for in the notes, or (with `settings`) CATCH_GAME's video with no
+    picture level in the last REVEAL_EVERY - 1 levels and pictures in the library. Catch the Zombie is checked
+    first, so the two take turns with the questions."""
+    from . import quiz
+
     low = (notes or "").lower()
-    return "reveal" in low or "guess the picture" in low
+    if "reveal" in low or "guess the picture" in low:
+        return True
+    if settings is None or settings.reveal_every <= 0 or not catalog(settings):
+        return False
+    if not re.search(rf"\b{re.escape(settings.catch_game)}\b", game, re.I):
+        return False
+    every = settings.reveal_every
+    recent = quiz.history(settings, "gamer")[-(every - 1):] if every > 1 else []
+    return all(d.get("shape") != SHAPE for d in recent)
 
 
 def library_dir(settings: Settings) -> Path:

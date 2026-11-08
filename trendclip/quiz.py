@@ -1320,7 +1320,7 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
         return catch.script(settings, game, format=format, rng=rng)
     from . import reveal
 
-    if reveal.wanted(notes):  # Guess the Picture: no question, no Gemini (asked for in the notes, for now)
+    if reveal.wanted(notes, settings, game):  # Guess the Picture: no question, no Gemini (one Minecraft level in 4)
         progress(None, "A Guess the Picture level")
         return reveal.script(settings, game, format=format, rng=rng)
     queued = gamer_queue.take(settings, game)  # written for later (the dashboard's "Write a week"): no Gemini

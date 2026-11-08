@@ -41,6 +41,7 @@ _ENV_MAP: dict[str, str] = {
     "tts_rate": "TTS_RATE",
     "catch_every": "CATCH_EVERY",
     "catch_game": "CATCH_GAME",
+    "reveal_every": "REVEAL_EVERY",
     "short_target_seconds": "SHORT_TARGET_SECONDS",
     "music_channels": "MUSIC_CHANNELS",
     "music_volume": "MUSIC_VOLUME",
@@ -139,6 +140,7 @@ class Settings(BaseModel):
     # catch level sits in the last CATCH_EVERY - 1 levels; 0 = never.
     catch_every: int = Field(3, ge=0)
     catch_game: str = "Minecraft"
+    reveal_every: int = Field(4, ge=0)  # Guess the Picture: one Minecraft level in this many (0 = notes only)
     short_target_seconds: int = Field(22, ge=10, le=180)  # up to 30: the viral 18-22 s rules
     # Channel handle used in the multi-part calls to action ("Sub to @handle for Part 2").
     channel_handle: str = Field("@SideQuestLogic", pattern=r"^@[\w.-]{3,30}$")

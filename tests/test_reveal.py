@@ -63,3 +63,18 @@ def test_a_reveal_level_needs_no_gemini_and_names_the_kind(tmp_path):
     assert result.title == "Guess The Minecraft Mob | Level 31 🎮"
     assert result.title_card == "LEVEL 31 - WHAT IS IT?" and result.end_card == reveal.END_CARD
     assert "Creeper" not in result.pinned_comment and "which second" in result.pinned_comment.lower()
+
+
+def test_picture_levels_take_turns_with_catch_and_questions(tmp_path):
+    from trendclip import quiz
+
+    s = settings(tmp_path)
+    assert not reveal.wanted("", s, "Minecraft")  # no pictures yet
+    library(s)
+    assert reveal.wanted("", s, "Minecraft") and not reveal.wanted("", s, "GTA V")
+    quiz._remember(s, "gamer", answer="Creeper", question="Guess the picture", game="Minecraft", shape=reveal.SHAPE, level="1")
+    assert not reveal.wanted("", s, "Minecraft")
+    for n in range(2, 2 + s.reveal_every - 1):
+        quiz._remember(s, "gamer", answer="x", question="q", game="Minecraft", shape="number", level=str(n))
+    assert reveal.wanted("", s, "Minecraft")
+    assert not reveal.wanted("", s.model_copy(update={"reveal_every": 0}), "Minecraft")
