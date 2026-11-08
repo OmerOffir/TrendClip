@@ -1056,3 +1056,18 @@ def test_something_new_happens_every_two_seconds():
               "head": [{"text": "$1 BILLION", "from": "$5,000", "cue": "billion"}]}
     assert pw_write.world_gap(racing, []) is None  # the figure racing up is moving all along
     assert "RHYTHM" in pw_write.world_rules()
+
+
+def test_a_figure_races_up_from_zero(monkeypatch):
+    """IKEA and McDonald's hooks race from "€0"/"$0": the figure is there from the first frame (it was missing until
+    its cue, so the thumbnail had no big number)."""
+    from modules import bw_render, pw_world
+
+    monkeypatch.setattr(pw_world, "ensure_fonts", lambda folder=None: None)
+    script = {"format": "world", "scenes": [{"kind": "world", "narration": "Zero dollars in rent became ten billion a year.",
+                                             "head": [{"text": "$10 BILLION", "from": "$0", "cue": "billion"}]}]}
+    words = [bw_render.Word(w, k * 0.3, k * 0.3 + 0.25) for k, w in enumerate(script["scenes"][0]["narration"].split())]
+    spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
+    bw_render.align(spec)
+    head = pw_world.WorldRenderer(spec).items[0][0]
+    assert head["at"] < 0 and "land" in head and pw_world.racing("$0", "$10 BILLION", 0.5).startswith("$")

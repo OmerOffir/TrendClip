@@ -668,7 +668,7 @@ class WorldRenderer:
             color = COLORS.get(str(h.get("color") or ("white" if SKIES.get(o.get("sky", "day"), SKIES["day"])["dark"] else "ink")), WHITE)
             item = {"type": "head", "at": -1.0 if first and not h.get("cue") else at(h.get("cue"), k), "y": y + size * 0.62,
                     "text": str(h["text"]), "size": size, "color": color}
-            if h.get("from") and amount(str(h["from"])) and amount(str(h["text"])):  # races up from `from`, lands on its cue
+            if h.get("from") and amount(str(h["from"])) is not None and amount(str(h["text"])):  # "$0" races too  # races up from `from`, lands on its cue
                 item.update(at=-1.0 if first else scene.start, start=scene.start, land=cue_time(scene, words, h.get("cue"), 2),
                             frm=str(h["from"]))
             items.append(item)
