@@ -63,3 +63,34 @@ def test_a_spin_short_has_no_answer_and_asks_to_share(tmp_path):
     assert result.title == "Pause To Get Your Minecraft Block 🎮"
     assert "friend" in result.script and "friend" in result.pinned_comment
     assert spin.wanted("spin") and spin.wanted("Pause to get your block") and not spin.wanted("catch")
+
+
+def test_the_create_tabs_choice_beats_the_rotation(tmp_path, monkeypatch):
+    from trendclip import quiz, reveal
+
+    s = settings(tmp_path).model_copy(update={"catch_every": 1})  # the zombie's turn every time
+    library(s)
+    folder = reveal.library_dir(s)
+    folder.mkdir(parents=True)
+    Image.new("RGBA", (64, 64), (60, 180, 60, 255)).save(folder / "creeper.png")
+    (folder / "catalog.json").write_text(json.dumps([{"name": "Creeper", "kind": "mob", "file": "creeper.png",
+                                                      "source": "x"}]))
+    write = lambda notes: quiz._write_gamer(s, "Minecraft", notes=notes, format="short",  # noqa: E731
+                                            progress=lambda *a: None, client=None, rng=random.Random(1))
+    assert write("pause to get your block").spin
+    assert write("guess the picture").reveal == "creeper.png"
+    assert write("").catch  # Automatic: the rotation's zombie
+    from trendclip import gamer_queue
+
+    class Question(Exception):
+        pass
+
+    def reached(*a, **k):
+        raise Question
+
+    monkeypatch.setattr(gamer_queue, "take", reached)  # the question path's first step
+    try:
+        write(quiz.QUESTION_ONLY)
+        raise AssertionError("not a question")
+    except Question:
+        pass

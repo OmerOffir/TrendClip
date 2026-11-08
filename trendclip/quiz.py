@@ -1309,19 +1309,27 @@ def gamer_prompt(settings: Settings, game: str, shape: str, asked: list[str], no
                                notes=_notes(notes) + _variety(settings) + _learned(settings, "gamer"))
 
 
+QUESTION_ONLY = "question only"  # the Create tab's "Question" level choice
+
+
 def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, progress: ProgressFn, client,
                  rng: random.Random) -> ShortScript:
     """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
     level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
     from . import catch, gamer_queue, reveal, spin, script_writer as sw
 
+    # The Create tab's level choice (its notes) beats the rotation: "question only" skips the zombie and the picture.
+    question_only = QUESTION_ONLY in (notes or "").lower()
     if spin.wanted(notes) and spin.catalog(settings):  # Pause to Get Your Block: asked for in the notes only
         progress(None, "A Pause to Get Your Block Short")
         return spin.script(settings, game, format=format)
-    if catch.wanted(settings, game, notes):  # Catch the Zombie: no question, no Gemini
+    if reveal.wanted(notes) and reveal.catalog(settings):  # Guess the Picture asked for by name
+        progress(None, "A Guess the Picture level")
+        return reveal.script(settings, game, format=format, rng=rng)
+    if not question_only and catch.wanted(settings, game, notes):  # Catch the Zombie: no question, no Gemini
         progress(None, "A Catch the Zombie level")
         return catch.script(settings, game, format=format, rng=rng)
-    if reveal.wanted(notes, settings, game):  # Guess the Picture: no question, no Gemini (one Minecraft level in 4)
+    if not question_only and reveal.wanted(notes, settings, game):  # Guess the Picture's turn (REVEAL_EVERY)
         progress(None, "A Guess the Picture level")
         return reveal.script(settings, game, format=format, rng=rng)
     queued = gamer_queue.take(settings, game)  # written for later (the dashboard's "Write a week"): no Gemini

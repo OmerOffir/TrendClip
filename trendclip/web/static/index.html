@@ -467,7 +467,14 @@
         </div>
         <div class="cleared-note" id="cCleared" hidden></div>
         <div class="form-row form-actions">
-          <label class="check" title="No question: a pixel zombie pops up three times holding a different emoji, shorter each time; viewers comment the three emoji"><input type="checkbox" id="cCatch" /> 🧟 Catch the Zombie level</label>
+          <label class="check" title="Which Gamer IQ game to make. Automatic follows the rotation (a zombie or a picture when it is their turn, otherwise a question)">Game
+            <select id="cLevel">
+              <option value="" selected>Automatic</option>
+              <option value="question only">❓ Question</option>
+              <option value="catch the zombie">🧟 Catch the Zombie</option>
+              <option value="guess the picture">🧱 Guess the Picture</option>
+              <option value="pause to get your block">⏸️ Pause to Get Your Block</option>
+            </select></label>
           <label class="check sq-off"><input type="checkbox" id="cWatch" checked /> Let Gemini watch the clip</label>
           <button id="cDescribe" class="btn-secondary sq-off" type="button">✨ Fill the rest for my story</button>
           <button id="cWrite" class="btn-primary" type="button">Write script with Gemini</button>

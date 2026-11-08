@@ -14,7 +14,7 @@
     game: $("cGame"),
     length: $("cLength"),
     notes: $("cNotes"),
-    catch: $("cCatch"),
+    level: $("cLevel"),
     watch: $("cWatch"),
     write: $("cWrite"),
     describe: $("cDescribe"),
@@ -112,6 +112,8 @@
     reactions: [], // [{word, mood}] reaction-sticker beats from Gemini
     flashes: [], // quiz: [{word, text}] numbers / clues flashed on screen
     catch: [], // Catch the Zombie: the three emoji it holds
+    reveal: "", // Guess the Picture: the picture file
+    spin: false, // Pause to Get Your Block
     answer: "", // quiz: the correct answer
     choices: [], // quiz: the options in full, for the leaderboard
     stickerLib: null,
@@ -143,6 +145,8 @@
     draft.reactions = state.reactions;
     draft.flashes = state.flashes;
     draft.catch = state.catch;
+    draft.reveal = state.reveal;
+    draft.spin = state.spin;
     draft.answer = state.answer;
     draft.choices = state.choices;
     draft.stickers = els.stickers.checked;
@@ -159,11 +163,11 @@
   // ---- formats & parts -------------------------------------------------------------------
 
   const emptyPart = () => ({ script: "", title: "", desc: "", tags: "", titleCard: "", endCard: "", popups: [], reactions: [],
-    flashes: [], answer: "", choices: [], catch: [] });
+    flashes: [], answer: "", choices: [], catch: [], reveal: "", spin: false });
 
   function capturePart() {
     const p = { popups: state.popups, reactions: state.reactions, flashes: state.flashes, answer: state.answer,
-      choices: state.choices, catch: state.catch };
+      choices: state.choices, catch: state.catch, reveal: state.reveal, spin: state.spin };
     for (const key of PART_FIELDS) p[key] = els[key].value;
     return p;
   }
@@ -174,6 +178,8 @@
     state.reactions = Array.isArray(p.reactions) ? p.reactions : [];
     state.flashes = Array.isArray(p.flashes) ? p.flashes : [];
     state.catch = Array.isArray(p.catch) ? p.catch : [];
+    state.reveal = p.reveal || "";
+    state.spin = !!p.spin;
     state.answer = p.answer || "";
     state.choices = p.choices || [];
     renderPopups();
@@ -277,6 +283,8 @@
       if (Array.isArray(draft.reactions)) state.reactions = draft.reactions;
       if (Array.isArray(draft.flashes)) state.flashes = draft.flashes;
       if (Array.isArray(draft.catch)) state.catch = draft.catch;
+      state.reveal = draft.reveal || "";
+      state.spin = !!draft.spin;
       state.answer = draft.answer || "";
       state.choices = draft.choices || [];
       if (draft.stickers != null) els.stickers.checked = draft.stickers;
@@ -484,6 +492,10 @@
     updateButtons();
   }
 
+  // The Create tab's game choice: the ones with no question need no Gemini words, so the button says what it makes.
+  const GAMER_BUTTON = { "catch the zombie": "🧟 Make a Catch the Zombie level",
+    "guess the picture": "🧱 Make a Guess the Picture level", "pause to get your block": "⏸️ Make a Pause to Get Your Block" };
+
   function updateButtons() {
     const busyScript = state.scriptJob != null;
     const busyRender = state.renderJob != null;
@@ -504,7 +516,7 @@
       : multi ? "Write Part 1 + Part 2 with Gemini"
       : quiz ? { math: "Write a math challenge", riddle: "Write a riddle with Gemini",
         trivia: "Write a trivia trap with Gemini", paradox: "Write a paradox trap with Gemini",
-        movie: "Write a movie quiz with Gemini", gamer: "🎮 Write a Gamer IQ question" }[els.mode.value]
+        movie: "Write a movie quiz with Gemini", gamer: GAMER_BUTTON[els.level.value] || "🎮 Write a Gamer IQ question" }[els.mode.value]
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);
@@ -568,6 +580,8 @@
     state.reactions = r.reactions || [];
     state.flashes = r.flashes || [];
     state.catch = r.catch || [];
+    state.reveal = r.reveal || "";
+    state.spin = !!r.spin;
     state.answer = r.answer || "";
     state.choices = r.choices || [];
     setSelect(els.voice, r.voice);
@@ -854,7 +868,7 @@
       clip: state.clip,
       game,
       trend_titles: titles,
-      notes: els.catch.checked ? "catch the zombie" : els.notes.value,
+      notes: els.mode.value === "gamer" && els.level.value ? els.level.value : els.notes.value,
       target_seconds: Number(els.length.value),
       watch_clip: els.watch.checked,
       mode: els.mode.value,
@@ -907,6 +921,8 @@
         const wasQuiz = state.flashes.length > 0;
         state.flashes = r.flashes || [];
         state.catch = r.catch || [];
+        state.reveal = r.reveal || "";
+        state.spin = !!r.spin;
         state.answer = r.answer || "";
         state.choices = r.choices || [];
         if (state.flashes.length) els.endCard.value = r.end_card || "";
@@ -1025,6 +1041,8 @@
           answer: state.answer,
           choices: state.choices,
           catch: state.catch,
+          reveal: state.reveal,
+          spin: state.spin,
         }),
       });
       state.renderJob = body.id;
@@ -1282,6 +1300,7 @@
     });
 
     els.write.addEventListener("click", writeScript);
+    els.level.addEventListener("change", updateButtons);
     els.describe.addEventListener("click", describeStory);
     els.render.addEventListener("click", renderShort);
     els.banner.addEventListener("click", (e) => {
