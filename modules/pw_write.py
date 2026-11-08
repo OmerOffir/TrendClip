@@ -202,7 +202,7 @@ def format_problems(script: dict) -> list[str]:
 
 def world_problems(script: dict) -> list[str]:
     """A true story in the world look: its length, its scenes, and that everything it names can be drawn and cued."""
-    from modules import pw_world
+    from modules import pw_sets, pw_world
 
     problems = []
     scenes = script.get("scenes") or []
@@ -261,10 +261,19 @@ def world_problems(script: dict) -> list[str]:
                 problems.append(f"{where}: {text!r} is too long for the screen ({WORLD_TEXT} characters at most)")
         cues += [x.get("cue") for key in ("head", "tags", "stamps", "bars") for x in sc.get(key) or []]
         cues += [(sc.get(key) or {}).get("cue") for key in ("big", "grid") if isinstance(sc.get(key), dict)]
+        piece = sc.get("set") if isinstance(sc.get("set"), dict) else None
+        if piece:
+            if piece.get("draw") not in pw_sets.SETS:
+                problems.append(f"{where}: set.draw is one of {', '.join(pw_sets.SETS)}")
+            if len(str(piece.get("title") or "")) > 14:
+                problems.append(f"{where}: set.title is 14 characters at most")
+            cues.append(piece.get("houses"))
+            if len(sc.get("head") or []) > 1:
+                problems.append(f"{where}: a set scene has at most one head line (the set fills the middle)")
         for cue in cues:
             if cue not in (None, "") and not said(sc, cue):
                 problems.append(f"{where}: the cue {cue!r} is not a word of this scene's narration")
-        if not (people or prop or texts or sc.get("big") or sc.get("grid") or sc.get("stamps")):
+        if not (people or prop or texts or piece or sc.get("big") or sc.get("grid") or sc.get("stamps")):
             problems.append(f"{where}: shows nothing (give it people, a prop, a figure or a tag)")
     return problems
 
@@ -545,7 +554,9 @@ WORLD_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "003-spanx-world.js
 
 
 def world_rules() -> str:
-    from modules import pw_world
+    from modules import pw_sets, pw_world
+
+    sets = "; ".join(pw_sets.HOW.values())
 
     lo, hi = WORLD_WORDS
     looks = dict(sara="a blonde woman in a red dress (the heroine)", woman="a dark-haired woman in purple",
@@ -594,6 +605,11 @@ A scene's keys (all optional except kind and narration):
   "grid": {{"n": 7, "draw": "store", "cue": a word}} (a row of small drawings popping one by one: 7 stores, 12 trucks)
   "head": big lines in the sky (the hook, the twist, the end)
   "rain": "cash" (money falling: the hook, the biggest win)
+  "set": the whole scene drawn as the story's OWN thing instead of the city street, when the story is about one:
+    {sets}
+    A set scene keeps at most ONE head line (the set fills the middle); people, tags and big figures still work.
+    Use a fitting set in 2-3 scenes (the hook is the best place: things move on the first frame), never in every
+    scene, and never one the story isn't about. No set fits? Leave it out.
   Every "cue" is a word of THAT scene's narration (it appears when the voice says it). Every scene shows something.
 - "sources": 2 or more real pages (news, the company, interviews; never Wikipedia), "claims": every fact and figure,
   each with 2 or more source numbers. Nothing invented: no made-up quotes, no guessed numbers, no "probably".

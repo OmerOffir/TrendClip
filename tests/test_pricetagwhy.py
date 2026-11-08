@@ -1001,3 +1001,34 @@ def test_names_in_capitals_are_said_as_names_not_letters():
 
     said = kokoro_voice.paragraph("A boy built IKEA. LEGO and FIFA. The CEO of IBM, HSBC, ESPN and AARP. IKEA's stores.")
     assert said == "A boy built Ikea. Lego and Fifa. The CEO of IBM, HSBC, ESPN and AARP. Ikea's stores."
+
+
+def test_a_set_piece_draws_the_story_s_own_thing(monkeypatch):
+    """Set pieces (2026-11-08): the owner wants the Monopoly story to show a board game moving, not the street every
+    time. A scene with "set": {"draw": "board"} is drawn as a board on a table (the token hops, the dice roll, passing
+    GO pays with a cash sound); the rules check its name and title, and the LLM prompt lists the sets."""
+    import json
+
+    from modules import bw_render, pw_sets, pw_world, pw_write
+
+    monkeypatch.setattr(pw_world, "ensure_fonts", lambda folder=None: None)
+    script = json.loads((pw_channel.PROJECT_ROOT / "content/pricetagwhy/examples/004-monopoly-world.json").read_text())
+    assert pw_write.problems_of(script) == []
+    assert '"draw": "board"' in pw_write.world_rules()
+    bad = json.loads(json.dumps(script))
+    bad["scenes"][0]["set"] = {"draw": "castle"}
+    assert any("set.draw" in p for p in pw_write.problems_of(bad))
+    words, t = [], 0.0
+    for s in script["scenes"]:
+        for w in s["narration"].split():
+            words.append(bw_render.Word(w, t, t + 0.25))
+            t += 0.3
+    spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
+    bw_render.align(spec)
+    r = pw_world.WorldRenderer(spec)
+    assert set(r.sets) == {0, 2, 4} and isinstance(r.sets[0], pw_sets.Board)
+    hook = spec.scenes[0]
+    assert r.frame(0.0).size == (bw_render.W, bw_render.H)
+    assert r.sets[0].squares(hook.start + 1.0) > r.sets[0].squares(hook.start)  # the token moves
+    go = r.sets[0].passes_go()
+    assert go and any(abs(at - go[0]) < 1e-6 and name == "cash" for at, name, _ in spec.sfx_extra)

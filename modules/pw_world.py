@@ -18,6 +18,8 @@ A world scene (kind "world") may carry, all optional:
     big      a figure that counts up when said: {text: "$5,000", cue, color}
     bars     horizontal bars growing when said: [{label, value, text, cue, color}]
     grid     a row of small drawings popping one by one: {n, draw, cue}
+    set      the whole scene drawn as the story's own thing instead of the street: {draw: board, ...}
+             (modules.pw_sets: a board game moving...)
 A cue is a word of the scene's narration: the thing appears when the voice says it (else in turn after the start).
 The first scene's things are all there on the first frame: the hook, and the thumbnail.
 
@@ -631,6 +633,10 @@ class WorldRenderer:
         self.spec = spec
         ensure_fonts()
         self.items: list[list[dict[str, Any]]] = [self.plan(i, s) for i, s in enumerate(spec.scenes)]
+        from modules import pw_sets  # set pieces: a scene drawn as the story's own thing (a board game...)
+
+        self.sets = {i: pw_sets.SETS[s.opts["set"]["draw"]](s.opts["set"], s, spec.words) for i, s in enumerate(spec.scenes)
+                     if isinstance(s.opts.get("set"), dict) and s.opts["set"].get("draw") in pw_sets.SETS}
         self.groups = self.caption_groups(spec.words)
         spec.sfx_extra = self.sounds()
 
@@ -652,7 +658,7 @@ class WorldRenderer:
                           "seed": sum(map(ord, str(p.get("name", "")))) % 97})
         if isinstance(o.get("prop"), dict):
             items.append({"type": "prop", "at": at(o["prop"].get("cue"), 1), "o": o["prop"]})
-        y = 280.0
+        y = 170.0 if isinstance(o.get("set"), dict) else 280.0  # a set piece fills the middle: its words go higher
         for k, h in enumerate(o.get("head") or []):
             size = int(h.get("size", 96))
             if h.get("arrow"):
@@ -699,6 +705,8 @@ class WorldRenderer:
             if year and year != prev_year and i > 0:
                 found.append((scene.start + 0.08, "stamp", 0.0))
             prev_year = year
+            if i in self.sets:
+                found += self.sets[i].sounds()
             for it in self.items[i]:
                 if "land" in it:
                     found.append((it["land"], "cash", 0.0))
@@ -744,10 +752,13 @@ class WorldRenderer:
         sky = o.get("sky", "day") if o.get("sky") in SKIES else "day"
         dur = max(0.5, scene.end - scene.start)
         u = min(1.0, max(0.0, (t - scene.start) / dur))
-        back_img = backdrop(sky, (self.spec.seed or 7) + i)
-        drift = int(120 * ease(u) * (1 if i % 2 == 0 else -1))
-        x0 = 60 + drift // 2
-        img = back_img.crop((x0, 0, x0 + W, H))
+        if i in self.sets:
+            img = self.sets[i].draw(t)
+        else:
+            back_img = backdrop(sky, (self.spec.seed or 7) + i)
+            drift = int(120 * ease(u) * (1 if i % 2 == 0 else -1))
+            x0 = 60 + drift // 2
+            img = back_img.crop((x0, 0, x0 + W, H))
         dark = SKIES[sky]["dark"]
         if o.get("rain"):
             rain(img, t - scene.start, (self.spec.seed or 7) + i)
