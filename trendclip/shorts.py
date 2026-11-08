@@ -116,6 +116,7 @@ class RenderRequest(BaseModel):
     answer: str = Field("", max_length=80)
     choices: list[str] = Field(default_factory=list, max_length=6)  # quiz options in full: "A) ...", for the leaderboard
     catch: list[str] = Field(default_factory=list, max_length=6)  # Catch the Zombie: the emoji it holds, one pop each
+    reveal: str = Field("", max_length=80)  # Guess the Picture: the picture's file in assets/reveal
 
 
 class SeriesPart(BaseModel):
@@ -380,6 +381,11 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     if req.catch:
         progress(None, f"Hiding the zombie {len(req.catch)} times")
         overlays = overlays + catch.plan(settings, req.catch, words, seed=req.script)
+    if req.reveal:
+        from . import reveal
+
+        progress(None, "Hiding the picture behind the blocks")
+        overlays = overlays + reveal.plan(settings, req.reveal, words, seed=req.output_name or req.script)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(

@@ -1318,6 +1318,11 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     if catch.wanted(settings, game, notes):  # Catch the Zombie: no question, no Gemini
         progress(None, "A Catch the Zombie level")
         return catch.script(settings, game, format=format, rng=rng)
+    from . import reveal
+
+    if reveal.wanted(notes):  # Guess the Picture: no question, no Gemini (asked for in the notes, for now)
+        progress(None, "A Guess the Picture level")
+        return reveal.script(settings, game, format=format, rng=rng)
     queued = gamer_queue.take(settings, game)  # written for later (the dashboard's "Write a week"): no Gemini
     if queued is not None:
         result, shape = queued
