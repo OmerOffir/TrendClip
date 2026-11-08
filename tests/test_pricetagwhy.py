@@ -875,3 +875,34 @@ def test_a_slot_made_or_emptied_from_the_tab_is_marked_so_the_bot_leaves_it(tmp_
     assert job.make_key in sent
     at = datetime(2026, 11, 4, 22, 22, tzinfo=settings.tz)
     assert all(j.key != job.key for j in pw_channel.due_makes(settings, at, set(sent), tmp_path))
+
+
+def test_a_world_story_passes_the_rules_and_draws_its_hook_on_the_first_frame(monkeypatch):
+    """The full-colour world look (2026-11-08): the example true story is a valid script, every scene is drawn,
+    the hook's words are on frame 0, and things said later pop in when the voice says them."""
+    import json
+
+    from modules import bw_render, pw_world
+
+    monkeypatch.setattr(pw_world, "ensure_fonts", lambda folder=None: None)
+    script = json.loads((pw_channel.PROJECT_ROOT / "content/pricetagwhy/examples/003-spanx-world.json").read_text())
+    assert pw_channel.is_world(script) and pw_channel.check_script(script) == []
+    assert pw_channel.limits(script) == pw_channel.WORLD_SECONDS
+    bad = {**script, "scenes": [{**script["scenes"][0], "head": []}, *script["scenes"][1:]]}
+    assert any("hook" in p for p in pw_channel.check_script(bad))
+    words, t = [], 0.0
+    for s in script["scenes"]:
+        for w in s["narration"].split():
+            words.append(bw_render.Word(w, t, t + 0.25))
+            t += 0.3
+    spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
+    bw_render.align(spec)
+    r = pw_world.WorldRenderer(spec)
+    assert r.frame(0.0).size == (bw_render.W, bw_render.H)
+    assert all(it["at"] < 0 for it in r.items[0] if it["type"] == "head")  # the hook is there on the first frame
+    door = next(it for it in r.items[1] if it["type"] == "prop")
+    said = next(w.start for w in words if w.text == "door")
+    assert door["at"] == said
+    for i, scene in enumerate(spec.scenes):
+        assert r.frame((scene.start + scene.end) / 2).mode == "RGB"
+    assert any(name == "stamp" for _, name, _ in spec.sfx_extra) and any(name == "cash" for _, name, _ in spec.sfx_extra)

@@ -46,6 +46,7 @@ CATEGORY = "27"  # Education
 MIN_SECONDS, MAX_SECONDS = 22.0, 45.0  # the brief asks 30-38 s: viewers swiped away from 45-50 s ones
 STORY_SECONDS = (45.0, 85.0)  # the owner (2026-11-03): the 123 s sample was too long for the algorithm  # a money story (modules.pw_write.STORY): a cast, 3-4 moves with their math, the bars, the ask
 STORY_KINDS = ("cast", "step", "bars", "ask")
+WORLD_SECONDS = (40.0, 90.0)  # a true story in the world look (modules.pw_world)
 
 
 def is_story(script: dict) -> bool:
@@ -53,8 +54,15 @@ def is_story(script: dict) -> bool:
     return script.get("format") == "story" or any((s.get("kind") in STORY_KINDS) for s in script.get("scenes") or [])
 
 
+def is_world(script: dict) -> bool:
+    """A true money story in the full-colour world look (modules.pw_world, 2026-11-08)."""
+    return script.get("format") == "world"
+
+
 def limits(script: dict) -> tuple[float, float]:
     """(min, max) seconds this script's video may run."""
+    if is_world(script):
+        return WORLD_SECONDS
     return STORY_SECONDS if is_story(script) else (MIN_SECONDS, MAX_SECONDS)
 VOICE = "af_heart"  # Kokoro-82M (Apache 2.0, commercial use allowed): warm and curious, unlike Borderline Why's voices
 MUSIC = "funny"  # a music/ folder; PW_MUSIC=none for the voice alone
@@ -159,7 +167,12 @@ def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
     problems = []
     scenes = script.get("scenes") or []
-    if is_story(script):
+    if is_world(script):
+        if not scenes or not all(s.get("kind") == "world" for s in scenes):
+            problems.append("every scene of a world story is of kind world")
+        elif not (scenes[0].get("head") or scenes[0].get("big")):
+            problems.append("a world story opens on its hook: head lines (or a big figure) on the first scene")
+    elif is_story(script):
         if not scenes or scenes[0].get("kind") != "cast":
             problems.append("a story's first scene is its cast (kind cast)")
     elif not scenes or scenes[0].get("kind") not in ("tag", "product"):
@@ -746,12 +759,18 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     spec = bw_render.spec_from_dict(script, spoken)
     spec.hold = 0.5  # the video ends half a second after the last word (no follow line, no redraw)
     spec.sfx = setting("PW_SFX", "on").lower() not in ("off", "0", "no")  # pops, marker, whooshes, a cash ring (pw_render)
-    pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
-    if missing := bw_render.prepare(spec):
-        raise ChannelError("Places not found on the map: " + ", ".join(missing))
     music = pick_music(int(script["seed"]))
-    pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, float(setting("PW_MUSIC_VOLUME", "0.09")),
-                     lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle(), question=script.get("question", ""))
+    volume = float(setting("PW_MUSIC_VOLUME", "0.09"))
+    if is_world(script):  # the full-colour world (modules.pw_world): no maps, no photos, no marker hand
+        from modules import pw_world
+
+        pw_world.render(spec, work / "voice.mp3", work / "video.mp4", music, volume, lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
+    else:
+        pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
+        if missing := bw_render.prepare(spec):
+            raise ChannelError("Places not found on the map: " + ", ".join(missing))
+        pw_render.render(spec, work / "voice.mp3", work / "video.mp4", music, volume,
+                         lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle(), question=script.get("question", ""))
     info = {
         "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:6],
@@ -762,8 +781,14 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
     }
-    try:  # a picture made to be clicked (modules.pw_thumb), not a frame of the video
-        pw_thumb.make(script, work / "thumb.jpg", thumb_style(script))
+    try:  # a picture made to be clicked (modules.pw_thumb), not a frame of the video; a world story's hook frame
+        if is_world(script):
+            from modules import pw_world
+
+            pw_world.still(spec, 0.0).save(work / "thumb.jpg", quality=92)
+            info["thumb_at"] = 0.0
+        else:
+            pw_thumb.make(script, work / "thumb.jpg", thumb_style(script))
         info["thumbnail"] = "thumb.jpg"
     except Exception:  # noqa: BLE001 - the video is still good without it
         logger.exception("Price Tag Why thumbnail for %s failed", key)
