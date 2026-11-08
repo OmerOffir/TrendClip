@@ -331,6 +331,18 @@ def pick_voice(settings: Settings, requested: str | None, engine: str | None = N
     return default_voice(settings, engine)
 
 
+def _quiz_style(req: RenderRequest) -> dict[str, Any]:
+    """The quiz look for quizzes and Gamer IQ levels; a Guess the Picture level has its captions under the card."""
+    if not (req.flashes or req.reveal):
+        return {}
+    style = quiz.render_style(req.aspect == "landscape")
+    if req.reveal and req.aspect != "landscape":
+        from . import reveal
+
+        style["margin_v"] = reveal.CAPTION_MARGIN
+    return style
+
+
 def tail_texts(req: RenderRequest) -> dict[str, Any]:
     """A Gamer IQ level's tail: the question's tease again after the last word (the loop back to frame 0) and the
     answer on one frame near the end (seen by pausing). Not for a catch level (its answer is emoji, which the flash
@@ -397,7 +409,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         music_start=req.music_start,
         overlays=overlays + sticker_overlays, title_card=req.title_card.strip(), end_card=req.end_card.strip(),
         flashes=flashes, landscape=req.aspect == "landscape",
-        **(quiz.render_style(req.aspect == "landscape") if req.flashes else {}),
+        **_quiz_style(req),
         **tail_texts(req),
     )
 

@@ -39,9 +39,10 @@ KINDS = {"mob": MOBS}
 GRID = 6  # about 6 x 6 blocks over the picture (its own box: a tall mob gets more rows)
 STEP = 0.5  # one block breaks every half second (on the half second, so the timer and the picture change together)
 LEFT = 0.4  # share of the blocks still standing at the end: it never shows whole
-SIDE = 700  # the picture's square on the 1080 x 1920 canvas
-STRIP = 96  # the timer strip under it
-CENTER = (WIDTH // 2, 930)  # clear of the end card (top) and the captions (from ~1340)
+SIDE = 600  # the picture's square on the 1080 x 1920 canvas
+STRIP = 116  # the timer strip under it
+CENTER = (WIDTH // 2, 790)  # under the end card (top), above the captions
+CAPTION_MARGIN = 520  # the captions end 520 px from the bottom, under the card (the quiz default 620 covered it)
 FRAME = 14
 BG = (198, 198, 198)  # the inventory grey behind the picture
 DARK, LIGHT = (55, 55, 55), (255, 255, 255)
@@ -53,7 +54,7 @@ SCRIPT = ("{game} fans only. Something is hiding behind these blocks. One breaks
 WINDOW = ("Something", "One")  # the blocks break between these two spoken words
 TITLE = "Guess The {game} {Kind} | Level {level} 🎮"
 CARD = "LEVEL {level} - WHAT IS IT?"
-END_CARD = "What is it? · Which second did you know?"
+END_CARD = "Comment the second you knew"
 PINNED = ("What is it? And which second did you know? 👇\n🏆 First correct answer gets 10 leaderboard points. "
           "Level {next} drops next!")
 DESCRIPTION = "A {game} {kind} hides behind the blocks. Guess it before it shows, and comment the second you knew."
@@ -254,10 +255,10 @@ def card(picture, boxes: list, broken: set[int], second: int, stones: list) -> "
     d = ImageDraw.Draw(img)
     top = SIDE + 2 * FRAME
     d.rectangle([FRAME, top, w - FRAME, h - FRAME], fill=(30, 30, 30))
-    font = _font(64)
+    font = _font(88)
     text = f"TIME  {second}s"
     tw = d.textlength(text, font=font)
-    d.text(((w - tw) / 2, top + (STRIP - 64) / 2 - 6), text, font=font, fill=(255, 221, 0))
+    d.text(((w - tw) / 2, top + (STRIP - 88) / 2 - 8), text, font=font, fill=(255, 221, 0))
     return img
 
 
