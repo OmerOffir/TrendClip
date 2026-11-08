@@ -229,15 +229,16 @@ def order(picture, boxes: list, rng: random.Random) -> list[int]:
 
 
 def _font(size: int):
+    """Poppins ExtraBold like the captions (assets/fonts), else Pillow's own scalable font."""
     from PIL import ImageFont
 
-    from .video_assembler import find_font_file
+    from .config import PROJECT_ROOT
 
-    _, path = find_font_file()
-    try:
-        return ImageFont.truetype(str(path), size) if path else ImageFont.load_default()
-    except OSError:
-        return ImageFont.load_default()
+    for path in (PROJECT_ROOT / "assets" / "fonts" / "Poppins-ExtraBold.ttf",
+                 PROJECT_ROOT / "assets" / "fonts" / "Poppins-Bold.ttf"):
+        if path.is_file():
+            return ImageFont.truetype(str(path), size)
+    return ImageFont.load_default(size)
 
 
 def card(picture, boxes: list, broken: set[int], second: int, stones: list) -> "object":
