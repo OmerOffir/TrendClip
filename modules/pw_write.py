@@ -878,7 +878,11 @@ def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Pa
     else this machine's."""
     if format not in FORMATS:
         raise WriteError(f"The format is one of: {', '.join(FORMATS)}")
-    found = of_format(topics(out_dir) if found is None else found, format)
+    every = topics(out_dir) if found is None else found
+    asked_topic = next((t for t in every if question and _norm(t["question"]) == _norm(question)), None)
+    if kind == "one" and asked_topic and asked_topic.get("format") in FORMATS:
+        format = asked_topic["format"]  # "Write it now" on a topic writes it in the topic's own format (a true story stays one)
+    found = of_format(every, format)
     if kind == "one":
         asked = " ".join(question.split())
         known = next((t for t in found if _norm(t["question"]) == _norm(asked)), None) if asked else None

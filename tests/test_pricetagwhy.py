@@ -952,3 +952,13 @@ def test_a_video_being_made_shows_its_progress_from_its_log(tmp_path):
     assert pw_channel.make_progress("2026-11-08_2300", tmp_path) is None  # a make that went quiet died
     log.write_text("[95%] Video ready\n[100%] Video ready\n{\"key\": \"2026-11-08_2300\"}\n")
     assert pw_channel.make_progress("2026-11-08_2300", tmp_path) is None and pw_channel.making_now(tmp_path) == []
+
+
+def test_write_it_now_on_a_true_story_topic_uses_the_true_story_prompt(tmp_path):
+    """The IKEA topic (a true story) went through "Write it now" with the why prompt and came out a 27 s whiteboard
+    video (2026-11-08): a topic's own format wins."""
+    from modules import pw_write
+
+    pw_write.add_topic("How did a 17-year-old selling matches build IKEA?", "business tricks", tmp_path, "world")
+    session = pw_write.start("one", "How did a 17-year-old selling matches build IKEA?", out_dir=tmp_path)
+    assert session["format"] == "world" and "true story for this idea" in session["prompt"]
