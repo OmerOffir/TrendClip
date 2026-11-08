@@ -45,7 +45,9 @@ STRIP = 116  # the timer strip under it
 CENTER = (WIDTH // 2, 790)  # under the end card (top), above the captions
 CAPTION_MARGIN = 520  # the captions end 520 px from the bottom, under the card (the quiz default 620 covered it)
 FRAME = 14
-BG = (198, 198, 198)  # the inventory grey behind the picture
+# Behind the picture: the one of these furthest from the mob's own colour (a white Ghast on grey vanished, the
+# owner's first real level, 2026-11-08); none is close to the stone blocks' grey.
+BACKDROPS = ((121, 166, 255), (28, 30, 52), (232, 204, 128), (92, 156, 64))
 DARK, LIGHT = (55, 55, 55), (255, 255, 255)
 STONE = ((125, 125, 125), (112, 112, 112), (138, 138, 138), (100, 100, 100))
 
@@ -255,13 +257,23 @@ def _font(size: int):
     return ImageFont.load_default(size)
 
 
+def backdrop(picture) -> tuple[int, int, int]:
+    """The backdrop colour that stands out most from the picture's average solid colour."""
+    import numpy as np
+
+    px = np.asarray(picture.convert("RGBA")).reshape(-1, 4)
+    solid = px[px[:, 3] > 128][:, :3]
+    mean = solid.mean(axis=0) if len(solid) else np.array([128, 128, 128])
+    return max(BACKDROPS, key=lambda c: float(((np.array(c) - mean) ** 2).sum()))
+
+
 def card(picture, boxes: list, broken: set[int], second: int, stones: list) -> "object":
     """The framed picture with the standing blocks on it and the timer strip under it."""
     from PIL import Image, ImageDraw
 
     w, h = SIDE + 2 * FRAME, SIDE + STRIP + 3 * FRAME
     img = Image.new("RGBA", (w, h), DARK + (255,))
-    inner = Image.new("RGBA", (SIDE, SIDE), BG + (255,))
+    inner = Image.new("RGBA", (SIDE, SIDE), backdrop(picture) + (255,))
     inner.alpha_composite(picture)
     for i, box in enumerate(boxes):
         if i not in broken:
