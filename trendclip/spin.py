@@ -59,7 +59,7 @@ SCRIPT = ("{game} fans only. Pause the video right now. The block you stop on is
           "Purple is epic. Gold is legendary. Got gold? Comment your block. Then send this to a friend, "
           "and see who gets the better one.")
 TITLE = "Pause To Get Your {game} Block 🎮"
-CARD = "PAUSE NOW - WHAT DID YOU GET?"
+CARD = "PAUSE NOW!"  # one line: the four-line "PAUSE NOW - WHAT DID YOU GET?" covered the rarity label
 END_CARD = "Comment your block"
 PINNED = "What block did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better one."
 DESCRIPTION = "Pause the video: the {game} block you stop on is yours. Comment what you got and challenge a friend."
