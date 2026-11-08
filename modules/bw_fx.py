@@ -1142,6 +1142,12 @@ class FxRenderer(Renderer):
             busy = any(el.at < s.start + self.ARRIVE_EMPTY and el.kind not in ("highlight",) for el in s.elements)
             if not moved or busy or any(el.kind in ("pole", "local") for el in s.elements):
                 continue
+            from modules import bw_era
+
+            # today's flag would say the wrong owner: in a scene of the past (Alaska "in the 1800s" is Russia's) or
+            # where the scene already flies whose land it is (the owner, 2026-11-08: a US flag on Russian Alaska)
+            if any(el.opts.get("flag") for el in s.elements) or (bw_era.scene_year(s) or 9999) <= time.localtime().tm_year - bw_era.OLD:
+                continue
             seen: list[str] = []
             cam = Cam(*self.views[i])
             taken: list[tuple[float, float]] = []  # the flags keep clear of each other

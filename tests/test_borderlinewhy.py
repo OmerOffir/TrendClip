@@ -2700,3 +2700,22 @@ def test_the_storys_people_talk_on_a_photo(world, fx_offline, tmp_path):
         bw_local.say = real
     ps = r.photos[1]
     assert len(ps.cast) == 1 and ps.guest == "" and said == ["Deal!"]
+
+
+def test_no_arrival_flag_where_todays_flag_names_the_wrong_owner(world, fx_offline):
+    """Alaska "in the 1800s" was Russia's: a jump there raises no US flag (the owner, 2026-11-08), nor in a scene
+    that already flies whose land it is."""
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "map", "narration": "In the 1800s Paris was far away.", "focus": ["Paris"], "headline": "1800s",
+         "elements": [{"kind": "pin", "place": "Paris", "cue": "away"}]},
+        {"kind": "map", "narration": "Back to the notch again.", "focus": ["Minnesota"],
+         "elements": [{"kind": "pin", "place": "Minnesota", "cue": "notch"}]},
+        {"kind": "map", "narration": "Paris flies its own flag.", "focus": ["Paris"],
+         "elements": [{"kind": "highlight", "place": "France", "flag": "Flag of France.svg", "cue": "Paris"}]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    fx_offline.FxRenderer(spec)
+    arrived = [i for i, s in enumerate(spec.scenes) if any(e.opts.get("_arrival") for e in s.elements)]
+    assert arrived == [2]  # only the jump back to today's Minnesota
