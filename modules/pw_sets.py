@@ -479,7 +479,7 @@ SPIN = 0.75  # seconds the paper takes to spin in
 
 
 @lru_cache(maxsize=8)
-def newspaper(name: str, date: str, headline: str, picture: str) -> Image.Image:
+def newspaper(name: str, date: str, headline: str, picture: str, label: str = "") -> Image.Image:
     """A front page: the masthead, the date line, the headline in big black letters, a photo, columns of text."""
     from modules import pw_world
 
@@ -524,9 +524,9 @@ def newspaper(name: str, date: str, headline: str, picture: str) -> Image.Image:
         full = pw_world.person(picture, "smile", "hang")
         pic = full.crop((int(full.width * 0.12), int(full.height * 0.18), int(full.width * 0.88), int(full.height * 0.8)))
     elif picture in pw_world.PROPS:
-        pic = pw_world.prop(picture, "")
+        pic = pw_world.prop(picture, label)
     elif picture in ITEMS:
-        pic = item(picture, "")
+        pic = item(picture, label)
     if pic is not None:
         gray = pic.convert("LA").convert("RGBA")
         gray.putalpha(pic.getchannel("A"))
@@ -570,6 +570,7 @@ class Paper:
         self.date = str(opts.get("date") or scene.opts.get("year") or "")[:24]
         self.headline = str(opts.get("headline") or "")[:40].upper()
         self.picture = str(opts.get("picture") or "")
+        self.label = str(opts.get("label") or "")[:12].upper()
         self.mood = "dark" if str(opts.get("mood")) == "bad" else "warm"
 
     def sounds(self) -> list[tuple[float, str, float]]:
@@ -579,7 +580,7 @@ class Paper:
         local = max(0.0, t - self.scene.start)
         colors = ((70, 40, 60), (110, 56, 80)) if self.mood == "dark" else ((236, 140, 50), (250, 180, 70))
         img = sunburst(colors, int(local * 8) % 30).copy()
-        paper = newspaper(self.name, self.date, self.headline, self.picture)
+        paper = newspaper(self.name, self.date, self.headline, self.picture, self.label)
         u = min(1.0, local / SPIN)
         if u < 1:
             angle = -6 + 720 * (1 - ease(u))
@@ -604,7 +605,7 @@ HOW = {
              'out of a press (making or selling millions of one thing, a cut of every sale)'),
     "paper": ('{"draw": "paper", "headline": the front page\'s headline (40 characters at most, capitals), "name": the '
               'paper\'s name ("THE DAILY NEWS"), "date": the date line ("JUNE 1935"; else the scene\'s year), '
-              '"picture": a look or a prop or an item shown as the photo, "mood": good|bad} = a front page spinning in '
+              '"picture": a look or a prop or an item shown as the photo, "label": the words on that prop or item ("IKEA"), "mood": good|bad} = a front page spinning in '
               'over turning rays (the moment the world heard: a sale, a crash, a record, a scandal, a court case)'),
 }
 SET_MIN, SET_MOST, SET_SCENES = 2, 3, 5  # different sets a story uses; scenes one set may fill; set scenes in all
