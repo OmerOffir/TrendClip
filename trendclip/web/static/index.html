@@ -126,7 +126,7 @@
       <form class="pw-add" id="pwAddTopic">
         <input type="text" id="pwAddQuestion" placeholder="Why does …?  or a story: Same $500, four friends…?" maxlength="160" required>
         <select id="pwAddPillar"><option value="">pillar</option></select>
-        <select id="pwAddFormat" title="A 35 s why, or a 50-75 s money story (a cast, their moves with the math, the bars, which one are you?)"><option value="why">❓ why (35 s)</option><option value="story">📖 story (60 s)</option></select>
+        <select id="pwAddFormat" title="A 35 s why, or a 50-75 s money story (a cast, their moves with the math, the bars, which one are you?)"><option value="why">❓ why (35 s)</option><option value="story">📖 story (60 s)</option><option value="world">🌆 true story (60 s)</option></select>
         <button type="submit" class="btn-primary">Add</button>
         <button type="button" class="btn-secondary" id="pwNoIdea" title="Copies the prompt for 20 new topics (New topics from your own LLM, below): paste it into any LLM, then paste its answer back there">💡 No idea? Get a prompt</button>
         <span class="hint" id="pwAddStatus"></span>
@@ -143,7 +143,7 @@
         <button type="button" id="pwTopicsRefresh" hidden></button>
       </div>
       <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
-        <div class="llm-topics-row"><select data-l="format" title="What the prompt asks for"><option value="why">❓ why questions (35 s)</option><option value="story">📖 money stories (60 s)</option></select>
+        <div class="llm-topics-row"><select data-l="format" title="What the prompt asks for"><option value="why">❓ why questions (35 s)</option><option value="story">📖 money stories (60 s)</option><option value="world">🌆 true stories (60 s)</option></select>
           <button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
         <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
       </div>

@@ -25,7 +25,12 @@ from modules import pw_channel, pw_draw
 from trendclip import llm_json
 
 KINDS = ("one", "week")
-FORMATS = ("why", "story")  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask)
+FORMATS = ("why", "story", "world")  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
+# a true money story in the full-colour world look (modules.pw_world, 2026-11-08)
+WORLD_WORDS = (140, 215)  # 55-75 s
+WORLD_SCENES = (7, 14)
+WORLD_SCENE_WORDS = 30
+WORLD_TEXT = 26  # characters on a pill or a headline line
 DEFAULT_COUNT = 7
 MIN_WORDS, MAX_WORDS = 70, 100  # about 30-38 s with the channel's voice (1.1x): 45-50 s ones lost most viewers
 STORY_WORDS = (130, 190)  # 50-75 s: long enough for the next number to pull, short enough for the algorithm (a 300-word one ran 123 s)
@@ -110,7 +115,7 @@ def add_topic(question: str, pillar: str = "", out_dir: Path | None = None, form
     if any(_norm(t["question"]) == _norm(question) for t in found):
         raise WriteError("That question is already on the list")
     item = {"question": question, "pillar": pillar, "used": False, "added": datetime.now().strftime("%Y-%m-%d"),
-            **({"format": "story"} if format == "story" else {})}
+            **({"format": format} if format in ("story", "world") else {})}
     save_topics([*found, item], out_dir)
     return item
 
@@ -147,6 +152,8 @@ def next_topics(count: int, out_dir: Path | None = None, found: list[dict[str, A
 
 def format_problems(script: dict) -> list[str]:
     """What the renderer and the brief need beyond pw_channel.check_script."""
+    if pw_channel.is_world(script):
+        return world_problems(script)
     if pw_channel.is_story(script):
         return story_problems(script)
     problems = []
@@ -189,6 +196,75 @@ def format_problems(script: dict) -> list[str]:
     for src in script.get("sources") or []:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
+    return problems
+
+
+def world_problems(script: dict) -> list[str]:
+    """A true story in the world look: its length, its scenes, and that everything it names can be drawn and cued."""
+    from modules import pw_world
+
+    problems = []
+    scenes = script.get("scenes") or []
+    lo, hi = WORLD_WORDS
+    n = pw_channel.words(pw_channel.narration(script))
+    if not lo <= n <= hi:
+        problems.append(f"{n} words of narration (a true story wants {lo}-{hi}, about 55-75 s)")
+    if not WORLD_SCENES[0] <= len(scenes) <= WORLD_SCENES[1]:
+        problems.append(f"{len(scenes)} scenes (wanted {WORLD_SCENES[0]}-{WORLD_SCENES[1]}: one beat each)")
+    if script.get("parable"):
+        problems.append("a world story is true: no parables here (use the story format for those)")
+    if scenes and not any(h.get("from") for h in scenes[0].get("head") or []):
+        problems.append("scene 1: the hook's big figure races up from the start money (a head line with \"from\")")
+    if scenes and not str(scenes[-1].get("narration") or "").strip().endswith("?"):
+        problems.append("the last scene asks the viewer a question (its narration ends with ?)")
+
+    def said(scene: dict, cue: Any) -> bool:
+        tok = re.sub(r"[^\w$]", "", str(cue).lower())
+        spoken = [re.sub(r"[^\w$]", "", w.lower()) for w in str(scene.get("narration") or "").split()]
+        return bool(tok) and any(w == tok or (len(tok) > 2 and w.startswith(tok)) for w in spoken)
+
+    for k, sc in enumerate(scenes, 1):
+        where = f"scene {k}"
+        words = pw_channel.words(str(sc.get("narration") or ""))
+        if not words:
+            problems.append(f"{where}: no narration")
+        elif words > WORLD_SCENE_WORDS:
+            problems.append(f"{where}: {words} words (at most {WORLD_SCENE_WORDS}: split it into two scenes)")
+        if sc.get("sky") and sc["sky"] not in pw_world.SKIES:
+            problems.append(f"{where}: sky is one of {', '.join(pw_world.SKIES)}")
+        people = sc.get("people") or []
+        if len(people) > 2:
+            problems.append(f"{where}: at most 2 people in a scene")
+        cues = []
+        for p in people:
+            if p.get("look") not in pw_world.LOOKS:
+                problems.append(f"{where}: look is one of {', '.join(pw_world.LOOKS)}")
+            for m in [p, *(p.get("moods") or [])]:
+                if m.get("expr") and m["expr"] not in pw_world.EXPRESSIONS:
+                    problems.append(f"{where}: expr is one of {', '.join(pw_world.EXPRESSIONS)}")
+                if m.get("pose") and m["pose"] not in pw_world.POSES:
+                    problems.append(f"{where}: pose is one of {', '.join(pw_world.POSES)}")
+            cues += [p.get("cue"), *(m.get("cue") for m in p.get("moods") or [])]
+            if len(str(p.get("name") or "")) > 16:
+                problems.append(f"{where}: a name tag is 16 characters at most")
+        prop = sc.get("prop") if isinstance(sc.get("prop"), dict) else None
+        if prop:
+            if prop.get("draw") not in pw_world.PROPS:
+                problems.append(f"{where}: prop.draw is one of {', '.join(pw_world.PROPS)}")
+            cues.append(prop.get("cue"))
+        texts = [h.get("text", "") for h in sc.get("head") or [] if not h.get("arrow")]
+        texts += [t.get("text", "") for t in sc.get("tags") or []]
+        texts += [str(b.get("label") or "") for b in sc.get("bars") or []]
+        for text in texts:
+            if len(str(text)) > WORLD_TEXT:
+                problems.append(f"{where}: {text!r} is too long for the screen ({WORLD_TEXT} characters at most)")
+        cues += [x.get("cue") for key in ("head", "tags", "stamps", "bars") for x in sc.get(key) or []]
+        cues += [(sc.get(key) or {}).get("cue") for key in ("big", "grid") if isinstance(sc.get(key), dict)]
+        for cue in cues:
+            if cue not in (None, "") and not said(sc, cue):
+                problems.append(f"{where}: the cue {cue!r} is not a word of this scene's narration")
+        if not (people or prop or texts or sc.get("big") or sc.get("grid") or sc.get("stamps")):
+            problems.append(f"{where}: shows nothing (give it people, a prop, a figure or a tag)")
     return problems
 
 
@@ -464,6 +540,71 @@ The example (a finished script):
 {_example(STORY_EXAMPLE)}"""
 
 
+WORLD_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "003-spanx-world.json"  # the prompt's example only
+
+
+def world_rules() -> str:
+    from modules import pw_world
+
+    lo, hi = WORLD_WORDS
+    looks = dict(sara="a blonde woman in a red dress (the heroine)", woman="a dark-haired woman in purple",
+                 man="a brown-haired man in blue", old="an older man with glasses", suit="a man in a navy suit and tie",
+                 kid="a child")
+    props = dict(door="a closed door (rejection, doors slammed)", scissors="scissors (an idea, cutting)", cash="a stack of cash",
+                 factory="a factory or mill (label it)", store="a shop front (label it)", tv="a TV set (label: the show)",
+                 magazine="a magazine cover (label: its headline)", plane="a plane (travel, tickets)",
+                 laptop="a laptop (label: what's on the screen)", fax="a fax machine (office sales, the 90s)")
+    return f"""Price Tag Why is a YouTube Shorts channel of TRUE money stories, told in a warm full-colour cartoon world: a
+city street under a sky that follows the mood, named cartoon people, the year on a badge, the numbers popping big.
+Viewers: curious adults (18-45, US/UK/CA/AU), not finance experts. The stories that win: a real founder or company
+that started tiny and ended huge ("$5,000 and a pair of scissors became $1.2 billion"), a famous money mistake or
+rise-and-fall, a genius money move, how much a company makes from ONE thing. Real people, real numbers, real years.
+
+Each script is ONE JSON object shaped exactly like the example below, with "format": "world":
+- {lo}-{hi} words of narration in all (55-75 seconds). Short spoken sentences, numbers growing as the story goes.
+  Say big money in words ("1.2 billion dollars", "five thousand dollars") and years in digits ("1998").
+- {WORLD_SCENES[0]}-{WORLD_SCENES[1]} scenes, all "kind": "world", ONE beat each, at most {WORLD_SCENE_WORDS} words of narration per scene.
+- scene 1 is the hook (about 6 s, at most 22 words): the start money, the end money and the strange detail, in the
+  first sentence ("Five thousand dollars in savings and one pair of scissors. That's how Sara Blakely built a 1.2
+  billion dollar company."). Its "head" lines show it: the start, an arrow, then the end figure racing up from the
+  start: {{"text": "$1.2 BILLION", "from": "$5,000", "cue": "billion", "color": "gold", "size": 150}}. Add
+  "rain": "cash" when the story ends in money won. The first frame is also the thumbnail.
+- then the story in order, a year on the scene where time jumps, a place when it moves. Exactly one twist scene at
+  "sky": "night" with head [{{"text": "BUT THEN...", "size": 120, "cue": <its first word>}}].
+- the last scene says the start and the end again (head lines, an arrow between) and asks the viewer ONE question
+  (the narration ends with "?", a tag shows it: 26 characters at most). No "follow", no "subscribe".
+A scene's keys (all optional except kind and narration):
+  "sky": day (normal) | sunset (the hook, a big win) | night (hard times, the idea at night, the twist) | dawn (a trip, a new start)
+  "year": "1998"; "place": "ATLANTA" (capitals)
+  "people": 1-2 of {{"name": the name tag (16 characters at most: "SARA", "MILL OWNER"), "look": one of
+    {"; ".join(f"{k} = {v}" for k, v in looks.items())}, "x": 0.25-0.78 (where they stand: the hero left, others right),
+    "expr": {"|".join(pw_world.EXPRESSIONS)}, "pose": {"|".join(pw_world.POSES)}, "cue": the word they appear on (only for someone new),
+    "moods": [{{"cue": a word, "expr": ..., "pose": ...}}] (they react as it is said: sad at "no", grin + up at a win)}}.
+    The same person keeps the same name and look in every scene.
+  "prop": {{"draw": one of {"; ".join(f"{k} = {v}" for k, v in props.items())}, "x": 0.72, "cue": a word,
+    "label": words on it}}. Only draw what the narration names; leave it out rather than draw the wrong thing.
+  "tags": pills in the sky, said as they appear: [{{"text": "NO INVESTORS" (26 characters at most), "cue": a word,
+    "style": dark|light|gold|green|red, "size": 46-72}}]
+  "big": {{"text": "$5,000", "cue": a word, "color": gold|green|red}}: a figure that counts up as it is said
+  "bars": [{{"label": "YEAR 1 SALES", "value": 4, "text": "$4 MILLION", "cue": a word, "color": gold|green|red}}] (2-3 bars)
+  "stamps": [{{"text": "NO", "cue": a word}}] (1-3 red stamps slammed on: rejections)
+  "grid": {{"n": 7, "draw": "store", "cue": a word}} (a row of small drawings popping one by one: 7 stores, 12 trucks)
+  "head": big lines in the sky (the hook, the twist, the end)
+  "rain": "cash" (money falling: the hook, the biggest win)
+  Every "cue" is a word of THAT scene's narration (it appears when the voice says it). Every scene shows something.
+- "sources": 2 or more real pages (news, the company, interviews; never Wikipedia), "claims": every fact and figure,
+  each with 2 or more source numbers. Nothing invented: no made-up quotes, no guessed numbers, no "probably".
+- "comment": the question pinned under the video (the last scene's question + 👇). "title": the YouTube title with
+  the numbers ("$5,000 and a pair of scissors became a $1.2 billion company"). "question": the first frame's words,
+  at most 5 ("$5,000 to $1.2 billion"). "description": 2-3 sentences. "hashtags": 2-3 without #. "pillar": one of
+  {", ".join(PILLARS)}.
+Rules: explain, never advise (no "buy", "invest", "you should"); brands are plain words, never logos; a different
+company, trade and decade from one story to the next.
+
+The example (a finished script):
+{_example(WORLD_EXAMPLE)}"""
+
+
 def rules() -> str:
     return f"""Price Tag Why is a YouTube Shorts channel: whiteboard-animated answers to the money questions everyone
 wonders about, for curious adults (18-45, US/UK/CA/AU) who are not finance experts. Promise: "In under a minute,
@@ -538,10 +679,15 @@ def write_prompt(session: dict[str, Any]) -> str:
     qs = "\n".join(f"{k}. {t['question']}" + (f" (pillar: {t['pillar']})" if t.get("pillar") else "")
                    for k, t in enumerate(session["topics"], 1))
     many = len(session["topics"]) > 1
-    story = session_format(session) == "story"
-    what = ("one money story for each of these ideas" if many else "the money story for this idea") if story else \
-           ("one script for each of these questions" if many else "the script for this question")
-    return (f"{story_rules() if story else rules()}\n\nWrite {what}:\n{qs}\n\n"
+    fmt = session_format(session)
+    if fmt == "world":
+        what = "one true story for each of these ideas" if many else "the true story for this idea"
+    elif fmt == "story":
+        what = "one money story for each of these ideas" if many else "the money story for this idea"
+    else:
+        what = "one script for each of these questions" if many else "the script for this question"
+    text = {"world": world_rules, "story": story_rules}.get(fmt, rules)()
+    return (f"{text}\n\nWrite {what}:\n{qs}\n\n"
             f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per idea, in this order' if many else 'one object'}.")
 
 
@@ -643,12 +789,34 @@ Answer with JSON only, no other text:
 The pillar is one of: {pillars}, written exactly so."""
 
 
+WORLD_TOPICS_PROMPT = """I run "Price Tag Why", a YouTube Shorts channel of TRUE money stories (55-75 seconds) told in a
+colourful cartoon world: a real founder or company that started tiny and ended huge, a famous money mistake, a
+rise and fall, a genius money move, how much a company makes from one thing. Real people, real numbers, real years.
+
+Give me {count} new story ideas. Each one is a short line with the start and the end in numbers and the strange
+detail, ending with "?" ("How did $5,000 and a pair of scissors become a $1.2 billion company (Spanx)?"). Each must:
+- be true and checkable in at least two solid sources (news, interviews, the company; not Wikipedia)
+- have a number that grows a lot (or crashes a lot), and a moment where it almost failed
+- be about a brand or thing people know or use (food, drinks, toys, clothes, apps, shops, games), mostly from the
+  US, UK or worldwide; at most 1 in 4 from money history before 1950
+- avoid investing or crypto tips, politics, elections and wars
+
+Don't repeat or rephrase any of these, already made or planned:
+{taken}
+
+Answer with JSON only, no other text:
+{{"topics": [{{"question": "How did a $500 loan become the Crocs empire?", "pillar": "business tricks", "format": "world"}}]}}
+The pillar is one of: {pillars}, written exactly so."""
+
+
 def llm_prompt(count: int = 20, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None, format: str = "why") -> str:
     """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM"); `found`: the list
     to avoid (the Linux hub's, on the sending machine); format "story" asks for money-story ideas."""
     taken = "\n".join(t["question"] for t in (topics(out_dir) if found is None else found)) or "(none yet)"
     if format == "story":
         return STORY_TOPICS_PROMPT.format(count=count, pillars=", ".join(PILLARS), taken=taken)
+    if format == "world":
+        return WORLD_TOPICS_PROMPT.format(count=count, pillars=", ".join(PILLARS), taken=taken)
     return TOPICS_PROMPT.format(count=count, pillars="\n".join(f"- {p}" for p in PILLARS), taken=taken)
 
 
@@ -699,8 +867,8 @@ def _save(session: dict[str, Any], out_dir: Path | None = None) -> dict[str, Any
 
 
 def of_format(found: list[dict[str, Any]], format: str) -> list[dict[str, Any]]:
-    """The topics written in this format: story ideas, or the "why" questions."""
-    return [t for t in found if (t.get("format") == "story") == (format == "story")]
+    """The topics written in this format: story ideas, true (world) stories, or the "why" questions."""
+    return [t for t in found if (t.get("format") or "why") == (format if format in FORMATS else "why")]
 
 
 def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Path | None = None,
@@ -719,7 +887,8 @@ def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Pa
         picked = next_topics(max(1, min(14, count)), out_dir, found)
     if not picked:
         raise WriteError("No topics left: add questions in the Topics tab" if format == "why" else
-                         "No story ideas left: add some in the Topics tab (New topics from your own LLM, Stories)")
+                         "No story ideas left: add some in the Topics tab (New topics from your own LLM, Stories)" if format == "story" else
+                         "No true-story ideas left: add some in the Topics tab (New topics from your own LLM, True stories)")
     session = {"kind": kind, "format": format, "topics": picked, "step": "write", "drafts": [], "problems": {}, "flagged": {},
                "started": datetime.now().isoformat(timespec="minutes")}
     return _save(session, out_dir)
@@ -762,9 +931,9 @@ def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     parsed = llm_json.parse(stripped, Answer, WriteError)
     drafts = merge(session, parsed.scripts)
     session["drafts"] = drafts
-    if session_format(session) == "story":
+    if session_format(session) in ("story", "world"):
         for d in drafts:
-            d["format"] = "story"
+            d["format"] = session_format(session)
     session["problems"] = {str(k): problems_of(d) for k, d in enumerate(drafts, 1)}
     if len(drafts) != len(session["topics"]):
         session["problems"]["0"] = [f"{len(drafts)} scripts for {len(session['topics'])} questions"]
@@ -917,7 +1086,8 @@ def view(kind: str, out_dir: Path | None = None, found: list[dict[str, Any]] | N
         all_ = topics(out_dir) if found is None else found
         n = 1 if kind == "one" else DEFAULT_COUNT
         return {"kind": kind, "step": "none", "topics": next_topics(n, out_dir, of_format(all_, "why")),
-                "stories": next_topics(n, out_dir, of_format(all_, "story")), "formats": list(FORMATS)}
+                "stories": next_topics(n, out_dir, of_format(all_, "story")),
+                "worlds": next_topics(n, out_dir, of_format(all_, "world")), "formats": list(FORMATS)}
     prompt = {"write": write_prompt, "fix": fix_prompt, "facts": facts_prompt}.get(session["step"])
     return {"kind": kind, "format": session_format(session), "step": session["step"], "topics": session["topics"], "prompt": prompt(session) if prompt else "",
             "drafts": [{"title": d.get("title", ""), "words": pw_channel.words(pw_channel.narration(d)),

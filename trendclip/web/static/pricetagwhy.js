@@ -204,7 +204,7 @@
     els.topics.innerHTML = rows.length ? rows.map((t, i) => `<div class="pw-slot pw-topic${i === 0 && !t.used ? " next" : ""}">
         <span class="pw-n">${t.used ? "" : i + 1}</span>
         ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
-        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 50-75 s">📖 story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
+        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 50-75 s">📖 story</span>' : t.format === "world" ? '<span class="pill good" title="A true story in the colour world: 55-75 s">🌆 true story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
         ${t.used ? "" : `${i && !linux ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
           <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
           ${linux ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}`}
@@ -239,22 +239,24 @@
     card.querySelector('[data-l="copy"]').click();  // fills the prompt in (and copies it)
   }
 
-  const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s" };
-  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why, or a money story: 50-75 s, a cast of drawn people, one move each with its math, the bars, which one are you?">
-      <option value="why"${state.format[kind] === "story" ? "" : " selected"}>❓ why (35 s)</option><option value="story"${state.format[kind] === "story" ? " selected" : ""}>📖 story (50-75 s)</option></select>`;
+  const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
+  const FORMAT_OPTIONS = [["why", "❓ why (35 s)"], ["story", "📖 story (50-75 s)"], ["world", "🌆 true story (55-75 s)"]];
+  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why; a money story (a cast, one move each with its math, the bars); or a true story in the colour world (a real founder or company, from tiny to huge)">
+      ${FORMAT_OPTIONS.map(([v, label]) => `<option value="${v}"${(state.format[kind] || "why") === v ? " selected" : ""}>${label}</option>`).join("")}</select>`;
   const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
 
   function renderWrite(kind, v) {
     const box = els.write[kind];
     const topicList = topicItems(v.topics);
     if (v.step === "none") {
-      const story = state.format[kind] === "story";
-      const next = story ? v.stories || [] : v.topics || [];
+      const fmt = state.format[kind] || "why";
+      const story = fmt !== "why";
+      const next = fmt === "world" ? v.worlds || [] : story ? v.stories || [] : v.topics || [];
       const list = topicItems(next);
       box.innerHTML = kind === "one"
         ? `<div class="pw-add">${formatPick(kind)}<input type="text" id="pwOneQuestion" placeholder="${story ? "A story idea" : "A question"}, or leave empty for the next one: ${esc((next[0] || {}).question || "none left")}" maxlength="160">
            <button type="button" class="btn-primary" data-write-start="one">Start</button></div>
-           ${!next.length && story ? `<div class="da-note">No story ideas yet: get some in the Topics tab (New topics from your own LLM → 📖 money stories), or type one above.</div>` : ""}`
+           ${!next.length && story ? `<div class="da-note">No ${fmt === "world" ? "true-story" : "story"} ideas yet: get some in the Topics tab (New topics from your own LLM → ${fmt === "world" ? "🌆 true stories" : "📖 money stories"}), or type one above.</div>` : ""}`
         : `<div class="pw-add">${formatPick(kind)}<label class="hint">Scripts <input type="number" id="pwWeekCount" min="1" max="14" value="7" style="width:70px"></label>
            <button type="button" class="btn-primary" data-write-start="week">Start</button></div>
            ${list ? `<span class="hint">The next ${story ? "story ideas" : "topics, pillars in turn"}:</span><ol>${list}</ol>` : noTopics()}`;

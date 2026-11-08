@@ -690,7 +690,7 @@ def test_a_story_session_writes_from_story_ideas_with_the_story_rules(tmp_path):
     pw_write.add_topic("Same $300, three cousins with a lemonade stand: how did one make $900 and one $90,000?",
                        "business tricks", tmp_path, "story")
     fresh = pw_write.view("one", tmp_path)
-    assert fresh["formats"] == ["why", "story"] and fresh["stories"][0]["question"].startswith("Same $300")
+    assert fresh["formats"] == ["why", "story", "world"] and fresh["stories"][0]["question"].startswith("Same $300")
     assert fresh["topics"][0]["question"].startswith("Why")  # the why questions stay apart
     view = pw_write.start("one", out_dir=tmp_path, format="story")
     assert view["format"] == "story" and "money story" in view["prompt"] and "\"math\": a product" in view["prompt"]
@@ -906,3 +906,30 @@ def test_a_world_story_passes_the_rules_and_draws_its_hook_on_the_first_frame(mo
     for i, scene in enumerate(spec.scenes):
         assert r.frame((scene.start + scene.end) / 2).mode == "RGB"
     assert any(name == "stamp" for _, name, _ in spec.sfx_extra) and any(name == "cash" for _, name, _ in spec.sfx_extra)
+
+
+def test_true_world_stories_have_their_own_prompts_topics_and_rules(tmp_path):
+    """The third format (2026-11-08): the owner's LLM writes true stories for the world look from its own prompt,
+    their ideas are kept apart, and a script that names what can't be drawn or cued is sent back."""
+    import json
+
+    from modules import pw_write
+
+    example = json.loads(pw_write.WORLD_EXAMPLE.read_text())
+    assert pw_write.problems_of(example) == []
+    assert '"format": "world"' in pw_write.world_rules() and "BUT THEN" in pw_write.world_rules()
+    assert "TRUE money stories" in pw_write.llm_prompt(5, tmp_path, [], "world")
+    pw_write.add_topic("How did $5,000 become Spanx?", "business tricks", tmp_path, "world")
+    pw_write.add_topic("Why is popcorn so expensive at the movies?", "everyday prices", tmp_path)
+    assert [t["question"] for t in pw_write.of_format(pw_write.topics(tmp_path), "world")] == ["How did $5,000 become Spanx?"]
+    assert all(t.get("format") != "world" for t in pw_write.of_format(pw_write.topics(tmp_path), "why"))
+    session = pw_write.start("one", "", out_dir=tmp_path, format="world")
+    assert session["format"] == "world" and "true story for this idea" in session["prompt"]
+    bad = json.loads(json.dumps(example))
+    bad["scenes"][1]["prop"]["draw"] = "rocket"
+    bad["scenes"][1]["tags"][0]["cue"] = "banana"
+    bad["scenes"][0]["head"][-1].pop("from")
+    found = " | ".join(pw_write.problems_of(bad))
+    assert "prop.draw" in found and "'banana'" in found and "races up" in found
+    done = pw_write.answer("one", json.dumps({"scripts": [{k: v for k, v in example.items() if k != "format"}]}), tmp_path)
+    assert done["step"] == "facts" and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "world"
