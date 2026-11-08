@@ -4,28 +4,110 @@
   "format": "world",
   "description": "Sara Blakely sold fax machines door to door, cut the feet off her pantyhose, and put her $5,000 savings into one idea. Every mill said no, Oprah said yes, and in 2021 Blackstone valued Spanx at $1.2 billion. The true story, in a minute.",
   "pillar": "company stories",
-  "hashtags": ["moneystory", "business", "spanx"],
+  "hashtags": [
+    "moneystory",
+    "business",
+    "spanx"
+  ],
   "comment": "Would you bet all your savings on one idea? 👇",
   "sources": [
-    {"title": "Forbes: How Sara Blakely of Spanx turned $5,000 into $1 billion (2012)", "url": "https://www.forbes.com/global/2012/0326/billionaires-12-feature-united-states-spanx-sara-blakely-american-booty.html"},
-    {"title": "Fortune: Sara Blakely's billion-dollar idea, $5,000 savings and Oprah (2024)", "url": "https://fortune.com/2024/02/27/sara-blakely-spanx-billion-dollar-idea-oprah-5000-savings-billionaire/"},
-    {"title": "Inc.: How Sara Blakely started Spanx", "url": "http://www.inc.com/sara-blakely/how-sara-blakley-started-spanx.html"},
-    {"title": "ABC News: How to build a billion-dollar business (2012)", "url": "https://abcnews.go.com/Business/build-billion-dollar-business-spanx-inventor-sara-blakely/story?id=17831265"},
-    {"title": "Reuters: Blackstone buys majority stake in Spanx (2021)", "url": "https://www.reuters.com/business/blackstone-buys-majority-stake-shapewear-maker-spanx-2021-10-20/"},
-    {"title": "CNBC: Blackstone deal values Spanx at $1.2 billion (2021)", "url": "https://www.cnbc.com/2021/10/20/blackstone-buys-majority-stake-in-shapewear-maker-spanx-valuing-it-at-1point2-billion.html"},
-    {"title": "NBC News: Spanx founder gifts employees plane tickets and $10,000 (2021)", "url": "https://www.nbcnews.com/news/us-news/spanx-founder-sara-blakely-gifts-employees-plane-tickets-10-000-n1282400"},
-    {"title": "Forbes: Sara Blakely on hustling her way to a billion-dollar business (2014)", "url": "https://www.forbes.com/sites/clareoconnor/2014/10/21/spanx-inventor-sara-blakely-on-hustling-her-way-to-a-billion-dollar-business/"}
+    {
+      "title": "Forbes: How Sara Blakely of Spanx turned $5,000 into $1 billion (2012)",
+      "url": "https://www.forbes.com/global/2012/0326/billionaires-12-feature-united-states-spanx-sara-blakely-american-booty.html"
+    },
+    {
+      "title": "Fortune: Sara Blakely's billion-dollar idea, $5,000 savings and Oprah (2024)",
+      "url": "https://fortune.com/2024/02/27/sara-blakely-spanx-billion-dollar-idea-oprah-5000-savings-billionaire/"
+    },
+    {
+      "title": "Inc.: How Sara Blakely started Spanx",
+      "url": "http://www.inc.com/sara-blakely/how-sara-blakley-started-spanx.html"
+    },
+    {
+      "title": "ABC News: How to build a billion-dollar business (2012)",
+      "url": "https://abcnews.go.com/Business/build-billion-dollar-business-spanx-inventor-sara-blakely/story?id=17831265"
+    },
+    {
+      "title": "Reuters: Blackstone buys majority stake in Spanx (2021)",
+      "url": "https://www.reuters.com/business/blackstone-buys-majority-stake-shapewear-maker-spanx-2021-10-20/"
+    },
+    {
+      "title": "CNBC: Blackstone deal values Spanx at $1.2 billion (2021)",
+      "url": "https://www.cnbc.com/2021/10/20/blackstone-buys-majority-stake-in-shapewear-maker-spanx-valuing-it-at-1point2-billion.html"
+    },
+    {
+      "title": "NBC News: Spanx founder gifts employees plane tickets and $10,000 (2021)",
+      "url": "https://www.nbcnews.com/news/us-news/spanx-founder-sara-blakely-gifts-employees-plane-tickets-10-000-n1282400"
+    },
+    {
+      "title": "Forbes: Sara Blakely on hustling her way to a billion-dollar business (2014)",
+      "url": "https://www.forbes.com/sites/clareoconnor/2014/10/21/spanx-inventor-sara-blakely-on-hustling-her-way-to-a-billion-dollar-business/"
+    }
   ],
   "claims": [
-    {"claim": "She sold fax machines door to door before Spanx", "sources": [1, 3]},
-    {"claim": "She put $5,000 of savings into the idea and took no investors", "sources": [1, 2]},
-    {"claim": "Every North Carolina mill said no; one called back about two weeks later", "sources": [1, 4]},
-    {"claim": "She changed into it in a ladies' room in front of a Neiman Marcus buyer; seven stores took it", "sources": [3, 4]},
-    {"claim": "Oprah named Spanx one of her Favorite Things in November 2000", "sources": [1, 2]},
-    {"claim": "$4 million in sales the first year, $10 million the second", "sources": [1, 8]},
-    {"claim": "Forbes 2012: the world's youngest self-made female billionaire", "sources": [1, 8]},
-    {"claim": "Blackstone bought a majority stake in 2021, valuing Spanx at $1.2 billion", "sources": [5, 6]},
-    {"claim": "Every employee got $10,000 and two first-class plane tickets", "sources": [6, 7]}
+    {
+      "claim": "She sold fax machines door to door before Spanx",
+      "sources": [
+        1,
+        3
+      ]
+    },
+    {
+      "claim": "She put $5,000 of savings into the idea and took no investors",
+      "sources": [
+        1,
+        2
+      ]
+    },
+    {
+      "claim": "Every North Carolina mill said no; one called back about two weeks later",
+      "sources": [
+        1,
+        4
+      ]
+    },
+    {
+      "claim": "She changed into it in a ladies' room in front of a Neiman Marcus buyer; seven stores took it",
+      "sources": [
+        3,
+        4
+      ]
+    },
+    {
+      "claim": "Oprah named Spanx one of her Favorite Things in November 2000",
+      "sources": [
+        1,
+        2
+      ]
+    },
+    {
+      "claim": "$4 million in sales the first year, $10 million the second",
+      "sources": [
+        1,
+        8
+      ]
+    },
+    {
+      "claim": "Forbes 2012: the world's youngest self-made female billionaire",
+      "sources": [
+        1,
+        8
+      ]
+    },
+    {
+      "claim": "Blackstone bought a majority stake in 2021, valuing Spanx at $1.2 billion",
+      "sources": [
+        5,
+        6
+      ]
+    },
+    {
+      "claim": "Every employee got $10,000 and two first-class plane tickets",
+      "sources": [
+        6,
+        7
+      ]
+    }
   ],
   "scenes": [
     {
@@ -33,13 +115,51 @@
       "narration": "Five thousand dollars in savings and one pair of scissors. That's how Sara Blakely built a 1.2 billion dollar company.",
       "sky": "sunset",
       "head": [
-        {"text": "$5,000 IN SAVINGS", "size": 86},
-        {"text": "+ ONE PAIR OF SCISSORS", "size": 58},
-        {"arrow": true},
-        {"text": "$1.2 BILLION", "size": 150, "color": "gold"}
+        {
+          "text": "$5,000 IN SAVINGS",
+          "size": 86
+        },
+        {
+          "text": "+ ONE PAIR OF SCISSORS",
+          "size": 58
+        },
+        {
+          "arrow": true
+        },
+        {
+          "text": "$1.2 BILLION",
+          "size": 150,
+          "color": "gold",
+          "from": "$5,000",
+          "cue": "billion"
+        }
       ],
-      "people": [{"name": "SARA", "look": "sara", "x": 0.3, "expr": "grin", "pose": "hip"}],
-      "prop": {"draw": "scissors", "x": 0.72}
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.3,
+          "expr": "smile",
+          "pose": "point",
+          "moods": [
+            {
+              "cue": "sara",
+              "expr": "smug",
+              "pose": "hip"
+            },
+            {
+              "cue": "billion",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
+        }
+      ],
+      "prop": {
+        "draw": "scissors",
+        "x": 0.72
+      },
+      "rain": "cash"
     },
     {
       "kind": "world",
@@ -47,109 +167,432 @@
       "sky": "day",
       "year": "1998",
       "place": "ATLANTA",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.3, "expr": "smile", "pose": "hang",
-                  "moods": [{"cue": "sells", "expr": "smile", "pose": "point"}, {"cue": "close", "expr": "sad", "pose": "hang"}]}],
-      "prop": {"draw": "door", "x": 0.72, "cue": "door"},
-      "tags": [{"text": "AGE 27", "cue": "27"}, {"text": "SELLS FAX MACHINES", "cue": "fax", "style": "light"}],
-      "stamps": [{"text": "NO", "cue": "close"}, {"text": "NO", "cue": "her"}, {"text": "NO", "cue": "face"}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.3,
+          "expr": "smile",
+          "pose": "hang",
+          "moods": [
+            {
+              "cue": "sells",
+              "expr": "smile",
+              "pose": "point"
+            },
+            {
+              "cue": "close",
+              "expr": "sad",
+              "pose": "hang"
+            }
+          ]
+        }
+      ],
+      "prop": {
+        "draw": "door",
+        "x": 0.72,
+        "cue": "door"
+      },
+      "tags": [
+        {
+          "text": "AGE 27",
+          "cue": "27"
+        },
+        {
+          "text": "SELLS FAX MACHINES",
+          "cue": "fax",
+          "style": "light"
+        }
+      ],
+      "stamps": [
+        {
+          "text": "NO",
+          "cue": "close"
+        },
+        {
+          "text": "NO",
+          "cue": "her"
+        },
+        {
+          "text": "NO",
+          "cue": "face"
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "One night, she cuts the feet off her pantyhose to wear under white pants. That's the whole idea.",
       "sky": "night",
       "year": "1998",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.3, "expr": "think", "pose": "chin",
-                  "moods": [{"cue": "idea", "expr": "grin", "pose": "up"}]}],
-      "prop": {"draw": "scissors", "x": 0.72, "cue": "cuts"},
-      "tags": [{"text": "THE IDEA", "cue": "idea", "style": "gold", "size": 64}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.3,
+          "expr": "think",
+          "pose": "chin",
+          "moods": [
+            {
+              "cue": "idea",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
+        }
+      ],
+      "prop": {
+        "draw": "scissors",
+        "x": 0.72,
+        "cue": "cuts"
+      },
+      "tags": [
+        {
+          "text": "THE IDEA",
+          "cue": "idea",
+          "style": "gold",
+          "size": 64
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "She puts in all her savings, five thousand dollars. No investors. No business degree.",
       "sky": "day",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.3, "expr": "smile", "pose": "point"}],
-      "prop": {"draw": "cash", "x": 0.72, "cue": "savings"},
-      "big": {"text": "$5,000", "cue": "five", "color": "green"},
-      "tags": [{"text": "NO INVESTORS", "cue": "investors", "style": "red"}, {"text": "NO BUSINESS DEGREE", "cue": "degree", "style": "light"}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.3,
+          "expr": "smile",
+          "pose": "point"
+        }
+      ],
+      "prop": {
+        "draw": "cash",
+        "x": 0.72,
+        "cue": "savings"
+      },
+      "big": {
+        "text": "$5,000",
+        "cue": "five",
+        "color": "green"
+      },
+      "tags": [
+        {
+          "text": "NO INVESTORS",
+          "cue": "investors",
+          "style": "red"
+        },
+        {
+          "text": "NO BUSINESS DEGREE",
+          "cue": "degree",
+          "style": "light"
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "She drives to the hosiery mills in North Carolina. Every mill says no. Two weeks later, one mill owner calls back. Yes.",
       "sky": "dawn",
       "place": "NORTH CAROLINA",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.24, "expr": "smile", "pose": "hang",
-                  "moods": [{"cue": "no", "expr": "sad", "pose": "hang"}, {"cue": "yes", "expr": "grin", "pose": "up"}]},
-                 {"name": "MILL OWNER", "look": "old", "x": 0.78, "cue": "owner", "expr": "smile", "pose": "point"}],
-      "prop": {"draw": "factory", "x": 0.55, "cue": "mills", "label": "MILL", "scale": 0.8},
-      "stamps": [{"text": "NO", "cue": "every"}, {"text": "NO", "cue": "says"}, {"text": "NO", "cue": "no"}],
-      "tags": [{"text": "2 WEEKS LATER", "cue": "weeks", "style": "light"}, {"text": "YES!", "cue": "yes", "style": "green", "size": 72}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.24,
+          "expr": "smile",
+          "pose": "hang",
+          "moods": [
+            {
+              "cue": "no",
+              "expr": "sad",
+              "pose": "hang"
+            },
+            {
+              "cue": "yes",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
+        },
+        {
+          "name": "MILL OWNER",
+          "look": "old",
+          "x": 0.78,
+          "cue": "owner",
+          "expr": "smile",
+          "pose": "point"
+        }
+      ],
+      "prop": {
+        "draw": "factory",
+        "x": 0.55,
+        "cue": "mills",
+        "label": "MILL",
+        "scale": 0.8
+      },
+      "stamps": [
+        {
+          "text": "NO",
+          "cue": "every"
+        },
+        {
+          "text": "NO",
+          "cue": "says"
+        },
+        {
+          "text": "NO",
+          "cue": "no"
+        }
+      ],
+      "tags": [
+        {
+          "text": "2 WEEKS LATER",
+          "cue": "weeks",
+          "style": "light"
+        },
+        {
+          "text": "YES!",
+          "cue": "yes",
+          "style": "green",
+          "size": 72
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "She changes into it in a ladies' room, right in front of a Neiman Marcus buyer. Seven stores take it.",
       "sky": "day",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.28, "expr": "grin", "pose": "hip"},
-                 {"name": "BUYER", "look": "woman", "x": 0.74, "cue": "buyer", "expr": "shocked", "pose": "hang",
-                  "moods": [{"cue": "seven", "expr": "smile", "pose": "thumb"}]}],
-      "grid": {"n": 7, "draw": "store", "cue": "seven"},
-      "tags": [{"text": "7 STORES", "cue": "stores", "style": "light"}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.28,
+          "expr": "grin",
+          "pose": "hip"
+        },
+        {
+          "name": "BUYER",
+          "look": "woman",
+          "x": 0.74,
+          "cue": "buyer",
+          "expr": "shocked",
+          "pose": "hang",
+          "moods": [
+            {
+              "cue": "seven",
+              "expr": "smile",
+              "pose": "thumb"
+            }
+          ]
+        }
+      ],
+      "grid": {
+        "n": 7,
+        "draw": "store",
+        "cue": "seven"
+      },
+      "tags": [
+        {
+          "text": "7 STORES",
+          "cue": "stores",
+          "style": "light"
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "Then, November 2000. Oprah names Spanx one of her Favorite Things.",
       "sky": "night",
       "year": "2000",
-      "head": [{"text": "BUT THEN...", "size": 120, "cue": "then"}],
-      "people": [{"name": "SARA", "look": "sara", "x": 0.28, "expr": "shocked", "pose": "hang",
-                  "moods": [{"cue": "favorite", "expr": "grin", "pose": "up"}]}],
-      "prop": {"draw": "tv", "x": 0.72, "cue": "oprah", "label": "FAVORITE THINGS"}
+      "head": [
+        {
+          "text": "BUT THEN...",
+          "size": 120,
+          "cue": "then"
+        }
+      ],
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.28,
+          "expr": "shocked",
+          "pose": "hang",
+          "moods": [
+            {
+              "cue": "favorite",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
+        }
+      ],
+      "prop": {
+        "draw": "tv",
+        "x": 0.72,
+        "cue": "oprah",
+        "label": "FAVORITE THINGS"
+      }
     },
     {
       "kind": "world",
       "narration": "First year: four million dollars in sales. Second year: ten million.",
       "sky": "day",
-      "bars": [{"label": "YEAR 1 SALES", "value": 4, "text": "$4 MILLION", "cue": "first", "color": "gold"},
-               {"label": "YEAR 2 SALES", "value": 10, "text": "$10 MILLION", "cue": "second", "color": "green"}],
-      "people": [{"name": "SARA", "look": "sara", "x": 0.5, "expr": "grin", "pose": "hip"}]
+      "bars": [
+        {
+          "label": "YEAR 1 SALES",
+          "value": 4,
+          "text": "$4 MILLION",
+          "cue": "first",
+          "color": "gold"
+        },
+        {
+          "label": "YEAR 2 SALES",
+          "value": 10,
+          "text": "$10 MILLION",
+          "cue": "second",
+          "color": "green"
+        }
+      ],
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.5,
+          "expr": "grin",
+          "pose": "hip"
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "2012. Forbes calls her the youngest self-made woman billionaire in the world.",
       "sky": "sunset",
       "year": "2012",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.3, "expr": "grin", "pose": "up"}],
-      "prop": {"draw": "magazine", "x": 0.72, "cue": "forbes", "label": "YOUNGEST SELF-MADE BILLIONAIRE"}
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.3,
+          "expr": "grin",
+          "pose": "up"
+        }
+      ],
+      "prop": {
+        "draw": "magazine",
+        "x": 0.72,
+        "cue": "forbes",
+        "label": "YOUNGEST SELF-MADE BILLIONAIRE"
+      }
     },
     {
       "kind": "world",
       "narration": "2021. Blackstone buys most of Spanx, valuing it at 1.2 billion dollars.",
       "sky": "day",
       "year": "2021",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.26, "expr": "smile", "pose": "hang",
-                  "moods": [{"cue": "billion", "expr": "grin", "pose": "up"}]},
-                 {"name": "BLACKSTONE", "look": "suit", "x": 0.76, "cue": "blackstone", "expr": "smug", "pose": "point"}],
-      "big": {"text": "$1.2 BILLION", "cue": "valuing", "color": "gold"}
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.26,
+          "expr": "smile",
+          "pose": "hang",
+          "moods": [
+            {
+              "cue": "billion",
+              "expr": "grin",
+              "pose": "up"
+            }
+          ]
+        },
+        {
+          "name": "BLACKSTONE",
+          "look": "suit",
+          "x": 0.76,
+          "cue": "blackstone",
+          "expr": "smug",
+          "pose": "point"
+        }
+      ],
+      "big": {
+        "text": "$1.2 BILLION",
+        "cue": "valuing",
+        "color": "gold"
+      },
+      "rain": "cash"
     },
     {
       "kind": "world",
       "narration": "Her thank you? Every employee gets ten thousand dollars and two first-class plane tickets.",
       "sky": "sunset",
       "year": "2021",
-      "people": [{"name": "SARA", "look": "sara", "x": 0.26, "expr": "grin", "pose": "hip"}],
-      "prop": {"draw": "plane", "x": 0.7, "cue": "plane", "lift": 330},
-      "tags": [{"text": "$10,000 EACH", "cue": "ten", "style": "green", "size": 64}, {"text": "+ 2 FIRST-CLASS TICKETS", "cue": "tickets", "style": "light"}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.26,
+          "expr": "grin",
+          "pose": "hip"
+        }
+      ],
+      "prop": {
+        "draw": "plane",
+        "x": 0.7,
+        "cue": "plane",
+        "lift": 330
+      },
+      "tags": [
+        {
+          "text": "$10,000 EACH",
+          "cue": "ten",
+          "style": "green",
+          "size": 64
+        },
+        {
+          "text": "+ 2 FIRST-CLASS TICKETS",
+          "cue": "tickets",
+          "style": "light"
+        }
+      ]
     },
     {
       "kind": "world",
       "narration": "Five thousand dollars to 1.2 billion. Would you bet all your savings on one idea?",
       "sky": "night",
       "head": [
-        {"text": "$5,000", "size": 110, "color": "gold"},
-        {"arrow": true},
-        {"text": "$1.2 BILLION", "size": 140, "color": "gold", "cue": "billion"}
+        {
+          "text": "$5,000",
+          "size": 110,
+          "color": "gold"
+        },
+        {
+          "arrow": true
+        },
+        {
+          "text": "$1.2 BILLION",
+          "size": 140,
+          "color": "gold",
+          "cue": "billion"
+        }
       ],
-      "people": [{"name": "SARA", "look": "sara", "x": 0.5, "expr": "think", "pose": "chin"}],
-      "tags": [{"text": "WOULD YOU BET IT ALL?", "cue": "would", "style": "light", "size": 56}]
+      "people": [
+        {
+          "name": "SARA",
+          "look": "sara",
+          "x": 0.5,
+          "expr": "think",
+          "pose": "chin"
+        }
+      ],
+      "tags": [
+        {
+          "text": "WOULD YOU BET IT ALL?",
+          "cue": "would",
+          "style": "light",
+          "size": 56
+        }
+      ]
     }
   ]
 }

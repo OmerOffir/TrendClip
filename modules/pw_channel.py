@@ -785,8 +785,9 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         if is_world(script):
             from modules import pw_world
 
-            pw_world.still(spec, 0.0).save(work / "thumb.jpg", quality=92)
-            info["thumb_at"] = 0.0
+            at = pw_world.thumb_time(spec)
+            pw_world.still(spec, at).save(work / "thumb.jpg", quality=92)
+            info["thumb_at"] = round(at, 2)
         else:
             pw_thumb.make(script, work / "thumb.jpg", thumb_style(script))
         info["thumbnail"] = "thumb.jpg"

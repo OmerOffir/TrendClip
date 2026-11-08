@@ -143,6 +143,60 @@ def number_parts(text: str) -> tuple[str, float, str, int] | None:
     return m.group(1), float(digits), m.group(3), decimals
 
 
+SCALES = {"THOUSAND": 1e3, "K": 1e3, "MILLION": 1e6, "M": 1e6, "BILLION": 1e9, "B": 1e9, "TRILLION": 1e12, "T": 1e12}
+
+
+def amount(text: str) -> float | None:
+    """'$1.2 BILLION' -> 1.2e9, '$5,000' -> 5000.0 (None when it isn't a figure)."""
+    parts = number_parts(text.strip())
+    if parts is None:
+        return None
+    word = parts[2].strip().upper().split(" ")[0] if parts[2].strip() else ""
+    return parts[1] * SCALES.get(word, 1.0)
+
+
+def racing(frm: str, to: str, u: float) -> str:
+    """A figure racing from `frm` to `to` (every digit spinning, faster and faster), e.g. $5,000 -> $1,200,000,000."""
+    a, b = amount(frm) or 1.0, amount(to) or 1.0
+    u = min(1.0, max(0.0, u))
+    v = a * (b / a) ** (u ** 1.5) if a > 0 and b > 0 else a + (b - a) * u
+    pre = number_parts(frm)[0] if number_parts(frm) else ""
+    return f"{pre}{int(v):,}"
+
+
+BILL, COIN = (112, 56), 46
+
+
+@lru_cache(maxsize=64)
+def falling(kind: str, angle: int) -> Image.Image:
+    """A banknote or a coin for the money rain, turned by `angle` degrees."""
+    if kind == "bill":
+        w, h = BILL
+        img = Image.new("RGBA", ((w + 8) * SS, (h + 8) * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle([4 * SS, 4 * SS, (w + 4) * SS, (h + 4) * SS], radius=8 * SS, fill=(120, 204, 140), outline=INK, width=4 * SS)
+        d.ellipse([(w / 2 - 12) * SS, (h / 2 - 12) * SS, (w / 2 + 20) * SS, (h / 2 + 20) * SS], fill=(90, 170, 110), outline=INK, width=3 * SS)
+    else:
+        img = Image.new("RGBA", ((COIN + 8) * SS, (COIN + 8) * SS), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        d.ellipse([4 * SS, 4 * SS, (COIN + 4) * SS, (COIN + 4) * SS], fill=GOLD, outline=INK, width=4 * SS)
+        d.ellipse([14 * SS, 14 * SS, (COIN - 6) * SS, (COIN - 6) * SS], outline=(214, 150, 30), width=3 * SS)
+    return shrink(img).rotate(angle, resample=Image.BICUBIC, expand=True)
+
+
+def rain(img: Image.Image, t: float, seed: int, n: int = 26) -> None:
+    """Banknotes and coins falling and turning over the whole frame (a scene's rain: cash), already falling at t=0."""
+    rng = np.random.default_rng(seed)
+    for k in range(n):
+        x0, y0 = rng.uniform(-40, W + 40), rng.uniform(-200, H)
+        speed, spin, sway = rng.uniform(260, 520), rng.uniform(-160, 160), rng.uniform(20, 60)
+        kind = "bill" if k % 3 else "coin"
+        y = (y0 + speed * t) % (H + 260) - 160
+        x = x0 + sway * math.sin(t * 2.4 + k)
+        angle = int((rng.uniform(0, 360) + spin * t) // 15 * 15) % 360
+        put(img, falling(kind, angle), (x, y))
+
+
 def counted(text: str, u: float) -> str:
     parts = number_parts(text)
     if parts is None or u >= 1:
@@ -390,12 +444,22 @@ def prop(name: str, label: str = "") -> Image.Image:
         for y in (70, 230):
             d.rounded_rectangle(B(134, y, 266, y + 130), radius=6 * s, outline=(130, 72, 40), width=4 * s)
         d.ellipse(B(254, 214, 278, 238), fill=GOLD, outline=INK, width=3 * s)
-    elif name == "scissors":
-        d.polygon([(200 * s, 210 * s), (330 * s, 40 * s), (348 * s, 52 * s), (222 * s, 222 * s)], fill=(206, 214, 226), outline=INK, width=lw)
-        d.polygon([(200 * s, 210 * s), (70 * s, 40 * s), (52 * s, 52 * s), (178 * s, 222 * s)], fill=(226, 232, 240), outline=INK, width=lw)
-        for cx in (130, 270):
-            d.ellipse(B(cx - 62, 230, cx + 62, 354), fill=RED, outline=INK, width=lw)
-            d.ellipse(B(cx - 32, 262, cx + 32, 322), fill=(0, 0, 0, 0), outline=INK, width=lw)
+    elif name.startswith("scissors"):
+        shut = int(name[8:] or 0) / 4  # scissors0..4: open .. closed (the snip)
+        for side, blade in ((1, (226, 232, 240)), (-1, (206, 214, 226))):
+            a = math.radians(side * 26 * shut)  # each piece turns about the pivot: its blade in, its handle out
+
+            def R(x, y, a=a):
+                dx, dy = x - 200, y - 210
+                return ((200 + dx * math.cos(a) - dy * math.sin(a)) * s, (210 + dx * math.sin(a) + dy * math.cos(a)) * s)
+
+            tip = 330 if side == -1 else 70
+            d.polygon([R(200, 210), R(tip, 40), R(tip + 18 * (1 if side == -1 else -1), 52), R(200 + 22 * (1 if side == -1 else -1), 222)],
+                      fill=blade, outline=INK, width=lw)
+            hx = 130 if side == -1 else 270
+            cx, cy = R(hx, 292)
+            d.ellipse([cx - 62 * s, cy - 62 * s, cx + 62 * s, cy + 62 * s], fill=RED, outline=INK, width=lw)
+            d.ellipse([cx - 32 * s, cy - 30 * s, cx + 32 * s, cy + 30 * s], fill=(0, 0, 0, 0), outline=INK, width=lw)
         d.ellipse(B(188, 198, 212, 222), fill=GOLD, outline=INK, width=3 * s)
     elif name == "cash":
         for k in range(5):
@@ -596,8 +660,12 @@ class WorldRenderer:
                 y += 112
                 continue
             color = COLORS.get(str(h.get("color") or ("white" if SKIES.get(o.get("sky", "day"), SKIES["day"])["dark"] else "ink")), WHITE)
-            items.append({"type": "head", "at": -1.0 if first and not h.get("cue") else at(h.get("cue"), k), "y": y + size * 0.62,
-                          "text": str(h["text"]), "size": size, "color": color})
+            item = {"type": "head", "at": -1.0 if first and not h.get("cue") else at(h.get("cue"), k), "y": y + size * 0.62,
+                    "text": str(h["text"]), "size": size, "color": color}
+            if h.get("from") and amount(str(h["from"])) and amount(str(h["text"])):  # races up from `from`, lands on its cue
+                item.update(at=-1.0 if first else scene.start, start=scene.start, land=cue_time(scene, words, h.get("cue"), 2),
+                            frm=str(h["from"]))
+            items.append(item)
             y += size * 1.15
         if isinstance(o.get("big"), dict):
             b = o["big"]
@@ -632,6 +700,8 @@ class WorldRenderer:
                 found.append((scene.start + 0.08, "stamp", 0.0))
             prev_year = year
             for it in self.items[i]:
+                if "land" in it:
+                    found.append((it["land"], "cash", 0.0))
                 if it["at"] < 0.05:
                     continue
                 if it["type"] == "stamp":
@@ -679,6 +749,8 @@ class WorldRenderer:
         x0 = 60 + drift // 2
         img = back_img.crop((x0, 0, x0 + W, H))
         dark = SKIES[sky]["dark"]
+        if o.get("rain"):
+            rain(img, t - scene.start, (self.spec.seed or 7) + i)
         for it in self.items[i]:
             self.draw_item(img, it, t, dark, i)
         self.top_bar(img, scene)
@@ -717,14 +789,26 @@ class WorldRenderer:
         elif kind == "prop":
             o = it["o"]
             name = str(o.get("draw") or "fax")
-            sp = prop(name if name in PROPS else "fax", str(o.get("label") or ""))
+            name = name if name in PROPS else "fax"
+            if name == "scissors":  # snipping, two snips a second
+                name = "scissors%d" % round(4 * abs(math.sin(t * math.pi * 2)))
+            sp = prop(name, str(o.get("label") or ""))
             sc = float(o.get("scale") or 1.0) * PROP_SCALE
             bob = 6 * math.sin(t * 2.2) if o.get("lift") else 0.0
             put(img, sp, (W * float(o.get("x", 0.72)), GROUND + 6 - float(o.get("lift") or 0) + bob), scale=sc * s, alpha=a, anchor="b")
         elif kind == "head":
-            put(img, big_text(it["text"], it["size"], it["color"]), (W / 2, it["y"]), scale=s, alpha=a)
+            text, pulse = it["text"], 1.0
+            if "land" in it:
+                if t < it["land"]:
+                    text = racing(it["frm"], it["text"], (t - it["start"]) / max(0.3, it["land"] - it["start"]))
+                else:  # landed: a punch of size, then still
+                    dt = t - it["land"]
+                    pulse = 1 + 0.18 * math.sin(math.pi * min(1.0, dt / 0.35)) * (dt < 0.35)
+            sp = big_text(text, it["size"], it["color"])
+            fit = min(1.0, (W - 70) / sp.width)
+            put(img, sp, (W / 2, it["y"]), scale=s * fit * pulse, alpha=a)
         elif kind == "arrow":
-            put(img, arrow(), (W / 2, it["y"]), scale=s, alpha=a)
+            put(img, arrow(), (W / 2, it["y"] + 9 * math.sin(t * 7)), scale=s, alpha=a)
         elif kind == "big":
             u = (t - it["at"]) / 0.75 if it["at"] >= 0 else 1.0
             put(img, big_text(counted(it["text"], u), 150, it["color"]), (W / 2, it["y"]), scale=s, alpha=a)
@@ -837,6 +921,12 @@ def render(spec: Spec, voice: Path, out: Path, music: Path | None = None, music_
     finally:
         bw_fx.FxRenderer = original
         spec.look = look
+
+
+def thumb_time(spec: Spec) -> float:
+    """The hook once its racing figure has landed (the thumbnail): the end of the first scene."""
+    first = spec.scenes[0]
+    return max(0.0, first.end - 0.25)
 
 
 def still(spec: Spec, t: float) -> Image.Image:
