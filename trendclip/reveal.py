@@ -50,6 +50,9 @@ FRAME = 14
 BACKDROPS = ((121, 166, 255), (28, 30, 52), (232, 204, 128), (92, 156, 64))
 DARK, LIGHT = (55, 55, 55), (255, 255, 255)
 STONE = ((125, 125, 125), (112, 112, 112), (138, 138, 138), (100, 100, 100))
+DIRT = ((134, 96, 67), (121, 85, 58), (150, 108, 74), (108, 76, 52))
+DEEPSLATE = ((72, 72, 80), (62, 62, 70), (86, 86, 94), (52, 52, 60))
+COVERS = (STONE, DIRT, DEEPSLATE)  # the blocks: the one furthest from the mob's colour (a grey Ghast under stone)
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. Something is hiding behind these blocks. One breaks every half second. "
@@ -180,8 +183,8 @@ def script(settings: Settings, game: str, *, format: str = "short", rng: random.
 # --------------------------------------------------------------------------- the card
 
 
-def _stone(rng: random.Random, w: int, h: int):
-    """One code-drawn stone block: grey noise in 8 x 8 pixels with a light top-left and dark bottom-right edge."""
+def _stone(rng: random.Random, w: int, h: int, palette=STONE):
+    """One code-drawn block: noise in 8 x 8 pixels of `palette` with a light top-left and dark bottom-right edge."""
     from PIL import Image, ImageDraw
 
     img = Image.new("RGB", (w, h))
@@ -189,12 +192,14 @@ def _stone(rng: random.Random, w: int, h: int):
     cw, ch = w / 8, h / 8
     for y in range(8):
         for x in range(8):
-            d.rectangle([round(x * cw), round(y * ch), round((x + 1) * cw), round((y + 1) * ch)], fill=rng.choice(STONE))
+            d.rectangle([round(x * cw), round(y * ch), round((x + 1) * cw), round((y + 1) * ch)], fill=rng.choice(palette))
     edge = max(4, min(w, h) // 22)
-    d.rectangle([0, 0, w, edge], fill=(160, 160, 160))
-    d.rectangle([0, 0, edge, h], fill=(160, 160, 160))
-    d.rectangle([0, h - edge, w, h], fill=(70, 70, 70))
-    d.rectangle([w - edge, 0, w, h], fill=(70, 70, 70))
+    light = tuple(min(255, c + 35) for c in palette[2])
+    dark = tuple(max(0, c - 40) for c in palette[3])
+    d.rectangle([0, 0, w, edge], fill=light)
+    d.rectangle([0, 0, edge, h], fill=light)
+    d.rectangle([0, h - edge, w, h], fill=dark)
+    d.rectangle([w - edge, 0, w, h], fill=dark)
     return img
 
 
@@ -257,23 +262,34 @@ def _font(size: int):
     return ImageFont.load_default(size)
 
 
-def backdrop(picture) -> tuple[int, int, int]:
-    """The backdrop colour that stands out most from the picture's average solid colour."""
+def _mean(picture):
     import numpy as np
 
     px = np.asarray(picture.convert("RGBA")).reshape(-1, 4)
     solid = px[px[:, 3] > 128][:, :3]
-    mean = solid.mean(axis=0) if len(solid) else np.array([128, 128, 128])
-    return max(BACKDROPS, key=lambda c: float(((np.array(c) - mean) ** 2).sum()))
+    return solid.mean(axis=0) if len(solid) else np.array([128.0, 128.0, 128.0])
 
 
-def card(picture, boxes: list, broken: set[int], second: int, stones: list) -> "object":
+def _dist(a, b) -> float:
+    return float(sum((float(x) - float(y)) ** 2 for x, y in zip(a, b)))
+
+
+def colours(picture) -> tuple[tuple, tuple[int, int, int]]:
+    """(block palette, backdrop): the blocks furthest from the mob's average colour, then the backdrop furthest
+    from both, so what is open and what is still covered never look alike."""
+    mean = _mean(picture)
+    cover = max(COVERS, key=lambda p: _dist(p[0], mean))
+    back = max(BACKDROPS, key=lambda c: min(_dist(c, mean), _dist(c, cover[0])))
+    return cover, back
+
+
+def card(picture, boxes: list, broken: set[int], second: int, stones: list, back=BACKDROPS[0]) -> "object":
     """The framed picture with the standing blocks on it and the timer strip under it."""
     from PIL import Image, ImageDraw
 
     w, h = SIDE + 2 * FRAME, SIDE + STRIP + 3 * FRAME
     img = Image.new("RGBA", (w, h), DARK + (255,))
-    inner = Image.new("RGBA", (SIDE, SIDE), backdrop(picture) + (255,))
+    inner = Image.new("RGBA", (SIDE, SIDE), tuple(back) + (255,))
     inner.alpha_composite(picture)
     for i, box in enumerate(boxes):
         if i not in broken:
@@ -320,7 +336,8 @@ def plan(settings: Settings, file: str, words: list[Word], seed: str = "", tail:
     rng = random.Random(seed or file)
     picture = _fit(settings, file)
     boxes = tiles(picture)
-    stones = [_stone(rng, b[2] - b[0], b[3] - b[1]) for b in boxes]
+    cover, back = colours(picture)
+    stones = [_stone(rng, b[2] - b[0], b[3] - b[1], cover) for b in boxes]
     breaking = order(picture, boxes, rng)
     total = words[-1].end + tail
     begin = max(1.0, _word_time(words, WINDOW[0], True, 1.5))
@@ -336,7 +353,7 @@ def plan(settings: Settings, file: str, words: list[Word], seed: str = "", tail:
     for n, at in enumerate(marks):
         broken = set(breaking[:sum(1 for k in range(steps) if begin + k * STEP <= at + 1e-6)])
         path = out_dir / f"{n:03d}.png"
-        card(picture, boxes, broken, int(at), stones).save(path)
+        card(picture, boxes, broken, int(at), stones, back).save(path)
         end = marks[n + 1] if n + 1 < len(marks) else total + 0.5
         out.append(Overlay(path, round(at, 3), round(end, 3), center=CENTER, box=SIDE + STRIP + 3 * FRAME,
                            style="asis", cut=True))
