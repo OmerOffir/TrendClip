@@ -992,3 +992,12 @@ def test_the_plan_shows_a_sample_made_from_a_slots_script(tmp_path):
                                                           "duration_seconds": 59.4, "check": check}))
     found = pw_channel.samples_by_script(tmp_path)
     assert found["ikea.json"]["key"] == "sample-2" and found["ikea.json"]["video_t"]  # the newest one that passed its check
+
+
+def test_names_in_capitals_are_said_as_names_not_letters():
+    """The voice said "I-K-E-A" (the owner, 2026-11-08): a name in capitals that can be said goes to Kokoro in normal
+    case; real abbreviations are still spelled."""
+    from trendclip import kokoro_voice
+
+    said = kokoro_voice.paragraph("A boy built IKEA. LEGO and FIFA. The CEO of IBM, HSBC, ESPN and AARP. IKEA's stores.")
+    assert said == "A boy built Ikea. Lego and Fifa. The CEO of IBM, HSBC, ESPN and AARP. Ikea's stores."

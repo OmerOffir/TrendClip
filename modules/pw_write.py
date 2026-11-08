@@ -564,6 +564,8 @@ rise-and-fall, a genius money move, how much a company makes from ONE thing. Rea
 Each script is ONE JSON object shaped exactly like the example below, with "format": "world":
 - {lo}-{hi} words of narration in all (55-75 seconds). Short spoken sentences, numbers growing as the story goes.
   Say big money in words ("1.2 billion dollars", "five thousand dollars") and years in digits ("1998").
+  Write names in the narration the way people say them: "Ikea", "Lego", "Spanx", never in capitals (capitals are
+  read letter by letter, which is right only for real abbreviations: CEO, IBM). Pills and headlines may use capitals.
 - {WORLD_SCENES[0]}-{WORLD_SCENES[1]} scenes, all "kind": "world", ONE beat each, at most {WORLD_SCENE_WORDS} words of narration per scene.
 - scene 1 is the hook (about 6 s, at most 22 words): the start money, the end money and the strange detail, in the
   first sentence ("Five thousand dollars in savings and one pair of scissors. That's how Sara Blakely built a 1.2

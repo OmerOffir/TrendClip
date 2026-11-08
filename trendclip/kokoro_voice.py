@@ -96,10 +96,30 @@ def unload() -> None:
             pass
 
 
+SPELLED = {"AARP", "USAA", "NAACP", "UCLA", "NCAA", "WWII"}  # said letter by letter though they have vowels
+CAPS_WORD = re.compile(r"\b([A-Z]{4,})('s|’s)?\b")
+VOWELS = set("AEIOU")
+
+
+def spoken_names(text: str) -> str:
+    """Names written in capitals that are said as a word ("IKEA", "LEGO", "FIFA") in normal case, so Kokoro says
+    the name instead of the letters (the owner, 2026-11-08: "I-K-E-A"). An abbreviation stays as it is: fewer than
+    two vowels (ESPN, HSBC, SPANX would still be spelled, but such names are written in normal case), or listed in
+    SPELLED (AARP)."""
+    def fix(m: re.Match) -> str:
+        word = m.group(1)
+        if word in SPELLED or sum(c in VOWELS for c in word) < 2:
+            return m.group(0)
+        return word.capitalize() + (m.group(2) or "")
+
+    return CAPS_WORD.sub(fix, text)
+
+
 def paragraph(text: str) -> str:
     """The text as one paragraph: Kokoro reads a paragraph at a natural pace and splits it into chunks of a
-    few sentences itself; fed one sentence at a time it slows down and pads every sentence with silence."""
-    return " ".join(text.split())
+    few sentences itself; fed one sentence at a time it slows down and pads every sentence with silence. Names in
+    capitals are said as names (spoken_names)."""
+    return spoken_names(" ".join(text.split()))
 
 
 def trim(audio, sample_rate: int = SAMPLE_RATE, lead: float = 0.06, tail: float = 0.12):
