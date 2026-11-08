@@ -408,7 +408,8 @@ def description(script: dict) -> str:
     if shows_icons(script):
         lines += ["", "Icons: Noto Emoji by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0)."]
     often = "twice a day" if len(slots()) == 2 else "every day"
-    lines += ["", DISCLAIMER, "", f"A new 'why' {often}: {handle()}", "", " ".join(f"#{t}" for t in tags)]
+    what = "true money story" if is_world(script) else "'why'"
+    lines += ["", DISCLAIMER, "", f"A new {what} {often}: {handle()}", "", " ".join(f"#{t}" for t in tags)]
     return "\n".join(lines).strip()
 
 

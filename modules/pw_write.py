@@ -27,6 +27,7 @@ from trendclip import llm_json
 KINDS = ("one", "week")
 FORMATS = ("why", "story", "world")  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
 # a true money story in the full-colour world look (modules.pw_world, 2026-11-08)
+DEFAULT_FORMAT = "world"  # an idea pasted from the LLM without a format is a true story (the channel's only format now)
 WORLD_WORDS = (140, 215)  # 55-75 s
 WORLD_SCENES = (7, 14)
 WORLD_SCENE_WORDS = 30
@@ -829,7 +830,7 @@ def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
     added = []
     for p in found:
         try:
-            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir, p.format)["question"])
+            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir, p.format or DEFAULT_FORMAT)["question"])
         except WriteError:
             continue
     return {"added": added, "skipped": len(found) - len(added)}

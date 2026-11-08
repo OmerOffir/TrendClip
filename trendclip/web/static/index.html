@@ -120,13 +120,13 @@
       <div class="card-head">
         <div>
           <h2>Topics <span class="hint" id="pwTopicsCount"></span></h2>
-          <span class="hint">The money questions in the order the next scripts take them: the top one, then the four pillars in turn. A topic has no script yet: <b>✍️ Write it now</b> opens Write it myself with it (the script goes to the first free slot), <b>⬆ Write next</b> puts it at the top for Write it myself and Write a week</span>
+          <span class="hint">The true money stories to tell, in the order the next scripts take them (a founder, a company, a famous deal: real people, real numbers, real years). A topic has no script yet: <b>✍️ Write it now</b> opens Write it myself with it (the script goes to the first free slot), <b>⬆ Write next</b> puts it at the top for Write it myself and Write a week</span>
         </div>
       </div>
       <form class="pw-add" id="pwAddTopic">
-        <input type="text" id="pwAddQuestion" placeholder="Why does …?  or a story: Same $500, four friends…?" maxlength="160" required>
+        <input type="text" id="pwAddQuestion" placeholder="How did …?  a true money story: How did $5,000 and a pair of scissors become Spanx?" maxlength="160" required>
         <select id="pwAddPillar"><option value="">pillar</option></select>
-        <select id="pwAddFormat" title="A 35 s why, or a 50-75 s money story (a cast, their moves with the math, the bars, which one are you?)"><option value="why">❓ why (35 s)</option><option value="story">📖 story (60 s)</option><option value="world">🌆 true story (60 s)</option></select>
+        <input type="hidden" id="pwAddFormat" value="world">
         <button type="submit" class="btn-primary">Add</button>
         <button type="button" class="btn-secondary" id="pwNoIdea" title="Copies the prompt for 20 new topics (New topics from your own LLM, below): paste it into any LLM, then paste its answer back there">💡 No idea? Get a prompt</button>
         <span class="hint" id="pwAddStatus"></span>
@@ -138,12 +138,12 @@
       <div class="card-head">
         <div>
           <h2>New topics from your own LLM</h2>
-          <span class="hint">When the list runs out: the prompt asks for 20 new money questions across the four pillars (or 20 money-story ideas), and lists the ones you already have so it won't repeat them</span>
+          <span class="hint">When the list runs out: the prompt asks for 20 new true money stories (a founder or company from tiny to huge, a famous mistake, a genius money move), each checkable in two sources, and lists the ones you already have so it won't repeat them</span>
         </div>
         <button type="button" id="pwTopicsRefresh" hidden></button>
       </div>
       <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
-        <div class="llm-topics-row"><select data-l="format" title="What the prompt asks for"><option value="why">❓ why questions (35 s)</option><option value="story">📖 money stories (60 s)</option><option value="world">🌆 true stories (60 s)</option></select>
+        <div class="llm-topics-row"><input type="hidden" data-l="format" value="world">
           <button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
         <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
       </div>
@@ -158,7 +158,7 @@
       <div class="card-head">
         <div>
           <h2>✍️ Write it myself</h2>
-          <span class="hint">One script with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. A <b>story</b> is the long format (50-75 s): a cast of drawn people, one move each with its math on the board, the bars, "which one are you?"</span>
+          <span class="hint">One true story with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. 55-75 s in the colour world: a moving hook (the number races from the start money to the end), named characters, the year and the place, the numbers popping as they are said, one "BUT THEN…", a question at the end</span>
         </div>
       </div>
       <div class="pw-write" id="pwWriteOne"><div class="empty">Loading…</div></div>
@@ -169,7 +169,7 @@
       <div class="card-head">
         <div>
           <h2>📅 Write a week</h2>
-          <span class="hint">The coming week's scripts in one prompt (the next topics, pillars in turn), then one fact-check prompt. They join the queue in order</span>
+          <span class="hint">The coming week's true stories in one prompt (the next topics), then one fact-check prompt. They join the queue in order</span>
         </div>
       </div>
       <div class="pw-write" id="pwWriteWeek"><div class="empty">Loading…</div></div>

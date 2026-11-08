@@ -310,13 +310,13 @@ def youtube_logout() -> dict[str, Any]:
 class TopicRequest(BaseModel):
     question: str
     pillar: str = ""
-    format: str = ""  # "story" for a money-story idea
+    format: str = "world"  # the dashboard adds true-story ideas only (2026-11-08)
 
 
 class StartRequest(BaseModel):
     question: str = ""
     count: int = pw_write.DEFAULT_COUNT
-    format: str = "why"  # why | story (pw_write.FORMATS)
+    format: str = "world"  # why | story | world (pw_write.FORMATS); the dashboard writes true stories only
 
 
 class PasteRequest(BaseModel):
@@ -374,7 +374,7 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
 
 
 @router.get("/llm-topics")
-def llm_topics_prompt(count: int = 20, format: str = "why") -> dict[str, Any]:
+def llm_topics_prompt(count: int = 20, format: str = "world") -> dict[str, Any]:
     """The prompt for new topics (or, format=story, new money-story ideas), to paste into any LLM."""
     return {"prompt": pw_write.llm_prompt(max(1, min(40, count)), None, _hub_topics()[0], format)}
 

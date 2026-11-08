@@ -962,3 +962,17 @@ def test_write_it_now_on_a_true_story_topic_uses_the_true_story_prompt(tmp_path)
     pw_write.add_topic("How did a 17-year-old selling matches build IKEA?", "business tricks", tmp_path, "world")
     session = pw_write.start("one", "How did a 17-year-old selling matches build IKEA?", out_dir=tmp_path)
     assert session["format"] == "world" and "true story for this idea" in session["prompt"]
+
+
+def test_the_dashboard_writes_true_stories_only(tmp_path):
+    """The owner (2026-11-08): no more old-format videos from the tool. New ideas, the Write tabs and the ideas prompt
+    default to the true story; an LLM answer that forgets the format still lands as one."""
+    from trendclip.web import pricetagwhy as web
+
+    from modules import pw_write
+
+    assert web.StartRequest().format == "world" and web.TopicRequest(question="How did X?").format == "world"
+    done = pw_write.llm_add('{"topics": [{"question": "How did a $500 loan become Crocs?", "pillar": "business tricks"}]}', tmp_path)
+    assert done["added"] and pw_write.topics(tmp_path)[-1]["format"] == "world"
+    html = (pw_channel.PROJECT_ROOT / "trendclip/web/static/index.html").read_text()
+    assert '<option value="why">❓ why' not in html and 'id="pwAddFormat" value="world"' in html

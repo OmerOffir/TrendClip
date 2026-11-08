@@ -8,7 +8,7 @@
     videos: $("pwVideos"), count: $("pwVideosCount"), topics: $("pwTopics"), topicsCount: $("pwTopicsCount"),
     navWaiting: $("pwNavWaiting"), navQueued: $("pwNavQueued"), navTopics: $("pwNavTopics"), long: $("pwLong"),
     write: { one: $("pwWriteOne"), week: $("pwWriteWeek") } };
-  const state = { poll: null, status: null, section: "videos", format: { one: "why", week: "why" } };  // format: the Write tabs' pick (why | story)
+  const state = { poll: null, status: null, section: "videos", format: { one: "world", week: "world" } };  // the Write tabs write true stories only (the colour world, 2026-11-08)
   const showError = (msg) => { els.error.textContent = msg || ""; els.error.hidden = !msg; };
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const fmtWhen = (iso) => (iso || "").replace("T", " ").slice(0, 16);
@@ -247,26 +247,24 @@
   }
 
   const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
-  const FORMAT_OPTIONS = [["why", "❓ why (35 s)"], ["story", "📖 story (50-75 s)"], ["world", "🌆 true story (55-75 s)"]];
-  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="A 35 s why; a money story (a cast, one move each with its math, the bars); or a true story in the colour world (a real founder or company, from tiny to huge)">
-      ${FORMAT_OPTIONS.map(([v, label]) => `<option value="${v}"${(state.format[kind] || "why") === v ? " selected" : ""}>${label}</option>`).join("")}</select>`;
+  const formatPick = (kind) => `<span class="pill good" title="A true money story in the colour world: a real founder or company, from tiny to huge">🌆 true story · 55-75 s</span>`;
   const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
 
   function renderWrite(kind, v) {
     const box = els.write[kind];
     const topicList = topicItems(v.topics);
     if (v.step === "none") {
-      const fmt = state.format[kind] || "why";
+      const fmt = state.format[kind] || "world";
       const story = fmt !== "why";
       const next = fmt === "world" ? v.worlds || [] : story ? v.stories || [] : v.topics || [];
       const list = topicItems(next);
       box.innerHTML = kind === "one"
-        ? `<div class="pw-add">${formatPick(kind)}<input type="text" id="pwOneQuestion" placeholder="${story ? "A story idea" : "A question"}, or leave empty for the next one: ${esc((next[0] || {}).question || "none left")}" maxlength="160">
+        ? `<div class="pw-add">${formatPick(kind)}<input type="text" id="pwOneQuestion" placeholder="${fmt === "world" ? "A true story (How did …?)" : story ? "A story idea" : "A question"}, or leave empty for the next one: ${esc((next[0] || {}).question || "none left")}" maxlength="160">
            <button type="button" class="btn-primary" data-write-start="one">Start</button></div>
            ${!next.length && story ? `<div class="da-note">No ${fmt === "world" ? "true-story" : "story"} ideas yet: get some in the Topics tab (New topics from your own LLM → ${fmt === "world" ? "🌆 true stories" : "📖 money stories"}), or type one above.</div>` : ""}`
         : `<div class="pw-add">${formatPick(kind)}<label class="hint">Scripts <input type="number" id="pwWeekCount" min="1" max="14" value="7" style="width:70px"></label>
            <button type="button" class="btn-primary" data-write-start="week">Start</button></div>
-           ${list ? `<span class="hint">The next ${story ? "story ideas" : "topics, pillars in turn"}:</span><ol>${list}</ol>` : noTopics()}`;
+           ${list ? `<span class="hint">The next ${fmt === "world" ? "true stories" : story ? "story ideas" : "topics, pillars in turn"}:</span><ol>${list}</ol>` : noTopics()}`;
       return;
     }
     const drafts = (v.drafts || []).map((d, i) => `<div class="pw-slot">
@@ -411,7 +409,7 @@
       const kind = d.writeStart;
       if (d.restart && !window.confirm("Start over? The pasted answers of this session are dropped.")) return;
       const body = kind === "one" ? { question: ($("pwOneQuestion") || {}).value || "" } : { count: Number(($("pwWeekCount") || {}).value || 7) };
-      body.format = ($(`pwFormat-${kind}`) || {}).value || state.format[kind] || "why";
+      body.format = ($(`pwFormat-${kind}`) || {}).value || state.format[kind] || "world";
       if (d.restart) Object.assign(body, kind === "one" ? { question: "" } : { count: 7 });
       return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}`, body));
     }
