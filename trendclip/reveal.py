@@ -101,28 +101,36 @@ def slug(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
 
 
-def fetch_library(settings: Settings, kind: str = "mob", names: list[str] | None = None, session=None) -> list[dict]:
+def fetch_library(settings: Settings, kind: str = "mob", names: list[str] | None = None, session=None,
+                  folder: Path | None = None, titles: dict[str, str] | None = None) -> list[dict]:
     """Download each page's main image from the Minecraft Wiki (first frame of a GIF, trimmed, PNG) and record it
-    in catalog.json. Pictures already there are kept."""
+    in catalog.json. Pictures already there are kept. `folder` (default assets/reveal) and `titles` (a name's wiki
+    page when it differs, "Diamond Block" -> "Block of Diamond") serve the pause-to-get-your-block levels too."""
     import requests
     from PIL import Image
 
     session = session or requests.Session()
     session.headers["User-Agent"] = USER_AGENT
-    folder = library_dir(settings)
+    folder = folder or library_dir(settings)
     folder.mkdir(parents=True, exist_ok=True)
-    found = {e["name"]: e for e in catalog(settings)}
+    titles = titles or {}
+    try:
+        found = {e["name"]: e for e in json.loads((folder / "catalog.json").read_text(encoding="utf-8"))}
+    except (OSError, ValueError):
+        found = {}
     todo = [n for n in (names or KINDS[kind]) if n not in found]
     for i in range(0, len(todo), 20):
         batch = todo[i:i + 20]
-        r = session.get(WIKI_API, params={"action": "query", "titles": "|".join(batch), "prop": "pageimages",
+        page_of = {titles.get(n, n): n for n in batch}
+        r = session.get(WIKI_API, params={"action": "query", "titles": "|".join(page_of), "prop": "pageimages",
                                           "piprop": "original", "redirects": 1, "format": "json"}, timeout=30)
         r.raise_for_status()
         data = r.json()["query"]
         back = {x["to"]: x["from"] for x in data.get("redirects", [])}
         for page in data.get("pages", {}).values():
             src = (page.get("original") or {}).get("source")
-            name = back.get(page.get("title"), page.get("title"))
+            title = back.get(page.get("title"), page.get("title"))
+            name = page_of.get(title, title)
             if not src or name not in batch:
                 logger.warning("No wiki picture for %s", name)
                 continue

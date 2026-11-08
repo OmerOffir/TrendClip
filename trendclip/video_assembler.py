@@ -676,7 +676,8 @@ class Overlay:
     style: Literal["asis", "sticker", "card"] = "asis"
     pulse: bool = False  # gentle breathing while shown (call-to-action stickers)
     animated: bool = False  # play the GIF / WebP animation
-    cut: bool = False  # appear and vanish in one frame, no pop-in or fade (Catch the Zombie: it may last 4 frames)
+    cut: bool = False  # appear and vanish in one frame, no pop-in or fade (Catch the Zombie: it may last 4 frames);
+    # with `animated`, the animation plays frame by frame with no pop-in (the pause-to-get-your-block card)
 
     def xy(self) -> tuple[int, int]:
         return self.center or (WIDTH // 2 + self.x_offset, POPUP_CENTER_Y)
@@ -732,7 +733,7 @@ def _source_frames(overlay: Overlay) -> list[tuple[Any, float]]:
             return [(prepare(src), 1.0)]
         out = []
         for i, frame in enumerate(ImageSequence.Iterator(src)):  # one object, seeked: copy each frame now
-            if i >= 120:
+            if i >= (2000 if overlay.cut else 120):
                 break
             out.append((prepare(frame.copy()), max(frame.info.get("duration", 100), 20) / 1000))
         return out
@@ -753,6 +754,20 @@ def render_pop_frames(overlay: Overlay | Path, out_dir: Path, name: str, box: in
     biggest = max(max(f.size) for f, _ in frames)
     side = int(biggest * max(POP_SCALES) * (1.06 if overlay.pulse else 1)) + 4
     side += side % 2
+    if overlay.cut and len(frames) > 1:  # an animation at full size, one PNG per video frame, no pop-in
+        starts, at = [], 0.0
+        for _, d in frames:
+            starts.append(at)
+            at += d
+        count = max(1, math.ceil((overlay.end - overlay.start) * fps))
+        for k in range(count):
+            t = (k + 0.5) / fps % at
+            i = max(j for j, s in enumerate(starts) if s <= t)
+            img = frames[i][0]
+            frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))
+            frame.alpha_composite(img, ((side - img.width) // 2, (side - img.height) // 2))
+            frame.save(out_dir / f"{name}_{k:04d}.png")
+        return f"{name}_%04d.png"
     if overlay.cut:  # one frame at full size; ffmpeg holds it
         img = frames[0][0]
         frame = Image.new("RGBA", (side, side), (0, 0, 0, 0))

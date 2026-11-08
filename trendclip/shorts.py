@@ -117,6 +117,7 @@ class RenderRequest(BaseModel):
     choices: list[str] = Field(default_factory=list, max_length=6)  # quiz options in full: "A) ...", for the leaderboard
     catch: list[str] = Field(default_factory=list, max_length=6)  # Catch the Zombie: the emoji it holds, one pop each
     reveal: str = Field("", max_length=80)  # Guess the Picture: the picture's file in assets/reveal
+    spin: bool = False  # Pause to Get Your Block: the flicking block card (spin.py)
 
 
 class SeriesPart(BaseModel):
@@ -333,10 +334,10 @@ def pick_voice(settings: Settings, requested: str | None, engine: str | None = N
 
 def _quiz_style(req: RenderRequest) -> dict[str, Any]:
     """The quiz look for quizzes and Gamer IQ levels; a Guess the Picture level has its captions under the card."""
-    if not (req.flashes or req.reveal):
+    if not (req.flashes or req.reveal or req.spin):
         return {}
     style = quiz.render_style(req.aspect == "landscape")
-    if req.reveal and req.aspect != "landscape":
+    if (req.reveal or req.spin) and req.aspect != "landscape":
         from . import reveal
 
         style["margin_v"] = reveal.CAPTION_MARGIN
@@ -398,6 +399,11 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
 
         progress(None, "Hiding the picture behind the blocks")
         overlays = overlays + reveal.plan(settings, req.reveal, words, seed=req.output_name or req.script)
+    if req.spin:
+        from . import spin
+
+        progress(None, "Shuffling the blocks")
+        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(

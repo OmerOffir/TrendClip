@@ -107,6 +107,7 @@ class ShortScript(GeminiShort):
     choices: list[str] = Field(default_factory=list)  # quiz: the options in full, e.g. "B) No, I am your father."
     catch: list[str] = Field(default_factory=list)  # Catch the Zombie: the emoji it holds, 3-6 (trendclip/catch.py)
     reveal: str = ""  # Guess the Picture: the picture's file in assets/reveal (trendclip/reveal.py)
+    spin: bool = False  # Pause to Get Your Block: the flicking block card (trendclip/spin.py)
 
 
 class GeminiSeries(BaseModel):

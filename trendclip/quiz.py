@@ -1313,13 +1313,14 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
                  rng: random.Random) -> ShortScript:
     """Gamer IQ: a 3-option question about the game in the background, fact-checked on Google, numbered as a
     level of an ongoing series. The game is the puzzle, not wallpaper: its fans recognise it and argue."""
-    from . import catch, gamer_queue, script_writer as sw
+    from . import catch, gamer_queue, reveal, spin, script_writer as sw
 
+    if spin.wanted(notes) and spin.catalog(settings):  # Pause to Get Your Block: asked for in the notes only
+        progress(None, "A Pause to Get Your Block Short")
+        return spin.script(settings, game, format=format)
     if catch.wanted(settings, game, notes):  # Catch the Zombie: no question, no Gemini
         progress(None, "A Catch the Zombie level")
         return catch.script(settings, game, format=format, rng=rng)
-    from . import reveal
-
     if reveal.wanted(notes, settings, game):  # Guess the Picture: no question, no Gemini (one Minecraft level in 4)
         progress(None, "A Guess the Picture level")
         return reveal.script(settings, game, format=format, rng=rng)
