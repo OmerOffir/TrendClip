@@ -52,6 +52,7 @@ W, H = 640, 760  # the card
 PIC = 430  # the block's square on it
 CENTER = (WIDTH // 2, 800)
 FRAME = 18
+PANEL = (128, 132, 146)
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. Pause the video right now. The block you stop on is yours. Grey is common. Blue is rare. "
@@ -146,7 +147,10 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
     text = tier.upper()
     d.text(((W - d.textlength(text, font=label)) / 2, FRAME + 6), text, font=label,
            fill=(20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))
-    img.alpha_composite(pic, ((W - pic.width) // 2, FRAME + 110 + (PIC - pic.height) // 2))
+    top = FRAME + 110
+    d.rounded_rectangle([(W - PIC) // 2 - 24, top - 14, (W + PIC) // 2 + 24, top + PIC + 14], radius=28,
+                        fill=PANEL)  # mid grey: dark blocks (Dragon Egg, Obsidian) vanished on the dark card
+    img.alpha_composite(pic, ((W - pic.width) // 2, top + (PIC - pic.height) // 2))
     name = entry["name"].upper()
     size = 60
     while size > 34 and d.textlength(name, font=_font(size)) > W - 2 * FRAME - 30:
