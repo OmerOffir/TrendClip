@@ -93,7 +93,7 @@ def events(spec) -> list[tuple[float, str, float]]:
     """(time, sound, seconds) for every moment worth a sound, thinned to one per MIN_GAP."""
     found: list[tuple[float, str, float]] = []
     for scene in spec.scenes:
-        if scene.kind == "card":
+        if scene.kind in ("card", "paper"):  # a title card; the era's newspaper landing (bw_paper)
             found.append((scene.start, "paper", 0.0))
         elif scene.kind == "board":
             found.append((scene.start + 0.3, "marker", min(1.8, max(0.4, (scene.end - scene.start) * 0.5))))

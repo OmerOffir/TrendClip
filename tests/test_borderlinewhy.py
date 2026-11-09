@@ -2508,6 +2508,49 @@ def test_a_stage_needs_a_painting_and_only_its_characters():
     assert "stage | " not in bw_script.SCENE_RULES and "a stage scene (at most one" in bw_script.SCENE_RULES
 
 
+def test_a_paper_scene_lands_the_eras_newspaper_on_the_map(world, fx_offline):
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "paper", "narration": "In 1783 the papers said the line was drawn.", "focus": ["Minnesota"], "year": "1783",
+         "title": "The Line Is Drawn", "subtitle": "A notch for the lake", "kicker": "Paris, September 3, 1783"},
+        {"kind": "map", "narration": "And the line stayed.", "focus": ["Minnesota"]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == [] and spec.scenes[1].kind == "paper"
+    r = fx_offline.FxRenderer(spec)
+    paper = spec.scenes[1]
+    mid = np.asarray(r.frame(paper.start + 2.0), dtype=float)
+    assert abs(mid[900:1000, 400:700].mean(axis=(0, 1)) - (215, 200, 165)).max() < 45  # the yellowed page fills the middle
+    assert (paper.start, "paper", 0.0) in bw_sfx.events(spec)
+    from modules import bw_paper
+
+    p = bw_paper.Paper.from_scene(paper)
+    assert (p.name, p.date, p.headline, p.place) == (bw_paper.MASTHEAD, "PARIS, SEPTEMBER 3, 1783", "The Line Is Drawn", "Minnesota")
+
+
+def test_a_paper_scene_needs_a_headline_a_year_and_its_place():
+    draft = _draft()
+    draft.scenes[1] = bw_script.SceneDraft(kind="paper", narration=draft.scenes[1].narration, title="Alaska Sold To America",
+                                           subtitle="For $7.2 million", kicker="Washington, March 30, 1867", year="1867",
+                                           focus=["Alaska"])
+    problems = lambda d: [p for p in bw_script.check(d, _research(), lambda n: n != "Atlantis") if "paper" in p or "newspaper" in p]
+    assert problems(draft) == []
+    draft.scenes[1].title = "Sold"
+    assert "headline, 3-7 words" in problems(draft)[0]
+    draft.scenes[1].title, draft.scenes[1].kicker, draft.scenes[1].year = "Alaska Sold To America", "Washington", ""
+    assert "give its year" in problems(draft)[0]
+    draft.scenes[1].year, draft.scenes[1].focus = "1867", ["Atlantis"]
+    assert "the one place" in problems(draft)[0]
+    draft.scenes[1].focus = ["Alaska"]
+    draft.scenes[1].elements = [bw_script.ElementDraft(kind="icon", icon="money_bag")]
+    assert "has elements" in problems(draft)[0]
+    draft.scenes[1].elements = []
+    draft.scenes[0] = draft.scenes[1]
+    assert any("first scene can't be a newspaper" in p for p in problems(draft))
+    assert any("2 newspapers" in p for p in problems(draft))
+    assert "a paper scene (at most one" in bw_script.SCENE_RULES
+
+
 def test_the_painting_is_an_old_work_of_art_of_that_moment():
     from modules import bw_stage
 

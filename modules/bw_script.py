@@ -356,7 +356,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card | board | photo | stage | compare")
+    kind: str = Field(description="map | card | board | photo | stage | compare | paper")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -529,6 +529,13 @@ must be the whole narration.
   "Purchase of Manhattan", "Fall of Constantinople"). Its elements are 1-2 locals only (no place: they stand in the
   painting, big): the story's people with "flag", one "say" each, "react" on the word they say it. "focus" names
   the place (the map is shown if no painting is found). "year" optional. Never the first scene.
+- a paper scene (at most one, and only when the story has a dated moment that made the news: a sale, a treaty, a
+  declaration, a war's start or end, a vote) shows that day's newspaper landing on the map: "title" is its front-page
+  headline in 3-7 words, as the papers of the time wrote it ("ALASKA SOLD TO THE UNITED STATES"); "subtitle" one
+  short line under it with the key fact ("Russia parts with its American colony for $7,200,000"); "kicker" the
+  dateline, a city and a date ("WASHINGTON, MARCH 30, 1867"); "focus" the one place the story is about (its old
+  engraved map is printed on the page); "year" the year. The narration says that moment. No elements. Never the
+  first scene; never for something that had no newspapers (before about 1700).
 - The mascot: the channel's red-panda explorer stands in the corner and talks with the narrator in its own voice.
   Give it {mascot_lines}. "ask" on a scene is a question it asks just before that scene, which that scene's
   narration then answers ("Wait. Why would Germany want a skinny strip like that?", "Okay, so how did they get
@@ -809,8 +816,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                             f"give every map scene after the first at least {limits.map_elements} elements on different cue words "
                             "(the place lighting up, then a label, an icon or a local)")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card", "board", "photo", "stage", "compare") for k in kinds):
-        problems.append("a scene kind is not map, card, board, photo, stage or compare")
+    if any(k not in ("map", "card", "board", "photo", "stage", "compare", "paper") for k in kinds):
+        problems.append("a scene kind is not map, card, board, photo, stage, compare or paper")
+    if kinds.count("paper") > 1:
+        problems.append(f"{kinds.count('paper')} newspapers (at most one: the story's one dated moment)")
+    if kinds and kinds[0] == "paper":
+        problems.append("the first scene can't be a newspaper (it is the thumbnail: a map)")
     if kinds.count("compare") > 1:
         problems.append(f"{kinds.count('compare')} split screens (at most one: the comparison the story turns on)")
     if kinds and kinds[0] == "compare":
@@ -886,6 +897,15 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"split screen {i}: its elements are 2-3 strips, each a measure, a bridge (build) or a highlight")
             if any(e.kind == "build" and e.icon.strip().lower() != "bridge" for e in strips):
                 problems.append(f"split screen {i}: a strip's build is a bridge")
+        if s.kind.strip().lower() == "paper":
+            if not 3 <= words(s.title) <= 8:
+                problems.append(f"paper scene {i}: its title is the headline, 3-7 words")
+            if s.elements:
+                problems.append(f"paper scene {i} has elements (a newspaper has none)")
+            if not s.focus or not find(s.focus[0]):
+                problems.append(f"paper scene {i}: its focus is the one place on the map the page prints")
+            if not re.search(r"\b1[5-9]\d\d\b|\b20\d\d\b", f"{s.year} {s.kicker}"):
+                problems.append(f"paper scene {i}: give its year (and the date in the kicker)")
         if s.kind.strip().lower() == "stage":
             cast = [e for e in s.elements if e.kind == "local"]
             if not 1 <= len(cast) <= 2 or len(cast) != len(s.elements):

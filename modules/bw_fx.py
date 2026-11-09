@@ -1076,6 +1076,7 @@ class FxRenderer(Renderer):
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
+        self.papers: dict[int, Any] = {}  # the newspaper scenes (modules.bw_paper) and the frame they land on
         self.stages: dict[int, Any] = {}  # the stage scenes' pictures and casts (modules.bw_stage), made on first use
         self.compares: dict[int, Any] = {}  # the split screens' strips (modules.bw_compare)
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
@@ -2646,6 +2647,14 @@ class FxRenderer(Renderer):
 
                 self.stages[i] = bw_stage.Stage.from_scene(scene, scene.opts["_painting"].path, lambda el: self.react_time(el, scene))
             img = self.stages[i].frame(t)
+        elif scene.kind == "paper" and i > 0:  # the era's newspaper landing over the map before it (modules.bw_paper)
+            if i not in self.papers:
+                from modules import bw_paper
+
+                prev = i - 1
+                self.papers[i] = (bw_paper.Paper.from_scene(scene), self.scene_frame(prev, self.spec.scenes[prev].end - 0.05))
+            paper, behind = self.papers[i]
+            img = paper.frame(t - scene.start, behind)
         else:
             img = self.boards[i].frame(t) if i in self.boards else super().scene_frame(i, t)
         if scene.opts.get("year"):

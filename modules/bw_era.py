@@ -40,13 +40,13 @@ def stretch(spec) -> list[int]:
     cutoff = time.localtime().tm_year - OLD
     scenes = spec.scenes
     for i, s in enumerate(scenes):
-        if i == 0 or s.kind not in ("map", "photo", "board", "stage") or (scene_year(s) or 9999) > cutoff:
+        if i == 0 or s.kind not in ("map", "photo", "board", "stage", "paper") or (scene_year(s) or 9999) > cutoff:
             continue
         out = [i]
         for j in range(i + 1, len(scenes)):
             nxt = scenes[j]
             year = scene_year(nxt)
-            if len(out) >= MAX_SCENES or nxt.kind not in ("map", "photo", "board", "stage") or TODAY.search(nxt.narration or "") \
+            if len(out) >= MAX_SCENES or nxt.kind not in ("map", "photo", "board", "stage", "paper") or TODAY.search(nxt.narration or "") \
                     or (year is not None and year > cutoff):
                 break
             out.append(j)
