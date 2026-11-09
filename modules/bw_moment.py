@@ -5,7 +5,8 @@ the shopkeeper raising the shutter in the dark, the sun coming up late).
 
     Moment(sky="night", clock="10:00", clock_label="BEIJING TIME", shop="BAZAAR", sunrise=True, cast=[...]).frame(t)
 
-The street is the flat world look (modules.pw_world.backdrop); the people are the owner's GIFs (modules.bw_local).
+The look is Borderline Why's own sketchbook (ink and watercolour on cream paper, the hand font), not Price Tag
+Why's flat street; the people are the owner's GIFs (modules.bw_local).
 The camera only drifts (the owner's calm camera).
 """
 
@@ -17,7 +18,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 from modules import bw_local, pw_world
 from modules.bw_render import H, W
@@ -36,80 +37,189 @@ def ease(u: float) -> float:
     return u * u * (3 - 2 * u)
 
 
+# --------------------------------------------------------------------------- the sketchbook look
+# Borderline Why's own look (the owner, 2026-11-09: the flat street looked like Price Tag Why): ink lines with a
+# wobble and watercolour washes on cream paper, the explorer's sketchbook, the hand font of the marker hand.
+
+PEN = (44, 36, 32)
+WASH = {  # sky top, sky bottom, far houses, near houses, ground, lit windows, the orb
+    "night": ((34, 44, 96), (82, 86, 140), (96, 100, 140), (70, 74, 112), (88, 86, 112), (250, 210, 110), (246, 240, 214)),
+    "dawn": ((150, 178, 222), (250, 210, 170), (196, 186, 190), (170, 156, 160), (214, 196, 170), (250, 236, 200), (255, 214, 120)),
+    "day": ((150, 196, 236), (214, 232, 244), (224, 200, 160), (200, 168, 128), (222, 204, 170), (250, 240, 210), (255, 220, 110)),
+    "sunset": ((96, 70, 150), (250, 150, 100), (190, 120, 120), (140, 90, 110), (150, 110, 110), (255, 210, 140), (255, 200, 120)),
+}
+
+
+def _jitter(pts, rng, amp: float = 1.6, step: float = 18.0) -> list[tuple[float, float]]:
+    out = []
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        n = max(1, int(math.hypot(x1 - x0, y1 - y0) / step))
+        for k in range(n):
+            u = k / n
+            out.append((x0 + (x1 - x0) * u + rng.normal(0, amp), y0 + (y1 - y0) * u + rng.normal(0, amp)))
+    out.append((pts[-1][0] + rng.normal(0, amp), pts[-1][1] + rng.normal(0, amp)))
+    return out
+
+
+def ink(d: ImageDraw.ImageDraw, pts, rng, width: int = 4, color=PEN) -> None:
+    """A hand-inked line: wobbling, gone over twice."""
+    for _ in range(2):
+        d.line(_jitter(list(pts), rng), fill=color + (235,), width=width, joint="curve")
+
+
+def rect_pts(x0, y0, x1, y1):
+    return [(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]
+
+
+def wash(img: Image.Image, poly, color, rng, alpha: float = 0.85, even: float = 0.72) -> None:
+    """A watercolour fill: soft edges, uneven pigment, a darker rim where the paint dried."""
+    w, h = img.size
+    m = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(m).polygon(_jitter(list(poly), rng, 2.5, 30), fill=255)
+    m = m.filter(ImageFilter.GaussianBlur(2.2))
+    a = np.asarray(m, dtype=np.float32) / 255
+    grain = _blotch(w, h, int(rng.integers(0, 9999)))
+    edge = np.clip(a * (1 - a) * 4, 0, 1)  # the dried rim
+    alpha_map = a * alpha * (even + (1 - even) * grain) + edge * 0.18
+    layer = np.zeros((h, w, 4), dtype=np.float32)
+    layer[..., :3] = np.array(color, np.float32) * (1 - 0.18 * edge[..., None])
+    layer[..., 3] = np.clip(alpha_map, 0, 1) * 255
+    img.alpha_composite(Image.fromarray(layer.astype(np.uint8), "RGBA"))
+
+
+@lru_cache(maxsize=16)
+def _blotch(w: int, h: int, seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    small = rng.random((h // 40 + 2, w // 40 + 2)).astype(np.float32)
+    img = Image.fromarray((small * 255).astype(np.uint8)).resize((w, h), Image.BICUBIC).filter(ImageFilter.GaussianBlur(12))
+    return np.asarray(img, dtype=np.float32) / 255
+
+
 @lru_cache(maxsize=4)
 def street(sky: str, seed: int) -> Image.Image:
-    return pw_world.backdrop(sky, seed).convert("RGBA")
+    """The sketchbook street: a watercolour sky, two rows of inked houses, the street; wider than the frame (drift)."""
+    from modules import bw_paper
+
+    top, bottom, far, near, ground, lit, orb = WASH.get(sky, WASH["day"])
+    wide = W + 120
+    rng = np.random.default_rng(seed)
+    img = bw_paper._aged(wide, H, seed).convert("RGBA")
+    yy = np.linspace(0, 1, GROUND)[:, None, None]
+    sky_rgb = np.array(top, np.float32) * (1 - yy) + np.array(bottom, np.float32) * yy
+    grain = _blotch(wide, GROUND, seed)[..., None]
+    layer = np.concatenate([np.repeat(sky_rgb, wide, axis=1), (0.78 + 0.2 * grain) * 255], axis=2)
+    img.alpha_composite(Image.fromarray(np.clip(layer, 0, 255).astype(np.uint8), "RGBA"))
+    d = ImageDraw.Draw(img)
+    if sky == "night":
+        for _ in range(60):
+            x, y, r = rng.uniform(0, wide), rng.uniform(40, GROUND - 450), rng.uniform(1.5, 3.2)
+            d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 250, 230, 220))
+    ox, oy, orr = wide * 0.82, GROUND - 600, 70
+    wash(img, [(ox + orr * math.cos(a), oy + orr * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 40)], orb, rng, 0.95)
+    for row, (hmin, hmax, color) in enumerate(((300, 600, far), (170, 420, near))):
+        x = -rng.uniform(0, 60)
+        while x < wide:
+            bw = rng.uniform(110, 200)
+            bh = rng.uniform(hmin, hmax)
+            x0, x1, y0 = x, x + bw, GROUND - bh
+            body = rect_pts(x0, y0, x1, GROUND)
+            dome = rng.random() < 0.25 and row == 0
+            wash(img, body[:-1], color, rng, 0.9)
+            if dome:  # a dome or a flat roof with a little tower, like an old town
+                pts = [(x0 + bw * 0.2 + bw * 0.6 * u, y0 - math.sin(math.pi * u) * bw * 0.32) for u in np.linspace(0, 1, 16)]
+                wash(img, pts, color, rng, 0.9)
+                ink(d, pts, rng, 3)
+            ink(d, body, rng, 3 if row == 0 else 4)
+            for wy in np.arange(y0 + 34, GROUND - 60, 62):  # windows, arched
+                for wx in np.arange(x0 + 22, x1 - 40, 46):
+                    on = sky in ("night", "sunset") and rng.random() < 0.45
+                    win = [(wx, wy + 34), (wx, wy + 10), (wx + 9, wy), (wx + 18, wy + 10), (wx + 18, wy + 34)]
+                    if on:
+                        wash(img, win, lit, rng, 0.95)
+                    ink(d, win + [win[0]], rng, 2)
+            x = x1 + rng.uniform(4, 22)
+    wash(img, rect_pts(0, GROUND, wide, H)[:-1], ground, rng, 0.95, even=0.9)
+    ink(d, [(0, GROUND), (wide, GROUND)], rng, 5)
+    for k in range(0, wide, 140):  # cobbles, sketched
+        ink(d, [(k, GROUND + 60), (k + 60, GROUND + 60)], rng, 2, (90, 80, 70))
+        ink(d, [(k + 70, GROUND + 140), (k + 120, GROUND + 140)], rng, 2, (90, 80, 70))
+    return img
 
 
 @lru_cache(maxsize=4)
 def shop_front(sign: str) -> Image.Image:
-    """A shop: its sign, a striped awning and the doorway the shutter covers (drawn separately)."""
-    s = SS
+    """A market stall front: a hand-lettered sign, a striped awning, the doorway the shutter covers."""
+    from modules.bw_fx import hand_font
+
     w, h = SHOP_W, SHOP_H
-    img = Image.new("RGBA", ((w + 20) * s, (h + 20) * s), (0, 0, 0, 0))
+    rng = np.random.default_rng(len(sign) + 3)
+    img = Image.new("RGBA", (w + 20, h + 20), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    d.rectangle([10 * s, 10 * s, (w + 10) * s, (h + 10) * s], fill=(214, 168, 112), outline=INK, width=6 * s)  # the wall
-    d.rectangle([30 * s, 30 * s, (w - 10) * s, 120 * s], fill=(120, 40, 50), outline=INK, width=5 * s)  # the sign
-    f = pw_world.font(64 * s, "Black")
-    d.text(((w + 20) / 2 * s, 76 * s), sign.upper(), font=f, fill=(255, 214, 120), anchor="mm")
+    wash(img, rect_pts(10, 10, w + 10, h + 10)[:-1], (206, 160, 112), rng)
+    ink(d, rect_pts(10, 10, w + 10, h + 10), rng, 5)
+    wash(img, rect_pts(30, 28, w - 10, 118)[:-1], (150, 52, 52), rng, 0.95)
+    ink(d, rect_pts(30, 28, w - 10, 118), rng, 4)
+    d.text(((w + 20) / 2, 74), sign.upper(), font=hand_font(78), fill=(255, 230, 160), anchor="mm")
     stripes = 8
-    for k in range(stripes):  # the awning
+    for k in range(stripes):
         x0 = 10 + k * w / stripes
-        d.polygon([(x0 * s, 132 * s), ((x0 + w / stripes) * s, 132 * s), ((x0 + w / stripes + 6) * s, 200 * s), ((x0 - 6) * s, 200 * s)],
-                  fill=(232, 62, 62) if k % 2 == 0 else (250, 240, 220), outline=INK)
-    d.rectangle([60 * s, 220 * s, (w - 40) * s, (h + 10) * s], fill=(40, 30, 40), outline=INK, width=5 * s)  # the doorway
-    for k, color in enumerate(((240, 180, 60), (90, 170, 90), (220, 90, 60), (240, 200, 90))):  # goods inside
-        x = 100 + k * 90
-        d.ellipse([x * s, (h - 70) * s, (x + 70) * s, h * s], fill=color, outline=INK, width=3 * s)
-        d.ellipse([(x + 15) * s, (h - 120) * s, (x + 75) * s, (h - 60) * s], fill=tuple(int(c * 0.85) for c in color), outline=INK, width=3 * s)
-    return pw_pw(img)
-
-
-def pw_pw(img: Image.Image) -> Image.Image:
-    return pw_world.shrink(img)
+        poly = [(x0, 132), (x0 + w / stripes, 132), (x0 + w / stripes + 6, 196), (x0 - 6, 196)]
+        wash(img, poly, (214, 70, 64) if k % 2 == 0 else (246, 236, 214), rng, 0.95)
+        ink(d, poly + [poly[0]], rng, 2)
+    d.rectangle([60, 216, w - 40, h + 10], fill=(52, 40, 44, 255))  # the dark doorway (no street showing through)
+    ink(d, rect_pts(60, 216, w - 40, h + 10), rng, 4)
+    for k, color in enumerate(((236, 176, 70), (110, 170, 90), (214, 96, 66), (236, 200, 100))):  # baskets of goods
+        x = 96 + k * 88
+        pile = [(x, h), (x + 6, h - 56), (x + 34, h - 84), (x + 62, h - 56), (x + 68, h)]
+        wash(img, pile, color, rng, 0.95)
+        ink(d, pile + [pile[0]], rng, 2)
+    return img
 
 
 def shutter(u: float) -> Image.Image:
     """The rolling shutter over the doorway, `u` of the way up."""
-    w, h = SHOP_W - 100, SHOP_H - 210
+    w, h = SHOP_W - 100, SHOP_H - 206
     shown = max(0, int(h * (1 - ease(u))))
     img = Image.new("RGBA", (w, max(1, shown)), (0, 0, 0, 0))
     if shown <= 0:
         return img
+    rng = np.random.default_rng(5)
     d = ImageDraw.Draw(img)
-    d.rectangle([0, 0, w - 1, shown - 1], fill=(160, 166, 176), outline=INK, width=4)
-    for y in range(shown - 1, 0, -22):
-        d.line([(4, y), (w - 5, y)], fill=(118, 124, 136), width=4)
-    d.rectangle([w / 2 - 40, shown - 18, w / 2 + 40, shown - 6], fill=(90, 96, 108))  # the handle
+    d.rectangle([0, 0, w - 1, shown - 1], fill=(170, 172, 176, 255))
+    for y in range(shown - 1, 0, -24):
+        ink(d, [(4, y), (w - 5, y)], rng, 2, (110, 112, 120))
+    ink(d, rect_pts(1, 1, w - 2, shown - 2), rng, 3)
     return img
 
 
 def clock(hh: int, mm: float, label: str) -> Image.Image:
-    """A big station clock with its hands at hh:mm and a label plate under it."""
-    s = SS
+    """A town clock in ink and wash, its hands at hh:mm, the label hand-lettered under it."""
+    from modules.bw_fx import hand_font
+
     r = CLOCK_R
-    size = (2 * r + 60) * s
-    img = Image.new("RGBA", (size, size + 90 * s), (0, 0, 0, 0))
+    size = 2 * r + 60
+    rng = np.random.default_rng(11)
+    img = Image.new("RGBA", (size, size + 90), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     c = size / 2
-    d.ellipse([c - (r + 14) * s, c - (r + 14) * s, c + (r + 14) * s, c + (r + 14) * s], fill=(60, 50, 70), outline=INK, width=6 * s)
-    d.ellipse([c - r * s, c - r * s, c + r * s, c + r * s], fill=(250, 246, 232), outline=INK, width=5 * s)
+    ring = [(c + (r + 14) * math.cos(a), c + (r + 14) * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
+    wash(img, ring, (120, 90, 60), rng, 0.95)
+    face_pts = [(c + r * math.cos(a), c + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
+    wash(img, face_pts, (250, 244, 226), rng, 1.0)
+    ink(d, ring, rng, 4)
+    ink(d, face_pts, rng, 3)
     for k in range(12):
         a = math.radians(k * 30)
-        r0 = r * (0.8 if k % 3 else 0.72)
-        d.line([(c + math.sin(a) * r0 * s, c - math.cos(a) * r0 * s), (c + math.sin(a) * r * 0.92 * s, c - math.cos(a) * r * 0.92 * s)],
-               fill=INK, width=(8 if k % 3 == 0 else 4) * s)
-    ha = math.radians((hh % 12 + mm / 60) * 30)
-    ma = math.radians(mm * 6)
-    d.line([(c, c), (c + math.sin(ha) * r * 0.5 * s, c - math.cos(ha) * r * 0.5 * s)], fill=INK, width=14 * s)
-    d.line([(c, c), (c + math.sin(ma) * r * 0.78 * s, c - math.cos(ma) * r * 0.78 * s)], fill=INK, width=8 * s)
-    d.ellipse([c - 12 * s, c - 12 * s, c + 12 * s, c + 12 * s], fill=(232, 62, 62), outline=INK, width=3 * s)
-    f = pw_world.font(38 * s, "Black")
-    tw = f.getlength(label) + 50 * s
-    y = size + 10 * s
-    d.rounded_rectangle([c - tw / 2, y, c + tw / 2, y + 70 * s], radius=14 * s, fill=(34, 30, 50), outline=INK, width=4 * s)
-    d.text((c, y + 35 * s), label, font=f, fill=(255, 214, 120), anchor="mm")
-    return pw_world.shrink(img)
+        r0 = r * (0.8 if k % 3 else 0.7)
+        d.line([(c + math.sin(a) * r0, c - math.cos(a) * r0), (c + math.sin(a) * r * 0.9, c - math.cos(a) * r * 0.9)],
+               fill=PEN, width=7 if k % 3 == 0 else 3)
+    ha, ma = math.radians((hh % 12 + mm / 60) * 30), math.radians(mm * 6)
+    d.line([(c, c), (c + math.sin(ha) * r * 0.5, c - math.cos(ha) * r * 0.5)], fill=PEN, width=11)
+    d.line([(c, c), (c + math.sin(ma) * r * 0.78, c - math.cos(ma) * r * 0.78)], fill=PEN, width=6)
+    d.ellipse([c - 9, c - 9, c + 9, c + 9], fill=(196, 50, 50))
+    if label:
+        d.text((c, size + 40), label, font=hand_font(56), fill=(250, 244, 226), anchor="mm", stroke_width=6, stroke_fill=PEN)
+    return img
 
 
 @dataclass
@@ -144,6 +254,7 @@ class Moment:
             u = ease((t - self.sunrise_at) / 2.5)
             dawn = street("dawn", self.seed).crop((x0, 0, x0 + W, H))
             mask = np.clip((np.linspace(-0.6, 1.0, H) + u * 1.2), 0, 1)[:, None] * u
+            mask[GROUND:] *= 0.35  # the street lightens less than the sky
             m = Image.fromarray((np.repeat(mask, W, axis=1) * 200).astype(np.uint8))
             img = Image.composite(dawn.convert("RGBA"), img, m)
         if self.shop:
