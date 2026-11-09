@@ -199,26 +199,29 @@ def clock(hh: int, mm: float, label: str) -> Image.Image:
     r = CLOCK_R
     size = 2 * r + 60
     rng = np.random.default_rng(11)
-    img = Image.new("RGBA", (size, size + 90), (0, 0, 0, 0))
+    lw = int(hand_font(56).getlength(label)) + 40 if label else 0
+    width = max(size, lw)  # a long label ("US SAMOA · SUNDAY") gets room, the face stays centred
+    img = Image.new("RGBA", (width, size + 90), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     c = size / 2
-    ring = [(c + (r + 14) * math.cos(a), c + (r + 14) * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
+    cx = width / 2
+    ring = [(cx + (r + 14) * math.cos(a), c + (r + 14) * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
     wash(img, ring, (120, 90, 60), rng, 0.95)
-    face_pts = [(c + r * math.cos(a), c + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
+    face_pts = [(cx + r * math.cos(a), c + r * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 48)]
     wash(img, face_pts, (250, 244, 226), rng, 1.0)
     ink(d, ring, rng, 4)
     ink(d, face_pts, rng, 3)
     for k in range(12):
         a = math.radians(k * 30)
         r0 = r * (0.8 if k % 3 else 0.7)
-        d.line([(c + math.sin(a) * r0, c - math.cos(a) * r0), (c + math.sin(a) * r * 0.9, c - math.cos(a) * r * 0.9)],
+        d.line([(cx + math.sin(a) * r0, c - math.cos(a) * r0), (cx + math.sin(a) * r * 0.9, c - math.cos(a) * r * 0.9)],
                fill=PEN, width=7 if k % 3 == 0 else 3)
     ha, ma = math.radians((hh % 12 + mm / 60) * 30), math.radians(mm * 6)
-    d.line([(c, c), (c + math.sin(ha) * r * 0.5, c - math.cos(ha) * r * 0.5)], fill=PEN, width=11)
-    d.line([(c, c), (c + math.sin(ma) * r * 0.78, c - math.cos(ma) * r * 0.78)], fill=PEN, width=6)
-    d.ellipse([c - 9, c - 9, c + 9, c + 9], fill=(196, 50, 50))
+    d.line([(cx, c), (cx + math.sin(ha) * r * 0.5, c - math.cos(ha) * r * 0.5)], fill=PEN, width=11)
+    d.line([(cx, c), (cx + math.sin(ma) * r * 0.78, c - math.cos(ma) * r * 0.78)], fill=PEN, width=6)
+    d.ellipse([cx - 9, c - 9, cx + 9, c + 9], fill=(196, 50, 50))
     if label:
-        d.text((c, size + 40), label, font=hand_font(56), fill=(250, 244, 226), anchor="mm", stroke_width=6, stroke_fill=PEN)
+        d.text((cx, size + 40), label, font=hand_font(56), fill=(250, 244, 226), anchor="mm", stroke_width=6, stroke_fill=PEN)
     return img
 
 

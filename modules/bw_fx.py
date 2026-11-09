@@ -2019,21 +2019,21 @@ class FxRenderer(Renderer):
             return
         hh, mm = (int(v) for v in el.text.split(":"))
         sweep = 60 * (1 - bw_moment.ease((t - el.at) / 1.0))  # the minute hand comes round the last hour
-        label = str(el.opts.get("label") or (el.feature.name if el.feature is not None else "")).upper()[:14]
+        label = str(el.opts.get("label") or (el.feature.name if el.feature is not None else "")).upper()[:18]
         key = (hh, round(mm - sweep), label)
         cache = self.__dict__.setdefault("_clocks", {})
         if key not in cache:
             face = bw_moment.clock(hh, mm - round(sweep), label)
             size = int(el.opts.get("size", 190))
-            k = size / face.width
-            cache[key] = face.resize((size, int(face.height * k)), Image.LANCZOS)
+            k = size / (2 * bw_moment.CLOCK_R + 60)  # the face is this wide; a long label may be wider
+            cache[key] = face.resize((max(1, int(face.width * k)), int(face.height * k)), Image.LANCZOS)
             if len(cache) > 400:
                 cache.clear()
         im = cache[key]
         s = backout(u)
         if s < 0.999:
             im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))), Image.BILINEAR)
-        face_h = im.width  # the face is square on top; the label hangs under it
+        face_h = (2 * bw_moment.CLOCK_R + 60) * im.height / max(1, (2 * bw_moment.CLOCK_R + 60) + 90)  # the face on top, the label under
         ov.alpha_composite(im, (int(xy[0] - im.width / 2), int(xy[1] - face_h / 2)))
 
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
