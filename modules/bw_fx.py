@@ -1080,6 +1080,7 @@ class FxRenderer(Renderer):
         rng = np.random.default_rng(spec.seed or 5)
         self.dust = rng.random((40, 4))  # x, y, speed, size of the specks that float up on cards
         self.boards = {i: bw_brand.Board(s, guest=self.LIVELY) for i, s in enumerate(spec.scenes) if s.kind == "board"}
+        self.moments: dict[int, Any] = {}  # the everyday-situation scenes (modules.bw_moment)
         self.papers: dict[int, Any] = {}  # the newspaper scenes (modules.bw_paper) and the frame they land on
         self.stages: dict[int, Any] = {}  # the stage scenes' pictures and casts (modules.bw_stage), made on first use
         self.compares: dict[int, Any] = {}  # the split screens' strips (modules.bw_compare)
@@ -2672,6 +2673,12 @@ class FxRenderer(Renderer):
 
                 self.stages[i] = bw_stage.Stage.from_scene(scene, scene.opts["_painting"].path, lambda el: self.react_time(el, scene))
             img = self.stages[i].frame(t)
+        elif scene.kind == "moment":  # off the map, into the everyday situation the narration tells (modules.bw_moment)
+            if i not in self.moments:
+                from modules import bw_moment
+
+                self.moments[i] = bw_moment.from_scene(scene, self.spec.words, lambda el, sc=scene: self.react_time(el, sc))
+            img = self.moments[i].frame(t - scene.start).convert("RGBA")
         elif scene.kind == "paper" and i > 0:  # the era's newspaper landing over the map before it (modules.bw_paper)
             if i not in self.papers:
                 from modules import bw_paper

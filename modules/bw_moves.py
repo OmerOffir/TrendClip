@@ -167,7 +167,7 @@ def _jump(prev, scene) -> int:
 def _pick(prev, scene) -> str:
     if scene.kind == "stage":
         return "ink"  # into the old painting: it soaks in
-    if scene.kind == "photo":
+    if scene.kind in ("photo", "moment"):
         return "page"
     if prev.kind == "map" and scene.kind == "map":
         return "spyglass"  # off to another place

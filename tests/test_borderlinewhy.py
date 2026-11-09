@@ -2589,6 +2589,46 @@ def test_each_transition_starts_on_the_scene_before_and_ends_on_the_next():
         assert abs(np.median(end.reshape(-1, 3), axis=0) - (30, 30, 200)).max() < 2, name
 
 
+def test_a_moment_scene_shows_the_everyday_situation_off_the_map(world, fx_offline):
+    data = {"title": "Why?", "cover_text": "One clock", "seed": 1, "look": "satellite", "scenes": [
+        {"kind": "map", "narration": "There is a notch on the map.", "focus": ["Minnesota"],
+         "elements": [{"kind": "highlight", "place": "Minnesota"}]},
+        {"kind": "moment", "narration": "Shops there open at ten in the dark until the sun finally rises.", "focus": ["Minnesota"],
+         "sky": "night", "clock": "10:00", "clock_label": "Beijing time", "shop": "Bazaar", "shutter": "open", "sunrise": "sun",
+         "elements": [{"kind": "local", "icon": "citizen", "cue": "shops", "react": "dark", "say": "So dark!"}]},
+        {"kind": "map", "narration": "And the line stayed.", "focus": ["Minnesota"]}]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == [] and spec.scenes[1].kind == "moment"
+    r = fx_offline.FxRenderer(spec)
+    m = spec.scenes[1]
+    frame = np.asarray(r.frame(m.start + 0.5), dtype=float)
+    assert frame[100:400, 100:1000].mean(axis=(0, 1))[2] > frame[100:400, 100:1000].mean(axis=(0, 1))[0]  # a night sky
+    moment = r.moments[1]
+    assert (moment.sky, moment.clock, moment.clock_label, moment.shop) == ("night", "10:00", "BEIJING TIME", "Bazaar")
+    assert 0 < moment.open_at < moment.sunrise_at and len(moment.cast) == 1
+    assert (m.start, "whoosh", 0.0) in bw_sfx.events(spec)
+
+
+def test_a_moment_scene_is_checked():
+    draft = _draft()
+    local = bw_script.ElementDraft(kind="local", icon="merchant", say="So dark!", cue="treaty", react="map")
+    draft.scenes[1] = bw_script.SceneDraft(kind="moment", narration=draft.scenes[1].narration, sky="night", clock="10:00",
+                                           clock_label="Beijing time", elements=[local])
+    problems = lambda d: [p for p in bw_script.check(d, _research(), lambda n: True) if "moment" in p]
+    assert problems(draft) == []
+    draft.scenes[1].sky, draft.scenes[1].clock = "midnight", "ten"
+    assert any("night, dawn, day or sunset" in p for p in problems(draft)) and any("an hour like 10:00" in p for p in problems(draft))
+    draft.scenes[1].sky, draft.scenes[1].clock, draft.scenes[1].shutter = "night", "10:00", "zebra"
+    assert "shutter word 'zebra' is not in its narration" in problems(draft)[0]
+    draft.scenes[1].shutter = ""
+    draft.scenes[1].elements.append(bw_script.ElementDraft(kind="icon", icon="money_bag"))
+    assert "0-2 locals and nothing else" in problems(draft)[0]
+    draft.scenes[1].elements.pop()
+    draft.scenes[0] = draft.scenes[1]
+    assert any("first scene can't be a moment" in p for p in problems(draft))
+    assert "a moment scene (at most two" in bw_script.SCENE_RULES
+
+
 def test_the_painting_is_an_old_work_of_art_of_that_moment():
     from modules import bw_stage
 

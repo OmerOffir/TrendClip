@@ -356,7 +356,7 @@ class ElementDraft(BaseModel):
 
 
 class SceneDraft(BaseModel):
-    kind: str = Field(description="map | card | board | photo | stage | compare | paper")
+    kind: str = Field(description="map | card | board | photo | stage | compare | paper | moment")
     narration: str = Field(description="1-2 spoken sentences.")
     focus: list[str] = Field(default_factory=list, description="map: the places the camera frames.")
     headline: str = Field("", description="2-6 words shown at the top (optional).")
@@ -370,6 +370,12 @@ class SceneDraft(BaseModel):
     caption: str = Field("", description="photo: 1-5 words written under the picture.")
     painting: str = Field("", description="stage: the moment an old painting shows, as a museum would title it "
                                           "(\"Hannibal crossing the Alps\", \"Purchase of Manhattan\").")
+    sky: str = Field("", description="moment: night | dawn | day | sunset.")
+    clock: str = Field("", description="moment: the hour on the clock, \"10:00\" (optional).")
+    clock_label: str = Field("", description="moment: 1-3 words on the clock's plate, \"BEIJING TIME\" (optional).")
+    shop: str = Field("", description="moment: the sign of the shop in the street, 1-2 words (optional).")
+    shutter: str = Field("", description="moment: the narration word the shop's shutter rolls up on (optional).")
+    sunrise: str = Field("", description="moment: the narration word the sun starts coming up on (optional).")
     year: str = Field("", description="map: a year or span (\"1812\", \"1838-39\") that slams in big as the scene starts, "
                                       "then stays as a small tag (a new step of the story; the war-map format).")
     ask: str = Field("", description="The mascot's short question, said just before this scene (optional).")
@@ -529,6 +535,14 @@ must be the whole narration.
   "Purchase of Manhattan", "Fall of Constantinople"). Its elements are 1-2 locals only (no place: they stand in the
   painting, big): the story's people with "flag", one "say" each, "react" on the word they say it. "focus" names
   the place (the map is shown if no painting is found). "year" optional. Never the first scene.
+- a moment scene (at most two, most videos have one) leaves the map for the everyday situation the narration
+  describes, so the viewer SEES it: people in a street at that hour ("in Kashgar the sun doesn't rise until past
+  10 a.m.", "shops don't open until 10", "children walk to school in the dark", "the market closes at sunset").
+  "sky": night | dawn | day | sunset, as it is at that moment; "clock": the hour when the narration names one
+  ("10:00"), with "clock_label" ("BEIJING TIME", "LOCAL TIME"); "shop": a short sign when a shop or market is
+  part of it ("BAZAAR", "BAKERY"), "shutter" the word it opens on; "sunrise": the word the sun starts coming up
+  on, when it does. Its elements are 0-2 locals only (the people of the situation, with "say" and "react" on the
+  word they say it). "focus" names the place. Never the first scene.
 - a paper scene (at most one, and only when the story has a dated moment that made the news: a sale, a treaty, a
   declaration, a war's start or end, a vote) shows that day's newspaper landing on the map: "title" is its front-page
   headline in 3-7 words, as the papers of the time wrote it ("ALASKA SOLD TO THE UNITED STATES"); "subtitle" one
@@ -816,8 +830,12 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                             f"give every map scene after the first at least {limits.map_elements} elements on different cue words "
                             "(the place lighting up, then a label, an icon or a local)")
     kinds = [s.kind.strip().lower() for s in draft.scenes]
-    if any(k not in ("map", "card", "board", "photo", "stage", "compare", "paper") for k in kinds):
-        problems.append("a scene kind is not map, card, board, photo, stage, compare or paper")
+    if any(k not in ("map", "card", "board", "photo", "stage", "compare", "paper", "moment") for k in kinds):
+        problems.append("a scene kind is not map, card, board, photo, stage, compare, paper or moment")
+    if kinds.count("moment") > 2:
+        problems.append(f"{kinds.count('moment')} moment scenes (at most two)")
+    if kinds and kinds[0] == "moment":
+        problems.append("the first scene can't be a moment (it is the thumbnail: a map)")
     if kinds.count("paper") > 1:
         problems.append(f"{kinds.count('paper')} newspapers (at most one: the story's one dated moment)")
     if kinds and kinds[0] == "paper":
@@ -897,6 +915,20 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"split screen {i}: its elements are 2-3 strips, each a measure, a bridge (build) or a highlight")
             if any(e.kind == "build" and e.icon.strip().lower() != "bridge" for e in strips):
                 problems.append(f"split screen {i}: a strip's build is a bridge")
+        if s.kind.strip().lower() == "moment":
+            from modules import bw_moment
+
+            if s.sky.strip().lower() not in bw_moment.SKIES:
+                problems.append(f"moment scene {i}: its sky is night, dawn, day or sunset")
+            if s.clock and not bw_moment.CLOCK.fullmatch(s.clock.strip()):
+                problems.append(f"moment scene {i}: its clock is an hour like 10:00")
+            if [e for e in s.elements if e.kind != "local"] or len(s.elements) > 2:
+                problems.append(f"moment scene {i}: its elements are 0-2 locals and nothing else (the people of the situation)")
+            low = s.narration.lower()
+            for key in ("shutter", "sunrise"):
+                cue = getattr(s, key).strip().lower()
+                if cue and cue not in low:
+                    problems.append(f"moment scene {i}: its {key} word {cue!r} is not in its narration")
         if s.kind.strip().lower() == "paper":
             if not 3 <= words(s.title) <= 8:
                 problems.append(f"paper scene {i}: its title is the headline, 3-7 words")
