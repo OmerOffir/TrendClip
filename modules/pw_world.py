@@ -186,14 +186,20 @@ def falling(kind: str, angle: int) -> Image.Image:
     return shrink(img).rotate(angle, resample=Image.BICUBIC, expand=True)
 
 
-def rain(img: Image.Image, t: float, seed: int, n: int = 26) -> None:
-    """Banknotes and coins falling and turning over the whole frame (a scene's rain: cash), already falling at t=0."""
+OPEN = 1.5  # seconds of a clean opening: the hook's payoff alone, before its money rain falls in
+
+
+def rain(img: Image.Image, t: float, seed: int, n: int = 26, enter: bool = False) -> None:
+    """Banknotes and coins falling and turning over the whole frame (a scene's rain: cash), already falling at t=0;
+    with `enter` they start above the frame at t=0 and fall in one by one (nothing before t=0)."""
     rng = np.random.default_rng(seed)
     for k in range(n):
         x0, y0 = rng.uniform(-40, W + 40), rng.uniform(-200, H)
         speed, spin, sway = rng.uniform(260, 520), rng.uniform(-160, 160), rng.uniform(20, 60)
         kind = "bill" if k % 3 else "coin"
-        y = (y0 + speed * t) % (H + 260) - 160
+        if enter and speed * t < y0 + 200:
+            continue
+        y = (speed * t - (y0 + 200) if enter else y0 + speed * t) % (H + 260) - 160
         x = x0 + sway * math.sin(t * 2.4 + k)
         angle = int((rng.uniform(0, 360) + spin * t) // 15 * 15) % 360
         put(img, falling(kind, angle), (x, y))
@@ -257,6 +263,22 @@ def arrow(color: tuple[int, int, int] = GOLD) -> Image.Image:
     pts = [(30, 0), (60, 0), (60, 58), (84, 58), (45, 104), (6, 58), (30, 58)]
     d.polygon([(x * SS, y * SS) for x, y in pts], fill=color, outline=INK, width=4 * SS)
     return shrink(img)
+
+
+@lru_cache(maxsize=4)
+def arrow_right(color: tuple[int, int, int] = GOLD) -> Image.Image:
+    return arrow(color).rotate(90, expand=True)
+
+
+def side_by_side(*sprites: Image.Image, gap: int = 18) -> Image.Image:
+    w = sum(s.width for s in sprites) + gap * (len(sprites) - 1)
+    h = max(s.height for s in sprites)
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    x = 0
+    for s in sprites:
+        img.alpha_composite(s, (x, (h - s.height) // 2))
+        x += s.width + gap
+    return img
 
 
 # people -------------------------------------------------------------------------------------------------------------
@@ -668,9 +690,11 @@ class WorldRenderer:
             color = COLORS.get(str(h.get("color") or ("white" if SKIES.get(o.get("sky", "day"), SKIES["day"])["dark"] else "ink")), WHITE)
             item = {"type": "head", "at": -1.0 if first and not h.get("cue") else at(h.get("cue"), k), "y": y + size * 0.62,
                     "text": str(h["text"]), "size": size, "color": color}
-            if h.get("from") and amount(str(h["from"])) is not None and amount(str(h["text"])):  # "$0" races too  # races up from `from`, lands on its cue
-                item.update(at=-1.0 if first else scene.start, start=scene.start, land=cue_time(scene, words, h.get("cue"), 2),
-                            frm=str(h["from"]))
+            if h.get("from") and amount(str(h["from"])) is not None and amount(str(h["text"])):  # "$0" races too
+                if first:  # the hook shows its payoff from frame 0: half the viewers swiped a figure still racing (2026-11-09)
+                    item.update(at=-1.0, hero=True, frm=str(h["from"]), solo=len(o.get("head") or []) == 1)
+                else:  # races up from `from`, lands on its cue
+                    item.update(at=scene.start, start=scene.start, land=cue_time(scene, words, h.get("cue"), 2), frm=str(h["from"]))
             items.append(item)
             y += size * 1.15
         if isinstance(o.get("big"), dict):
@@ -760,8 +784,8 @@ class WorldRenderer:
             x0 = 60 + drift // 2
             img = back_img.crop((x0, 0, x0 + W, H))
         dark = SKIES[sky]["dark"]
-        if o.get("rain"):
-            rain(img, t - scene.start, (self.spec.seed or 7) + i)
+        if o.get("rain"):  # the hook's rain falls in after the opening, which stays clean and readable
+            rain(img, t - scene.start - (OPEN if i == 0 else 0.0), (self.spec.seed or 7) + i, enter=i == 0)
         for it in self.items[i]:
             self.draw_item(img, it, t, dark, i)
         self.top_bar(img, scene)
@@ -815,7 +839,11 @@ class WorldRenderer:
                 else:  # landed: a punch of size, then still
                     dt = t - it["land"]
                     pulse = 1 + 0.18 * math.sin(math.pi * min(1.0, dt / 0.35)) * (dt < 0.35)
+            if it.get("hero"):  # the hook's payoff breathes, so the opening isn't still
+                pulse = 1 + 0.035 * math.sin(t * 5.0)
             sp = big_text(text, it["size"], it["color"])
+            if it.get("solo"):  # the hook's only line: the start money beside it, so frame 0 shows the jump
+                sp = side_by_side(big_text(it["frm"], it["size"], RED), arrow_right(), sp)
             fit = min(1.0, (W - 70) / sp.width)
             put(img, sp, (W / 2, it["y"]), scale=s * fit * pulse, alpha=a)
         elif kind == "arrow":

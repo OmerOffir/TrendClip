@@ -1070,4 +1070,34 @@ def test_a_figure_races_up_from_zero(monkeypatch):
     spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
     bw_render.align(spec)
     head = pw_world.WorldRenderer(spec).items[0][0]
-    assert head["at"] < 0 and "land" in head and pw_world.racing("$0", "$10 BILLION", 0.5).startswith("$")
+    assert head["at"] < 0 and head["text"] == "$10 BILLION" and pw_world.racing("$0", "$10 BILLION", 0.5).startswith("$")
+
+
+def test_the_hook_opens_clean_with_its_payoff(monkeypatch):
+    """2026-11-09: 42-58% stayed on the world hooks (59-75% on the old stories): frame 0 showed a figure still racing
+    ($5,183) under a full money rain. Now the payoff is there at frame 0, the rain falls in after the opening, and
+    later scenes still race."""
+    from modules import bw_render, pw_world
+
+    monkeypatch.setattr(pw_world, "ensure_fonts", lambda folder=None: None)
+    script = {"format": "world", "scenes": [
+        {"kind": "world", "narration": "Five thousand dollars became a billion dollar company.", "rain": "cash",
+         "head": [{"text": "$1,200,000,000", "from": "$5,000", "cue": "billion"}]},
+        {"kind": "world", "narration": "Then sales went from four to ten million dollars.",
+         "head": [{"text": "$10,000,000", "from": "$4,000,000", "cue": "ten"}]}]}
+    words, k = [], 0
+    for sc in script["scenes"]:
+        for w in sc["narration"].split():
+            words.append(bw_render.Word(w, k * 0.3, k * 0.3 + 0.25)); k += 1
+    spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
+    bw_render.align(spec)
+    r = pw_world.WorldRenderer(spec)
+    hook, later = r.items[0][0], r.items[1][0]
+    assert hook.get("hero") and "land" not in hook and "land" in later
+    clean, rained = r.frame(0.0), r.frame(pw_world.OPEN + 1.2)
+    plain = pw_world.WorldRenderer(bw_render.spec_from_dict({**script, "scenes": [{**script["scenes"][0], "rain": None},
+                                                                                   script["scenes"][1]], "seed": 3}, words))
+    bw_render.align(plain.spec)
+    import numpy as np
+    assert np.abs(np.asarray(clean, dtype=int) - np.asarray(plain.frame(0.0), dtype=int)).mean() < 0.5  # no rain at frame 0
+    assert np.abs(np.asarray(rained, dtype=int) - np.asarray(plain.frame(pw_world.OPEN + 1.2), dtype=int)).mean() > 0.5
