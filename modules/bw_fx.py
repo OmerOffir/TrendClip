@@ -1992,6 +1992,50 @@ class FxRenderer(Renderer):
                             e.opts["_lean"] = -1 if pos[id(e)][0] <= min(r[0] for r in rest) else 1
         return self._spots[key] or xy
 
+    def hook_y(self, k: int) -> float:
+        """The flash-forward's words never stand on a character or an icon of the flashed scene (the owner,
+        2026-11-09: "1 ZONE" sat on the local): under the headline when that is clear, else lower down."""
+        if "_hook_y" not in self.__dict__:
+            scene = self.spec.scenes[k]
+            cam = self.camera(k, scene.end - 0.05)
+            spots = [self.anchor(cam, el) for el in scene.elements if el.kind in ("local", "icon", "pole", "clock")]
+            half_h = 150
+            best = bw_render.HEAD_Y + 230
+            for y in (bw_render.HEAD_Y + 230, MAP_BOTTOM - 200, CY):
+                if all(abs(sy - y) > half_h + 130 or abs(sx - W / 2) > 520 for sx, sy in spots):
+                    best = y
+                    break
+            self.__dict__["_hook_y"] = best
+        return self.__dict__["_hook_y"]
+
+    def clock(self, ov: Image.Image, el: Element, xy: tuple[float, float], t: float) -> None:
+        """A clock on a place, showing its hour ("text": "9:00"): it pops in with its hands sweeping round to the hour,
+        the place's name under it, so a country's time zones read at a glance (the owner, 2026-11-09: five clocks on
+        China, not just the number 5)."""
+        from modules import bw_moment
+
+        u = (t - el.at) / 0.4
+        if u <= 0 or not bw_moment.CLOCK.fullmatch(el.text or ""):
+            return
+        hh, mm = (int(v) for v in el.text.split(":"))
+        sweep = 60 * (1 - bw_moment.ease((t - el.at) / 1.0))  # the minute hand comes round the last hour
+        label = str(el.opts.get("label") or (el.feature.name if el.feature is not None else "")).upper()[:14]
+        key = (hh, round(mm - sweep), label)
+        cache = self.__dict__.setdefault("_clocks", {})
+        if key not in cache:
+            face = bw_moment.clock(hh, mm - round(sweep), label)
+            size = int(el.opts.get("size", 190))
+            k = size / face.width
+            cache[key] = face.resize((size, int(face.height * k)), Image.LANCZOS)
+            if len(cache) > 400:
+                cache.clear()
+        im = cache[key]
+        s = backout(u)
+        if s < 0.999:
+            im = im.resize((max(1, int(im.width * s)), max(1, int(im.height * s))), Image.BILINEAR)
+        face_h = im.width  # the face is square on top; the label hangs under it
+        ov.alpha_composite(im, (int(xy[0] - im.width / 2), int(xy[1] - face_h / 2)))
+
     def element(self, ov, d, cam, el: Element, t: float, scene: Scene) -> None:
         if el.kind == "icon" and el.opts.get("auto"):  # an added GIF (plan_gifs): in a free spot of its own
             if self.cam_clock is not None:  # never on the opening flash-forward's held frames of the outcome
@@ -2011,6 +2055,9 @@ class FxRenderer(Renderer):
             self.icon(ov, el, self.icon_spot(i, scene, el, xy), t)
         elif el.kind == "pole":
             self.pole(ov, el, self.anchor(cam, el), t)
+        elif el.kind == "clock":  # kept clear of the characters and the words, like an icon
+            i = next(k for k, s in enumerate(self.spec.scenes) if s is scene)
+            self.clock(ov, el, self.icon_spot(i, scene, el, self.anchor(cam, el)), t)
         elif el.kind == "local":
             i = next(k for k, s in enumerate(self.spec.scenes) if s is scene)
             x, y = self.anchor(cam, el)

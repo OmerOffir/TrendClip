@@ -327,7 +327,7 @@ LOCAL_MOODS = ("shocked", "sad", "grin", "smug", "think", "smile")  # a local's 
 
 
 class ElementDraft(BaseModel):
-    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter | army | battle | local | build | measure")
+    kind: str = Field(description="highlight | label | pin | ring | line | arrow | parallel | meridian | stamp | icon | pole | route | transfer | counter | army | battle | local | build | measure | clock")
     place: str = Field("", description="The place it is about, named as on a map (see the rules).")
     to: str = Field("", description="line / arrow / army / build / measure: where it ends.")
     value: float = Field(0.0, description="parallel: the latitude; meridian: the longitude (negative = S / W); counter: the number.")
@@ -455,7 +455,11 @@ must be the whole narration.
   scene's "focus" is those two shores so the camera is close. Use it whenever the story is about something built,
   planned or never built: a bridge, a border wall, a fence, a canal), measure (a dashed line between "place" and
   "to" at their closest edges that draws itself, then its length along it; "text" is the distance as the narration
-  says it ("3 KM"), else the map's own km and miles. Use it when a distance is the surprise: "only 3 km apart").
+  says it ("3 KM"), else the map's own km and miles. Use it when a distance is the surprise: "only 3 km apart"),
+  clock (a clock standing on "place" with its hands sweeping round to "text", the hour there ("9:00", "13:00"), the
+  place's name under it. Use clocks whenever the story is about time: 2-5 clocks across a country show its time
+  zones at a glance (Kashgar 9:00, Lhasa 10:00, Chengdu 11:00, Beijing 12:00, Harbin 13:00), two clocks show a
+  gap ("two hours earlier"); cue each on the word that names its place or hour; never just a number for zones).
   local (one of the channel's own characters standing on "place": "icon" is citizen, farmer, settler, king or
   soldier (these act out the mood with their own faces), or diplomat, general, merchant, sultan, emperor, chief,
   fisherman, child, village_woman, blacksmith, nomad (herders, steppe and desert peoples), priest (the church, a
@@ -978,6 +982,8 @@ def check(draft: Draft, res: Research, find=bw_geo.resolve, limits: Limits = SHO
                 problems.append(f"scene {i}: a build's icon is bridge, wall, fence or canal")
             if e.kind == "build" and not ((e.place.strip() and e.to.strip()) or len([p for p in e.points if p.strip()]) >= 2):
                 problems.append(f"scene {i}: a build needs a \"place\" and \"to\", or 2-5 \"points\" along its path")
+            if e.kind == "clock" and not (e.place.strip() and re.fullmatch(r"(?:[01]?\d|2[0-3]):[0-5]\d", e.text.strip())):
+                problems.append(f"scene {i}: a clock needs its place and its hour as text (\"9:00\")")
             if e.kind == "measure" and not (e.place.strip() and e.to.strip()):
                 problems.append(f"scene {i}: a measure needs the two places it measures between (\"place\" and \"to\")")
             if e.kind == "battle" and not e.place.strip():

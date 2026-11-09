@@ -72,9 +72,9 @@ ANTON_URL = "https://github.com/google/fonts/raw/main/ofl/anton/Anton-Regular.tt
 SERIF_FONTS = ("Georgia Bold.ttf", "georgiab.ttf", "DejaVuSerif-Bold.ttf", "LiberationSerif-Bold.ttf")
 
 ELEMENT_KINDS = ("highlight", "label", "pin", "ring", "line", "arrow", "parallel", "meridian", "stamp", "icon", "pole", "route",
-                 "transfer", "counter", "army", "battle", "local", "build", "measure")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
+                 "transfer", "counter", "army", "battle", "local", "build", "measure", "clock")  # a transfer becomes two highlights of one place (spec_from_dict): the old owner, then the new
 MIN_ON_SCREEN = 2.0  # seconds an icon, a flag pole or a local stays before its scene cuts away (a late cue pops in earlier)
-STAY_KINDS = ("icon", "pole", "local")
+STAY_KINDS = ("icon", "pole", "local", "clock")
 NO_PLACE_KINDS = ("stamp", "parallel", "meridian", "route", "sketch", "icon", "pole", "counter", "local")  # their place, if any, is optional
 COLOR_ROLES = ("a", "b", "c", "gold", "red", "white")
 
@@ -732,7 +732,11 @@ class Renderer:
         pill.putalpha(pill.getchannel("A").point(lambda v: int(v * u)))
         ov.alpha_composite(pill, (int(W / 2 - pill.width / 2), int(self.counter_y(row) - pill.height / 2)))
 
-    def hook_text(self, img: Image.Image, s: str, age: float) -> None:
+    def hook_y(self, k: int) -> float:
+        """Where the flash-forward's words stand (their middle): under the headline."""
+        return HEAD_Y + 230
+
+    def hook_text(self, img: Image.Image, s: str, age: float, y: float | None = None) -> None:
         """The flash-forward's words: big gold letters on a dark band that slams in under the headline."""
         if not s:
             return
@@ -750,7 +754,7 @@ class Renderer:
         sc = 1.12 - 0.12 * ease(u)
         band = band.resize((max(1, int(band.width * sc)), max(1, int(band.height * sc))))
         band.putalpha(band.getchannel("A").point(lambda v: int(v * u)))
-        img.alpha_composite(band, (int(W / 2 - band.width / 2), int(HEAD_Y + 230 - band.height / 2)))
+        img.alpha_composite(band, (int(W / 2 - band.width / 2), int((HEAD_Y + 230 if y is None else y) - band.height / 2)))
 
     def hook_frame(self, t: float) -> Image.Image | None:
         """The opening flash-forward (spec.hook): the outcome scene on one held camera (its finished view), first as it
@@ -765,12 +769,12 @@ class Renderer:
         try:
             if t < flip:
                 img = self.scene_frame(k, scene.start)
-                self.hook_text(img, before, 1.0)  # up from the first frame (the thumbnail)
+                self.hook_text(img, before, 1.0, self.hook_y(k))  # up from the first frame (the thumbnail)
             else:
                 img = self.scene_frame(k, scene.end - 0.05)
                 if before and t < flip + 0.15:  # the map changes in place
                     img = Image.blend(self.scene_frame(k, scene.start).convert(img.mode), img, (t - flip) / 0.15)
-                self.hook_text(img, str(hook.get("after") or ""), t - flip)
+                self.hook_text(img, str(hook.get("after") or ""), t - flip, self.hook_y(k))
         finally:
             self.cam_clock = None
         return img
