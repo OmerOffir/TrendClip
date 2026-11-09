@@ -1869,7 +1869,7 @@ def test_an_icon_never_stands_on_words(world, fx_offline):
     car = next(e for e in scene.elements if e.kind == "icon")
     x, y = r.icon_spot(0, scene, car, r.anchor(cam, car))
     half = car.opts.get("size", 190) * 0.6
-    assert (x, y) != r.anchor(cam, car)
+    assert zones  # the pin's name and the label are there to stay clear of
     assert not any(x + half > z[0] and x - half < z[2] and y + half > z[1] and y - half < z[3] for z in zones), ((x, y), zones)
 
 

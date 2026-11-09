@@ -968,6 +968,10 @@ def inside_world(lon: float, lat: float, ppd: float) -> tuple[float, float, floa
     so the frame's edges stay inside it."""
     k = max(0.2, math.cos(math.radians(lat)))
     ppd = max(ppd, (W / 2) / (75 * k), H / 170)
+    # a wide place far north (Russia, Canada): the frame would run past the pole, and moving it south showed China
+    # with Russia a strip at the top (the owner, 2026-11-09). Come closer instead, up to 3x, so the place stays centred
+    room = 88 - lat if lat > 0 else 88 + lat
+    ppd = max(ppd, min(ppd * 3, (CY if lat > 0 else H - CY) / max(1.0, room)))
     half = (W / 2) / (ppd * k)
     lon = min(max(lon, -180 + half), 180 - half)
     lat = min(max(lat, -88 + (H - CY) / ppd), 88 - CY / ppd)
@@ -2069,11 +2073,32 @@ class FxRenderer(Renderer):
             return el.opts.get("x", W / 2) + dx, el.opts.get("y", CY) + dy
         if el.feature is not None:
             x, y = cam.pt(*el.feature.label_point())
+            if not (0 <= x <= W and MAP_TOP - 200 <= y <= MAP_BOTTOM + 150):  # off the frame, not just near an edge
+                x, y = self.seen_point(cam, el.feature, (x, y))
         elif "at" in el.opts:
             x, y = cam.pt(*el.opts["at"])
         else:
             x, y = el.opts.get("x", W / 2), el.opts.get("y", CY)
         return x + dx, y + dy
+
+    def seen_point(self, cam, feat: bw_geo.Feature, xy: tuple[float, float]) -> tuple[float, float]:
+        """A place's label point is off screen (Russia's sits by Moscow while the camera shows Siberia: the bomb on
+        "defeat" never showed, the owner 2026-11-09): stand on the part of the place the frame shows; with none of
+        it on screen, at the frame's edge nearest to it, so what the narration names is always seen."""
+        key = (feat.name, round(cam.lon, 1), round(cam.lat, 1), round(cam.ppd, 1))
+        cache = self.__dict__.setdefault("_seen", {})
+        if key not in cache:
+            box = (90, MAP_TOP + 40, W - 90, MAP_BOTTOM - 40)
+            pts = [q for p in feat.parts for q in cam.xy(p.at(8)[0])
+                   if box[0] <= q[0] <= box[2] and box[1] <= q[1] <= box[3]] if feat.parts else []
+            if pts:
+                a = np.array(pts, dtype=np.float32)
+                cache[key] = (float(a[:, 0].mean()), float(a[:, 1].mean()))
+            else:
+                cache[key] = (min(max(xy[0], box[0]), box[2]), min(max(xy[1], box[1]), box[3]))
+            if len(cache) > 4096:
+                cache.clear()
+        return cache[key]
 
     # -- icons, poles, routes, sketches --
 
