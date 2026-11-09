@@ -426,7 +426,14 @@ DESCRIPTION_RULES = """THE DESCRIPTION
 """
 
 # The scene rules a Short and a long video's chapter share (modules.bw_long)
-SCENE_RULES = """THE SCENES ({min_scenes}-{max_scenes})
+SCENE_RULES = """SHOW IT, DON'T JUST SAY IT (the channel's first rule: viewers leave at still moments and stay when they
+SEE what the narrator says): every claim gets a picture of exactly that. "Five time zones" is five clocks across the
+country with five hours, not the number 5; "the sun rises at 10 a.m." is a clock on 10:00 and a sun; "shops open in
+the dark" is a moment scene in that street; "it was sold" is the newspaper of that day; "a 3 km gap" is a measure;
+"they traded it for an island" is the two places and a transfer. Before you finish, read each scene and ask: what
+does the viewer see on the words that matter? If the answer is "the same map", add the thing itself.
+
+THE SCENES ({min_scenes}-{max_scenes})
 Split the narration, in order and word for word, into scenes of 1-2 sentences. Every scene's narration together
 must be the whole narration.
 - map scenes show places. "focus" = the 1-3 places the camera frames. Elements (2-5 per map scene after the first,
