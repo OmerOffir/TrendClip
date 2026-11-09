@@ -450,6 +450,12 @@ def rewind_on() -> bool:
     return _on("BW_REWIND", "0")
 
 
+def moves_on() -> bool:
+    """The special transitions at the story's big jumps (modules.bw_moves: page, tear, spyglass, ink); BW_MOVES=off
+    drops them."""
+    return _on("BW_MOVES")
+
+
 def sfx_on() -> bool:
     """The code-made sound effects under the voice (modules.bw_sfx); BW_SFX=off drops them."""
     return _on("BW_SFX")
@@ -745,6 +751,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         words = fit_voice(work / "voice.mp3", words, spec.duration, fit)
         spec = bw_render.spec_from_dict(script, words)
     spec.sfx = sfx_on()
+    spec.moves = moves_on()
     progress(0.15, "Placing the maps")
     if missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))

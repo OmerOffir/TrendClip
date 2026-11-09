@@ -150,6 +150,7 @@ class Spec:
     lines: list[list[Word]] = field(default_factory=list)  # the mascot's spoken lines, drawn in its speech bubble
     hold: float = 0.0  # with an outro: seconds after the last word, in place of TAIL (modules.bw_brand.END_HOLD)
     sfx: bool = False  # mix modules.bw_sfx's sound effects under the voice (Borderline Why turns it on)
+    moves: bool = False  # special transitions at the story's big jumps (modules.bw_moves)
     rewind: bool = False  # the trip back in time: a tape rewind into the old years, old film till today (modules.bw_era)
     # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
     # "before": the words stamped on the first map, "after": the words stamped on the outcome}
@@ -513,6 +514,9 @@ class Renderer:
             from modules import bw_era
 
             self.era = bw_era.Era(spec) if bw_era.stretch(spec) else None
+        from modules import bw_moves
+
+        self.moves = bw_moves.planned(spec)  # the special transitions at the big jumps
 
     def color(self, role: str) -> tuple[int, int, int]:
         return self.pal.get(role) or self.pal["a"]
@@ -877,7 +881,13 @@ class Renderer:
         if hooked is None and i == 0 and self.hook_scene() is not None and t < HOOK_END + HOOK_FADE:
             last = self.hook_frame(HOOK_END - 0.01)  # the flash-forward fades into the story
             img = Image.blend(last.convert(img.mode), img, ramp(t, HOOK_END, HOOK_FADE))
-        if hooked is None and i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
+        move = self.moves.get(i) if hooked is None else None
+        if move:
+            from modules import bw_moves
+
+            if t < scene.start + bw_moves.SECONDS[move]:  # one of the special transitions (modules.bw_moves)
+                img = bw_moves.frame(move, self.scene_frame(i - 1, t), img, (t - scene.start) / bw_moves.SECONDS[move])
+        elif hooked is None and i > 0 and t < scene.start + FADE and self.spec.scenes[i - 1].kind != scene.kind:
             img = Image.blend(self.scene_frame(i - 1, t), img, ramp(t, scene.start, FADE))
         if self.era is not None:  # the past as old film, under the mascot and the captions
             img = self.era.grade(img, t)

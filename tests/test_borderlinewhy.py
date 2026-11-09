@@ -2551,6 +2551,44 @@ def test_a_paper_scene_needs_a_headline_a_year_and_its_place():
     assert "a paper scene (at most one" in bw_script.SCENE_RULES
 
 
+def test_special_transitions_play_at_the_big_jumps_each_a_different_one(world, fx_offline):
+    from modules import bw_moves
+
+    scene = lambda kind, focus, **kw: {"kind": kind, "narration": f"Words about {focus}.", "focus": [focus], **kw}
+    data = {"title": "Why?", "cover_text": "A notch", "seed": 1, "look": "satellite", "scenes": [
+        scene("map", "Minnesota", elements=[{"kind": "highlight", "place": "Minnesota"}]),
+        scene("map", "Minnesota"), scene("map", "France"), scene("map", "France"), scene("map", "Minnesota"),
+        scene("map", "Minnesota"), scene("map", "France"), scene("map", "France"),
+        scene("paper", "France", title="The Line Is Drawn Today", year="1783", kicker="Paris, 1783"), scene("map", "France")]}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    assert bw_moves.planned(spec) == {}  # off unless the channel turns it on
+    spec.moves = True
+    moves = bw_moves.planned(spec)
+    assert 1 <= len(moves) <= bw_moves.MAX_MOVES and 8 not in moves and 9 not in moves  # the newspaper lands on its own
+    assert all(b - a > bw_moves.GAP for a, b in zip(sorted(moves), sorted(moves)[1:]))
+    assert len(set(moves.values())) == len(moves)  # never the same one twice
+    i = min(moves)
+    r = fx_offline.FxRenderer(spec)
+    s = spec.scenes[i]
+    mid = r.frame(s.start + bw_moves.SECONDS[moves[i]] / 2)
+    assert mid.size == (bw_render.W, bw_render.H)
+    assert (s.start, bw_moves.SOUNDS[moves[i]], 0.0) in bw_sfx.events(spec) or any(abs(e[0] - s.start) < 0.01 for e in bw_sfx.events(spec))
+
+
+def test_each_transition_starts_on_the_scene_before_and_ends_on_the_next():
+    from PIL import Image
+
+    from modules import bw_moves
+
+    a, b = Image.new("RGB", (216, 384), (200, 30, 30)), Image.new("RGB", (216, 384), (30, 30, 200))
+    for name in bw_moves.MOVES:
+        start = np.asarray(bw_moves.frame(name, a, b, 0.0), dtype=float)
+        end = np.asarray(bw_moves.frame(name, a, b, 1.0), dtype=float)
+        assert abs(np.median(start.reshape(-1, 3), axis=0) - (200, 30, 30)).max() < 2, name
+        assert abs(np.median(end.reshape(-1, 3), axis=0) - (30, 30, 200)).max() < 2, name
+
+
 def test_the_painting_is_an_old_work_of_art_of_that_moment():
     from modules import bw_stage
 

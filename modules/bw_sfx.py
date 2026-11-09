@@ -92,8 +92,15 @@ def sound(name: str, seconds: float = 0.0) -> np.ndarray:
 def events(spec) -> list[tuple[float, str, float]]:
     """(time, sound, seconds) for every moment worth a sound, thinned to one per MIN_GAP."""
     found: list[tuple[float, str, float]] = []
-    for scene in spec.scenes:
-        if scene.kind in ("card", "paper"):  # a title card; the era's newspaper landing (bw_paper)
+    from modules import bw_moves
+
+    moved = bw_moves.planned(spec)
+    for i, scene in enumerate(spec.scenes):
+        if i in moved:  # a special transition (modules.bw_moves): its own sound, not the scene kind's
+            found.append((scene.start, bw_moves.SOUNDS[moved[i]], 0.0))
+            if scene.kind == "photo":
+                found.append((scene.start + 1.6, "pop", 0.0))
+        elif scene.kind in ("card", "paper"):  # a title card; the era's newspaper landing (bw_paper)
             found.append((scene.start, "paper", 0.0))
         elif scene.kind == "board":
             found.append((scene.start + 0.3, "marker", min(1.8, max(0.4, (scene.end - scene.start) * 0.5))))
