@@ -619,6 +619,23 @@ def gif_words(words: list) -> list[tuple[float, str, str]]:
     return out
 
 
+COLD_FLIP = 1.5  # the cold open: the second words land at their cue, else this many seconds in
+
+
+def cold_flip(spec) -> float | None:
+    """When a cold open's second words land (spec.hook on scene 0 with "before" and "after"): at the cue word,
+    else COLD_FLIP seconds in. None without one."""
+    hook = getattr(spec, "hook", None) or {}
+    if hook.get("scene") != 0 or not (hook.get("before") and hook.get("after")):
+        return None
+    cue = "".join(c for c in str(hook.get("cue") or "").lower() if c.isalnum())
+    if cue:
+        for w in spec.words:
+            if "".join(c for c in w.text.lower() if c.isalnum()).startswith(cue):
+                return max(0.6, w.start - 0.08)
+    return COLD_FLIP
+
+
 def plan_gifs(spec, i: int, recent: set[str] | None = None, worn: dict[str, int] | None = None) -> list[Element]:
     """A scene's added GIFs: while some stretch of GIF_GAP seconds would show nothing new (no element, no mascot
     line, and on a photo none of its own beats), the GIF of a word said in it pops up on that word, the one
@@ -633,6 +650,8 @@ def plan_gifs(spec, i: int, recent: set[str] | None = None, worn: dict[str, int]
               *[ln[0].start for ln in getattr(spec, "lines", []) if ln and start <= ln[0].start < end]}
     if scene.kind == "photo":
         events |= {start + 0.9, start + 1.6}
+    if i == 0 and (flip := cold_flip(spec)) is not None and start <= flip < end:
+        events.add(flip)  # the cold open's words change: something new
     added: list[Element] = []
     while cands and len(added) < GIF_MAX:
         ev = sorted(events)

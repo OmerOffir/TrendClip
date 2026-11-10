@@ -1930,6 +1930,30 @@ def _hook_dict():
     return data
 
 
+def test_cold_open_puts_its_words_on_the_first_scene_and_flips_them_at_the_cue(world):
+    from modules import bw_fx
+
+    data = _spec_dict()
+    cue = data["scenes"][0]["narration"].split()[3]
+    data["hook"] = {"scene": 0, "before": "2 MILES APART", "after": "21 HOURS APART", "cue": cue}
+    spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))
+    assert bw_render.prepare(spec) == []
+    r = bw_render.Renderer(spec)
+    assert r.hook_scene() is None and r.hook_frame(0.3) is None  # no flash-forward: the first scene plays from frame 0
+    said = next(w for w in spec.words if w.text.strip(".,").lower().startswith(cue.strip(".,").lower()))
+    flip = bw_fx.cold_flip(spec)
+    assert flip == max(0.6, said.start - 0.08) == r.cold_flip()
+    assert r.cold_headline(0.0) == ("2 MILES APART", 1.0)
+    assert r.cold_headline(flip + 1)[0] == "21 HOURS APART" and r.cold_headline(flip + 1)[1] == 1.0
+    band = slice(bw_render.HEAD_Y, bw_render.HEAD_Y + 260)
+    before, after = (np.asarray(r.frame(t)).astype(int)[band] for t in (0.0, flip + 0.5))
+    assert np.abs(before - after).mean() > 2  # the words changed
+    spec.hook = {"scene": 0, "before": "2 MILES APART", "after": "21 HOURS APART"}
+    assert bw_fx.cold_flip(spec) == bw_fx.COLD_FLIP  # no cue: a fixed moment
+    spec.hook = {}
+    assert bw_fx.cold_flip(spec) is None and r.cold_headline(0.0) is None
+
+
 def test_flash_forward_opens_on_the_outcome_then_the_story(world):
     data = _hook_dict()
     spec = bw_render.spec_from_dict(data, _words(" ".join(s["narration"] for s in data["scenes"])))

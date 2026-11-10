@@ -154,6 +154,8 @@ class Spec:
     rewind: bool = False  # the trip back in time: a tape rewind into the old years, old film till today (modules.bw_era)
     # the opening flash-forward: {"scene": index of the later scene whose finished frame shows the outcome,
     # "before": the words stamped on the first map, "after": the words stamped on the outcome}
+    # the cold open: {"scene": 0, "before", "after", "cue"}: no flash-forward; the first scene is the strange picture
+    # itself and plays from frame 0 with "before" on it, "after" landing when the narrator says "cue"
     hook: dict[str, Any] = field(default_factory=dict)
     style: str = ""  # "war": the war-map look (modules.bw_fx): a paper map, each side in one solid colour
 
@@ -531,6 +533,28 @@ class Renderer:
         k = self.spec.hook.get("scene") if self.spec.hook else None
         return k if isinstance(k, int) and 0 < k < len(self.spec.scenes) else None
 
+    def cold(self) -> dict | None:
+        """The cold open's words (spec.hook on scene 0), or None."""
+        hook = self.spec.hook or {}
+        return hook if hook.get("scene") == 0 and (hook.get("before") or hook.get("after")) else None
+
+    def cold_flip(self) -> float:
+        """When the cold open's second words land: at the cue word, else COLD_FLIP seconds in."""
+        from modules import bw_fx  # it imports this module
+
+        return bw_fx.cold_flip(self.spec) or 0.0
+
+    def cold_headline(self, t: float) -> tuple[str, float] | None:
+        """The cold open's words as the first scene's headline: (text, how far in it is, 0..1): "before" from frame 0,
+        "after" landing at its cue. None without a cold open."""
+        hook = self.cold()
+        if hook is None:
+            return None
+        flip = self.cold_flip()
+        if hook.get("after") and (t >= flip or not hook.get("before")):
+            return str(hook["after"]), ramp(t, flip, 0.18) if hook.get("before") else 1.0
+        return str(hook["before"]), 1.0
+
     def cam_time(self, i: int, t: float) -> float:
         """The camera's clock: held during the flash-forward; the first scene's move starts once the flash-forward
         is over (squeezed into the rest of the scene, so it still ends where the next scene's flight begins)."""
@@ -829,7 +853,9 @@ class Renderer:
         scene = self.spec.scenes[i]
         img = self.map_frame(i, t) if scene.kind == "map" else self.card_frame(i, t)
         ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        if i == 0 and self.spec.cover:
+        if i == 0 and (cold := self.cold_headline(t)):
+            headline(ov, cold[0], cold[1], color=FIXED["gold"], size=110)
+        elif i == 0 and self.spec.cover:
             headline(ov, self.spec.cover, 1.0, color=FIXED["gold"], size=96)
         elif scene.headline:
             headline(ov, scene.headline, ramp(t, scene.start + 0.15), color=FIXED["gold"] if scene.kind == "map" else FIXED["red"])
