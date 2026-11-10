@@ -219,7 +219,7 @@
     els.topics.innerHTML = rows.length ? rows.map((t, i) => `<div class="pw-slot pw-topic${i === 0 && !t.used ? " next" : ""}">
         <span class="pw-n">${t.used ? "" : i + 1}</span>
         ${t.used ? '<span class="pill good">✅ written</span>' : i === 0 ? '<span class="pill warn">▶ next</span>' : ""}
-        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 50-75 s">📖 story</span>' : t.format === "world" ? '<span class="pill good" title="A true story in the colour world: 55-75 s">🌆 true story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
+        <span class="pw-what">${esc(t.question)}</span>${t.format === "story" ? '<span class="pill good" title="A money story: 50-75 s">📖 story</span>' : t.format === "world" ? '<span class="pill good" title="A true story on the price-tag pegboard: 50-75 s">🌆 true story</span>' : ""}<span class="pill">${esc(t.pillar || "—")}</span>
         ${t.used ? "" : `${i && !linux ? `<button type="button" class="btn-secondary" data-topic-first="${esc(t.question)}" title="The next script written (Write it myself or Write a week) takes this one">⬆ Write next</button>` : ""}
           <button type="button" class="btn-primary" data-topic-write="${esc(t.question)}" title="Opens Write it myself with this question; the script goes to the first free slot">✍️ Write it now</button>
           ${linux ? "" : `<button type="button" class="btn-secondary" data-topic-remove="${esc(t.question)}">Remove</button>`}`}
@@ -255,7 +255,7 @@
   }
 
   const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
-  const formatPick = (kind) => `<span class="pill good" title="A true money story in the colour world: a real founder or company, from tiny to huge">🌆 true story · 55-75 s</span>`;
+  const formatPick = (kind) => `<span class="pill good" title="A true money story on the price-tag pegboard: a real founder or company, from tiny to huge">🌆 true story · 55-75 s</span>`;
   const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
 
   function renderWrite(kind, v) {

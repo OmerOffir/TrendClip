@@ -963,6 +963,103 @@ def problems(script: dict) -> list[str]:
             tok = re.sub(r"[^\w$]", "", str(cue or "").lower())
             if cue and not any(w == tok or (len(tok) > 2 and w.startswith(tok)) for w in spoken):
                 found.append(f"{where}: the cue \"{cue}\" is not a word of its narration")
+    return found + layout_problems(script)
+
+
+SCENES = (7, 14)
+HANG_MOST = 3  # tags side by side on the rail
+HANG_X = {1: (0.5,), 2: (0.27, 0.73), 3: (0.17, 0.5, 0.83)}
+HANG_SCALE = {1: 1.3, 2: 1.3, 3: 0.95}  # three in a row overlap when they swing at more than this
+STICKER_TEXT = 22  # characters on a sticker
+STICKER_Y = (1010, 1260, 1330)  # the first sticker's row: under plain tags, under a price tied below, under a card tied below
+STICKER_ROOM = (3, 2, 1)  # label stickers that fit under each
+STICKER_STEP = 110
+STICKER_LOW = 1340  # lower than this and a sticker sits on the caption
+WIDE = ("paper", "news", "board", "doc")  # cards too wide to hang beside another tag at full size
+
+
+def under(hang: list[dict]) -> int:
+    """What is tied under the scene's tags: 0 nothing, 1 a price, 2 a card (the tallest decides the stickers' room)."""
+    kids = [h["child"] for h in hang if h.get("child")]
+    return 2 if any(c.get("kind") == "card" or c.get("draw") for c in kids) else 1 if kids else 0
+
+
+def arrange(script: dict) -> dict:
+    """A copy of the script with every place left out filled in: where each tag hangs (x, scale, len) and where each
+    sticker sticks (x, y). A script from the LLM names what hangs, never where; a hand-placed value is kept."""
+    import copy
+
+    out = copy.deepcopy(script)
+    for sc in out.get("scenes") or []:
+        hang = sc.get("hang") or []
+        n = min(max(len(hang), 1), HANG_MOST)
+        for k, h in enumerate(hang):
+            if "x" in h:  # placed by hand: left as it is
+                continue
+            h["x"] = HANG_X[n][k] if k < n else 0.5
+            h.setdefault("scale", 1.0 if n > 1 and h.get("draw") in WIDE else 1.1 if sc.get("belt") else HANG_SCALE[n])
+            # under a belt the tag hangs below the line; the middle of three hangs lower, so they swing clear
+            h.setdefault("len", 380 if sc.get("belt") else 210 if n == 3 and k == 1 else 120)
+            if h.get("child"):
+                h["child"].setdefault("scale", h["scale"])
+        if sc.get("belt"):  # small things riding the rail, clear of the tag below them
+            for key, value in (("scale", 0.7), ("len", 50), ("gap", 250), ("n", 40)):
+                sc["belt"].setdefault(key, value)
+        base, free = STICKER_Y[under(hang)], None
+        if under(hang) and len(hang) == 2 and not all(h.get("child") for h in hang):
+            # one tag has nothing tied under it: the labels go under that one, clear of the other's child
+            base, free = STICKER_Y[0], next(h.get("x", 0.5) for h in hang if not h.get("child"))
+        row = 0
+        round_one = any(st.get("kind") in ("burst", "stamp") for st in sc.get("stickers") or [])
+        for st in sc.get("stickers") or []:
+            if "x" in st or "y" in st:  # placed by hand
+                continue
+            if st.get("kind") in ("burst", "stamp"):  # round ones go to the right, beside the labels
+                labels = sum(1 for o in sc["stickers"] if o.get("kind") not in ("burst", "stamp"))
+                st.setdefault("x", free or 0.83)  # beside a tied tag it goes under the labels, not under the child
+                st.setdefault("y", min(base + (STICKER_STEP * labels + 50 if free else 60), STICKER_LOW - 60))
+                st.setdefault("size", 140 if st.get("kind") == "burst" else 84)
+                st.setdefault("rot", 7 if st.get("kind") == "burst" else -5)
+            else:
+                st.setdefault("x", free + (0.03 if free > 0.5 else -0.03) if free else 0.36 if round_one else 0.5 if len(str(st.get("text", ""))) > 16 else (0.36, 0.5, 0.4)[row % 3])
+                st.setdefault("y", min(base + STICKER_STEP * row, STICKER_LOW))
+                row += 1
+    return out
+
+
+def layout_problems(script: dict) -> list[str]:
+    """What cannot be laid out: too many tags on the rail, too many stickers for the room under them, long words."""
+    found = []
+    scenes = script.get("scenes") or []
+    if not SCENES[0] <= len(scenes) <= SCENES[1]:
+        found.append(f"{len(scenes)} scenes (a tags story has {SCENES[0]}-{SCENES[1]})")
+    for k, sc in enumerate(scenes, 1):
+        where = f"scene {k}"
+        hang = sc.get("hang") or []
+        if not hang and not sc.get("belt"):
+            found.append(f"{where}: nothing hangs (give it 1-{HANG_MOST} tags in hang, or a belt)")
+        if len(hang) > HANG_MOST:
+            found.append(f"{where}: {len(hang)} tags on the rail (at most {HANG_MOST}: tie one under another as its child)")
+        loose = [s for s in sc.get("stickers") or [] if "y" not in s]
+        labels = [s for s in loose if s.get("kind") not in ("burst", "stamp")]
+        room = STICKER_ROOM[under(hang)]
+        if len(hang) == 2 and not all(h.get("child") for h in hang):
+            room = STICKER_ROOM[0]  # beside the child, under the tag that has none
+        if len(labels) > room:
+            found.append(f"{where}: {len(labels)} label stickers (room for {room} here)")
+        if len(loose) - len(labels) > 1:
+            found.append(f"{where}: one burst or stamp a scene")
+        for s in loose:
+            if len(str(s.get("text", "")).replace("|", " ")) > STICKER_TEXT:
+                found.append(f"{where}: the sticker \"{s.get('text')}\" is over {STICKER_TEXT} characters")
+        for h in hang:
+            for tag in (h, h.get("child") or {}):
+                if len(str(tag.get("name", ""))) > 12:
+                    found.append(f"{where}: the name \"{tag['name']}\" is over 12 characters")
+                if tag.get("kind") == "price" and len(str(tag.get("text", ""))) > 14:
+                    found.append(f"{where}: the price \"{tag['text']}\" is over 14 characters")
+        if sc.get("cut") and sc["cut"].get("id") not in [h.get("id") for h in hang]:
+            found.append(f"{where}: cut names the id of a tag hanging in that scene")
     return found
 
 
@@ -984,7 +1081,7 @@ if __name__ == "__main__":  # a sample from a recorded voice: python -m modules.
     args = ap.parse_args()
     data = json.loads(Path(args.script).read_text(encoding="utf-8"))
     said = json.loads(Path(args.voice).with_suffix(".words.json").read_text(encoding="utf-8"))
-    sp = bw_render.spec_from_dict(data, [bw_render.Word(w["word"], float(w["start"]), float(w["end"])) for w in said])
+    sp = bw_render.spec_from_dict(arrange(data), [bw_render.Word(w["word"], float(w["start"]), float(w["end"])) for w in said])
     sp.hold, sp.sfx = 0.5, True
     if args.stills:
         bw_render.align(sp)

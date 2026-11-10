@@ -744,6 +744,95 @@ The example (a finished script):
 {_example()}"""
 
 
+TRUE_LOOK = "tags"  # the look a true story is written in: "tags" (the pegboard, the owner's pick 2026-11-10) or "world"
+TAGS_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "005-coke-tags.json"  # the prompt's example only
+PLACES = ("x", "y", "len", "scale", "rot", "gap", "n")  # where things hang: the renderer's job, never the LLM's
+
+
+def _unplaced(node: Any) -> Any:
+    """The example without its hand-set places (and its pushes), so the LLM copies the story and not the layout."""
+    if isinstance(node, dict):
+        return {k: _unplaced(v) for k, v in node.items() if k not in PLACES and k != "kick"}
+    return [_unplaced(v) for v in node] if isinstance(node, list) else node
+
+
+def tags_rules() -> str:
+    from modules import pw_tags
+
+    lo, hi = pw_tags.WORDS
+    looks = dict(man="a gentleman with a moustache, a monocle and a bow tie", woman="a woman with her hair in a bun",
+                 boss="a boss with slick hair and a moustache (green tag)", suit="a man in a tie (an official, an agent, a president)",
+                 tenant="a young worker in a cap (blue tag)")
+    script = json.loads(TAGS_EXAMPLE.read_text(encoding="utf-8"))
+    for k in ("topic", "checked", "narration", "seed"):
+        script.pop(k, None)
+    example = json.dumps(_unplaced(script), ensure_ascii=False, indent=1)
+    return f"""Price Tag Why is a YouTube Shorts channel of TRUE money stories with a look nobody else has: the whole story
+hangs on a shop's pegboard. Every person is a paper tag with a face, hanging on a string from a rail; their money is a
+price tag tied under them; things (a bottle, a coin, a contract, a newspaper) are tags with a drawing. Tags swing,
+drop in when they are named, and scissors cut one off when it is gone. Viewers: curious adults (18-45, US/UK/CA/AU),
+not finance experts. The stories that win: a real founder or company that started tiny and ended huge, a famous
+money mistake or rise-and-fall, a genius money move, a price that did something strange. Real people, real numbers,
+real years.
+
+Each script is ONE JSON object shaped exactly like the example below, with "format": "tags":
+- {lo}-{hi} words of narration in all (50-75 seconds). Short spoken sentences, numbers growing as the story goes.
+  Say big money in words ("1.2 billion dollars", "five thousand dollars") and years in digits ("1998").
+  Write names in the narration the way people say them: "Ikea", "Lego", never in capitals (capitals are read letter
+  by letter, right only for real abbreviations: CEO, IBM). Words on tags and stickers are in capitals.
+- {pw_tags.SCENES[0]}-{pw_tags.SCENES[1]} scenes, all "kind": "tags", ONE beat each, at most {pw_tags.SCENE_WORDS} words of narration per scene.
+- scene 1 is the hook (about 6 s, at most 22 words): the start money, the end money and the strange detail in the
+  first sentence. It hangs the story's two sides with their prices tied under them (the person and what they paid,
+  the thing and what it became), with NO cue on them: they are up on the first frame, which is also the thumbnail.
+- then the story in order: a "year" on the scene where time jumps, a "place" when it moves.
+- the last scene hangs the hook's tags again and asks the viewer ONE question (the narration ends with "?"; a
+  burst sticker shows it in 2-4 words). No "follow", no "subscribe".
+A scene's keys (all optional except kind and narration):
+  "board": the pegboard's colour, changed every 1-2 scenes so the picture never sits still:
+    {" | ".join(pw_tags.BOARDS)} (coal or plum with "dim": true for hard times and secrets)
+  "year": "1899"; "place": "CHATTANOOGA" (the sign over the rail; "year": "PRICE TAG WHY" takes an old date down
+    when the scene is not about that year any more)
+  "hang": 1-{pw_tags.HANG_MOST} tags on the rail, left to right. Never give x, y, sizes or angles: the board places everything.
+    Every tag has an "id" (lowercase, the same id in the next scene = the same tag stays up; a tag that is not
+    repeated is pulled away) and a "kind":
+    - "person": "name" (12 characters at most: "THOMAS", "ROOSEVELT"), "sub" (their role: "A LAWYER"), "look": one of
+      {"; ".join(f"{k} = {v}" for k, v in looks.items())},
+      "expr": {"|".join(pw_tags.EXPRESSIONS)}, "moods": [{{"cue": a word, "expr": ...}}] (the face changes as it
+      is said: shocked at the twist, grin at a win, sad at a loss). The same person keeps the same id, name and look.
+    - "price": "text" (14 characters at most: "$1", "5¢", "$18.9 MILLION"), "color": white|red|gold|green|black
+      (green = money won, red = a cost or a loss, gold = the big number), "sub": what it is ("THE DEAL", "SOLD FOR").
+      "from": "$20" with "land": a word makes the figure race up from there and land on that word.
+    - "card": a drawing, "draw" one of: bottle ("label": the word on it, "sub": its price dot); coin ("label": "$20",
+      "sub": "1933"); machine (a vending machine: "label": its name, "sub": its coin); doc (a contract or licence:
+      "title", "no": a line on it, "when": the amount or date); paper (a front page: "headline", "date", "paper":
+      its name); box (a product box: "label"); text ("lines": "DRINK|COCA-COLA|5¢", "color": red|white|gold|green|black:
+      a sign or an ad).
+    "cue": the word the tag drops in on (leave it out for tags that are there from the scene's start).
+    "child": ONE tag tied under it (a price or a card, same keys, with its own "cue"): a person's money, a coin's price.
+  "stickers": slapped on the board as they are said: [{{"text": "TWO LAWYERS" ({pw_tags.STICKER_TEXT} characters at most), "cue": a word,
+    "kind": label (white, a fact) | dark (a hard fact) | gold (a rule, an idea's name)}}]: 1-3 a scene (2 when a tag
+    has a price child, 1 when it has a card child), plus at most ONE round one: "kind": "burst" (a win, the question: "text": "WORLD|RECORD", | breaks
+    the line) or "stamp" (a red verdict: "NO", "SEIZED", "FOREVER").
+  "cut": {{"id": a tag hanging in this scene, "cue": a word}}: scissors cut its string and it falls (a price that
+    ends, a deal that dies, a thing taken away). Use it once or twice a story, on its biggest loss.
+  "belt": {{"draw": box|bottle|coin, "label": "COKE", "sub": "5¢", "cue": a word}}: a line of them riding along the
+    rail (a factory, a mint, many sold). Use it in one scene of a story about a product or a coin.
+  Every "cue" is a word of THAT scene's narration (it appears when the voice says it). Draw only what the narration
+  names at that moment; never write one thing on a drawing of another.
+  RHYTHM: something new happens on screen about every 2 seconds (6-7 spoken words): a tag dropping in, a child tag,
+  a mood, a sticker, the cut. Spread the cues through the sentence, not all on the last word.
+- "sources": 2 or more real pages (news, the company, interviews; never Wikipedia), "claims": every fact and figure,
+  each with 2 or more source numbers. Nothing invented: no made-up quotes, no guessed numbers, no "probably".
+- "comment": the question pinned under the video (the last scene's question + 👇). "title": the YouTube title with
+  the numbers. "question": the first frame's words, at most 5. "description": 2-3 sentences. "hashtags": 2-3 without
+  #. "pillar": one of {", ".join(PILLARS)}.
+Rules: explain, never advise (no "buy", "invest", "you should"); brands are plain words, never logos; a different
+company, trade and decade from one story to the next.
+
+The example (a finished script):
+{example}"""
+
+
 def session_format(session: dict[str, Any]) -> str:
     return session.get("format") if session.get("format") in FORMATS else "why"
 
@@ -759,7 +848,7 @@ def write_prompt(session: dict[str, Any]) -> str:
         what = "one money story for each of these ideas" if many else "the money story for this idea"
     else:
         what = "one script for each of these questions" if many else "the script for this question"
-    text = {"world": world_rules, "story": story_rules}.get(fmt, rules)()
+    text = {"world": tags_rules if TRUE_LOOK == "tags" else world_rules, "story": story_rules}.get(fmt, rules)()
     return (f"{text}\n\nWrite {what}:\n{qs}\n\n"
             f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per idea, in this order' if many else 'one object'}.")
 
@@ -1009,8 +1098,9 @@ def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     drafts = merge(session, parsed.scripts)
     session["drafts"] = drafts
     if session_format(session) in ("story", "world"):
-        for d in drafts:
-            d["format"] = session_format(session)
+        for d in drafts:  # a true story keeps the look it came in (tags or world); one without a format gets today's
+            looks = ("world", "tags") if session_format(session) == "world" else ()
+            d["format"] = d["format"] if d.get("format") in looks else TRUE_LOOK if looks else session_format(session)
     session["problems"] = {str(k): problems_of(d) for k, d in enumerate(drafts, 1)}
     if len(drafts) != len(session["topics"]):
         session["problems"]["0"] = [f"{len(drafts)} scripts for {len(session['topics'])} questions"]

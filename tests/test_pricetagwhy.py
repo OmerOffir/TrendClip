@@ -931,7 +931,7 @@ def test_true_world_stories_have_their_own_prompts_topics_and_rules(tmp_path):
     bad["scenes"][0]["head"][-1].pop("from")
     found = " | ".join(pw_write.problems_of(bad))
     assert "prop.draw" in found and "'banana'" in found and "races up" in found
-    done = pw_write.answer("one", json.dumps({"scripts": [{k: v for k, v in example.items() if k != "format"}]}), tmp_path)
+    done = pw_write.answer("one", json.dumps({"scripts": [example]}), tmp_path)  # a world script still passes as world
     assert done["step"] == "facts" and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "world"
 
 
@@ -1134,3 +1134,42 @@ def test_a_tags_story_passes_the_rules_and_hangs_its_hook_on_the_first_frame():
     assert first.getbbox() and len(first.convert("RGB").getcolors(1 << 24)) > 50  # tags are drawn, not a bare board
     for scene in spec.scenes:
         assert pw_tags.still(spec, (scene.start + scene.end) / 2).size == (bw_render.W, bw_render.H)
+
+
+def test_true_stories_are_written_as_tags_and_the_bot_places_them(tmp_path):
+    """The owner (2026-11-10) picked the hanging tags for the next videos: a true-story session hands the LLM the
+    tags rules, whose example names what hangs but never where; a draft without a format becomes a tags script; and
+    the places the LLM left out are filled in at the make, with the hand-placed example left as it is."""
+    import json
+
+    from modules import pw_tags, pw_write
+
+    example = json.loads(pw_write.TAGS_EXAMPLE.read_text())
+    assert pw_tags.arrange(example) == example  # placed by hand: nothing moves
+    text = pw_write.tags_rules()
+    assert pw_write.TRUE_LOOK == "tags" and '"format": "tags"' in text and "pegboard" in text
+    shown = json.loads(text.split("The example (a finished script):", 1)[1])
+    bare = pw_write._unplaced(example)
+    assert shown == bare and '"x":' not in text and '"scale":' not in text
+    assert pw_write.problems_of(bare) == []
+    placed = pw_tags.arrange(bare)
+    for before, scene in zip(bare["scenes"], placed["scenes"]):
+        assert all("x" in h and "scale" in h and "len" in h for h in scene.get("hang") or [])
+        assert all("x" in s and "y" in s and s["y"] <= pw_tags.STICKER_LOW for s in scene.get("stickers") or [])
+        assert "x" not in json.dumps(before.get("hang") or [])
+    belt = next(sc for sc in placed["scenes"] if sc.get("belt"))
+    assert belt["belt"]["scale"] < 1 and belt["hang"][0]["len"] > 300  # small things on the rail, the tag under them
+
+    crowded = json.loads(json.dumps(bare))
+    crowded["scenes"][2]["hang"] = [{"id": f"p{k}", "kind": "person", "name": "A VERY LONG NAME HERE"} for k in range(4)]
+    crowded["scenes"][3]["stickers"] = [{"kind": "label", "text": "ONE"}] * 4
+    crowded["scenes"][4].pop("hang", None)
+    crowded["scenes"][4].pop("belt", None)
+    found = " | ".join(pw_tags.problems(crowded))
+    assert "4 tags on the rail" in found and "label stickers" in found and "over 12 characters" in found and "nothing hangs" in found
+
+    pw_write.add_topic("Why did a Coke cost 5 cents for 70 years?", "money history", tmp_path, "world")
+    session = pw_write.start("one", "", out_dir=tmp_path, format="world")
+    assert session["format"] == "world" and "pegboard" in session["prompt"] and "true story for this idea" in session["prompt"]
+    done = pw_write.answer("one", json.dumps({"scripts": [{k: v for k, v in bare.items() if k != "format"}]}), tmp_path)
+    assert done["step"] == "facts" and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "tags"

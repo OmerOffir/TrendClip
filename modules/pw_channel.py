@@ -781,6 +781,10 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.05, "Recording the narration")
     spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
+    if is_tags(script):  # the script names what hangs; where it hangs is filled in here
+        from modules import pw_tags
+
+        script = pw_tags.arrange(script)
     spec = bw_render.spec_from_dict(script, spoken)
     spec.hold = 0.5  # the video ends half a second after the last word (no follow line, no redraw)
     spec.sfx = setting("PW_SFX", "on").lower() not in ("off", "0", "no")  # pops, marker, whooshes, a cash ring (pw_render)
