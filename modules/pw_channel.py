@@ -59,9 +59,14 @@ def is_world(script: dict) -> bool:
     return script.get("format") == "world"
 
 
+def is_tags(script: dict) -> bool:
+    """A true money story in the pegboard look (modules.pw_tags, 2026-11-10): everything is a price tag on a string."""
+    return script.get("format") == "tags"
+
+
 def limits(script: dict) -> tuple[float, float]:
     """(min, max) seconds this script's video may run."""
-    if is_world(script):
+    if is_world(script) or is_tags(script):
         return WORLD_SECONDS
     return STORY_SECONDS if is_story(script) else (MIN_SECONDS, MAX_SECONDS)
 VOICE = "af_heart"  # Kokoro-82M (Apache 2.0, commercial use allowed): warm and curious, unlike Borderline Why's voices
@@ -172,6 +177,11 @@ def check_script(script: dict) -> list[str]:
             problems.append("every scene of a world story is of kind world")
         elif not (scenes[0].get("head") or scenes[0].get("big")):
             problems.append("a world story opens on its hook: head lines (or a big figure) on the first scene")
+    elif is_tags(script):
+        if not scenes or not all(s.get("kind") == "tags" for s in scenes):
+            problems.append("every scene of a tags story is of kind tags")
+        elif not any(not h.get("cue") for h in scenes[0].get("hang") or []):
+            problems.append("a tags story opens with its tags up: something in the first scene's hang without a cue")
     elif is_story(script):
         if not scenes or scenes[0].get("kind") != "cast":
             problems.append("a story's first scene is its cast (kind cast)")
@@ -408,7 +418,7 @@ def description(script: dict) -> str:
     if shows_icons(script):
         lines += ["", "Icons: Noto Emoji by Google (Apache 2.0; animated Noto Emoji, CC BY 4.0)."]
     often = "twice a day" if len(slots()) == 2 else "every day"
-    what = "true money story" if is_world(script) else "'why'"
+    what = "true money story" if is_world(script) or is_tags(script) else "'why'"
     lines += ["", DISCLAIMER, "", f"A new {what} {often}: {handle()}", "", " ".join(f"#{t}" for t in tags)]
     return "\n".join(lines).strip()
 
@@ -780,6 +790,10 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         from modules import pw_world
 
         pw_world.render(spec, work / "voice.mp3", work / "video.mp4", music, volume, lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
+    elif is_tags(script):  # the pegboard (modules.pw_tags): the story hangs as price tags on strings
+        from modules import pw_tags
+
+        pw_tags.render(spec, work / "voice.mp3", work / "video.mp4", music, volume, lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
     else:
         pw_render.restyle(spec)  # a product with no drawing becomes a photo scene before the photos are fetched
         if missing := bw_render.prepare(spec):
@@ -803,6 +817,10 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
             at = pw_world.thumb_time(spec)
             pw_world.still(spec, at).save(work / "thumb.jpg", quality=92)
             info["thumb_at"] = round(at, 2)
+        elif is_tags(script):  # the first scene with everything hung and stuck on
+            from modules import pw_tags
+
+            pw_tags.still(spec, info["thumb_at"]).save(work / "thumb.jpg", quality=92)
         else:
             pw_thumb.make(script, work / "thumb.jpg", thumb_style(script))
         info["thumbnail"] = "thumb.jpg"

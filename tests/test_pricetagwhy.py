@@ -1101,3 +1101,36 @@ def test_the_hook_opens_clean_with_its_payoff(monkeypatch):
     import numpy as np
     assert np.abs(np.asarray(clean, dtype=int) - np.asarray(plain.frame(0.0), dtype=int)).mean() < 0.5  # no rain at frame 0
     assert np.abs(np.asarray(rained, dtype=int) - np.asarray(plain.frame(pw_world.OPEN + 1.2), dtype=int)).mean() > 0.5
+
+
+def test_a_tags_story_passes_the_rules_and_hangs_its_hook_on_the_first_frame():
+    """The hanging price tags look (2026-11-10): the example true story is a valid script, the hook's tags hang
+    on frame 0, and a cue that is not a word of its scene is refused."""
+    import copy
+    import json
+
+    from modules import bw_render, pw_tags
+
+    script = json.loads((pw_channel.PROJECT_ROOT / "content/pricetagwhy/examples/005-coke-tags.json").read_text())
+    assert pw_channel.is_tags(script) and not pw_channel.is_world(script)
+    assert pw_channel.check_script(script) == []
+    assert pw_channel.limits(script) == pw_channel.WORLD_SECONDS
+    bad = copy.deepcopy(script)
+    for tag in bad["scenes"][0]["hang"]:
+        tag["cue"] = "lawyers"
+    assert pw_channel.check_script(bad)  # nothing would hang on the first frame
+    bad = copy.deepcopy(script)
+    bad["scenes"][1]["stickers"] = [{"text": "X", "cue": "zebra", "x": 0.5, "y": 1000}]
+    assert any("zebra" in p for p in pw_tags.problems(bad))
+    words, t = [], 0.0
+    for s in script["scenes"]:
+        for w in s["narration"].split():
+            words.append(bw_render.Word(w, t, t + 0.25))
+            t += 0.3
+    spec = bw_render.spec_from_dict({**script, "seed": 3}, words)
+    bw_render.align(spec)
+    first = pw_tags.still(spec, 0.0)
+    assert first.size == (bw_render.W, bw_render.H)
+    assert first.getbbox() and len(first.convert("RGB").getcolors(1 << 24)) > 50  # tags are drawn, not a bare board
+    for scene in spec.scenes:
+        assert pw_tags.still(spec, (scene.start + scene.end) / 2).size == (bw_render.W, bw_render.H)

@@ -1,0 +1,875 @@
+{
+ "title": "A $1 deal and a 5-cent Coke that lasted 70 years",
+ "question": "5 cents for 70 years",
+ "format": "tags",
+ "description": "From 1886 to 1959, a Coke cost a nickel. In 1899 two lawyers got the bottling rights for $1 with syrup at a fixed price forever, Coke painted '5 cents' everywhere, and its vending machines took only a nickel. Coke's boss even asked President Eisenhower for a 7.5-cent coin.",
+ "pillar": "money history",
+ "hashtags": [
+  "moneystory",
+  "cocacola",
+  "history"
+ ],
+ "comment": "Would you promise one price forever? 👇",
+ "sources": [
+  {
+   "title": "NPR Planet Money: Why Coke cost a nickel for 70 years (2012)",
+   "url": "https://www.npr.org/sections/money/2012/11/15/165143816/why-coke-cost-a-nickel-for-70-years"
+  },
+  {
+   "title": "Levy and Young: 'The Real Thing': Nominal price rigidity of the nickel Coke, 1886-1959 (Journal of Money, Credit and Banking)",
+   "url": "https://econ.biu.ac.il/sites/econ/files/shared/people/LevyDaniel/jmcb4.pdf"
+  },
+  {
+   "title": "Tennessee Encyclopedia: Coca-Cola Bottling Company",
+   "url": "https://tennesseeencyclopedia.net/?p=595"
+  },
+  {
+   "title": "Joseph B. Whitehead Foundation: About Joseph B. Whitehead",
+   "url": "https://www.jbwhitehead.org/about/joseph-b-whitehead"
+  },
+  {
+   "title": "Improbable Research: The epic endurance of nickel-a-bottle Coca-Cola (2012)",
+   "url": "https://improbable.com/2012/04/28/the-epic-endurance-of-nickel-a-bottle-coca-cola/"
+  }
+ ],
+ "claims": [
+  {
+   "claim": "A Coke cost a nickel from 1886 until about 1959, more than 70 years",
+   "sources": [
+    1,
+    2,
+    5
+   ]
+  },
+  {
+   "claim": "The price held through wars and the Great Depression",
+   "sources": [
+    1,
+    5
+   ]
+  },
+  {
+   "claim": "In 1899 Chattanooga lawyers Benjamin Thomas and Joseph Whitehead got the rights to bottle Coca-Cola from company president Asa Candler",
+   "sources": [
+    1,
+    3,
+    4
+   ]
+  },
+  {
+   "claim": "The bottling rights were sold for $1",
+   "sources": [
+    3,
+    4
+   ]
+  },
+  {
+   "claim": "The 1899 contract sold the bottlers syrup at a fixed price forever",
+   "sources": [
+    1,
+    2
+   ]
+  },
+  {
+   "claim": "Coca-Cola advertised the 5-cent price widely, including painted signs on store walls",
+   "sources": [
+    1,
+    2
+   ]
+  },
+  {
+   "claim": "Coke's vending machines were built to take only a nickel",
+   "sources": [
+    1,
+    2,
+    5
+   ]
+  },
+  {
+   "claim": "Moving to a dime meant a 100% jump, seen as too big",
+   "sources": [
+    1,
+    5
+   ]
+  },
+  {
+   "claim": "Coca-Cola's boss Robert Woodruff, Eisenhower's hunting friend, asked him for a 7.5-cent coin",
+   "sources": [
+    1,
+    2
+   ]
+  },
+  {
+   "claim": "The Treasury disliked the idea and no coin was made",
+   "sources": [
+    1,
+    2
+   ]
+  },
+  {
+   "claim": "As costs rose, prices crept up to 6, 7 or 10 cents depending on the area",
+   "sources": [
+    1,
+    2
+   ]
+  },
+  {
+   "claim": "The last nickel Cokes disappeared around 1959",
+   "sources": [
+    1,
+    2,
+    5
+   ]
+  }
+ ],
+ "scenes": [
+  {
+   "board": "teal",
+   "hang": [
+    {
+     "id": "thomas",
+     "kind": "person",
+     "look": "man",
+     "name": "THOMAS",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.27,
+     "sub": "A LAWYER",
+     "expr": "smug",
+     "moods": [
+      {
+       "cue": "five",
+       "expr": "grin"
+      }
+     ],
+     "child": {
+      "kind": "price",
+      "text": "$1",
+      "scale": 1.3,
+      "color": "green",
+      "sub": "THE DEAL"
+     }
+    },
+    {
+     "kind": "card",
+     "draw": "bottle",
+     "label": "COKE",
+     "sub": "5¢",
+     "id": "coke",
+     "x": 0.73,
+     "scale": 1.3,
+     "len": 120,
+     "child": {
+      "kind": "price",
+      "text": "5¢",
+      "scale": 1.3,
+      "color": "gold",
+      "sub": "FOR 70 YEARS"
+     }
+    }
+   ],
+   "stickers": [
+    {
+     "text": "$1 TO BOTTLE COKE",
+     "cue": "dollar",
+     "x": 0.36,
+     "y": 1200,
+     "kind": "label"
+    },
+    {
+     "text": "70|YEARS",
+     "cue": "70",
+     "x": 0.85,
+     "y": 1275,
+     "kind": "burst",
+     "size": 112,
+     "rot": 8
+    }
+   ],
+   "kick": [
+    {
+     "id": "thomas",
+     "cue": "lawyers"
+    },
+    {
+     "id": "coke",
+     "cue": "bottle",
+     "k": -0.22
+    }
+   ],
+   "narration": "Two lawyers paid one dollar to bottle Coca-Cola. And a bottle of Coke stayed at five cents for 70 years.",
+   "kind": "tags"
+  },
+  {
+   "year": "1886",
+   "place": "",
+   "board": "brick",
+   "belt": {
+    "draw": "bottle",
+    "label": "COKE",
+    "sub": "5¢",
+    "scale": 0.7,
+    "len": 50,
+    "gap": 250,
+    "n": 40
+   },
+   "hang": [
+    {
+     "kind": "price",
+     "text": "5¢",
+     "scale": 1.1,
+     "id": "nickel",
+     "x": 0.5,
+     "len": 380,
+     "size": "l",
+     "color": "gold",
+     "sub": "A BOTTLE"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "WARS",
+     "cue": "wars",
+     "x": 0.27,
+     "y": 1090,
+     "kind": "dark",
+     "rot": -3
+    },
+    {
+     "text": "THE GREAT DEPRESSION",
+     "cue": "Depression",
+     "x": 0.6,
+     "y": 1200,
+     "kind": "dark",
+     "rot": 2
+    },
+    {
+     "text": "STILL 5¢",
+     "cue": "move",
+     "x": 0.5,
+     "y": 1330,
+     "kind": "stamp",
+     "size": 100,
+     "rot": -5
+    }
+   ],
+   "narration": "1886. Coca-Cola goes on sale for a nickel. Then come wars, then the Great Depression. The price doesn't move.",
+   "kind": "tags"
+  },
+  {
+   "year": "1899",
+   "place": "CHATTANOOGA",
+   "board": "navy",
+   "hang": [
+    {
+     "id": "thomas",
+     "kind": "person",
+     "look": "man",
+     "name": "THOMAS",
+     "scale": 0.95,
+     "len": 120,
+     "x": 0.17,
+     "sub": "LAWYER",
+     "expr": "smile",
+     "moods": [
+      {
+       "cue": "right",
+       "expr": "grin"
+      }
+     ]
+    },
+    {
+     "id": "whitehead",
+     "kind": "person",
+     "look": "suit",
+     "name": "WHITEHEAD",
+     "scale": 0.95,
+     "len": 210,
+     "x": 0.5,
+     "sub": "LAWYER",
+     "cue": "lawyers",
+     "expr": "smile"
+    },
+    {
+     "id": "candler",
+     "kind": "person",
+     "look": "boss",
+     "name": "ASA CANDLER",
+     "scale": 0.95,
+     "len": 120,
+     "x": 0.83,
+     "sub": "COKE'S BOSS",
+     "cue": "boss",
+     "expr": "think"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "TWO LAWYERS",
+     "cue": "Two",
+     "x": 0.3,
+     "y": 1010,
+     "kind": "dark"
+    },
+    {
+     "text": "CAN WE BOTTLE IT?",
+     "cue": "right",
+     "x": 0.5,
+     "y": 1250,
+     "kind": "gold",
+     "size": 70
+    }
+   ],
+   "kick": [
+    {
+     "id": "thomas",
+     "cue": "Benjamin"
+    },
+    {
+     "id": "candler",
+     "cue": "Candler",
+     "k": -0.2
+    }
+   ],
+   "narration": "1899. Two Chattanooga lawyers, Benjamin Thomas and Joseph Whitehead, ask Coke's boss Asa Candler for the right to bottle it.",
+   "kind": "tags"
+  },
+  {
+   "hang": [
+    {
+     "id": "thomas",
+     "kind": "person",
+     "look": "man",
+     "name": "THOMAS",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.26,
+     "expr": "shocked",
+     "moods": [
+      {
+       "cue": "dollar",
+       "expr": "grin"
+      }
+     ],
+     "child": {
+      "kind": "card",
+      "draw": "doc",
+      "title": "CONTRACT",
+      "no": "BOTTLING",
+      "when": "$1",
+      "scale": 0.9,
+      "cue": "one"
+     }
+    },
+    {
+     "id": "candler",
+     "kind": "person",
+     "look": "boss",
+     "name": "ASA CANDLER",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.74,
+     "expr": "smile",
+     "moods": [
+      {
+       "cue": "fixed",
+       "expr": "smug"
+      }
+     ],
+     "child": {
+      "kind": "price",
+      "text": "SYRUP",
+      "scale": 1.3,
+      "color": "red",
+      "sub": "FIXED PRICE",
+      "cue": "syrup"
+     }
+    }
+   ],
+   "stickers": [
+    {
+     "text": "FOREVER",
+     "cue": "Forever",
+     "x": 0.5,
+     "y": 1270,
+     "kind": "stamp",
+     "size": 110,
+     "rot": -5
+    }
+   ],
+   "kick": [
+    {
+     "id": "candler",
+     "cue": "yes"
+    },
+    {
+     "id": "thomas",
+     "cue": "dollar",
+     "k": -0.2
+    }
+   ],
+   "narration": "Candler says yes, for one dollar. He also sells them syrup at a fixed price. Forever.",
+   "kind": "tags"
+  },
+  {
+   "board": "brick",
+   "year": "PRICE TAG WHY",
+   "hang": [
+    {
+     "kind": "card",
+     "draw": "text",
+     "id": "s1",
+     "lines": "DRINK|COCA-COLA|5¢",
+     "color": "red",
+     "x": 0.19,
+     "len": 130,
+     "cue": "paints"
+    },
+    {
+     "kind": "card",
+     "draw": "text",
+     "id": "s2",
+     "lines": "DRINK|COCA-COLA|5¢",
+     "color": "white",
+     "x": 0.5,
+     "len": 400,
+     "cue": "everywhere"
+    },
+    {
+     "kind": "card",
+     "draw": "text",
+     "id": "s3",
+     "lines": "DRINK|COCA-COLA|5¢",
+     "color": "red",
+     "x": 0.81,
+     "len": 200,
+     "cue": "Signs"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "THE PRICE IS THE AD",
+     "cue": "stores",
+     "x": 0.5,
+     "y": 1130,
+     "kind": "gold"
+    },
+    {
+     "text": "5|CENTS",
+     "cue": "five",
+     "x": 0.5,
+     "y": 1300,
+     "kind": "burst",
+     "size": 120
+    }
+   ],
+   "narration": "Coke paints the price everywhere. Signs on the sides of stores read: Drink Coca-Cola, five cents.",
+   "kind": "tags"
+  },
+  {
+   "board": "teal",
+   "hang": [
+    {
+     "kind": "card",
+     "draw": "machine",
+     "id": "machine",
+     "title": "COCA-COLA",
+     "sub": "5¢",
+     "x": 0.3,
+     "scale": 1.45,
+     "len": 110
+    },
+    {
+     "kind": "card",
+     "draw": "coin",
+     "id": "nick",
+     "title": "5¢",
+     "sub": "NICKEL",
+     "x": 0.77,
+     "scale": 1.05,
+     "len": 260,
+     "cue": "coin"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "ONE COIN ONLY",
+     "cue": "one",
+     "x": 0.7,
+     "y": 1000,
+     "kind": "label"
+    },
+    {
+     "text": "A NICKEL",
+     "cue": "nickel",
+     "x": 0.7,
+     "y": 1170,
+     "kind": "gold",
+     "size": 70
+    }
+   ],
+   "kick": [
+    {
+     "id": "machine",
+     "cue": "vending",
+     "k": 0.12
+    }
+   ],
+   "narration": "Then come vending machines. Most take just one coin: a nickel.",
+   "kind": "tags"
+  },
+  {
+   "hang": [
+    {
+     "kind": "card",
+     "draw": "machine",
+     "id": "machine",
+     "title": "COCA-COLA",
+     "sub": "5¢",
+     "x": 0.3,
+     "scale": 1.45,
+     "len": 110
+    },
+    {
+     "kind": "price",
+     "text": "10¢",
+     "scale": 1.3,
+     "id": "dime",
+     "x": 0.77,
+     "len": 200,
+     "color": "red",
+     "sub": "A DIME",
+     "cue": "dime",
+     "child": {
+      "kind": "card",
+      "draw": "text",
+      "lines": "+100%",
+      "color": "black",
+      "cue": "100"
+     }
+    }
+   ],
+   "stickers": [
+    {
+     "text": "TOO BIG",
+     "cue": "big",
+     "x": 0.62,
+     "y": 1250,
+     "kind": "stamp",
+     "size": 110,
+     "rot": -6
+    }
+   ],
+   "kick": [
+    {
+     "id": "dime",
+     "cue": "jump",
+     "k": 0.3
+    }
+   ],
+   "narration": "A dime would double the price, a 100 percent jump. Too big.",
+   "kind": "tags"
+  },
+  {
+   "board": "plum",
+   "dim": true,
+   "year": "PRICE TAG WHY",
+   "hang": [
+    {
+     "id": "woodruff",
+     "kind": "person",
+     "look": "suit",
+     "name": "WOODRUFF",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.26,
+     "sub": "COKE'S BOSS",
+     "expr": "smile",
+     "moods": [
+      {
+       "cue": "coin",
+       "expr": "grin"
+      }
+     ]
+    },
+    {
+     "id": "ike",
+     "kind": "person",
+     "look": "man",
+     "name": "EISENHOWER",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.74,
+     "sub": "PRESIDENT",
+     "cue": "President",
+     "expr": "think",
+     "child": {
+      "kind": "card",
+      "draw": "coin",
+      "title": "7½¢",
+      "sub": "NEW COIN?",
+      "scale": 0.85,
+      "cue": "seven"
+     }
+    }
+   ],
+   "stickers": [
+    {
+     "text": "HUNTING BUDDIES",
+     "cue": "hunting",
+     "x": 0.3,
+     "y": 1050,
+     "kind": "gold"
+    },
+    {
+     "text": "A NEW COIN?",
+     "cue": "new",
+     "x": 0.3,
+     "y": 1200,
+     "kind": "label"
+    }
+   ],
+   "kick": [
+    {
+     "id": "woodruff",
+     "cue": "Robert"
+    }
+   ],
+   "narration": "But then, Coke's boss Robert Woodruff asks his hunting buddy, President Eisenhower, for a new coin: seven and a half cents.",
+   "kind": "tags"
+  },
+  {
+   "hang": [
+    {
+     "id": "woodruff",
+     "kind": "person",
+     "look": "suit",
+     "name": "WOODRUFF",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.26,
+     "sub": "COKE'S BOSS",
+     "expr": "sad"
+    },
+    {
+     "kind": "card",
+     "draw": "coin",
+     "id": "newcoin",
+     "title": "7½¢",
+     "sub": "NEW COIN?",
+     "x": 0.74,
+     "scale": 1.2,
+     "len": 160
+    }
+   ],
+   "stickers": [
+    {
+     "text": "THE TREASURY: NO",
+     "cue": "Treasury",
+     "x": 0.5,
+     "y": 1300,
+     "kind": "dark"
+    },
+    {
+     "text": "NO",
+     "cue": "No",
+     "x": 0.3,
+     "y": 1100,
+     "kind": "stamp",
+     "size": 150,
+     "rot": -8
+    }
+   ],
+   "cut": {
+    "id": "newcoin",
+    "cue": "No"
+   },
+   "narration": "The Treasury doesn't like it. No new coin.",
+   "kind": "tags"
+  },
+  {
+   "board": "olive",
+   "hang": [
+    {
+     "kind": "price",
+     "text": "6¢",
+     "scale": 1.05,
+     "id": "p6",
+     "x": 0.17,
+     "len": 440,
+     "sub": "SOME STORES",
+     "cue": "six"
+    },
+    {
+     "kind": "card",
+     "draw": "bottle",
+     "label": "COKE",
+     "sub": "5¢",
+     "id": "b10",
+     "x": 0.5,
+     "len": 110,
+     "scale": 1.2,
+     "child": {
+      "kind": "price",
+      "text": "7¢",
+      "scale": 1.05,
+      "color": "gold",
+      "sub": "OTHERS",
+      "cue": "seven"
+     }
+    },
+    {
+     "kind": "price",
+     "text": "10¢",
+     "scale": 1.05,
+     "id": "p10",
+     "x": 0.83,
+     "len": 160,
+     "color": "red",
+     "sub": "SOME PLACES",
+     "cue": "ten"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "COSTS UP",
+     "cue": "Costs",
+     "x": 0.2,
+     "y": 1130,
+     "kind": "dark"
+    },
+    {
+     "text": "THE PRICE CREEPS",
+     "cue": "creep",
+     "x": 0.5,
+     "y": 1300,
+     "kind": "gold"
+    }
+   ],
+   "kick": [
+    {
+     "id": "b10",
+     "cue": "climbing"
+    }
+   ],
+   "narration": "Costs keep climbing. Prices start to creep: six cents, seven, ten.",
+   "kind": "tags"
+  },
+  {
+   "year": "1959",
+   "place": "",
+   "board": "coal",
+   "hang": [
+    {
+     "kind": "card",
+     "draw": "bottle",
+     "label": "COKE",
+     "sub": "5¢",
+     "id": "last",
+     "x": 0.24,
+     "scale": 1.35,
+     "len": 140
+    },
+    {
+     "kind": "card",
+     "draw": "paper",
+     "id": "news",
+     "headline": "THE NICKEL COKE IS GONE",
+     "date": "1959",
+     "x": 0.68,
+     "scale": 1.0,
+     "cue": "nickel"
+    }
+   ],
+   "stickers": [
+    {
+     "text": "70+ YEARS AT 5¢",
+     "cue": "70",
+     "x": 0.5,
+     "y": 1280,
+     "kind": "gold",
+     "size": 70
+    }
+   ],
+   "cut": {
+    "id": "last",
+    "cue": "disappears"
+   },
+   "narration": "1959. The last nickel Coke disappears, after more than 70 years.",
+   "kind": "tags"
+  },
+  {
+   "board": "teal",
+   "hang": [
+    {
+     "id": "candler",
+     "kind": "person",
+     "look": "boss",
+     "name": "ASA CANDLER",
+     "scale": 1.3,
+     "len": 120,
+     "x": 0.27,
+     "expr": "think",
+     "moods": [
+      {
+       "cue": "promise",
+       "expr": "smug"
+      }
+     ],
+     "child": {
+      "kind": "price",
+      "text": "$1",
+      "scale": 1.3,
+      "color": "green",
+      "sub": "THE DEAL"
+     }
+    },
+    {
+     "kind": "card",
+     "draw": "bottle",
+     "label": "COKE",
+     "sub": "5¢",
+     "id": "coke",
+     "x": 0.73,
+     "scale": 1.3,
+     "len": 120,
+     "cue": "70",
+     "child": {
+      "kind": "price",
+      "text": "5¢",
+      "scale": 1.3,
+      "color": "gold",
+      "sub": "FOR 70 YEARS"
+     }
+    }
+   ],
+   "stickers": [
+    {
+     "text": "ONE PRICE|FOREVER?",
+     "cue": "Would",
+     "x": 0.5,
+     "y": 1290,
+     "kind": "burst",
+     "size": 140
+    }
+   ],
+   "kick": [
+    {
+     "id": "candler",
+     "cue": "promise",
+     "k": 0.25
+    }
+   ],
+   "narration": "A one dollar deal, and 70 years at a nickel. Would you promise one price forever?",
+   "kind": "tags"
+  }
+ ],
+ "topic": "How did Coca-Cola stay 5 cents a bottle for 70 years?",
+ "checked": {
+  "rules": true,
+  "facts": "skipped by the owner",
+  "at": "20261108-2331"
+ },
+ "narration": "Two lawyers paid one dollar to bottle Coca-Cola. And a bottle of Coke stayed at five cents for 70 years. 1886. Coca-Cola goes on sale for a nickel. Then come wars, then the Great Depression. The price doesn't move. 1899. Two Chattanooga lawyers, Benjamin Thomas and Joseph Whitehead, ask Coke's boss Asa Candler for the right to bottle it. Candler says yes, for one dollar. He also sells them syrup at a fixed price. Forever. Coke paints the price everywhere. Signs on the sides of stores read: Drink Coca-Cola, five cents. Then come vending machines. Most take just one coin: a nickel. A dime would double the price, a 100 percent jump. Too big. But then, Coke's boss Robert Woodruff asks his hunting buddy, President Eisenhower, for a new coin: seven and a half cents. The Treasury doesn't like it. No new coin. Costs keep climbing. Prices start to creep: six cents, seven, ten. 1959. The last nickel Coke disappears, after more than 70 years. A one dollar deal, and 70 years at a nickel. Would you promise one price forever?",
+ "seed": 3306
+}

@@ -156,6 +156,10 @@ def format_problems(script: dict) -> list[str]:
     """What the renderer and the brief need beyond pw_channel.check_script."""
     if pw_channel.is_world(script):
         return world_problems(script)
+    if pw_channel.is_tags(script):
+        from modules import pw_tags
+
+        return pw_tags.problems(script)
     if pw_channel.is_story(script):
         return story_problems(script)
     problems = []
