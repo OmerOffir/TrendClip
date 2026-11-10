@@ -467,14 +467,15 @@ def brand_on() -> bool:
 
 
 def record_voice(text: str, out: Path, progress=lambda m: None, who: str = "", unload: bool = True,
-                 pace: float = 1.0) -> list[bw_render.Word]:
+                 pace: float = 1.0, voice: str = "") -> list[bw_render.Word]:
     """Kokoro (the hub's GPU voice) when it is installed, else the Edge voice. `who`: "" the narrator, "panda" the
-    mascot (its own voice, made higher and quicker by record_script). `pace` quickens it (a Short: SHORT_PACE)."""
+    mascot (its own voice, made higher and quicker by record_script). `pace` quickens it (a Short: SHORT_PACE).
+    `voice`: a Kokoro voice for this part instead of the narrator's (a quarrel: each side speaks in its own)."""
     from trendclip import kokoro_voice
 
     engine = setting("BW_TTS_ENGINE", "kokoro" if kokoro_voice.available() else "edge").lower()
     if engine == "kokoro":
-        voice = setting("BW_PANDA_VOICE", PANDA_VOICE) if who else setting("BW_TTS_VOICE", DEFAULT_VOICE)
+        voice = setting("BW_PANDA_VOICE", PANDA_VOICE) if who else (voice if kokoro_voice.is_voice(voice) else setting("BW_TTS_VOICE", DEFAULT_VOICE))
         progress(f"Recording the {'mascot' if who else 'narration'} (Kokoro {voice})")
         words = kokoro_voice.synthesize(text, out, voice, round(float(setting("BW_TTS_SPEED", "1.0")) * pace, 3))
         if unload:
@@ -507,8 +508,17 @@ def record_script(script: dict, out: Path, progress=lambda m: None, pace: float 
 
     from modules import bw_brand
 
-    parts = bw_brand.dialogue(script)
-    if all(not who for who, _ in parts):
+    quarrel = any(str(s.get("voice") or "").strip() for s in script.get("scenes") or [])
+    if quarrel:  # each scene's line in its speaker's voice (a scene's "voice"); the mascot's lines between them
+        parts = []
+        for s in script["scenes"]:
+            for who, text, voice in (("panda", s.get("ask"), ""), ("", s.get("narration"), str(s.get("voice") or "")),
+                                     ("panda", s.get("react"), "")):
+                if " ".join(str(text or "").split()) and (not who or script.get("brand")):
+                    parts.append((who, " ".join(str(text).split()), voice))
+    else:
+        parts = [(who, text, "") for who, text in bw_brand.dialogue(script)]
+    if all(not who for who, _, _ in parts) and not quarrel:
         return record_voice(script["narration"], out, progress, pace=pace)
     pitch = float(setting("BW_PANDA_PITCH", "1.22"))
     speed = float(setting("BW_PANDA_SPEED", "1.08"))
@@ -516,9 +526,12 @@ def record_script(script: dict, out: Path, progress=lambda m: None, pace: float 
     pcm = bytearray()
     words: list[bw_render.Word] = []
     try:
-        for k, (who, text) in enumerate(parts):
+        turn = b"\0\0" * int(VOICE_RATE * 0.12)  # a breath between two speakers
+        for k, (who, text, voice) in enumerate(parts):
             tmp = out.with_name(f"{out.stem}.part{k}.mp3")
-            got = record_voice(text, tmp, progress, who=who, unload=False, pace=pace)
+            got = record_voice(text, tmp, progress, who=who, unload=False, pace=pace, voice=voice)
+            if quarrel and not who and pcm and not parts[k - 1][0]:
+                pcm += turn
             # the mascot's voice: pitched up by `pitch` (which also quickens it by `pitch`), then retimed to `speed`
             raw = _pcm(tmp, f"asetrate={VOICE_RATE * pitch:.0f},aresample={VOICE_RATE},atempo={speed / pitch:.4f}" if who else "")
             if who and pcm:

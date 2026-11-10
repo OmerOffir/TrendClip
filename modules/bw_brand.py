@@ -301,8 +301,13 @@ def mascot_mood(spec: bw_render.Spec, mood_of: list[str], i: int, t: float) -> t
     return mood_of[i], start
 
 
+SPOT: tuple[float, float] | None = None  # set while a quarrel draws: the mascot steps in between the two sides (modules.bw_duel)
+
+
 def mascot_spot() -> tuple[float, float]:
     """Where the mascot stands: its centre x and its feet."""
+    if SPOT is not None:
+        return SPOT
     portrait = bw_render.LAYOUT == "portrait"
     return (165 if portrait else 175), bw_render.CAPTION_Y - (70 if portrait else 62)
 
@@ -714,13 +719,13 @@ class Board:
             v = (t - self.done) / 0.45
             if v < 1:
                 v = ease(max(0.0, v))
-                away = (bw_render.W * 0.92, bw_render.H + 60)
+                away = (bw_render.W * getattr(self, "away_x", 0.92), bw_render.H + 60)
                 pen = (last[0] + (away[0] - last[0]) * v, last[1] + (away[1] - last[1]) * v)
         elif pen is None and self.items:
             first = self.items[0]
             v = (t - (first["at"] - 0.35)) / 0.35
             if v > 0:
-                away, s = (bw_render.W * 0.92, bw_render.H + 60), self.start_of(first)
+                away, s = (bw_render.W * getattr(self, "away_x", 0.92), bw_render.H + 60), self.start_of(first)
                 v = ease(v)
                 pen = (away[0] + (s[0] - away[0]) * v, away[1] + (s[1] - away[1]) * v)
         if getattr(self, "guest_item", None) is not None and t > self.guest_item["at"]:

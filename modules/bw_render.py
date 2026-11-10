@@ -60,6 +60,7 @@ MOVE = 0.9  # seconds the camera takes from one scene's view to the next
 FADE = 0.4
 TAIL = 1.2  # seconds after the last word (a video with an outro uses its own, shorter hold instead)
 POP = 0.16  # seconds a caption word stays bigger as it is said
+SIDE_SAID = {"a": (120, 190, 255), "b": (255, 120, 105)}  # a quarrel's caption words, by the speaking side
 COUNT_UP = 1.0  # seconds a counter takes to count up to its number
 HOOK_FLIP, HOOK_END, HOOK_FADE = 0.9, 1.8, 0.35  # the opening flash-forward: the outcome scene before its change until
 # HOOK_FLIP, after it until HOOK_END, on one held camera; then it fades into the first scene, whose camera starts its move
@@ -865,6 +866,8 @@ class Renderer:
     def captions(self, img: Image.Image, t: float) -> None:
         if self.spec.line_at(t):
             return  # the mascot is talking: its words are in its bubble
+        if getattr(self, "duel", None) is not None:
+            return  # a quarrel: each line is in a bubble over its speaker (modules.bw_duel)
         words = self.spec.words
         group = None
         for k, g in enumerate(self.groups):
@@ -875,6 +878,9 @@ class Renderer:
         if not group:
             return
         size = CAPTION_SIZE
+        # a quarrel: the words in the speaker's colour (a scene's "side": a the blue coat, b the red)
+        side = next((sc.opts.get("side") for sc in self.spec.scenes if sc.start <= words[group[0]].start < sc.end), None)
+        said = SIDE_SAID.get(str(side), self.SAID)
         parts = [words[i].text.upper() for i in group]
         gap = lambda f: f.getlength(" ") + 18  # the space plus both words' 9 px outlines
         while size > CAPTION_SIZE * 0.6 and sum(font(size).getlength(p) + gap(font(size)) for p in parts) > W - 80:
@@ -886,7 +892,7 @@ class Renderer:
         popped = None
         for i, p, width in zip(group, parts, widths):
             age = t - words[i].start
-            fill = self.SAID if age >= 0 else (255, 255, 255)
+            fill = said if age >= 0 else (255, 255, 255)
             if 0 <= age < POP:  # the word being said pops up a size, then settles; drawn last, on top
                 popped = (x, p, fill, age)
             else:
@@ -903,7 +909,13 @@ class Renderer:
         i = self.scene_at(t)
         scene = self.spec.scenes[i]
         if self.era is not None and self.era.rewinding(t):  # the tape rewinding into the past (modules.bw_era)
+            duel = getattr(self, "duel", None)
+            if duel is not None:
+                duel.hidden = True  # a quarrel's two sides are not on the tape: they stand over it, never leaving
             img = self.era.rewind(self, t)
+            if duel is not None:
+                duel.hidden = False
+                self.overlay(img, t)
             self.captions(img, t)
             return img.convert("RGB")
         hooked = self.hook_frame(t) if i == 0 else None

@@ -1104,6 +1104,15 @@ class FxRenderer(Renderer):
         self.stages: dict[int, Any] = {}  # the stage scenes' pictures and casts (modules.bw_stage), made on first use
         self.compares: dict[int, Any] = {}  # the split screens' strips (modules.bw_compare)
         self.moods = bw_brand.moods(spec.scenes) if spec.brand else []
+        from modules import bw_duel
+
+        self.duel = bw_duel.Duel.from_spec(spec)
+        if self.duel is not None:  # the sides stand along the bottom of a board: its guest pops up between them,
+            for b in self.boards.values():  # under their bubbles, and the hand leaves between them too
+                b.away_x = 0.5
+                if b.guest_item is not None:
+                    b.guest_item.update(xy=bw_duel.GUEST_SPOT, px=bw_duel.GUEST_PX)
+                    b.items = [it for it in b.items if not it.get("head")]  # no arrow to where the guest was
         self.pens = {i: (self.war_pen(s) if self.war else bw_brand.pen_target(s)) for i, s in enumerate(spec.scenes)
                      if spec.brand and s.kind == "map" and not s.opts.get("globe")}
         self._pen_time: dict[int, tuple[float, float]] = {}
@@ -1924,6 +1933,8 @@ class FxRenderer(Renderer):
         name, a label, a stamp, the captions, the mascot's bubble); then a free slot on the screen, kept for the
         rest of the scene. Decided once, with the camera of the moment the last flag or word is up."""
         key = id(el)
+        if key not in self._spots and el.opts.get("fixed"):  # a quarrel's two sides keep their corners all video long
+            self._spots[key] = xy
         if key not in self._spots:
             self._spots[key] = None
             busy = [e for e in scene.elements if e is not el and e.kind != "icon"]
@@ -2811,7 +2822,18 @@ class FxRenderer(Renderer):
     def overlay(self, img: Image.Image, t: float) -> None:
         if self.LIVELY:
             self.chapter_bar(img, t)
-        if self.moods:
+        if self.duel is not None:  # a quarrel: its two sides stay on screen over every scene (modules.bw_duel)
+            self.duel.draw(img, t)
+            if self.moods and self.duel.mascot_on(t):
+                from modules import bw_duel
+
+                bw_brand.SPOT = bw_duel.MASCOT_SPOT
+                try:
+                    bw_brand.draw_mascot(img, self.spec, self.moods, self.scene_at, t)
+                    bw_brand.draw_bubble(img, self.spec, t)
+                finally:
+                    bw_brand.SPOT = None
+        elif self.moods:
             bw_brand.draw_mascot(img, self.spec, self.moods, self.scene_at, t)
             bw_brand.draw_bubble(img, self.spec, t, self.scene_at)
 

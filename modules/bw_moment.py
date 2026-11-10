@@ -96,8 +96,9 @@ def _blotch(w: int, h: int, seed: int) -> np.ndarray:
 
 
 @lru_cache(maxsize=4)
-def street(sky: str, seed: int) -> Image.Image:
-    """The sketchbook street: a watercolour sky, two rows of inked houses, the street; wider than the frame (drift)."""
+def street(sky: str, seed: int, village: bool = False) -> Image.Image:
+    """The sketchbook street: a watercolour sky, two rows of inked houses, the street; wider than the frame (drift).
+    A village has low houses with pitched roofs and pines behind them instead of a town's tall fronts."""
     from modules import bw_paper
 
     top, bottom, far, near, ground, lit, orb = WASH.get(sky, WASH["day"])
@@ -116,15 +117,27 @@ def street(sky: str, seed: int) -> Image.Image:
             d.ellipse([x - r, y - r, x + r, y + r], fill=(255, 250, 230, 220))
     ox, oy, orr = wide * 0.82, GROUND - 600, 70
     wash(img, [(ox + orr * math.cos(a), oy + orr * math.sin(a)) for a in np.linspace(0, 2 * math.pi, 40)], orb, rng, 0.95)
-    for row, (hmin, hmax, color) in enumerate(((300, 600, far), (170, 420, near))):
+    rows = ((150, 230, far), (120, 190, near)) if village else ((300, 600, far), (170, 420, near))
+    for row, (hmin, hmax, color) in enumerate(rows):
         x = -rng.uniform(0, 60)
         while x < wide:
-            bw = rng.uniform(110, 200)
+            bw = rng.uniform(170, 260) if village else rng.uniform(110, 200)
             bh = rng.uniform(hmin, hmax)
+            if village and row == 0:  # a pine between the far houses
+                px, ph = x + rng.uniform(30, 60), rng.uniform(300, 460)
+                tree = [(px - 62, GROUND), (px, GROUND - ph), (px + 62, GROUND)]
+                green = (38, 70, 66) if sky == "night" else (70, 120, 84)
+                wash(img, tree, green, rng, 0.92)
+                ink(d, tree, rng, 3)
+                x = px + 50
             x0, x1, y0 = x, x + bw, GROUND - bh
             body = rect_pts(x0, y0, x1, GROUND)
-            dome = rng.random() < 0.25 and row == 0
+            dome = rng.random() < 0.25 and row == 0 and not village
             wash(img, body[:-1], color, rng, 0.9)
+            if village:  # a pitched roof
+                roof = [(x0 - 14, y0), ((x0 + x1) / 2, y0 - bw * 0.3), (x1 + 14, y0)]
+                wash(img, roof, tuple(int(c * 0.8) for c in color), rng, 0.95)
+                ink(d, roof, rng, 4)
             if dome:  # a dome or a flat roof with a little tower, like an old town
                 pts = [(x0 + bw * 0.2 + bw * 0.6 * u, y0 - math.sin(math.pi * u) * bw * 0.32) for u in np.linspace(0, 1, 16)]
                 wash(img, pts, color, rng, 0.9)
@@ -132,12 +145,12 @@ def street(sky: str, seed: int) -> Image.Image:
             ink(d, body, rng, 3 if row == 0 else 4)
             for wy in np.arange(y0 + 34, GROUND - 60, 62):  # windows, arched
                 for wx in np.arange(x0 + 22, x1 - 40, 46):
-                    on = sky in ("night", "sunset") and rng.random() < 0.45
+                    on = sky in ("night", "sunset") and rng.random() < (0.3 if village else 0.45)
                     win = [(wx, wy + 34), (wx, wy + 10), (wx + 9, wy), (wx + 18, wy + 10), (wx + 18, wy + 34)]
                     if on:
                         wash(img, win, lit, rng, 0.95)
                     ink(d, win + [win[0]], rng, 2)
-            x = x1 + rng.uniform(4, 22)
+            x = x1 + (rng.uniform(40, 110) if village else rng.uniform(4, 22))
     wash(img, rect_pts(0, GROUND, wide, H)[:-1], ground, rng, 0.95, even=0.9)
     ink(d, [(0, GROUND), (wide, GROUND)], rng, 5)
     for k in range(0, wide, 140):  # cobbles, sketched
@@ -168,6 +181,19 @@ def shop_front(sign: str) -> Image.Image:
         ink(d, poly + [poly[0]], rng, 2)
     d.rectangle([60, 216, w - 40, h + 10], fill=(52, 40, 44, 255))  # the dark doorway (no street showing through)
     ink(d, rect_pts(60, 216, w - 40, h + 10), rng, 4)
+    if "GAS" in sign.upper() or "FUEL" in sign.upper():  # a gas station: two pumps with a screen and a hose
+        for x in (120, 290):
+            body = rect_pts(x, h - 190, x + 96, h + 6)
+            wash(img, body[:-1], (214, 60, 56), rng, 0.97)
+            ink(d, body, rng, 4)
+            screen = rect_pts(x + 16, h - 170, x + 80, h - 118)
+            wash(img, screen[:-1], (240, 240, 226), rng, 0.97)
+            ink(d, screen, rng, 3)
+            ink(d, [(x + 26, h - 144), (x + 70, h - 144)], rng, 3)
+            hose = [(x + 96, h - 150), (x + 128, h - 120), (x + 132, h - 60), (x + 110, h - 40), (x + 100, h - 84)]
+            ink(d, hose, rng, 6, (206, 206, 212))
+            ink(d, [(x + 100, h - 84), (x + 86, h - 96)], rng, 9, (206, 206, 212))  # the nozzle
+        return img
     for k, color in enumerate(((236, 176, 70), (110, 170, 90), (214, 96, 66), (236, 200, 100))):  # baskets of goods
         x = 96 + k * 88
         pile = [(x, h), (x + 6, h - 56), (x + 34, h - 84), (x + 62, h - 56), (x + 68, h)]
@@ -247,15 +273,16 @@ class Moment:
     sunrise_at: float = -1.0  # seconds in when the sun starts to come up (-1: the sky stays as it is)
     duration: float = 5.0
     seed: int = 1
+    village: bool = False  # low houses and pines instead of a town's tall fronts
     cast: list[Actor] = field(default_factory=list)
 
     def frame(self, t: float) -> Image.Image:
-        base = street(self.sky, self.seed)
+        base = street(self.sky, self.seed, self.village)
         x0 = int(60 * ease(t / max(1.0, self.duration)))  # the camera drifts slowly
         img = base.crop((x0, 0, x0 + W, H)).copy()
         if self.sunrise_at >= 0 and t > self.sunrise_at:  # the late sun: the sky warms toward dawn from the horizon
             u = ease((t - self.sunrise_at) / 2.5)
-            dawn = street("dawn", self.seed).crop((x0, 0, x0 + W, H))
+            dawn = street("dawn", self.seed, self.village).crop((x0, 0, x0 + W, H))
             mask = np.clip((np.linspace(-0.6, 1.0, H) + u * 1.2), 0, 1)[:, None] * u
             mask[GROUND:] *= 0.35  # the street lightens less than the sky
             m = Image.fromarray((np.repeat(mask, W, axis=1) * 200).astype(np.uint8))
@@ -321,4 +348,4 @@ def from_scene(scene, words, react_time) -> Moment:
                   clock=clock if CLOCK.fullmatch(clock) else "", clock_label=str(o.get("clock_label") or "").upper()[:18],
                   shop=str(o.get("shop") or "")[:12], open_at=cue_at(scene, words, str(o.get("shutter") or "")),
                   sunrise_at=cue_at(scene, words, str(o.get("sunrise") or "")), duration=scene.end - scene.start,
-                  seed=len(scene.narration), cast=cast)
+                  seed=len(scene.narration), village=bool(o.get("village")), cast=cast)
