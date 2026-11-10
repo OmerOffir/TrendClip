@@ -49,17 +49,17 @@ WALLS = {"Cobblestone": (2.0, 0), "Obsidian": (50.0, 3)}  # name -> (hardness, m
 
 NARRATION = {
     "mob": ("{game} dungeon run, part {n} of {total}. {article} {what} blocks the way. Pause the video right now. "
-            "The weapon you stop on is yours. How many hits to win? Comment your weapon and your hits. "
+            "The weapon you stop on is yours. How many hits to win? Comment your hits. "
             "Then send this to a friend, and see who wins the fight. {follow}"),
     "chest": ("{game} dungeon run, part {n} of {total}. You found a chest. Pause the video right now. "
-              "The loot you stop on is yours. Keep it for the final boss. Comment what you got. "
+              "The loot you stop on is yours. Keep it for the final boss. Comment your loot. "
               "Then send this to a friend, and see who gets the better loot for the dungeon. {follow}"),
     "wall": ("{game} dungeon run, part {n} of {total}. {article} {what} wall blocks the way. Pause the video right "
-             "now. The tool you stop on is yours. How long to break through? Comment your tool and your time. "
+             "now. The tool you stop on is yours. How long to break through? Comment your time. "
              "Then send this to a friend, and see who breaks through first. {follow}"),
     "boss": ("{game} dungeon run, part {n} of {total}. The final boss. {article} {what} is waiting. Pause the video "
              "right now. The weapon you stop on is yours. How many hits to win? Got a totem from a chest? You get "
-             "one more life. Comment your weapon and your hits. Then send this to a friend, and see who beats "
+             "one more life. Comment your hits. Then send this to a friend, and see who beats "
              "the boss. {follow}"),
 }
 TITLES = {

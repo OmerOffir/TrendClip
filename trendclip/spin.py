@@ -248,8 +248,7 @@ WALL = {  # name -> (hardness or None for unbreakable, needs a pickaxe to drop, 
 }
 AXE_SCRIPT = ("{game} fans only. Pause the video right now. The axe you stop on is yours, and so is the wall next "
               "to it. Can your axe break through? Netherite is legendary. But on wood, gold is the fastest. "
-              "Comment your axe, your wall and your time. Then send this to a friend, and see who breaks out "
-              "first.")
+              "Comment your time. Then send this to a friend, and see who breaks out first.")
 assert AXE_MARK in AXE_SCRIPT
 AXE_TITLE = "Pause To Get Your {game} Axe 🪓"
 AXE_END_CARD = "Comment your time"
@@ -427,7 +426,7 @@ FOES = {"Zombie": (20, 2), "Skeleton": (20, 0), "Enderman": (40, 0)}  # the dung
 ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF", "Enderman": "DODGES ARROWS"}
 WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
                  "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
-                 "Comment your weapon and your hits. Then send this to a friend, and see who wins the fight.")
+                 "Comment your hits. Then send this to a friend, and see who wins the fight.")
 assert WEAPON_MARK in WEAPON_SCRIPT
 WEAPON_TITLE = "Pause To Get Your Weapon vs The {boss} ⚔️"
 WEAPON_END_CARD = "Comment your hits"
