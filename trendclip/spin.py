@@ -418,12 +418,26 @@ for _metal, _tier, _sword, _axe, _pick, _spear in (
     WEAPONS[f"{_metal} Pickaxe"] = (_tier, _pick)
     WEAPONS[f"{_metal} Spear"] = (_tier, _spear)
 WEAPONS.update({"Bow": ("rare", 6), "Trident": ("epic", 9), "Mace": ("legendary", 6)})
-BOSSES = {  # name -> (health, armour) in Java Edition: the strongest mobs, one per Short
+BOSSES = {  # name -> (health, armour) in Java Edition (minecraft.wiki): one per Short, picked at random
     "Warden": (500, 0), "Wither": (300, 4), "Ender Dragon": (200, 0), "Elder Guardian": (80, 0),
     "Ravager": (100, 0), "Iron Golem": (100, 0),
+    # Every other mob with a picture, so a Short can just as well be against a pig (the owner, 2026-11-10).
+    # Left out: horses and llamas (random 15-30 health). Slime and magma cube are the large size; a shulker is
+    # hit while open (armour 0; closed it has 20); a wolf is wild, a zombie, husk or drowned not a leader.
+    "Allay": (20, 0), "Armadillo": (12, 0), "Axolotl": (14, 0), "Bat": (6, 0), "Bee": (10, 0), "Blaze": (20, 0),
+    "Breeze": (30, 0), "Camel": (32, 0), "Cat": (10, 0), "Chicken": (4, 0), "Cow": (10, 0), "Creeper": (20, 0),
+    "Dolphin": (10, 0), "Drowned": (20, 2), "Enderman": (40, 0), "Endermite": (8, 0), "Evoker": (24, 0),
+    "Fox": (10, 0), "Frog": (10, 0), "Ghast": (10, 0), "Glow Squid": (10, 0), "Goat": (10, 0),
+    "Guardian": (30, 0), "Hoglin": (40, 0), "Husk": (20, 2), "Magma Cube": (16, 12), "Mooshroom": (10, 0),
+    "Ocelot": (10, 0), "Panda": (20, 0), "Parrot": (6, 0), "Phantom": (20, 0), "Pig": (10, 0), "Piglin": (16, 0),
+    "Pillager": (24, 0), "Polar Bear": (30, 0), "Pufferfish": (3, 0), "Rabbit": (3, 0), "Sheep": (8, 0),
+    "Shulker": (30, 0), "Silverfish": (8, 0), "Skeleton": (20, 0), "Slime": (16, 0), "Sniffer": (14, 0),
+    "Snow Golem": (4, 0), "Spider": (16, 0), "Squid": (10, 0), "Stray": (20, 0), "Strider": (20, 0),
+    "Tadpole": (6, 0), "Tropical Fish": (3, 0), "Turtle": (30, 0), "Vex": (14, 0), "Villager": (20, 0),
+    "Wandering Trader": (20, 0), "Witch": (26, 0), "Wolf": (8, 0), "Zoglin": (40, 0), "Zombie": (20, 2),
 }
 FOES = {"Zombie": (20, 2), "Skeleton": (20, 0), "Enderman": (40, 0)}  # the dungeon's other mobs (Java)
-ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF", "Enderman": "DODGES ARROWS"}
+ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF", "Enderman": "DODGES ARROWS", "Breeze": "DEFLECTS ARROWS"}
 WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
                  "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
                  "Comment your hits. Then send this to a friend, and see who wins the fight.")
@@ -537,7 +551,7 @@ def weapon_verdict(boss: str, weapon: str) -> tuple[str, tuple[int, int, int]]:
     hits = hits_to_kill(boss, weapon)
     if hits is None:
         return ARROW_PROOF[boss], BOSS_RED
-    word = "SHOTS" if weapon == "Bow" else "HITS"
+    word = ("SHOT" if weapon == "Bow" else "HIT") + ("S" if hits != 1 else "")
     best = min(hits_to_kill(boss, w) or 10 ** 6 for w in WEAPONS)
     colour = (40, 170, 70) if hits <= best * 1.25 else (230, 140, 20) if hits <= best * 2 else (200, 40, 40)
     return f"{hits} {word} TO WIN", colour

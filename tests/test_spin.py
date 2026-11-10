@@ -149,6 +149,8 @@ def test_hits_follow_the_wikis_damage_health_and_armour():
     assert spin.weapon_verdict("Warden", "Netherite Axe") == ("50 HITS TO WIN", (40, 170, 70))
     assert spin.weapon_verdict("Warden", "Wooden Spear")[1] == (200, 40, 40)
     assert spin.weapon_verdict("Wither", "Bow")[0] == "ARROWS BOUNCE OFF"
+    assert spin.weapon_verdict("Chicken", "Wooden Sword")[0] == "1 HIT TO WIN"  # any mob can come, even a chicken
+    assert spin.weapon_verdict("Pig", "Bow")[0] == "2 SHOTS TO WIN"
 
 
 def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
@@ -165,7 +167,7 @@ def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
             entries.append({"name": name, "kind": "x", "file": f"w{i}.png", "source": "x"})
         (folder / "catalog.json").write_text(json.dumps(entries))
     found = spin.weapon_catalog(s)
-    assert [b["name"] for b in found["bosses"]] == ["Warden", "Ender Dragon", "Elder Guardian"]
+    assert [b["name"] for b in found["bosses"]] == ["Warden", "Ender Dragon", "Elder Guardian", "Zombie"]
     picks = spin.weapon_deck(found, 4000, random.Random(4))
     legendary = sum(spin.WEAPONS[w["name"]][0] == "legendary" for w in picks) / len(picks)
     assert 0.04 < legendary < 0.10 and all(a["name"] != b["name"] for a, b in zip(picks, picks[1:]))
