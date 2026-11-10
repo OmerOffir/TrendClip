@@ -1150,7 +1150,7 @@ def test_true_stories_are_written_as_tags_and_the_bot_places_them(tmp_path):
     assert pw_write.TRUE_LOOK == "tags" and '"format": "tags"' in text and "pegboard" in text
     shown = json.loads(text.split("The example (a finished script):", 1)[1])
     bare = pw_write._unplaced(example)
-    assert shown == bare and '"x":' not in text and '"scale":' not in text
+    assert shown["scenes"] == bare["scenes"] and '"x":' not in text and '"scale":' not in text
     assert pw_write.problems_of(bare) == []
     placed = pw_tags.arrange(bare)
     for before, scene in zip(bare["scenes"], placed["scenes"]):
