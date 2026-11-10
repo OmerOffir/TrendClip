@@ -1156,7 +1156,7 @@ def test_true_stories_are_written_as_tags_and_the_bot_places_them(tmp_path):
     for before, scene in zip(bare["scenes"], placed["scenes"]):
         assert all("x" in h and "scale" in h and "len" in h for h in scene.get("hang") or [])
         assert all("x" in s and "y" in s and s["y"] <= pw_tags.STICKER_LOW for s in scene.get("stickers") or [])
-        assert "x" not in json.dumps(before.get("hang") or [])
+        assert '"x":' not in json.dumps(before.get("hang") or [])
     belt = next(sc for sc in placed["scenes"] if sc.get("belt"))
     assert belt["belt"]["scale"] < 1 and belt["hang"][0]["len"] > 300  # small things on the rail, the tag under them
 
