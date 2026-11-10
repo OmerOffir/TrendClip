@@ -403,7 +403,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         from . import spin
 
         kind = spin.kind_of(req.script)
-        progress(None, "Shuffling the axes and walls" if kind == "axe" else "Shuffling the blocks")
+        progress(None, {"axe": "Shuffling the axes and walls", "weapon": "Shuffling the weapons and mobs"}.get(
+            kind, "Shuffling the blocks"))
         overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind)
 
     progress(0.0, "Rendering video")
