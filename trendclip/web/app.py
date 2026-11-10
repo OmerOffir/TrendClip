@@ -1188,6 +1188,32 @@ def index() -> HTMLResponse:
     return HTMLResponse(html)
 
 
+# ---- The long adventure: "Can You Beat Minecraft?" drawn by the bot, no gameplay, no LLM (trendclip/quest.py)
+
+
+@app.get("/api/gamer/quest")
+def gamer_quest_view() -> dict[str, Any]:
+    from .. import quest
+
+    settings = _base_settings()
+    return {"title": quest.TITLE, "stops": [stop.NAME.title() for stop in quest.STOPS], "hearts": quest.run()[-1],
+            "missing": quest.missing(settings),
+            "videos": [{"filename": v.filename, "seconds": v.duration_seconds, "created_at": v.created_at.isoformat(),
+                        "uploaded": bool((v.uploads.get("youtube") or {}).get("video_id"))}
+                       for v in quest.videos(settings)]}
+
+
+@app.post("/api/gamer/quest", status_code=202)
+def gamer_quest_make() -> dict[str, Any]:
+    """The video as one render job (polled at /api/create/jobs/{id}); it then waits in Upload."""
+    from .. import quest
+
+    settings = _base_settings()
+    if lost := quest.missing(settings):
+        raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost[:6])}: make a pause Short first")
+    return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress)).id}
+
+
 # ---- Gamer IQ "Write a week": any LLM writes the coming week's questions; they go to the hub's queue (trendclip/gamer_week.py)
 
 
