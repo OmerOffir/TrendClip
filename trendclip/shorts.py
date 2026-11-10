@@ -287,7 +287,7 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         if req.stickers and lib:
             progress(None, f"Placing stickers ({len(lib)} in the library)")
         cta = None
-        if req.cta_sticker and not (req.spin and spin.kind_of(req.script) == "weapon"):  # it sat on the boss card
+        if req.cta_sticker and not (req.spin and spin.kind_of(req.script) in ("weapon", "dungeon")):  # on the tall card
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
         reactions = list(req.reactions)
         if req.flashes and quiz.COUNTDOWN in req.script and not any(r.word == "Three" for r in reactions):
@@ -346,7 +346,7 @@ def _quiz_style(req: RenderRequest) -> dict[str, Any]:
         if req.spin:
             from . import spin
 
-            if spin.kind_of(req.script) == "weapon":
+            if spin.kind_of(req.script) in ("weapon", "dungeon"):
                 style["margin_v"] = spin.BOSS_CAPTION_MARGIN  # under the taller boss card
     return style
 
@@ -410,7 +410,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         from . import spin
 
         kind = spin.kind_of(req.script)
-        progress(None, {"axe": "Shuffling the axes and walls", "weapon": "Shuffling the weapons and mobs"}.get(
+        progress(None, {"axe": "Shuffling the axes and walls", "weapon": "Shuffling the weapons and mobs",
+                        "dungeon": "Drawing the dungeon"}.get(
             kind, "Shuffling the blocks"))
         overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind,
                                         script_text=req.script)

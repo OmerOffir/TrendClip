@@ -1320,6 +1320,11 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
 
     # The Create tab's level choice (its notes) beats the rotation: "question only" skips the zombie and the picture.
     question_only = QUESTION_ONLY in (notes or "").lower()
+    from . import dungeon
+
+    if dungeon.wanted(notes) and dungeon.ready(settings):  # Dungeon Run: the part asked for
+        progress(None, f"Dungeon Run part {dungeon.wanted(notes)}")
+        return dungeon.script(settings, game, dungeon.wanted(notes), format=format)
     if spin.wanted(notes) and spin.weapon_wanted(notes) and spin.weapon_catalog(settings):  # Pause to Get Your Weapon
         progress(None, "A Pause to Get Your Weapon Short")
         return spin.script(settings, game, format=format, kind="weapon", rng=rng)

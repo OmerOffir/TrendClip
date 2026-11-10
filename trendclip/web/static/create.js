@@ -518,7 +518,9 @@
       : multi ? "Write Part 1 + Part 2 with Gemini"
       : quiz ? { math: "Write a math challenge", riddle: "Write a riddle with Gemini",
         trivia: "Write a trivia trap with Gemini", paradox: "Write a paradox trap with Gemini",
-        movie: "Write a movie quiz with Gemini", gamer: GAMER_BUTTON[els.level.value] || "🎮 Write a Gamer IQ question" }[els.mode.value]
+        movie: "Write a movie quiz with Gemini", gamer: GAMER_BUTTON[els.level.value]
+          || (els.level.value.startsWith("dungeon") ? `🏰 Make ${els.level.value.replace("dungeon run", "Dungeon Run")}` : "")
+          || "🎮 Write a Gamer IQ question" }[els.mode.value]
       : story ? `Write a ${long ? "long " : ""}random story with Gemini`
       : `Write ${long ? "a long " : ""}script with Gemini`;
     const words = ownStory().reduce((n, s) => n + wordCount(s), 0);

@@ -84,6 +84,10 @@ def weapon_wanted(notes: str = "") -> bool:
 def kind_of(script_text: str) -> str:
     """Which cards a spin Short flicks through, read off its fixed narration."""
     text = script_text or ""
+    from . import dungeon
+
+    if dungeon.MARK in text.lower():
+        return "dungeon"
     return "weapon" if WEAPON_MARK in text else "axe" if AXE_MARK in text else "block"
 
 
@@ -192,6 +196,10 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     frames, from frame 0 to the end (the loop starts on a card too)."""
     if not words:
         return []
+    if kind == "dungeon":
+        from . import dungeon
+
+        return dungeon.plan(settings, words, script_text, seed=seed, tail=tail, fps=fps)
     rng = random.Random(seed or "spin")
     total = words[-1].end + tail
     count = int(total * fps / HOLD) + 2
@@ -415,7 +423,8 @@ BOSSES = {  # name -> (health, armour) in Java Edition: the strongest mobs, one 
     "Warden": (500, 0), "Wither": (300, 4), "Ender Dragon": (200, 0), "Elder Guardian": (80, 0),
     "Ravager": (100, 0), "Iron Golem": (100, 0),
 }
-ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF"}
+FOES = {"Zombie": (20, 2), "Skeleton": (20, 0), "Enderman": (40, 0)}  # the dungeon's other mobs (Java)
+ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF", "Enderman": "DODGES ARROWS"}
 WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
                  "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
                  "Comment your weapon and your hits. Then send this to a friend, and see who wins the fight.")
@@ -451,17 +460,24 @@ def weapon_dir(settings: Settings) -> Path:
 
 def fetch_weapons(settings: Settings, session=None) -> list[dict]:
     """Each weapon's 16 px inventory icon ("File:Invicon Wooden Sword.png") into assets/weapon/ with catalog.json."""
+    return fetch_icons(settings, list(WEAPONS), weapon_dir(settings), session=session)
+
+
+def fetch_icons(settings: Settings, names: list[str], folder: Path, session=None) -> list[dict]:
+    """Inventory icons ("File:Invicon Bread.png", the first frame of an animated one) into `folder` with
+    catalog.json."""
+    import io
     import json
 
     import requests
+    from PIL import Image
 
     from . import reveal
 
     session = session or requests.Session()
     session.headers["User-Agent"] = reveal.USER_AGENT
-    folder = weapon_dir(settings)
     folder.mkdir(parents=True, exist_ok=True)
-    files = {f"File:Invicon {n}.png": n for n in WEAPONS}
+    files = {f"File:Invicon {n}.png": n for n in names}
     entries = []
     names = list(files)
     for i in range(0, len(names), 40):
@@ -474,8 +490,10 @@ def fetch_weapons(settings: Settings, session=None) -> list[dict]:
                 logger.warning("No icon for %s", page.get("title"))
                 continue
             out = folder / f"{reveal.slug(name)}.png"
-            out.write_bytes(session.get(info[0]["url"], timeout=30).content)
-            entries.append({"name": name, "kind": "weapon", "file": out.name,
+            with Image.open(io.BytesIO(session.get(info[0]["url"], timeout=30).content)) as icon:
+                icon.seek(0)
+                icon.convert("RGBA").save(out)
+            entries.append({"name": name, "kind": "icon", "file": out.name,
                             "source": info[0]["url"].split("?")[0]})
     entries.sort(key=lambda e: e["name"])
     (folder / "catalog.json").write_text(json.dumps(entries, indent=1) + "\n", encoding="utf-8")
@@ -506,10 +524,14 @@ def hits_to_kill(boss: str, weapon: str) -> int | None:
 
     if weapon == "Bow" and boss in ARROW_PROOF:
         return None
-    health, armour = BOSSES[boss]
+    health, armour = {**FOES, **BOSSES}[boss]
     damage = WEAPONS[weapon][1]
     damage *= 1 - min(20, max(armour / 5, armour - 4 * damage / 8)) / 25
     return math.ceil(health / damage - 1e-9)
+
+
+def health_of(mob: str) -> int:
+    return {**FOES, **BOSSES}[mob][0]
 
 
 def weapon_verdict(boss: str, weapon: str) -> tuple[str, tuple[int, int, int]]:
@@ -537,49 +559,52 @@ def weapon_deck(found: dict, count: int, rng: random.Random) -> list[dict]:
     return out
 
 
-def boss_card(settings: Settings, boss: dict, weapon: dict, cache: dict):
+def boss_card(settings: Settings, boss: dict, weapon: dict, cache: dict, title: str = "THE BOSS"):
     """The boss on top (name, picture, health), the weapon under it in its tier's colour, the hits at the bottom."""
+    text, bar = weapon_verdict(boss["name"], weapon["name"])
+    return stack_card(f"{title}: {boss['name'].upper()}", boss, f"{health_of(boss['name'])} HEALTH", "YOUR WEAPON",
+                      WEAPONS[weapon["name"]][0], weapon, text, bar, cache)
+
+
+def stack_card(title: str, top: dict, note: str, label: str, tier: str, item: dict, text: str, bar: tuple,
+               cache: dict, text_fill: tuple = (255, 255, 255)):
+    """A fixed picture on top under a red `title` with a `note` under it; the flicking `item` under it in its
+    tier's colour ("`label`: EPIC"), and `text` on a `bar`-coloured strip at the bottom."""
     from PIL import Image, ImageDraw
 
     from .reveal import _font
 
-    tier = WEAPONS[weapon["name"]][0]
     colour = TIERS[tier][0]
     img = Image.new("RGBA", (BW, BH), (24, 24, 30, 255))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, BW - 1, BH - 1], outline=colour, width=FRAME)
 
-    def centred(text, y, size, fill, x0=FRAME, x1=BW - FRAME):
-        while size > 30 and d.textlength(text, font=_font(size)) > x1 - x0 - 30:
+    def centred(words, y, size, fill, x0=FRAME, x1=BW - FRAME):
+        while size > 30 and d.textlength(words, font=_font(size)) > x1 - x0 - 30:
             size -= 4
-        d.text(((x0 + x1 - d.textlength(text, font=_font(size))) / 2, y), text, font=_font(size), fill=fill)
+        d.text(((x0 + x1 - d.textlength(words, font=_font(size))) / 2, y), words, font=_font(size), fill=fill)
 
-    # the boss
     d.rectangle([FRAME, FRAME, BW - FRAME, FRAME + 92], fill=BOSS_RED)
-    centred(f"THE BOSS: {boss['name'].upper()}", FRAME + 10, 58, (255, 255, 255))
-    top = FRAME + 112
-    d.rounded_rectangle([BW // 2 - 260, top, BW // 2 + 260, top + BOSS_PIC + 30], radius=26, fill=PANEL)
-    pic = _fit(boss["path"], BOSS_PIC, cache)
-    img.alpha_composite(pic, ((BW - pic.width) // 2, top + 15 + (BOSS_PIC - pic.height) // 2))
-    centred(f"{BOSSES[boss['name']][0]} HEALTH", top + BOSS_PIC + 40, 48, (255, 110, 110))
-    # the weapon
-    y = top + BOSS_PIC + 112
+    centred(title, FRAME + 10, 58, (255, 255, 255))
+    y = FRAME + 112
+    d.rounded_rectangle([BW // 2 - 260, y, BW // 2 + 260, y + BOSS_PIC + 30], radius=26, fill=PANEL)
+    pic = _fit(top["path"], BOSS_PIC, cache)
+    img.alpha_composite(pic, ((BW - pic.width) // 2, y + 15 + (BOSS_PIC - pic.height) // 2))
+    centred(note, y + BOSS_PIC + 40, 48, (255, 110, 110))
+    y += BOSS_PIC + 112
     d.rectangle([FRAME, y, BW - FRAME, y + 76], fill=colour)
-    centred(f"YOUR WEAPON: {tier.upper()}", y + 6, 52,
-            (20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))
+    centred(f"{label}: {tier.upper()}", y + 6, 52, (20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))
     y += 92
     d.rounded_rectangle([FRAME + 40, y, FRAME + 40 + ICON + 30, y + ICON + 30], radius=26, fill=PANEL)
-    icon = _fit(weapon["path"], ICON, cache)
+    icon = _fit(item["path"], ICON, cache)
     img.alpha_composite(icon, (FRAME + 55 + (ICON - icon.width) // 2, y + 15 + (ICON - icon.height) // 2))
     name_x0 = FRAME + 40 + ICON + 50
-    words = weapon["name"].upper().split()
+    words = item["name"].upper().split()
     lines = [" ".join(words[:-1]), words[-1]] if len(words) > 1 else words
     for k, line in enumerate(lines):
         centred(line, y + (ICON + 30) / 2 - 62 * len(lines) / 2 + 62 * k - 4, 64, (255, 255, 255), name_x0,
                 BW - FRAME - 20)
-    # the hits
-    text, bar = weapon_verdict(boss["name"], weapon["name"])
     y0 = BH - FRAME - 140
     d.rectangle([FRAME, y0, BW - FRAME, BH - FRAME], fill=bar)
-    centred(text, y0 + 28, 76, (255, 255, 255))
+    centred(text, y0 + 28, 76, text_fill)
     return img
