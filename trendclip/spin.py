@@ -71,6 +71,16 @@ def wanted(notes: str = "") -> bool:
     return "spin" in low or "pause to get" in low
 
 
+def axe_wanted(notes: str = "") -> bool:
+    """Pause to Get Your Axe: the axe-vs-wall variant (the owner's idea, 2026-11-10)."""
+    return "axe" in (notes or "").lower()
+
+
+def kind_of(script_text: str) -> str:
+    """Which cards a spin Short flicks through, read off its fixed narration."""
+    return "axe" if AXE_MARK in (script_text or "") else "block"
+
+
 def library_dir(settings: Settings) -> Path:
     return settings.assets_dir / "spin"
 
@@ -92,18 +102,23 @@ def fetch_library(settings: Settings, session=None) -> list[dict]:
                                 titles={n: page for n, (_, page) in BLOCKS.items() if page})
 
 
-def script(settings: Settings, game: str, *, format: str = "short"):
+def script(settings: Settings, game: str, *, format: str = "short", kind: str = "block"):
     """The Short's ShortScript: fixed narration, `spin` set, no answer (every viewer gets their own)."""
     from . import quiz
 
-    if not catalog(settings):
-        raise ValueError("No blocks yet: run spin.fetch_library first")
+    axe = kind == "axe"
+    if not (axe_catalog(settings) if axe else catalog(settings)):
+        raise ValueError("No pictures yet: run spin.fetch_library / spin.fetch_axes first")
     game_name = quiz.game_name(game)
-    pack = SimpleNamespace(title=TITLE.format(game=game_name), description=DESCRIPTION.format(game=game_name),
-                           hashtags=HASHTAGS, title_card=CARD)
-    out = quiz._script(settings, game, "builtin", "gamer", format, SCRIPT.format(game=game_name),
-                       HOOK.format(game=game_name), [], "", PINNED, pack, on_screen="Pause to get your block",
-                       card=CARD, end_card=END_CARD)
+    title, description, hashtags = (AXE_TITLE, AXE_DESCRIPTION, AXE_HASHTAGS) if axe else (TITLE, DESCRIPTION,
+                                                                                            HASHTAGS)
+    pack = SimpleNamespace(title=title.format(game=game_name), description=description.format(game=game_name),
+                           hashtags=hashtags, title_card=CARD)
+    out = quiz._script(settings, game, "builtin", "gamer", format,
+                       (AXE_SCRIPT if axe else SCRIPT).format(game=game_name), HOOK.format(game=game_name), [], "",
+                       AXE_PINNED if axe else PINNED, pack,
+                       on_screen="Pause to get your axe" if axe else "Pause to get your block", card=CARD,
+                       end_card=AXE_END_CARD if axe else END_CARD)
     return out.model_copy(update={"spin": True, "reactions": []})
 
 
@@ -160,20 +175,195 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
     return img
 
 
-def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.0, fps: int = 30) -> list[Overlay]:
-    """One overlay for the whole video: an animated WebP of the cards, a new block every HOLD frames, from frame
-    0 to the end (the loop starts on a card too)."""
+def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.0, fps: int = 30,
+         kind: str = "block") -> list[Overlay]:
+    """One overlay for the whole video: an animated WebP of the cards, a new block (or axe and wall) every HOLD
+    frames, from frame 0 to the end (the loop starts on a card too)."""
     if not words:
         return []
     rng = random.Random(seed or "spin")
     total = words[-1].end + tail
     count = int(total * fps / HOLD) + 2
     cache: dict = {}
-    cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
+    if kind == "axe":
+        cards = [axe_card(settings, a, w, cache) for a, w in axe_deck(axe_catalog(settings), count, rng)]
+    else:
+        cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
     out_dir = settings.assets_dir / "cache" / "spin"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / (re.sub(r"[^a-z0-9]+", "-", (seed or "spin").lower())[:40].strip("-") + ".webp")
     cards[0].save(path, save_all=True, append_images=cards[1:], duration=round(1000 * HOLD / fps), loop=0,
                   lossless=False, quality=90)
-    return [Overlay(path, 0.0, round(total + 0.5, 3), center=CENTER, box=max(W, H), style="asis", cut=True,
-                    animated=True)]
+    return [Overlay(path, 0.0, round(total + 0.5, 3), center=CENTER, box=max(cards[0].size), style="asis",
+                    cut=True, animated=True)]
+
+
+# --------------------------------------------------------------------------- Pause to Get Your Axe
+# The left half is a wall (a block), the right half an axe; the bottom bar says how long that axe takes to break
+# that wall in Minecraft Java, by the wiki's formula (minecraft.wiki/w/Breaking): an axe speeds up only the blocks
+# it's the right tool for (wood), a block that needs a pickaxe is mined at 1/100 per hardness instead of 1/30,
+# rounded up to whole ticks of 1/20 s. Bedrock never breaks. The gold axe is the fastest on wood: a fact fans
+# argue about in the comments.
+
+AXE_MARK = "The axe you stop on is yours"
+AXES = {  # name -> (tier, mining speed, share of the cards)
+    "Wooden Axe": ("common", 2, 0.32), "Stone Axe": ("common", 4, 0.25), "Iron Axe": ("rare", 6, 0.18),
+    "Golden Axe": ("rare", 12, 0.12), "Diamond Axe": ("epic", 8, 0.09), "Netherite Axe": ("legendary", 9, 0.04),
+}
+WALL = {  # name -> (hardness or None for unbreakable, needs a pickaxe to drop, the axe is its tool)
+    "Oak Log": (2.0, False, True), "Oak Planks": (2.0, False, True), "Crafting Table": (2.5, False, True),
+    "Bookshelf": (1.5, False, True), "Chest": (2.5, False, True), "Jukebox": (2.0, False, True),
+    "Pumpkin": (1.0, False, True), "Melon": (1.0, False, True),
+    "Dirt": (0.5, False, False), "Grass Block": (0.6, False, False), "Sand": (0.5, False, False),
+    "Gravel": (0.6, False, False), "Glass": (0.3, False, False), "Hay Bale": (0.5, False, False),
+    "TNT": (0.0, False, False),
+    "Stone": (1.5, True, False), "Cobblestone": (2.0, True, False), "Iron Block": (5.0, True, False),
+    "Diamond Block": (5.0, True, False), "Obsidian": (50.0, True, False), "Crying Obsidian": (50.0, True, False),
+    "Ancient Debris": (30.0, True, False), "Netherite Block": (50.0, True, False),
+    "Bedrock": (None, False, False),
+}
+AXE_SCRIPT = ("{game} fans only. Pause the video right now. The axe you stop on is yours, and so is the wall next "
+              "to it. Can your axe break through? Netherite is legendary. But on wood, gold is the fastest. "
+              "Comment your axe, your wall and your time. Then send this to a friend, and see who breaks out "
+              "first.")
+assert AXE_MARK in AXE_SCRIPT
+AXE_TITLE = "Pause To Get Your {game} Axe 🪓"
+AXE_END_CARD = "Comment your time"
+AXE_PINNED = "What did you get? 👇 Axe + wall + time ⏱️\nSend this to a friend and see who breaks out first."
+AXE_DESCRIPTION = ("Pause the video: the {game} axe you stop on is yours, and so is the wall. How long does it take "
+                   "to break? Comment your time and challenge a friend.")
+AXE_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftaxe"]
+AW, AH = 1000, 820  # the axe-vs-wall card
+APIC = 340
+WALL_COLOUR = (90, 94, 108)
+
+
+def axe_dir(settings: Settings) -> Path:
+    return settings.assets_dir / "axe"
+
+
+def fetch_axes(settings: Settings, session=None) -> list[dict]:
+    """The axes and the wall blocks the block library lacks (Bedrock, Chest), into assets/axe/."""
+    from . import reveal
+
+    return reveal.fetch_library(settings, "axe", list(AXES) + ["Bedrock", "Chest"], session=session,
+                                folder=axe_dir(settings))
+
+
+def axe_catalog(settings: Settings) -> dict[str, list[dict]]:
+    """{"axes": [...], "walls": [...]} with each picture's full path; empty when either side has none."""
+    import json
+
+    found: dict[str, dict] = {}
+    for folder in (library_dir(settings), axe_dir(settings)):
+        try:
+            for e in json.loads((folder / "catalog.json").read_text(encoding="utf-8")):
+                found[e["name"]] = {**e, "path": str(folder / e["file"])}
+        except (OSError, ValueError):
+            continue
+    axes = [found[n] for n in AXES if n in found]
+    walls = [found[n] for n in WALL if n in found]
+    return {"axes": axes, "walls": walls} if axes and walls else {}
+
+
+def break_seconds(wall: str, axe: str) -> float | None:
+    """Seconds for `axe` to break `wall` in Java Edition (no enchantments, on the ground); None = never."""
+    import math
+
+    hardness, needs_pickaxe, axe_tool = WALL[wall]
+    if hardness is None:
+        return None
+    if hardness == 0:
+        return 0.0
+    speed = AXES[axe][1] if axe_tool else 1
+    damage = speed / hardness / (100 if needs_pickaxe else 30)
+    return 0.0 if damage >= 1 else math.ceil(1 / damage) / 20
+
+
+def verdict(seconds: float | None) -> tuple[str, tuple[int, int, int]]:
+    """The bottom bar's words and colour."""
+    if seconds is None:
+        return "NEVER BREAKS", (150, 20, 20)
+    if seconds == 0:
+        return "INSTANT BREAK!", (40, 170, 70)
+    if seconds >= 60:
+        whole = round(seconds)
+        text = f"{whole // 60} MIN {whole % 60} S" if whole % 60 else f"{whole // 60} MINUTES"
+    else:
+        text = f"{seconds:g} SECONDS" if seconds != 1 else "1 SECOND"
+    colour = (40, 170, 70) if seconds <= 2 else (230, 140, 20) if seconds <= 15 else (200, 40, 40)
+    return ("BREAKS IN " if seconds <= 2 else "TAKES ") + text, colour
+
+
+def axe_deck(found: dict, count: int, rng: random.Random) -> list[tuple[dict, dict]]:
+    """`count` (axe, wall) pairs: each axe its share, wooden walls three times as often as the rest (only on wood
+    does the axe you got change the time), never the same wall twice in a row (so every frame visibly changes)."""
+    axes, walls = found["axes"], found["walls"]
+    weights = [AXES[a["name"]][2] for a in axes]
+    wall_weights = [3 if WALL[w["name"]][2] else 1 for w in walls]
+    out: list[tuple[dict, dict]] = []
+    for _ in range(count):
+        while True:
+            pair = (rng.choices(axes, weights)[0], rng.choices(walls, wall_weights)[0])
+            if not out or pair[1]["name"] != out[-1][1]["name"]:
+                break
+        out.append(pair)
+    return out
+
+
+def _fit(path: str, size: int, cache: dict):
+    from PIL import Image
+
+    if path not in cache:
+        pic = Image.open(path).convert("RGBA")
+        scale = min(size / pic.width, size / pic.height)
+        cache[path] = pic.resize((max(1, round(pic.width * scale)), max(1, round(pic.height * scale))),
+                                 Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
+    return cache[path]
+
+
+def axe_card(settings: Settings, axe: dict, wall: dict, cache: dict):
+    """The wall on the left, the axe on the right framed in its tier's colour, the break time across the bottom."""
+    from PIL import Image, ImageDraw
+
+    from .reveal import _font
+
+    tier = AXES[axe["name"]][0]
+    colour = TIERS[tier][0]
+    img = Image.new("RGBA", (AW, AH), (24, 24, 30, 255))
+    d = ImageDraw.Draw(img)
+    half = AW // 2
+    d.rectangle([0, 0, AW - 1, AH - 1], outline=colour, width=FRAME)
+    head = 92
+    d.rectangle([FRAME, FRAME, half - 6, FRAME + head], fill=WALL_COLOUR)
+    d.rectangle([half + 6, FRAME, AW - FRAME, FRAME + head], fill=colour)
+    label = _font(58)
+    for text, x0, x1, fill in (("THE WALL", FRAME, half - 6, (255, 255, 255)),
+                               (tier.upper(), half + 6, AW - FRAME,
+                                (20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))):
+        d.text(((x0 + x1 - d.textlength(text, font=label)) / 2, FRAME + 8), text, font=label, fill=fill)
+    top = FRAME + head + 24
+    for entry, x0, x1 in ((wall, FRAME, half - 6), (axe, half + 6, AW - FRAME)):
+        mid = (x0 + x1) // 2
+        d.rounded_rectangle([mid - APIC // 2 - 20, top, mid + APIC // 2 + 20, top + APIC + 40], radius=26,
+                            fill=PANEL)
+        pic = _fit(entry["path"], APIC, cache)
+        img.alpha_composite(pic, (mid - pic.width // 2, top + 20 + (APIC - pic.height) // 2))
+        name = entry["name"].upper()
+        size = 50
+        while size > 28 and d.textlength(name, font=_font(size)) > x1 - x0 - 24:
+            size -= 4
+        d.text((mid - d.textlength(name, font=_font(size)) / 2, top + APIC + 56), name, font=_font(size),
+               fill=(255, 255, 255))
+    vs = _font(64)
+    d.ellipse([half - 52, top + APIC // 2 - 32, half + 52, top + APIC // 2 + 72], fill=(255, 255, 255))
+    d.text((half - d.textlength("VS", font=vs) / 2, top + APIC // 2 - 22), "VS", font=vs, fill=(20, 20, 20))
+    text, bar = verdict(break_seconds(wall["name"], axe["name"]))
+    y0 = AH - FRAME - 150
+    d.rectangle([FRAME, y0, AW - FRAME, AH - FRAME], fill=bar)
+    size = 76
+    while size > 40 and d.textlength(text, font=_font(size)) > AW - 2 * FRAME - 40:
+        size -= 4
+    d.text(((AW - d.textlength(text, font=_font(size))) / 2, y0 + (150 - size) / 2 - 8), text, font=_font(size),
+           fill=(255, 255, 255))
+    return img

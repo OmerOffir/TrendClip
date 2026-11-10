@@ -494,7 +494,8 @@
 
   // The Create tab's game choice: the ones with no question need no Gemini words, so the button says what it makes.
   const GAMER_BUTTON = { "catch the zombie": "🧟 Make a Catch the Zombie level",
-    "guess the picture": "🧱 Make a Guess the Picture level", "pause to get your block": "⏸️ Make a Pause to Get Your Block" };
+    "guess the picture": "🧱 Make a Guess the Picture level", "pause to get your block": "⏸️ Make a Pause to Get Your Block",
+    "pause to get your axe": "🪓 Make a Pause to Get Your Axe" };
 
   function updateButtons() {
     const busyScript = state.scriptJob != null;

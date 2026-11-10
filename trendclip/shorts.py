@@ -402,8 +402,9 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
     if req.spin:
         from . import spin
 
-        progress(None, "Shuffling the blocks")
-        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script)
+        kind = spin.kind_of(req.script)
+        progress(None, "Shuffling the axes and walls" if kind == "axe" else "Shuffling the blocks")
+        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(
