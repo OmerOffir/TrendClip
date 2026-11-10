@@ -314,8 +314,9 @@ def plan(settings: Settings, words: list[Word], script_text: str, seed: str = ""
     part = part_of(script_text)
     kind, _ = ROOMS[part - 1]
     total = words[-1].end + tail
-    first = next((w for w in words if w.text.rstrip().endswith((".", "!", "?"))), words[min(6, len(words) - 1)])
-    switch = round(min(first.end + 0.25, total / 3), 3)
+    i = next((k for k, w in enumerate(words) if w.text.rstrip().endswith((".", "!", "?"))), min(6, len(words) - 1))
+    after = words[i + 1].start if i + 1 < len(words) else words[i].end + 0.25  # the map holds through the breath
+    switch = round(min(max(after, words[i].end + 0.25), total / 3), 3)
     out_dir = settings.assets_dir / "cache" / "dungeon"
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = re.sub(r"[^a-z0-9]+", "-", (seed or f"part{part}").lower())[:40].strip("-")
