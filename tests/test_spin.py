@@ -227,3 +227,13 @@ def test_every_dungeon_part_renders_its_map_and_room(tmp_path):
         assert abs(the_map.end - (spoken[6].end + 0.25)) < 1e-6  # "...part 1 of 8." ends on the 7th word
     assert "is next" in dungeon.script(s, "Minecraft", 1).pinned_comment
     assert "Wither" in dungeon.script(s, "Minecraft", 8).pinned_comment
+
+
+def test_every_dungeon_part_ends_on_share_and_follow():
+    from trendclip import dungeon
+
+    for part in range(1, dungeon.PARTS + 1):
+        kind, what = dungeon.ROOMS[part - 1]
+        text = dungeon.NARRATION[kind].format(game="Minecraft", n=part, total=8, what=what, article="A",
+                                              next=part + 1, follow="Follow.")
+        assert "send this to a friend" in text and text.endswith("Follow.")

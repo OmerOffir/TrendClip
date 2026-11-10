@@ -49,14 +49,18 @@ WALLS = {"Cobblestone": (2.0, 0), "Obsidian": (50.0, 3)}  # name -> (hardness, m
 
 NARRATION = {
     "mob": ("{game} dungeon run, part {n} of {total}. {article} {what} blocks the way. Pause the video right now. "
-            "The weapon you stop on is yours. How many hits to win? Comment your weapon and your hits."),
+            "The weapon you stop on is yours. How many hits to win? Comment your weapon and your hits. "
+            "Then send this to a friend, and see who wins the fight. {follow}"),
     "chest": ("{game} dungeon run, part {n} of {total}. You found a chest. Pause the video right now. "
-              "The loot you stop on is yours. Keep it for the final boss. Comment what you got."),
+              "The loot you stop on is yours. Keep it for the final boss. Comment what you got. "
+              "Then send this to a friend, and see who gets the better loot for the dungeon. {follow}"),
     "wall": ("{game} dungeon run, part {n} of {total}. {article} {what} wall blocks the way. Pause the video right "
-             "now. The tool you stop on is yours. How long to break through? Comment your tool and your time."),
+             "now. The tool you stop on is yours. How long to break through? Comment your tool and your time. "
+             "Then send this to a friend, and see who breaks through first. {follow}"),
     "boss": ("{game} dungeon run, part {n} of {total}. The final boss. {article} {what} is waiting. Pause the video "
              "right now. The weapon you stop on is yours. How many hits to win? Got a totem from a chest? You get "
-             "one more life. Comment your weapon and your hits."),
+             "one more life. Comment your weapon and your hits. Then send this to a friend, and see who beats "
+             "the boss. {follow}"),
 }
 TITLES = {
     "mob": "Pause To Beat The {what} | Dungeon Run {n}/{total} ⚔️",
@@ -172,7 +176,9 @@ def script(settings: Settings, game: str, part: int, *, format: str = "short"):
     kind, what = ROOMS[part - 1]
     game_name = quiz.game_name(game)
     fill = {"game": game_name, "n": part, "total": PARTS, "what": what.lower() if kind == "wall" else what,
-            "article": spin.article(what), "next": part + 1}
+            "article": spin.article(what), "next": part + 1,
+            "follow": f"Follow, so you don't miss part {part + 1}." if part < PARTS
+            else "Follow for the next dungeon."}  # the owner, 2026-11-10: longer, with share + follow
     title = TITLES[kind].format(**fill)
     pack = SimpleNamespace(title=title, description=DESCRIPTION.format(**fill), hashtags=HASHTAGS,
                            title_card=f"PART {part} OF {PARTS}")
