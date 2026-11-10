@@ -278,6 +278,8 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
                      progress: ProgressFn, flashes: list | None = None) -> tuple[list, list[str]]:
     """Reaction stickers at the story beats + a subscribe / Part 2 sticker at the call to action.
     Sticker problems never fail the render."""
+    from . import spin
+
     if not (req.stickers or req.cta_sticker):
         return [], []
     try:
@@ -285,7 +287,7 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         if req.stickers and lib:
             progress(None, f"Placing stickers ({len(lib)} in the library)")
         cta = None
-        if req.cta_sticker:
+        if req.cta_sticker and not (req.spin and spin.kind_of(req.script) == "weapon"):  # it sat on the boss card
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
         reactions = list(req.reactions)
         if req.flashes and quiz.COUNTDOWN in req.script and not any(r.word == "Three" for r in reactions):
