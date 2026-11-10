@@ -233,8 +233,8 @@ AXE_PINNED = "What did you get? 👇 Axe + wall + time ⏱️\nSend this to a fr
 AXE_DESCRIPTION = ("Pause the video: the {game} axe you stop on is yours, and so is the wall. How long does it take "
                    "to break? Comment your time and challenge a friend.")
 AXE_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftaxe"]
-AW, AH = 1000, 820  # the axe-vs-wall card
-APIC = 340
+AW, AH = 1000, 760  # the axe-vs-wall card: as tall as the block card, so the captions under it stay clear
+APIC = 300
 WALL_COLOUR = (90, 94, 108)
 
 
