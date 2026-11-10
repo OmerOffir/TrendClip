@@ -75,11 +75,11 @@ HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftdu
 # The map card: as big as the boss card, in its place
 GRID = {1: (0, 0), 2: (1, 0), 3: (2, 0), 4: (2, 1), 5: (1, 1), 6: (0, 1), 7: (0, 2), 8: (1.5, 2)}  # snake
 COL_X = (200, 500, 800)
-ROW_Y = (330, 610, 890)
+ROW_Y = (300, 570, 840)  # room for YOU ARE HERE over the top row and BOSS under the bottom one
 ROOM = 190
 BOSS_ROOM = (380, 210)
-STUBS = [((500, 330), (500, 200)), ((800, 610), (950, 610)), ((200, 610), (60, 610)), ((500, 610), (500, 760)),
-         ((200, 890), (200, 1010))]  # dead ends: it reads as a maze, not a line
+STUBS = [((500, 300), (500, 170)), ((800, 570), (950, 570)), ((200, 570), (60, 570)), ((500, 570), (500, 720)),
+         ((200, 840), (200, 1000))]  # dead ends: it reads as a maze, not a line
 GOLD = (255, 196, 0)
 
 
@@ -237,7 +237,7 @@ def map_card(settings: Settings, part: int, cache: dict | None = None):
         half = 34
         box = (min(ax, bx) - half, min(ay, by) - half, max(ax, bx) + half, max(ay, by) + half)
         _texture(d, box, floor, rng, cell=17, spread=10)
-    d.text((spin.FRAME + 12, ROW_Y[0] - 100), "START", font=_font(40), fill=(255, 255, 255))
+    d.text((spin.FRAME + 6, ROW_Y[0] + 40), "START", font=_font(26), fill=(255, 255, 255))  # under the way in
 
     for n in range(1, PARTS + 1):
         kind, what = ROOMS[n - 1]

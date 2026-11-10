@@ -183,3 +183,47 @@ def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
     with Image.open(overlay.image) as webp:
         assert webp.size == (spin.BW, spin.BH)
     assert spin.weapon_wanted("pause to get your weapon") and not spin.axe_wanted("pause to get your weapon")
+
+
+def test_dungeon_numbers_and_parts():
+    from trendclip import dungeon
+
+    assert dungeon.break_seconds("Obsidian", "Diamond Pickaxe") == 9.4
+    assert dungeon.break_seconds("Obsidian", "Iron Pickaxe") == 250.0  # too low a mining level
+    assert dungeon.break_seconds("Obsidian", "Netherite Shovel") == 250.0
+    assert dungeon.break_seconds("Cobblestone", "Golden Pickaxe") == 0.25
+    assert dungeon.break_seconds("Cobblestone", "Copper Pickaxe") == 0.6
+    assert dungeon.break_seconds("Cobblestone", "Diamond Axe") == 10.0
+    assert spin.hits_to_kill("Enderman", "Bow") is None and spin.hits_to_kill("Zombie", "Iron Sword") == 4
+    assert dungeon.loot_verdict("Totem of Undying")[0] == "LEGENDARY LOOT!!"
+    assert dungeon.wanted("dungeon run part 3") == 3 and dungeon.wanted("Dungeon") == 1 and dungeon.wanted("") == 0
+    assert dungeon.part_of("Minecraft dungeon run, part 7 of 8. An obsidian wall") == 7
+    assert spin.kind_of("Minecraft dungeon run, part 7 of 8.") == "dungeon"
+
+
+def test_every_dungeon_part_renders_its_map_and_room(tmp_path):
+    from trendclip import dungeon, reveal
+
+    s = settings(tmp_path)
+    groups = {reveal.library_dir(s): ["Zombie", "Skeleton", "Enderman", "Wither"],
+              spin.library_dir(s): ["Cobblestone", "Obsidian"], spin.axe_dir(s): ["Chest"],
+              spin.weapon_dir(s): list(spin.WEAPONS),
+              dungeon.dungeon_dir(s): list(dungeon.LOOT) + [t for t in dungeon.TOOLS if t.endswith("Shovel")]}
+    for folder, names in groups.items():
+        folder.mkdir(parents=True)
+        entries = []
+        for i, name in enumerate(names):
+            Image.new("RGBA", (16, 16), (8 * i % 255, 90, 140, 255)).save(folder / f"d{i}.png")
+            entries.append({"name": name, "kind": "x", "file": f"d{i}.png", "source": "x"})
+        (folder / "catalog.json").write_text(json.dumps(entries))
+    assert dungeon.ready(s)
+    for part in range(1, dungeon.PARTS + 1):
+        result = dungeon.script(s, "Minecraft", part)
+        assert spin.kind_of(result.script) == "dungeon" and dungeon.part_of(result.script) == part
+        assert f"{part}/8" in result.title and result.spin
+        spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
+        the_map, cards = spin.plan(s, spoken, seed=f"p{part}", kind="dungeon", script_text=result.script)
+        assert the_map.start == 0 and the_map.end == cards.start and cards.animated
+        assert abs(the_map.end - (spoken[6].end + 0.25)) < 1e-6  # "...part 1 of 8." ends on the 7th word
+    assert "is next" in dungeon.script(s, "Minecraft", 1).pinned_comment
+    assert "Wither" in dungeon.script(s, "Minecraft", 8).pinned_comment
