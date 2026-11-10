@@ -582,6 +582,16 @@ class Art:
         self._cards[key] = im
         return im
 
+    def rules(self, tag: str):
+        """A stop alone: what the viewer starts with, where the road card stands in the long video."""
+        key = ("rules", tag)
+        if key not in self._cards:
+            im, d = self.shell((255, 196, 0), tag, "COMMENT YOUR HEARTS", GREY)
+            d.text((480, 150), "YOU START WITH", font=self.bar, fill=(255, 255, 255), anchor="mm")
+            d.text((480, 248), "10 HEARTS", font=self.big, fill=(255, 222, 0), anchor="mm")
+            self._cards[key] = im
+        return self._cards[key]
+
     def road(self, here: int):
         """The seven stops in a row: the ones passed ticked green, this one gold."""
         key = ("road", here)
@@ -626,6 +636,10 @@ class Stop:
     ZERO = ("NO HEARTS LOST", GREEN)
     L = 0.0  # how far the hero steps ahead of his usual place at this stop
     STAYS = False  # the world does not move on at the end
+    # the stop as a Short of its own (SOLO empty: it has none): its title, its first words, the dare on screen
+    SOLO, HOOK, DARE, TAG, SLUG = "", "", "", "PAUSE CHALLENGE", ""
+    ALONE: dict = {}  # the sentences that change when the stop is alone, by role
+    solo = False  # drawn alone: no road, no next stop
 
     @classmethod
     def options(cls) -> list[Option]:
@@ -638,6 +652,17 @@ class Stop:
     @classmethod
     def lines(cls, before: int) -> list[tuple[str, str]]:
         raise NotImplementedError
+
+    @classmethod
+    def after(cls) -> int:
+        """The narrator's hearts when this stop is the whole video."""
+        return max(0, min(HEARTS, HEARTS + cls.mine().delta))
+
+    @classmethod
+    def alone(cls) -> list[tuple[str, str]]:
+        """The stop's words as a Short of its own: a dare first, and the comment asked for at the end."""
+        swap = {"title": cls.HOOK, "next": "Comment your hearts.", **cls.ALONE}
+        return [(role, swap.get(role, text)) for role, text in cls.lines(HEARTS) if role != "intro"]
 
     def __init__(self, art: Art, lines: list[tuple[str, str]], words: list[Word], seed: str = "quest"):
         self.art, self.words = art, words
@@ -718,13 +743,25 @@ class Stop:
 
     def card(self, t: float):
         option = self.option(t)
+        if option is None and self.solo and t >= self.mine_at:
+            return self.art.card(self, self.pick, True), 0.0  # alone, the narrator's card stays to the end
         if option is None:
-            return self.art.road(self.N), 0.0
+            return self.before(), 0.0
         return self.art.card(self, option, t >= self.mine_at), _since(t, [self.mine_at], 0.2)
+
+    def before(self):
+        """The card until the options flick: the road, or the rules when the stop is alone."""
+        return self.art.rules(self.TAG) if self.solo else self.art.road(self.N)
 
     def sky(self, t: float, d) -> None:
         art = self.art
-        if self.title <= t < self.threat + 0.3:
+        if self.solo and t >= self.next:
+            _label(d, (W // 2, 420), "COMMENT", art.title, (255, 255, 255), 12)
+            _label(d, (W // 2, 590), "YOUR HEARTS", art.title, (255, 222, 0), 12)
+        elif self.solo and self.title <= t < self.threat + 0.3:
+            _label(d, (W // 2, 420), "CAN YOU", art.title, (255, 255, 255), 12)
+            _label(d, (W // 2, 590), self.DARE, art.fit(d, self.DARE, 960), self.COLOUR, 12)
+        elif self.title <= t < self.threat + 0.3:
             _label(d, (W // 2, 420), f"STOP {self.N}", art.title, (255, 255, 255), 12)
             _label(d, (W // 2, 590), self.NAME, art.fit(d, self.NAME, 960), self.COLOUR, 12)
         elif self.pause <= t < self.mine_at:
@@ -869,6 +906,9 @@ class Fight(Stop):
 
 class Forest(Fight):
     N, NAME, NEXT, COLOUR, MINE = 1, "THE FOREST", "THE CAVE", (120, 230, 110), "Stone Sword"
+    SOLO, HOOK = "Pause To Survive Your First Night ⚔️", "Ten hearts. Can you survive your first night?"
+    DARE, SLUG = "SURVIVE THE NIGHT?", "forest"
+    ALONE = {"count": "How many hearts do you have left?"}
 
     @classmethod
     def lines(cls, before: int) -> list[tuple[str, str]]:
@@ -989,6 +1029,8 @@ class Forest(Fight):
 # --------------------------------------------------------------------------- stop 2: the cave
 class Cave(Stop):
     N, NAME, NEXT, COLOUR, KIND, MINE = 2, "THE CAVE", "THE VILLAGE", (150, 220, 255), "PICKAXE", "Iron Pickaxe"
+    SOLO, HOOK = "Pause To Dig Out Of The Cave ⛏️", "Ten hearts. Can you dig out of this cave?"
+    DARE, SLUG = "DIG OUT?", "cave"
     L = 20.0
     WALL, BLOCKS = 100, 4  # the fallen blocks' left edge when the hero has stopped, and how many
 
@@ -1229,6 +1271,9 @@ class Village(Stop):
 # --------------------------------------------------------------------------- stop 4: the Nether
 class Nether(Stop):
     N, NAME, NEXT, COLOUR, KIND, MINE = 4, "THE NETHER", "THE FORTRESS", (255, 120, 80), "LANDING", "Magma"
+    SOLO, HOOK = "Pause To Cross The Lava Lake 🔥", "Ten hearts. Can you cross the lava?"
+    DARE, SLUG = "CROSS THE LAVA?", "nether"
+    ALONE = {"count": "How many hearts do you have left?"}
     L = 90.0
     LAKE, BLOCK = (74, 128), 93  # the lava's edges and the block's left edge once the hero has stopped
     RISE = 10  # how far the block stands out of the lava
@@ -1318,6 +1363,8 @@ class Nether(Stop):
 # --------------------------------------------------------------------------- stop 5: the fortress
 class Fortress(Stop):
     N, NAME, NEXT, COLOUR, KIND, MINE = 5, "THE FORTRESS", "THE STRONGHOLD", (255, 170, 60), "SHIELD", "Shield Down"
+    SOLO, HOOK = "Pause To Block The Blaze 🛡️", "Ten hearts. Can you block a blaze?"
+    DARE, SLUG = "BLOCK THE BLAZE?", "fortress"
     BLAZE = 140
 
     @classmethod
@@ -1437,6 +1484,9 @@ class Fortress(Stop):
 # --------------------------------------------------------------------------- stop 6: the stronghold
 class Stronghold(Stop):
     N, NAME, NEXT, COLOUR, KIND, MINE = 6, "THE STRONGHOLD", "THE END", (190, 200, 210), "DOOR", "Door 1"
+    SOLO, HOOK = "Pick A Door To Find The End Portal 🚪", "Ten hearts. Can you find the End portal?"
+    DARE, SLUG = "FIND THE PORTAL?", "stronghold"
+    TAG = "PICK A DOOR"
     STAYS = True
     DOORS = (84, 116, 148)  # their middles once the hero has stopped
     BEHIND = (("SILVERFISH", -1), ("THE PORTAL", 0), ("LAVA", -2))
@@ -1569,7 +1619,7 @@ class Stronghold(Stop):
 
     def card(self, t: float):
         if t < self.pause:
-            return self.art.road(self.N), 0.0
+            return self.before(), 0.0
         shown = sum(t >= x for x in self.opens)
         key = ("doors", shown, t >= self.mine_at)
         cards = self.art._cards
@@ -1597,6 +1647,8 @@ class Stronghold(Stop):
 # --------------------------------------------------------------------------- stop 7: the End
 class End(Fight):
     N, NAME, NEXT, COLOUR, MINE = 7, "THE END", "", (200, 130, 255), "Trident"
+    SOLO, HOOK = "Pause To Fight The Ender Dragon 🐉", "Ten hearts. Can you beat the Ender Dragon?"
+    DARE, SLUG = "BEAT THE DRAGON?", "end"
     FOE, EDGES = "Ender Dragon", (25, 40)
     STAYS = True
     COUNT = ""
@@ -1612,6 +1664,13 @@ class End(Fight):
                 ("mine", f"I stopped on a {cls.MINE.lower()}. {_say(hits).capitalize()} hits, and I lose {_hearts(lost)}."),
                 ("count", f"If you still have a heart, you beat Minecraft. I made it with {_say(after)}."),
                 ("next", "Comment your hearts.")]
+
+    @classmethod
+    def alone(cls) -> list[tuple[str, str]]:
+        swap = {"threat": "It has two hundred health.",
+                "pause": "Pause the video now! That is your weapon. The faster you win, the fewer hearts you lose.",
+                "count": f"The dragon is down. I kept {_hearts(cls.after())}. How about you?"}
+        return [(role, swap.get(role, text)) for role, text in super().alone()]
 
     def build(self) -> None:
         from PIL import ImageDraw
@@ -1712,13 +1771,14 @@ class End(Fight):
             _label(d, (W // 2, 420), "COMMENT", art.title, (255, 255, 255), 12)
             _label(d, (W // 2, 590), "YOUR HEARTS", art.title, (255, 222, 0), 12)
         elif t >= self.count:
-            _label(d, (W // 2, 420), "STILL ALIVE?", art.title, (255, 255, 255), 12)
-            _label(d, (W // 2, 590), "YOU BEAT MINECRAFT", art.fit(d, "YOU BEAT MINECRAFT", 980), (255, 222, 0), 12)
+            _label(d, (W // 2, 420), "DRAGON DOWN!" if self.solo else "STILL ALIVE?", art.title, (255, 255, 255), 12)
+            won = "HOW MANY HEARTS?" if self.solo else "YOU BEAT MINECRAFT"
+            _label(d, (W // 2, 590), won, art.fit(d, won, 980), (255, 222, 0), 12)
         else:
             super().sky(t, d)
 
     def card(self, t: float):
-        if t >= self.go:
+        if t >= self.go and not self.solo:
             return self.art.road(8), 0.0
         return super().card(t)
 
@@ -1742,17 +1802,36 @@ def run() -> list[int]:
     return out
 
 
-def scripts() -> list[list[tuple[str, str]]]:
+def solos() -> list[type]:
+    """The stops that are also a Short of their own (the village is not: at ten hearts its food gives nothing)."""
+    return [stop for stop in STOPS if stop.SOLO]
+
+
+def _stops(only: int = 0) -> tuple:
+    """The whole road, or stop number `only` alone."""
+    if not only:
+        return STOPS
+    stop = next((s for s in solos() if s.N == only), None)
+    if stop is None:
+        raise ValueError(f"Stop {only} is not a Short of its own")
+    return (stop,)
+
+
+def scripts(only: int = 0) -> list[list[tuple[str, str]]]:
     """Every stop's sentences by role, written for the narrator's own run."""
+    if only:
+        return [_stops(only)[0].alone()]
     return [stop.lines(before) for stop, before in zip(STOPS, run())]
 
 
 class Quest:
     """The seven stops one after the other, with the HUD, the cards and the captions on top."""
 
-    def __init__(self, settings: Settings, tracks: list[list[Word]]):
-        self.art = Art(settings)
-        self.stops = [cls(self.art, lines, words) for cls, lines, words in zip(STOPS, scripts(), tracks)]
+    def __init__(self, settings: Settings, tracks: list[list[Word]], only: int = 0):
+        self.art, self.only = Art(settings), only
+        self.stops = [cls(self.art, lines, words) for cls, lines, words in zip(_stops(only), scripts(only), tracks)]
+        for stop in self.stops:
+            stop.solo = bool(only)
         self.starts, at = [], 0.0
         for stop in self.stops:
             self.starts.append(at)
@@ -1778,7 +1857,8 @@ class Quest:
     def hud(self, t: float, stop: Stop, d) -> None:
         d.rectangle([0, 0, W, 268], fill=(16, 18, 26, 255))
         d.rectangle([0, 268, W, 276], fill=(255, 196, 0, 255))
-        d.text((W // 2, 150), f"STOP {stop.N} OF 7  ·  {stop.NAME}", font=self.art.head, fill=(255, 255, 255), anchor="mm")
+        head = f"{stop.TAG}  ·  {stop.NAME}" if self.only else f"STOP {stop.N} OF 7  ·  {stop.NAME}"
+        d.text((W // 2, 150), head, font=self.art.head, fill=(255, 255, 255), anchor="mm")
         now = self.hearts(t)
         fresh = [(x, a, b) for x, a, b in self.changes if 0 <= t - x < 0.35]
         for i in range(HEARTS):
@@ -1869,22 +1949,22 @@ def _effects(sounds: list[tuple[float, str]], total: float, path: Path, rate: in
 _QUEST: Quest | None = None
 
 
-def _start(settings: Settings, tracks: list[list[Word]]) -> None:
+def _start(settings: Settings, tracks: list[list[Word]], only: int = 0) -> None:
     global _QUEST
-    _QUEST = Quest(settings, tracks)
+    _QUEST = Quest(settings, tracks, only)
 
 
 def _draw(i: int) -> bytes:
     return _QUEST.frame(i / FPS).tobytes()
 
 
-def voices(settings: Settings, folder: Path, rate: str = "+5%") -> tuple[list[Path], list[list[Word]]]:
+def voices(settings: Settings, folder: Path, rate: str = "+5%", only: int = 0) -> tuple[list[Path], list[list[Word]]]:
     """Every stop read on its own, so each stop's cues are its own."""
     from . import voiceover
 
     folder.mkdir(parents=True, exist_ok=True)
     mp3s, tracks = [], []
-    for n, lines in enumerate(scripts(), 1):
+    for n, lines in enumerate(scripts(only), 1):
         mp3 = folder / f"stop{n}.mp3"
         tracks.append(voiceover.synthesize(" ".join(text for _, text in lines), mp3, settings.tts_voice, rate))
         mp3s.append(mp3)
@@ -1915,15 +1995,15 @@ def _music(settings: Settings):
         return None, None
 
 
-def render(settings: Settings, output: Path, workers: int = 6, music: float = 0.1, progress=None):
-    """The whole quest as an MP4: the seven narrations, the drawn frames, the effects, quiet music.
-    Returns the music's track (None without music)."""
+def render(settings: Settings, output: Path, workers: int = 6, music: float = 0.1, progress=None, only: int = 0):
+    """The whole quest (or stop `only` alone) as an MP4: the narrations, the drawn frames, the effects, quiet
+    music. Returns the music's track (None without music)."""
     import multiprocessing
 
     output.parent.mkdir(parents=True, exist_ok=True)
     work = settings.output_dir / "quest" / output.stem
-    mp3s, tracks = voices(settings, work)
-    quest = Quest(settings, tracks)
+    mp3s, tracks = voices(settings, work, only=only)
+    quest = Quest(settings, tracks, only)
     if quest.total >= 180:
         raise ValueError(f"The quest runs {quest.total:.1f} s: a Short must stay under 180")
     fx = work / "fx.wav"
@@ -1935,7 +2015,7 @@ def render(settings: Settings, output: Path, workers: int = 6, music: float = 0.
                              "-crf", "18", "-pix_fmt", "yuv420p", str(silent)], stdin=subprocess.PIPE)
     frames = int(quest.total * FPS)
     try:
-        with multiprocessing.get_context("spawn").Pool(workers, _start, (settings, tracks)) as pool:
+        with multiprocessing.get_context("spawn").Pool(workers, _start, (settings, tracks, only)) as pool:
             for i, frame in enumerate(pool.imap(_draw, range(frames), chunksize=4)):
                 proc.stdin.write(frame)
                 if i % 150 == 0:
@@ -1970,19 +2050,34 @@ def render(settings: Settings, output: Path, workers: int = 6, music: float = 0.
     return chosen
 
 
-def record(settings: Settings, output: Path, track=None):
+def texts(only: int = 0) -> dict:
+    """What YouTube shows: the long video's own texts, or a stop's as a Short of its own."""
+    if not only:
+        return {"title": TITLE, "card": TITLE_CARD, "description": DESCRIPTION,
+                "pinned": PINNED.format(hearts=run()[-1])}
+    stop = _stops(only)[0]
+    name = stop.SOLO.rsplit(" ", 1)[0]  # the title without its emoji
+    return {"title": stop.SOLO, "card": name.upper(),
+            "description": f"{stop.HOOK} Pause when it says so: what you stop on is what you get. "
+                           f"Comment how many hearts you have left.\n\nThe whole road to the Ender Dragon: \"{TITLE}\" "
+                           "on the channel.",
+            "pinned": f"How many hearts do you have left? 👇\nI kept {stop.after()}. "
+                      f"The whole road, seven stops: \"{TITLE}\" on the channel."}
+
+
+def record(settings: Settings, output: Path, track=None, only: int = 0):
     """The video's entry in output/shorts (the Upload and Plan tabs read it): its texts, the music's credit."""
     from . import shorts
     from .video_assembler import media_duration
 
-    credit = track.credit if track else ""
+    credit, text = track.credit if track else "", texts(only)
     short = shorts.ShortVideo(
-        filename=output.name, game="Minecraft", mode="gamer", title=TITLE,
-        description=f"{DESCRIPTION}\n\n{credit}".strip(), hashtags=HASHTAGS,
-        script=" ".join(text for lines in scripts() for _, text in lines), voice=settings.tts_voice,
+        filename=output.name, game="Minecraft", mode="gamer", title=text["title"],
+        description=f"{text['description']}\n\n{credit}".strip(), hashtags=HASHTAGS,
+        script=" ".join(t for lines in scripts(only) for _, t in lines), voice=settings.tts_voice,
         duration_seconds=round(media_duration(output), 2), background="", credit=credit,
-        music_title=track.title if track else "", music_url=track.url if track else "", title_card=TITLE_CARD,
-        end_card="Comment your hearts", pinned_comment=PINNED.format(hearts=run()[-1]),
+        music_title=track.title if track else "", music_url=track.url if track else "", title_card=text["card"],
+        end_card="Comment your hearts", pinned_comment=text["pinned"],
         channel_handle=settings.channel_handle,
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
@@ -1995,9 +2090,9 @@ def videos(settings: Settings) -> list:
     return [v for v in shorts.list_shorts(settings) if v.filename.startswith(PREFIX)]
 
 
-def _make(settings: Settings, output: Path, progress) -> None:
+def _make(settings: Settings, output: Path, progress, only: int = 0) -> None:
     """Draw it in a process of its own (the frames are drawn on several cores), reading its progress lines."""
-    proc = subprocess.Popen([sys.executable, "-m", "trendclip.quest", str(output)], cwd=Path(__file__).resolve().parent.parent,
+    proc = subprocess.Popen([sys.executable, "-m", "trendclip.quest", str(output), str(only)], cwd=Path(__file__).resolve().parent.parent,
                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     last = ""
     for line in proc.stdout:
@@ -2012,15 +2107,17 @@ def _make(settings: Settings, output: Path, progress) -> None:
         raise RuntimeError(f"The quest could not be made: {last[:300] or 'no output'}")
 
 
-def create(settings: Settings, progress=lambda frac, msg: None):
-    """The quest as a video in output/shorts, waiting in Upload like any other Short."""
+def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):
+    """The quest (or stop `only` alone) as a video in output/shorts, waiting in Upload like any other Short."""
     from . import shorts
 
     if lost := missing(settings):
         raise ValueError(f"No picture of {', '.join(lost[:6])}: make a pause Short first, it fetches the pictures")
-    progress(0.02, "Reading the seven stops")
-    output = settings.shorts_dir / f"{PREFIX}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
-    _make(settings, output, progress)
+    stops = _stops(only)  # an unknown stop stops here
+    progress(0.02, "Reading the stop" if only else "Reading the seven stops")
+    name = f"{stops[0].SLUG}_" if only else ""
+    output = settings.shorts_dir / f"{PREFIX}{name}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
+    _make(settings, output, progress, only)
     return shorts.get_short(settings, output.name)
 
 
@@ -2028,8 +2125,9 @@ def main(argv: list[str]) -> int:
     from .config import get_settings
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
-    settings, output = get_settings(), Path(argv[0])
-    record(settings, output, render(settings, output, workers=max(2, min(6, (os.cpu_count() or 4) - 2))))
+    settings, output, only = get_settings(), Path(argv[0]), int(argv[1]) if len(argv) > 1 else 0
+    workers = max(2, min(6, (os.cpu_count() or 4) - 2))
+    record(settings, output, render(settings, output, workers=workers, only=only), only)
     return 0
 
 

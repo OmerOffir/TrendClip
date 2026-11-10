@@ -5,6 +5,8 @@
   const $ = (id) => document.getElementById(id);
   const make = $("gqMake");
   if (!make) return;
+  const makeOne = $("gqMakeOne");
+  const stop = $("gqStop");
   const state = $("gqState");
   const list = $("gqVideos");
   const error = $("gwError");
@@ -15,7 +17,11 @@
 
   async function load() {
     const q = (await api("/api/gamer/quest")).body;
-    make.disabled = q.missing.length > 0 || make.dataset.busy === "1";
+    make.disabled = makeOne.disabled = q.missing.length > 0 || make.dataset.busy === "1";
+    if (!stop.options.length) {
+      stop.innerHTML = q.solos.map((s) => `<option value="${s.stop}">${esc(s.name)}: ${esc(s.title)}</option>`).join("");
+      stop.value = String(q.solos[q.solos.length - 1]?.stop ?? "");
+    }
     if (make.dataset.busy !== "1") {
       state.textContent = q.missing.length
         ? `Pictures are missing (${q.missing.slice(0, 4).join(", ")}): make a pause Short first, it fetches them`
@@ -38,7 +44,7 @@
     }
     if (job.status === "queued" || job.status === "running") {
       make.dataset.busy = "1";
-      make.disabled = true;
+      make.disabled = makeOne.disabled = true;
       state.textContent = job.status === "queued" ? "Waiting for the video before it…"
         : `${job.message}${job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : ""}…`;
       return setTimeout(() => watch(id), 3000);
@@ -50,18 +56,21 @@
     if (job.status === "done") state.textContent = "✅ Made: it waits in Upload";
   }
 
-  make.addEventListener("click", async () => {
+  async function start(only) {
     showError("");
-    make.disabled = true;
+    make.disabled = makeOne.disabled = true;
     try {
-      const id = (await api("/api/gamer/quest", { method: "POST" })).body.job;
+      const id = (await api("/api/gamer/quest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stop: only }) })).body.job;
       remember(id);
       watch(id);
     } catch (err) {
       showError(err.message);
-      make.disabled = false;
+      make.disabled = makeOne.disabled = false;
     }
-  });
+  }
+
+  make.addEventListener("click", () => start(0));
+  makeOne.addEventListener("click", () => start(Number(stop.value)));
 
   load().catch((err) => showError(err.message));
   if (recalled()) watch(recalled());

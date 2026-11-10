@@ -47,7 +47,7 @@ def test_the_video_waits_in_upload_with_its_texts(tmp_path, monkeypatch):
     monkeypatch.setattr(quest, "missing", lambda settings: [])
     monkeypatch.setattr("trendclip.video_assembler.media_duration", lambda path: 154.66)
 
-    def fake(settings, output, progress):
+    def fake(settings, output, progress, only=0):
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(b"mp4")
         quest.record(settings, output)
@@ -73,4 +73,40 @@ def test_the_dashboard_shows_the_quest_and_refuses_without_pictures(tmp_path, mo
     view = client.get("/api/gamer/quest").json()
     assert view["title"] == quest.TITLE and len(view["stops"]) == 7 and view["missing"] and view["videos"] == []
     assert client.post("/api/gamer/quest").status_code == 400
-    assert "gqMake" in client.get("/").text
+    assert [s["stop"] for s in view["solos"]] == [1, 2, 4, 5, 6, 7]
+    assert client.post("/api/gamer/quest", json={"stop": 3}).status_code == 400  # the village is no Short of its own
+    page = client.get("/").text
+    assert "gqMake" in page and "gqMakeOne" in page
+
+
+def test_a_stop_alone_dares_first_and_asks_for_the_hearts():
+    for stop in quest.solos():
+        lines = quest.scripts(stop.N)[0]
+        roles = [role for role, _ in lines]
+        assert roles[0] == "title" and {"threat", "pause", "mine", "next"} <= set(roles)
+        assert lines[0][1] == stop.HOOK and lines[-1][1] == "Comment your hearts."
+        words = " ".join(text for _, text in lines)
+        assert "Next stop" not in words and "Last stop" not in words and "Stop " not in words
+        assert len(words.split()) < 90  # about half a minute at most
+        assert 0 < stop.after() <= 10
+    with pytest.raises(ValueError, match="not a Short of its own"):
+        quest.scripts(3)
+
+
+def test_a_stop_alone_waits_in_upload_under_its_own_title(tmp_path, monkeypatch):
+    s = settings(tmp_path)
+    monkeypatch.setattr(quest, "missing", lambda settings: [])
+    monkeypatch.setattr("trendclip.video_assembler.media_duration", lambda path: 19.88)
+    seen = []
+
+    def fake(settings, output, progress, only=0):
+        seen.append(only)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mp4")
+        quest.record(settings, output, None, only)
+
+    monkeypatch.setattr(quest, "_make", fake)
+    short = quest.create(s, only=7)
+    assert seen == [7] and short.filename.startswith("quest_end_") and short.title == quest.End.SOLO
+    assert short.title_card == "PAUSE TO FIGHT THE ENDER DRAGON" and "Next stop" not in short.script
+    assert f"I kept {quest.End.after()}" in short.pinned_comment and quest.TITLE in short.description
