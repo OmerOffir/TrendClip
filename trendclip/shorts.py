@@ -341,6 +341,11 @@ def _quiz_style(req: RenderRequest) -> dict[str, Any]:
         from . import reveal
 
         style["margin_v"] = reveal.CAPTION_MARGIN
+        if req.spin:
+            from . import spin
+
+            if spin.kind_of(req.script) == "weapon":
+                style["margin_v"] = spin.BOSS_CAPTION_MARGIN  # under the taller boss card
     return style
 
 
@@ -405,7 +410,8 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         kind = spin.kind_of(req.script)
         progress(None, {"axe": "Shuffling the axes and walls", "weapon": "Shuffling the weapons and mobs"}.get(
             kind, "Shuffling the blocks"))
-        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind)
+        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind,
+                                        script_text=req.script)
 
     progress(0.0, "Rendering video")
     output = video_assembler.assemble_video(

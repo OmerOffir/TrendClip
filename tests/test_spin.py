@@ -141,22 +141,22 @@ def test_an_axe_short_flicks_axe_and_wall_cards(tmp_path):
 
 
 def test_hits_follow_the_wikis_damage_health_and_armour():
-    assert spin.hits_to_kill("Zombie", "Netherite Sword") == 3  # 8 less 2 armour's 1.6 %: 20 / 7.87
-    assert spin.hits_to_kill("Zombie", "Wooden Spear") == 22  # a 1-damage jab loses 6 % to the armour
     assert spin.hits_to_kill("Warden", "Netherite Axe") == 50
-    assert spin.hits_to_kill("Chicken", "Wooden Sword") == 1
-    assert spin.hits_to_kill("Enderman", "Bow") is None and spin.hits_to_kill("Enderman", "Trident") == 5
-    assert spin.weapon_verdict("Chicken", "Mace")[0] == "ONE HIT KILL!"
-    assert spin.weapon_verdict("Skeleton", "Bow")[0] == "4 SHOTS TO WIN"
-    assert spin.weapon_verdict("Breeze", "Bow")[0] == "DEFLECTS ARROWS"
+    assert spin.hits_to_kill("Warden", "Wooden Spear") == 500
+    assert spin.hits_to_kill("Wither", "Netherite Axe") == 31  # 10 less 4 armour's 3.2 %: 300 / 9.68
+    assert spin.hits_to_kill("Iron Golem", "Diamond Pickaxe") == 20
+    assert spin.hits_to_kill("Wither", "Bow") is None and spin.hits_to_kill("Ender Dragon", "Bow") == 34
+    assert spin.weapon_verdict("Warden", "Netherite Axe") == ("50 HITS TO WIN", (40, 170, 70))
+    assert spin.weapon_verdict("Warden", "Wooden Spear")[1] == (200, 40, 40)
+    assert spin.weapon_verdict("Wither", "Bow")[0] == "ARROW SHIELD"
 
 
-def test_a_weapon_short_flicks_weapon_and_mob_cards(tmp_path):
+def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
     from trendclip import reveal
 
     s = settings(tmp_path)
     library(s)
-    for folder, names in ((reveal.library_dir(s), ["Zombie", "Warden", "Chicken"]),
+    for folder, names in ((reveal.library_dir(s), ["Zombie", "Warden", "Ender Dragon", "Elder Guardian"]),
                           (spin.weapon_dir(s), list(spin.WEAPONS))):
         folder.mkdir(parents=True)
         entries = []
@@ -164,14 +164,22 @@ def test_a_weapon_short_flicks_weapon_and_mob_cards(tmp_path):
             Image.new("RGBA", (16, 16), (8 * i, 90, 140, 255)).save(folder / f"w{i}.png")
             entries.append({"name": name, "kind": "x", "file": f"w{i}.png", "source": "x"})
         (folder / "catalog.json").write_text(json.dumps(entries))
-    pairs = spin.weapon_deck(spin.weapon_catalog(s), 4000, random.Random(4))
-    legendary = sum(spin.WEAPONS[w["name"]][0] == "legendary" for w, _ in pairs) / len(pairs)
-    assert 0.04 < legendary < 0.10
-    assert all(a[1]["name"] != b[1]["name"] for a, b in zip(pairs, pairs[1:]))
-    result = spin.script(s, "Minecraft", kind="weapon")
-    assert result.title == "Pause To Get Your Minecraft Weapon ⚔️" and spin.kind_of(result.script) == "weapon"
+    found = spin.weapon_catalog(s)
+    assert [b["name"] for b in found["bosses"]] == ["Warden", "Ender Dragon", "Elder Guardian"]
+    picks = spin.weapon_deck(found, 4000, random.Random(4))
+    legendary = sum(spin.WEAPONS[w["name"]][0] == "legendary" for w in picks) / len(picks)
+    assert 0.04 < legendary < 0.10 and all(a["name"] != b["name"] for a, b in zip(picks, picks[1:]))
+    seen = set()
+    for seed in range(12):
+        result = spin.script(s, "Minecraft", kind="weapon", rng=random.Random(seed))
+        boss = spin.boss_of(result.script)
+        seen.add(boss)
+        assert result.title == f"Pause To Get Your Weapon vs The {boss} ⚔️" and spin.kind_of(result.script) == "weapon"
+    assert "Elder Guardian" in seen and "An Elder Guardian is coming" in spin.WEAPON_SCRIPT.format(
+        game="Minecraft", article=spin.article("Elder Guardian"), boss="Elder Guardian")
     spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
-    [overlay] = spin.plan(s, spoken, seed="w", kind="weapon")
+    [overlay] = spin.plan(s, spoken, seed="w", kind="weapon", script_text=result.script)
+    assert overlay.center == spin.BOSS_CENTER
     with Image.open(overlay.image) as webp:
-        assert webp.size == (spin.AW, spin.AH)
+        assert webp.size == (spin.BW, spin.BH)
     assert spin.weapon_wanted("pause to get your weapon") and not spin.axe_wanted("pause to get your weapon")

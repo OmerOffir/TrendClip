@@ -1322,7 +1322,7 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     question_only = QUESTION_ONLY in (notes or "").lower()
     if spin.wanted(notes) and spin.weapon_wanted(notes) and spin.weapon_catalog(settings):  # Pause to Get Your Weapon
         progress(None, "A Pause to Get Your Weapon Short")
-        return spin.script(settings, game, format=format, kind="weapon")
+        return spin.script(settings, game, format=format, kind="weapon", rng=rng)
     if spin.wanted(notes) and spin.axe_wanted(notes) and spin.axe_catalog(settings):  # Pause to Get Your Axe
         progress(None, "A Pause to Get Your Axe Short")
         return spin.script(settings, game, format=format, kind="axe")

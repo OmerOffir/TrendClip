@@ -108,7 +108,8 @@ def fetch_library(settings: Settings, session=None) -> list[dict]:
                                 titles={n: page for n, (_, page) in BLOCKS.items() if page})
 
 
-def script(settings: Settings, game: str, *, format: str = "short", kind: str = "block"):
+def script(settings: Settings, game: str, *, format: str = "short", kind: str = "block",
+           rng: random.Random | None = None):
     """The Short's ShortScript: fixed narration, `spin` set, no answer (every viewer gets their own)."""
     from . import quiz
 
@@ -120,10 +121,13 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
         "axe": (AXE_SCRIPT, AXE_TITLE, AXE_DESCRIPTION, AXE_HASHTAGS, AXE_PINNED, AXE_END_CARD),
         "weapon": (WEAPON_SCRIPT, WEAPON_TITLE, WEAPON_DESCRIPTION, WEAPON_HASHTAGS, WEAPON_PINNED, WEAPON_END_CARD),
     }.get(kind, (SCRIPT, TITLE, DESCRIPTION, HASHTAGS, PINNED, END_CARD))
-    pack = SimpleNamespace(title=title.format(game=game_name), description=description.format(game=game_name),
+    boss = (rng or random.Random()).choice([b["name"] for b in weapon_catalog(settings)["bosses"]]) \
+        if kind == "weapon" else ""
+    fill = {"game": game_name, "boss": boss, "article": article(boss) if boss else ""}
+    pack = SimpleNamespace(title=title.format(**fill), description=description.format(**fill),
                            hashtags=hashtags, title_card=CARD)
-    out = quiz._script(settings, game, "builtin", "gamer", format, words.format(game=game_name),
-                       HOOK.format(game=game_name), [], "", pinned, pack,
+    out = quiz._script(settings, game, "builtin", "gamer", format, words.format(**fill),
+                       HOOK.format(game=game_name), [], "", pinned.format(**fill), pack,
                        on_screen=f"Pause to get your {kind if kind in ('axe', 'weapon') else 'block'}", card=CARD,
                        end_card=end_card)
     return out.model_copy(update={"spin": True, "reactions": []})
@@ -183,7 +187,7 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
 
 
 def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.0, fps: int = 30,
-         kind: str = "block") -> list[Overlay]:
+         kind: str = "block", script_text: str = "") -> list[Overlay]:
     """One overlay for the whole video: an animated WebP of the cards, a new block (or axe and wall) every HOLD
     frames, from frame 0 to the end (the loop starts on a card too)."""
     if not words:
@@ -195,7 +199,9 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     if kind == "axe":
         cards = [axe_card(settings, a, w, cache) for a, w in axe_deck(axe_catalog(settings), count, rng)]
     elif kind == "weapon":
-        cards = [weapon_card(settings, w, m, cache) for w, m in weapon_deck(weapon_catalog(settings), count, rng)]
+        found = weapon_catalog(settings)
+        boss = next(b for b in found["bosses"] if b["name"] == boss_of(script_text or " ".join(w.text for w in words)))
+        cards = [boss_card(settings, boss, w, cache) for w in weapon_deck(found, count, rng)]
     else:
         cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
     out_dir = settings.assets_dir / "cache" / "spin"
@@ -203,7 +209,8 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     path = out_dir / (re.sub(r"[^a-z0-9]+", "-", (seed or "spin").lower())[:40].strip("-") + ".webp")
     cards[0].save(path, save_all=True, append_images=cards[1:], duration=round(1000 * HOLD / fps), loop=0,
                   lossless=False, quality=90)
-    return [Overlay(path, 0.0, round(total + 0.5, 3), center=CENTER, box=max(cards[0].size), style="asis",
+    return [Overlay(path, 0.0, round(total + 0.5, 3), center=BOSS_CENTER if kind == "weapon" else CENTER,
+                    box=max(cards[0].size), style="asis",
                     cut=True, animated=True)]
 
 
@@ -385,49 +392,57 @@ def versus_card(left: dict, left_label: str, right: dict, tier: str, text: str, 
 
 
 # --------------------------------------------------------------------------- Pause to Get Your Weapon
-# A mob on the left (Guess the Picture's renders, assets/reveal), a weapon on the right (the wiki's 16 px item
-# icons, assets/weapon), and how many hits that weapon needs to beat that mob in Java Edition: the weapon's
-# damage (minecraft.wiki Sword / Axe / Spear jab / Mace / Trident; a bow's full-charge arrow, 6), less the mob's
-# armour by the wiki's formula, into its health, rounded up. No crits, enchantments or mace smashes. Arrows never
-# hit an enderman (it teleports), a breeze (it deflects them) or a wither (shielded from half health). The
-# crossbow is left out: its 6-11 damage is random. The owner's idea, 2026-11-10.
+# One of the strongest mobs stands at the top of the card for the whole Short (the boss, named in the narration);
+# under it the game's weapons flick by, a new one every HOLD frames. A paused viewer sees their weapon and how many
+# hits it needs to beat the boss in Java Edition: the weapon's damage (minecraft.wiki Sword / Axe / Pickaxe /
+# Spear jab / Mace / Trident; a bow's full-charge arrow, 6), less the boss's armour by the wiki's formula, into its
+# health, rounded up. No crits, enchantments or mace smashes; the dragon is hit on the head. Arrows can't finish a
+# wither (shielded from half health). The crossbow is left out: its 6-11 damage is random. The owner's design,
+# 2026-11-10: one boss on top, the weapons flicking under it, "what did you get and in how many hits do you win?".
 
 WEAPON_MARK = "The weapon you stop on is yours"
 WEAPONS: dict[str, tuple[str, float]] = {}  # name -> (tier, damage)
-for _metal, _tier, _sword, _axe, _spear in (
-        ("Wooden", "common", 4, 7, 1), ("Golden", "common", 4, 7, 1), ("Stone", "common", 5, 9, 2),
-        ("Copper", "common", 5, 9, 2), ("Iron", "rare", 6, 9, 3), ("Diamond", "epic", 7, 9, 4),
-        ("Netherite", "legendary", 8, 10, 5)):
+for _metal, _tier, _sword, _axe, _pick, _spear in (
+        ("Wooden", "common", 4, 7, 2, 1), ("Golden", "common", 4, 7, 2, 1), ("Stone", "common", 5, 9, 3, 2),
+        ("Copper", "common", 5, 9, 3, 2), ("Iron", "rare", 6, 9, 4, 3), ("Diamond", "epic", 7, 9, 5, 4),
+        ("Netherite", "legendary", 8, 10, 6, 5)):
     WEAPONS[f"{_metal} Sword"] = (_tier, _sword)
     WEAPONS[f"{_metal} Axe"] = (_tier, _axe)
+    WEAPONS[f"{_metal} Pickaxe"] = (_tier, _pick)
     WEAPONS[f"{_metal} Spear"] = (_tier, _spear)
 WEAPONS.update({"Bow": ("rare", 6), "Trident": ("epic", 9), "Mace": ("legendary", 6)})
-MOBS = {  # name -> (health, armour) in Java Edition; mobs with a random or size-dependent health left out
-    "Allay": (20, 0), "Armadillo": (12, 0), "Axolotl": (14, 0), "Bat": (6, 0), "Bee": (10, 0), "Blaze": (20, 0),
-    "Breeze": (30, 0), "Camel": (32, 0), "Cat": (10, 0), "Chicken": (4, 0), "Cow": (10, 0), "Creeper": (20, 0),
-    "Dolphin": (10, 0), "Drowned": (20, 2), "Elder Guardian": (80, 0), "Ender Dragon": (200, 0),
-    "Enderman": (40, 0), "Endermite": (8, 0), "Evoker": (24, 0), "Fox": (10, 0), "Frog": (10, 0), "Ghast": (10, 0),
-    "Glow Squid": (10, 0), "Goat": (10, 0), "Guardian": (30, 0), "Hoglin": (40, 0), "Husk": (20, 2),
-    "Iron Golem": (100, 0), "Mooshroom": (10, 0), "Ocelot": (10, 0), "Panda": (20, 0), "Parrot": (6, 0),
-    "Phantom": (20, 0), "Pig": (10, 0), "Piglin": (16, 0), "Pillager": (24, 0), "Polar Bear": (30, 0),
-    "Pufferfish": (3, 0), "Rabbit": (3, 0), "Ravager": (100, 0), "Sheep": (8, 0), "Silverfish": (8, 0),
-    "Skeleton": (20, 0), "Sniffer": (14, 0), "Snow Golem": (4, 0), "Spider": (16, 0), "Squid": (10, 0),
-    "Stray": (20, 0), "Strider": (20, 0), "Tadpole": (6, 0), "Tropical Fish": (3, 0), "Turtle": (30, 0),
-    "Vex": (14, 0), "Villager": (20, 0), "Wandering Trader": (20, 0), "Warden": (500, 0), "Witch": (26, 0),
-    "Wither": (300, 4), "Wolf": (8, 0), "Zoglin": (40, 0), "Zombie": (20, 2),
+BOSSES = {  # name -> (health, armour) in Java Edition: the strongest mobs, one per Short
+    "Warden": (500, 0), "Wither": (300, 4), "Ender Dragon": (200, 0), "Elder Guardian": (80, 0),
+    "Ravager": (100, 0), "Iron Golem": (100, 0),
 }
-ARROW_PROOF = {"Enderman": "DODGES ARROWS", "Breeze": "DEFLECTS ARROWS", "Wither": "ARROW SHIELD"}
-WEAPON_SCRIPT = ("{game} fans only. Pause the video right now. The weapon you stop on is yours, and so is the mob "
-                 "next to it. How many hits to win? Netherite and the mace are legendary. Comment your weapon, "
-                 "your mob and your hits. Then send this to a friend, and see who wins the fight.")
+ARROW_PROOF = {"Wither": "ARROW SHIELD"}
+WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
+                 "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
+                 "Comment your weapon and your hits. Then send this to a friend, and see who wins the fight.")
 assert WEAPON_MARK in WEAPON_SCRIPT
-WEAPON_TITLE = "Pause To Get Your {game} Weapon ⚔️"
+WEAPON_TITLE = "Pause To Get Your Weapon vs The {boss} ⚔️"
 WEAPON_END_CARD = "Comment your hits"
-WEAPON_PINNED = "What did you get? 👇 Weapon + mob + hits ⚔️\nSend this to a friend and see who wins the fight."
-WEAPON_DESCRIPTION = ("Pause the video: the {game} weapon you stop on is yours, and so is the mob. How many hits to "
-                      "win? Comment your hits and challenge a friend.")
+WEAPON_PINNED = ("What did you get vs the {boss}? 👇 Weapon + hits ⚔️\n"
+                 "Send this to a friend and see who wins the fight.")
+WEAPON_DESCRIPTION = ("Pause the video: the {game} weapon you stop on is yours. How many hits to beat the {boss}? "
+                      "Comment your hits and challenge a friend.")
 WEAPON_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftweapons"]
-ICON = 288  # 16 px icons at 18x, whole pixels
+BW, BH = 1000, 1050  # the boss card: the boss on top, the weapon under it
+BOSS_CENTER = (WIDTH // 2, 950)
+BOSS_CAPTION_MARGIN = 280  # the captions under the taller card
+BOSS_PIC = 330
+ICON = 224  # 16 px icons at 14x, whole pixels
+BOSS_RED = (150, 20, 20)
+
+
+def article(boss: str) -> str:
+    return "The" if boss == "Ender Dragon" else "An" if boss[0] in "AEIOU" else "A"
+
+
+def boss_of(script_text: str) -> str:
+    """The boss a weapon Short's narration names."""
+    m = re.search(r"(?:A|An|The) ([A-Z][A-Za-z ]+?) is coming for you", script_text or "")
+    return m.group(1) if m and m.group(1) in BOSSES else "Warden"
 
 
 def weapon_dir(settings: Settings) -> Path:
@@ -447,25 +462,28 @@ def fetch_weapons(settings: Settings, session=None) -> list[dict]:
     folder = weapon_dir(settings)
     folder.mkdir(parents=True, exist_ok=True)
     files = {f"File:Invicon {n}.png": n for n in WEAPONS}
-    r = session.get(reveal.WIKI_API, params={"action": "query", "titles": "|".join(files), "prop": "imageinfo",
-                                             "iiprop": "url", "format": "json"}, timeout=30)
-    r.raise_for_status()
     entries = []
-    for page in r.json()["query"]["pages"].values():
-        name, info = files.get(page["title"]), page.get("imageinfo")
-        if not name or not info:
-            logger.warning("No icon for %s", page.get("title"))
-            continue
-        out = folder / f"{reveal.slug(name)}.png"
-        out.write_bytes(session.get(info[0]["url"], timeout=30).content)
-        entries.append({"name": name, "kind": "weapon", "file": out.name, "source": info[0]["url"].split("?")[0]})
+    names = list(files)
+    for i in range(0, len(names), 40):
+        r = session.get(reveal.WIKI_API, params={"action": "query", "titles": "|".join(names[i:i + 40]),
+                                                 "prop": "imageinfo", "iiprop": "url", "format": "json"}, timeout=30)
+        r.raise_for_status()
+        for page in r.json()["query"]["pages"].values():
+            name, info = files.get(page["title"]), page.get("imageinfo")
+            if not name or not info:
+                logger.warning("No icon for %s", page.get("title"))
+                continue
+            out = folder / f"{reveal.slug(name)}.png"
+            out.write_bytes(session.get(info[0]["url"], timeout=30).content)
+            entries.append({"name": name, "kind": "weapon", "file": out.name,
+                            "source": info[0]["url"].split("?")[0]})
     entries.sort(key=lambda e: e["name"])
     (folder / "catalog.json").write_text(json.dumps(entries, indent=1) + "\n", encoding="utf-8")
     return entries
 
 
 def weapon_catalog(settings: Settings) -> dict[str, list[dict]]:
-    """{"weapons": [...], "mobs": [...]} with full paths; empty when either side has none."""
+    """{"weapons": [...], "bosses": [...]} with full paths; empty when either side has none."""
     import json
 
     from . import reveal
@@ -478,49 +496,90 @@ def weapon_catalog(settings: Settings) -> dict[str, list[dict]]:
         except (OSError, ValueError):
             continue
     weapons = [found[n] for n in WEAPONS if n in found]
-    mobs = [found[n] for n in MOBS if n in found]
-    return {"weapons": weapons, "mobs": mobs} if weapons and mobs else {}
+    bosses = [found[n] for n in BOSSES if n in found]
+    return {"weapons": weapons, "bosses": bosses} if weapons and bosses else {}
 
 
-def hits_to_kill(mob: str, weapon: str) -> int | None:
-    """Hits for `weapon` to beat `mob` in Java Edition; None when it can't (arrows on an enderman)."""
+def hits_to_kill(boss: str, weapon: str) -> int | None:
+    """Hits for `weapon` to beat `boss` in Java Edition; None when it can't (arrows on a wither)."""
     import math
 
-    if weapon == "Bow" and mob in ARROW_PROOF:
+    if weapon == "Bow" and boss in ARROW_PROOF:
         return None
-    health, armour = MOBS[mob]
+    health, armour = BOSSES[boss]
     damage = WEAPONS[weapon][1]
     damage *= 1 - min(20, max(armour / 5, armour - 4 * damage / 8)) / 25
     return math.ceil(health / damage - 1e-9)
 
 
-def weapon_verdict(mob: str, weapon: str) -> tuple[str, tuple[int, int, int]]:
-    hits = hits_to_kill(mob, weapon)
+def weapon_verdict(boss: str, weapon: str) -> tuple[str, tuple[int, int, int]]:
+    hits = hits_to_kill(boss, weapon)
     if hits is None:
-        return ARROW_PROOF[mob], (150, 20, 20)
-    if hits == 1:
-        return "ONE HIT KILL!", (40, 170, 70)
+        return ARROW_PROOF[boss], BOSS_RED
     word = "SHOTS" if weapon == "Bow" else "HITS"
-    colour = (40, 170, 70) if hits <= 5 else (230, 140, 20) if hits <= 20 else (200, 40, 40)
+    best = min(hits_to_kill(boss, w) or 10 ** 6 for w in WEAPONS)
+    colour = (40, 170, 70) if hits <= best * 1.25 else (230, 140, 20) if hits <= best * 2 else (200, 40, 40)
     return f"{hits} {word} TO WIN", colour
 
 
-def weapon_deck(found: dict, count: int, rng: random.Random) -> list[tuple[dict, dict]]:
-    """`count` (weapon, mob) pairs: each tier its share of the weapons, any mob alike, never the same mob twice
-    in a row."""
-    weapons, mobs = found["weapons"], found["mobs"]
+def weapon_deck(found: dict, count: int, rng: random.Random) -> list[dict]:
+    """`count` weapons: each tier its share, never the same weapon twice in a row."""
+    weapons = found["weapons"]
     per_tier = {t: sum(WEAPONS[w["name"]][0] == t for w in weapons) for t in TIERS}
     weights = [TIERS[WEAPONS[w["name"]][0]][1] / per_tier[WEAPONS[w["name"]][0]] for w in weapons]
-    out: list[tuple[dict, dict]] = []
+    out: list[dict] = []
     for _ in range(count):
         while True:
-            pair = (rng.choices(weapons, weights)[0], rng.choice(mobs))
-            if not out or pair[1]["name"] != out[-1][1]["name"]:
+            pick = rng.choices(weapons, weights)[0]
+            if not out or pick["name"] != out[-1]["name"]:
                 break
-        out.append(pair)
+        out.append(pick)
     return out
 
 
-def weapon_card(settings: Settings, weapon: dict, mob: dict, cache: dict):
-    text, bar = weapon_verdict(mob["name"], weapon["name"])
-    return versus_card(mob, "THE MOB", weapon, WEAPONS[weapon["name"]][0], text, bar, cache, right_size=ICON)
+def boss_card(settings: Settings, boss: dict, weapon: dict, cache: dict):
+    """The boss on top (name, picture, health), the weapon under it in its tier's colour, the hits at the bottom."""
+    from PIL import Image, ImageDraw
+
+    from .reveal import _font
+
+    tier = WEAPONS[weapon["name"]][0]
+    colour = TIERS[tier][0]
+    img = Image.new("RGBA", (BW, BH), (24, 24, 30, 255))
+    d = ImageDraw.Draw(img)
+    d.rectangle([0, 0, BW - 1, BH - 1], outline=colour, width=FRAME)
+
+    def centred(text, y, size, fill, x0=FRAME, x1=BW - FRAME):
+        while size > 30 and d.textlength(text, font=_font(size)) > x1 - x0 - 30:
+            size -= 4
+        d.text(((x0 + x1 - d.textlength(text, font=_font(size))) / 2, y), text, font=_font(size), fill=fill)
+
+    # the boss
+    d.rectangle([FRAME, FRAME, BW - FRAME, FRAME + 92], fill=BOSS_RED)
+    centred(f"THE BOSS: {boss['name'].upper()}", FRAME + 10, 58, (255, 255, 255))
+    top = FRAME + 112
+    d.rounded_rectangle([BW // 2 - 260, top, BW // 2 + 260, top + BOSS_PIC + 30], radius=26, fill=PANEL)
+    pic = _fit(boss["path"], BOSS_PIC, cache)
+    img.alpha_composite(pic, ((BW - pic.width) // 2, top + 15 + (BOSS_PIC - pic.height) // 2))
+    centred(f"{BOSSES[boss['name']][0]} HEALTH", top + BOSS_PIC + 40, 48, (255, 110, 110))
+    # the weapon
+    y = top + BOSS_PIC + 112
+    d.rectangle([FRAME, y, BW - FRAME, y + 76], fill=colour)
+    centred(f"YOUR WEAPON: {tier.upper()}", y + 6, 52,
+            (20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))
+    y += 92
+    d.rounded_rectangle([FRAME + 40, y, FRAME + 40 + ICON + 30, y + ICON + 30], radius=26, fill=PANEL)
+    icon = _fit(weapon["path"], ICON, cache)
+    img.alpha_composite(icon, (FRAME + 55 + (ICON - icon.width) // 2, y + 15 + (ICON - icon.height) // 2))
+    name_x0 = FRAME + 40 + ICON + 50
+    words = weapon["name"].upper().split()
+    lines = [" ".join(words[:-1]), words[-1]] if len(words) > 1 else words
+    for k, line in enumerate(lines):
+        centred(line, y + (ICON + 30) / 2 - 62 * len(lines) / 2 + 62 * k - 4, 64, (255, 255, 255), name_x0,
+                BW - FRAME - 20)
+    # the hits
+    text, bar = weapon_verdict(boss["name"], weapon["name"])
+    y0 = BH - FRAME - 140
+    d.rectangle([FRAME, y0, BW - FRAME, BH - FRAME], fill=bar)
+    centred(text, y0 + 28, 76, (255, 255, 255))
+    return img
