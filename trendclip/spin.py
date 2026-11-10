@@ -415,7 +415,7 @@ BOSSES = {  # name -> (health, armour) in Java Edition: the strongest mobs, one 
     "Warden": (500, 0), "Wither": (300, 4), "Ender Dragon": (200, 0), "Elder Guardian": (80, 0),
     "Ravager": (100, 0), "Iron Golem": (100, 0),
 }
-ARROW_PROOF = {"Wither": "ARROW SHIELD"}
+ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF"}
 WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
                  "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
                  "Comment your weapon and your hits. Then send this to a friend, and see who wins the fight.")
@@ -430,8 +430,8 @@ WEAPON_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#mine
 BW, BH = 1000, 1050  # the boss card: the boss on top, the weapon under it
 BOSS_CENTER = (WIDTH // 2, 950)
 BOSS_CAPTION_MARGIN = 280  # the captions under the taller card
-BOSS_PIC = 330
-ICON = 224  # 16 px icons at 14x, whole pixels
+BOSS_PIC = 300
+ICON = 208  # 16 px icons at 13x, whole pixels (224 ran the panel into the hits bar)
 BOSS_RED = (150, 20, 20)
 
 

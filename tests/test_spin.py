@@ -148,7 +148,7 @@ def test_hits_follow_the_wikis_damage_health_and_armour():
     assert spin.hits_to_kill("Wither", "Bow") is None and spin.hits_to_kill("Ender Dragon", "Bow") == 34
     assert spin.weapon_verdict("Warden", "Netherite Axe") == ("50 HITS TO WIN", (40, 170, 70))
     assert spin.weapon_verdict("Warden", "Wooden Spear")[1] == (200, 40, 40)
-    assert spin.weapon_verdict("Wither", "Bow")[0] == "ARROW SHIELD"
+    assert spin.weapon_verdict("Wither", "Bow")[0] == "ARROWS BOUNCE OFF"
 
 
 def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
