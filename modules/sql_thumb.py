@@ -39,8 +39,9 @@ def plan(info: dict) -> dict | None:
     """The scene for a Short (its saved JSON), or None for the title-card look."""
     title = re.sub(r"[^\x00-\x7f]+", "", str(info.get("title") or "")).strip()
     script = str(info.get("script") or "")
-    quest = script.startswith("Ten hearts") or "Pause Edition" in title
-    hearts = 10 if quest else 0
+    start = re.match(r"(Ten|Five|Three) hearts", script)  # a drawn Short says what it starts with
+    quest = bool(start) or "Pause Edition" in title
+    hearts = {"Ten": 10, "Five": 5, "Three": 3}[start.group(1)] if start else 10 if quest else 0
     low = title.lower()
     if m := re.search(r"Weapon vs The ([A-Za-z ]+)", title):
         return fight(m.group(1).strip(), "HOW MANY HITS?", "Netherite Sword")

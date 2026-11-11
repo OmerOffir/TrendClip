@@ -1210,15 +1210,35 @@ def gamer_quest_view() -> dict[str, Any]:
                        for v in quest.videos(settings)]}
 
 
+def _quest_slot(settings: Settings, filename: str) -> tuple[Day, str] | None:
+    """The slot for a new drawn video: the first free one whose neighbours (the slot before and the slot after)
+    hold no video of the same format, so two fights never go up in a row; else simply the first free one."""
+    from .. import quest
+
+    free = _free_slots(settings)
+    kind = quest.kind_of(filename)
+    items = [i for i in planner.load(settings).items if i.slot and i.short]
+    times = sorted((planner.slot_time(settings, i.date, i.slot), quest.kind_of(i.short)) for i in items)
+
+    def clash(day, slot) -> bool:
+        at = planner.slot_time(settings, day, slot)
+        before = [k for t, k in times if t < at][-1:]
+        after = [k for t, k in times if t > at][:1]
+        return kind in before + after
+
+    return next((s for s in free if not clash(*s)), free[0] if free else None)
+
+
 def _quest_job(settings: Settings, only):
-    """Make the video, then put it on the plan's next free slot (the owner, 2026-11-11: a video left in Upload
-    alone was not found); with every slot taken it just waits in Upload."""
+    """Make the video, then put it on the plan (the owner, 2026-11-11: a video left in Upload alone was not
+    found): _quest_slot's slot; with every slot taken it just waits in Upload."""
     def run(progress):
         from .. import quest
 
         short = quest.create(settings, progress, only)
         try:
-            assistant.plan_short(settings, short.filename)
+            if slot := _quest_slot(settings, short.filename):
+                assistant.plan_short(settings, short.filename, *slot)
         except ValueError as err:
             logger.warning("%s is not planned: %s", short.filename, err)
         return short
@@ -1245,40 +1265,19 @@ class QuestRequest(BaseModel):
 @app.post("/api/gamer/quest", status_code=202)
 def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
     """The video as one render job (polled at /api/create/jobs/{id}); it then waits in Upload."""
-    from .. import quest
+    from .. import dungeon, quest
 
     settings, only = _base_settings(), req.stop if req else 0
-    if req and req.pet:
-        import random
-
-        from .. import dungeon
-
-        found = dungeon.pictures(settings)
-        bosses = [b for b in quest.pet_bosses() if b in found]
-        if not bosses or (req.foe and req.foe not in bosses):
-            raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any boss'}: make a pause Short first")
-        if lost := [m for m in arena_allies() if m not in found][:6]:
+    kind = next((k for k in ("pet", "wall", "twice", "fight") if req and getattr(req, k)), "")
+    if kind:  # a drawn Short: its place, rule, skin and wording are chosen away from the last ones (quest.choose)
+        if kind == "pet" and (lost := [m for m in arena_allies() if m not in dungeon.pictures(settings)][:6]):
             raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost)}: make a Guess the Picture level first")
-        only = f"{quest.PET}{req.foe or random.choice(bosses)}"
-        return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
-    if req and req.wall:
-        import random
-
-        if req.block and req.block not in quest.WALLS:
-            raise HTTPException(status_code=400, detail=f"No such wall: {req.block}")
-        only = f"{quest.WALL}{req.block or random.choice(list(quest.WALLS))}"
         if lost := quest.missing(settings):
             raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost[:6])}: make a pause Short first")
-        return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
-    if req and (req.twice or req.fight):
-        import random
-
-        from .. import dungeon
-
-        foes = [m for m in quest.twice_foes() if m in dungeon.pictures(settings)]
-        if not foes or (req.foe and req.foe not in foes):
-            raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any mob'}: make a pause Short first")
-        only = f"{quest.TWICE if req.twice else quest.FIGHT}{req.foe or random.choice(foes)}"
+        try:
+            only = quest.choose(settings, kind, req.block if kind == "wall" else req.foe)
+        except ValueError as err:
+            raise HTTPException(status_code=400, detail=str(err)) from err
         return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
     if only and only not in [stop.N for stop in quest.solos()]:
         raise HTTPException(status_code=400, detail=f"Stop {only} is not a Short of its own")

@@ -640,9 +640,15 @@ class Art:
             if name not in self.pics:
                 raise ValueError(f"No picture of {name}: run the pause Shorts' picture fetch first")
             im = Image.open(self.pics[name]["path"]).convert("RGBA")
+            from PIL import ImageFilter
+
             k = min(box[0] / im.width, box[1] / im.height)
-            self._icons[key] = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
-                                         Image.NEAREST if max(im.size) < 160 else Image.LANCZOS)
+            im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
+                           Image.NEAREST if max(im.size) < 160 else Image.LANCZOS)
+            rim = Image.new("RGBA", im.size, (236, 240, 255, 0))  # a pale line around it: a warden reads at night
+            rim.putalpha(im.getchannel("A").filter(ImageFilter.MaxFilter(7)).point(lambda a: int(a * 0.75)))
+            rim.alpha_composite(im)
+            self._icons[key] = rim
         return self._icons[key]
 
     def road(self, here: int):
@@ -693,6 +699,12 @@ class Stop:
     SOLO, HOOK, DARE, TAG, SLUG = "", "", "", "PAUSE CHALLENGE", ""
     ALONE: dict = {}  # the sentences that change when the stop is alone, by role
     solo = False  # drawn alone: no road, no next stop
+    PLACE, RULE, LOOK, V, START = "", "", HERO_LOOK, 0, HEARTS  # what changes from Short to Short (_varied)
+
+    @classmethod
+    def lose(cls, hearts: int) -> int:
+        """The hearts a loss of `hearts` costs under the Short's rule."""
+        return RULES[cls.RULE][2](hearts)
 
     @classmethod
     def options(cls) -> list[Option]:
@@ -709,7 +721,7 @@ class Stop:
     @classmethod
     def after(cls) -> int:
         """The narrator's hearts when this stop is the whole video."""
-        return max(0, min(HEARTS, HEARTS + cls.mine().delta))
+        return max(0, min(HEARTS, cls.START + cls.mine().delta))
 
     @classmethod
     def alone(cls) -> list[tuple[str, str]]:
@@ -848,7 +860,7 @@ class Stop:
         hx, d = c.hx, c.d
         swing = 0.55 * math.sin(t * 9) if walking else 0.0
         arm, turn, item, size = self.pose(t)
-        figure, hand = _figure(HERO_LOOK, swing, swing * 0.9, -swing * 0.9 if arm is None else arm, bite * 0.8)
+        figure, hand = _figure(self.LOOK, swing, swing * 0.9, -swing * 0.9 if arm is None else arm, bite * 0.8)
         up = self.jump(t)
         bob = 1 if walking and abs(math.sin(t * 9)) > 0.75 else 0
         corner = (int(hx) - FEET[0], GROUND - FEET[1] - bob - int(up))
@@ -1838,6 +1850,120 @@ class End(Fight):
 
 
 # --------------------------------------------------------------------------- the whole road
+# --------------------------------------------------------------------------- what changes from Short to Short
+# The drawn Shorts looked alike: the same hero in the same forest saying the same words, only the mob changed (the
+# owner, 2026-11-11). So a Short's `only` carries more than its subject: "fight:Blaze|place=fortress|rule=hardcore|
+# skin=2|v=4". The place is where the mob lives, the rule changes the hearts, the skin is the hero's, v picks the
+# narrator's wording. choose() fills them in, away from what the last Shorts had.
+LOOKS = (
+    HERO_LOOK,
+    {**HERO_LOOK, "top": (52, 140, 226), "legs": (58, 58, 70), "hair": (28, 28, 34)},
+    {**HERO_LOOK, "top": (70, 170, 84), "legs": (96, 70, 48), "hair": (226, 190, 96), "skin": (240, 196, 160)},
+    {**HERO_LOOK, "top": (214, 48, 58), "legs": (40, 44, 60), "hair": (22, 18, 16), "skin": (150, 100, 70)},
+    {**HERO_LOOK, "top": (150, 84, 214), "legs": (236, 236, 240), "hair": (196, 96, 40), "skin": (234, 184, 148)},
+)
+RULES = {  # name -> (the tag on top, the hearts at the start, hearts lost -> hearts lost, the narrator's sentence)
+    "": ("PAUSE CHALLENGE", HEARTS, lambda n: n, ""),
+    "hardcore": ("HARDCORE", 3, lambda n: n, "This one is hardcore."),
+    "half": ("HALF HEALTH", 5, lambda n: n, "You are already hurt."),
+    "double": ("DOUBLE TROUBLE", HEARTS, lambda n: 2 * n, "Double trouble: every heart you lose counts twice."),
+    "shield": ("SHIELD", HEARTS, lambda n: max(0, n - 1), "You carry a shield: it blocks the first heart you lose."),
+}
+RULE_NOTE = {"hardcore": "ONLY 3 HEARTS!", "half": "ONLY 5 HEARTS!", "double": "EVERY HEART COUNTS TWICE!",
+             "shield": "YOUR SHIELD BLOCKS 1 HEART!"}
+RULE_TITLE = {"hardcore": " (Hardcore)", "half": " (Half Health)", "double": " (Double Trouble)", "shield": " (With A Shield)"}
+PLACES = ("forest", "meadow", "village", "cave", "stronghold", "nether", "fortress", "end")
+INDOORS = ("cave", "stronghold", "fortress")  # where a wall can stand
+_NETHER = ("Blaze", "Magma Cube", "Piglin", "Hoglin", "Zoglin", "Strider", "Ghast", "Wither")
+_END = ("Enderman", "Ender Dragon", "Shulker", "Endermite")
+_DEEP = ("Spider", "Bat", "Warden", "Silverfish", "Skeleton", "Slime", "Creeper", "Zombie", "Glow Squid", "Axolotl")
+_VILLAGE = ("Villager", "Iron Golem", "Wandering Trader", "Cat", "Pillager", "Ravager", "Witch", "Evoker", "Vex")
+_TAME = ("Allay", "Armadillo", "Bee", "Camel", "Chicken", "Cow", "Dolphin", "Fox", "Frog", "Goat", "Mooshroom",
+         "Ocelot", "Panda", "Parrot", "Pig", "Polar Bear", "Pufferfish", "Rabbit", "Sheep", "Sniffer", "Snow Golem",
+         "Squid", "Tadpole", "Tropical Fish", "Turtle", "Wolf")
+
+
+def homes(mob: str) -> tuple:
+    """The places a fight with `mob` can be drawn in: where it lives in the game, the likeliest first."""
+    if mob in _NETHER:
+        return ("nether", "fortress")
+    if mob in _END:
+        return ("end", "forest") if mob == "Enderman" else ("end",)
+    if mob in _DEEP:
+        return ("cave", "stronghold", "forest")
+    if mob in _VILLAGE:
+        return ("village", "forest")
+    return ("meadow", "village", "forest") if mob in _TAME else ("forest", "cave", "stronghold")
+
+
+def _place_build(stop, place: str) -> None:
+    """The strips of `place` on `stop`: the road's own stops know how to draw them."""
+    from PIL import ImageDraw
+
+    if place == "stronghold":  # Stronghold.build also reads its three doors' cues
+        stop.wall, stop.ground = _blank(), _blank()
+        _fill(stop.wall, 0, GROUND, (92, 94, 102), 101, brick=True, specks=((74, 110, 62),), dark=-0.15, lit=False)
+        d = ImageDraw.Draw(stop.wall)
+        stop.torches = list(range(30, STRIP, 90))
+        for x in stop.torches:
+            d.rectangle([x, GROUND - 74, x + 1, GROUND - 66], fill=(120, 84, 50))
+        _fill(stop.ground, GROUND, LH, (112, 114, 122), 103, brick=True)
+        return
+    total = stop.total
+    {"forest": Forest, "meadow": Forest, "village": Village, "cave": Cave, "nether": Nether, "fortress": Fortress,
+     "end": End}[place].build(stop)
+    stop.total = total  # the End's own build makes its stop longer
+
+
+def _place_backdrop(stop, place: str, t: float, scroll: float):
+    return {"forest": Forest, "meadow": Forest, "village": Village, "cave": Cave, "stronghold": Stronghold,
+            "nether": Nether, "fortress": Fortress, "end": End}[place].backdrop(stop, t, scroll)
+
+
+def _parse(only) -> tuple[str, str, dict]:
+    """("fight", "Blaze", {"place": "fortress", ...}) of a Short's `only`; ("", "", {}) for the road and its stops."""
+    if not isinstance(only, str) or ":" not in only:
+        return "", "", {}
+    head, *rest = only.split("|")
+    kind, subject = head.split(":", 1)
+    return kind, subject, dict(item.split("=", 1) for item in rest if "=" in item)
+
+
+def _varied(opts: dict, subject: str, places: tuple) -> dict:
+    """The class attributes a Short's options give its stop (an unknown or missing one: the plain one)."""
+    place = opts.get("place") if opts.get("place") in places else places[0]
+    rule = opts.get("rule") if opts.get("rule") in RULES else ""
+    skin = int(opts["skin"]) % len(LOOKS) if str(opts.get("skin", "")).isdigit() else 0
+    v = int(opts["v"]) if str(opts.get("v", "")).isdigit() else 0
+    return {"PLACE": place, "RULE": rule, "LOOK": LOOKS[skin], "V": v, "TAG": RULES[rule][0], "START": RULES[rule][1]}
+
+
+def _say_it(cls, role: str, options: list[str]) -> str:
+    """One of the narrator's wordings for a sentence, by the Short's `v` (the first one when v is 0)."""
+    return options[0] if not cls.V else random.Random(f"{cls.V}-{role}").choice(options)
+
+
+def _left(cls, lost: int) -> str:
+    """The narrator's last count: what he has left, in one of three wordings, or that he did not make it."""
+    after = max(0, cls.START - lost)
+    if not after:
+        return "I did not make it. Did you?"
+    return _say_it(cls, "count", [f"I have {_hearts(after)} left. How about you?",
+                                  f"{_hearts(after).capitalize()} left for me. And you?",
+                                  f"I kept {_hearts(after)}. Can you beat that?"])
+
+
+def _hook(cls, hooks: list[str]) -> str:
+    return (_say_it(cls, "title", hooks) + " " + RULES[cls.RULE][3]).strip()
+
+
+def _rule_note(stop, d, y: int = 720) -> None:
+    """The Short's rule under its dare, while the dare shows."""
+    if stop.RULE:
+        note = RULE_NOTE[stop.RULE]
+        _label(d, (W // 2, y), note, stop.art.fit(d, note, 980, "Poppins-Black", 70), (255, 222, 0), 9)
+
+
 # --------------------------------------------------------------------------- Pause Twice: a chest, then a mob
 # A Short of two pauses in the quest's own world (the owner, 2026-11-11: drawn like the long adventure, not cards
 # over gameplay). Five hearts of the ten; the first pause opens a chest (food gives hearts back), then night falls,
@@ -1902,14 +2028,18 @@ class Ambush(Forest):
             hits = spin.hits_to_kill(cls.FOE, name)
             sub = spin.ARROW_PROOF[cls.FOE] if hits is None else \
                 f"{hits} {'SHOT' if name == 'Bow' else 'HIT'}{'S' if hits != 1 else ''} TO WIN"
-            out.append(Option(name, spin.WEAPONS[name][0], sub, -arena.hearts_lost(cls.FOE, name), weight, name))
+            out.append(Option(name, spin.WEAPONS[name][0], sub, -cls.lose(arena.hearts_lost(cls.FOE, name)), weight,
+                              name))
         return out
 
     @classmethod
     def lines(cls, before: int) -> list[tuple[str, str]]:
         hits, lost = cls.mine_hits(), -cls.mine().delta
         blows = f"{_say(hits).capitalize()} hit{'' if hits == 1 else 's'}"
-        return [("title", "Night falls."),
+        opening = {"forest": "Night falls.", "meadow": "A quiet meadow.", "village": "Back in the village.",
+                   "cave": "Down into a cave.", "stronghold": "Down into a stronghold.", "nether": "Into the Nether.",
+                   "fortress": "Into a Nether fortress.", "end": "Into the End."}[cls.PLACE or "forest"]
+        return [("title", opening),
                 ("threat", f"{_a(cls.FOE).capitalize() if cls.FOE != 'Ender Dragon' else 'The Ender Dragon'} "
                            "is coming for you."),
                 ("pause", "Pause again! That weapon is yours. A slow weapon costs more hearts."),
@@ -1917,10 +2047,18 @@ class Ambush(Forest):
                 ("count", f"I have {_hearts(cls.AFTER)} left. How about you?"),
                 ("next", "Comment your hearts.")]
 
+    PLACE = "forest"
+
     def build(self) -> None:
-        super().build()
+        _place_build(self, self.PLACE)
         self.total += 1.2  # the last words stay on screen
         self.pic = self.art.mob(self.FOE)
+
+    def night(self, t: float) -> float:
+        return 0.0 if self.PLACE == "meadow" else super().night(t)
+
+    def backdrop(self, t: float, scroll: float):
+        return _place_backdrop(self, self.PLACE, t, scroll)
 
     def before(self):
         from . import spin
@@ -2004,28 +2142,43 @@ class Duel(Ambush):
 
     @classmethod
     def lines(cls, before: int) -> list[tuple[str, str]]:
-        swap = {"title": f"Ten hearts. Can you beat the {cls.FOE.lower()}?",
-                "pause": "Pause the video now! That weapon is yours. A slow weapon costs more hearts."}
-        return [(role, swap.get(role, text)) for role, text in super().lines(before)]
+        hits, lost = cls.mine_hits(), -cls.mine().delta
+        foe, hearts = cls.FOE.lower(), _say(cls.START).capitalize()
+        a = "The Ender Dragon" if cls.FOE == "Ender Dragon" else _a(cls.FOE).capitalize()
+        blows = f"{_say(hits).capitalize()} hit{'' if hits == 1 else 's'}"
+        return [("title", _hook(cls, [f"{hearts} hearts. Can you beat the {foe}?",
+                                      f"{hearts} hearts, one {foe}. Can you win?",
+                                      f"{hearts} hearts. Would you survive the {foe}?"])),
+                ("threat", _say_it(cls, "threat", [f"{a} is coming for you.", f"{a} just spotted you.",
+                                                   f"{a} wants a fight."])),
+                ("pause", _say_it(cls, "pause", [
+                    "Pause the video now! That weapon is yours. A slow weapon costs more hearts.",
+                    "Pause right now! You fight with that weapon. The slower it wins, the more hearts you lose.",
+                    "Quick, pause! That is your weapon. A weak one costs you hearts."])),
+                ("mine", f"I stopped on {_a(cls.MINE.lower())}. {blows}, "
+                         + (f"and I lose {_hearts(lost)}." if lost else "and my shield blocks the hit.")),
+                ("count", _left(cls, lost)),
+                ("next", "Comment your hearts.")]
 
     def sky(self, t: float, d) -> None:
         if self.title <= t < self.pause:
             dare = f"THE {self.FOE.upper()}?"
             _label(d, (W // 2, 420), "CAN YOU BEAT", self.art.fit(d, "CAN YOU BEAT", 960), (255, 255, 255), 12)
             _label(d, (W // 2, 590), dare, self.art.fit(d, dare, 960), self.COLOUR, 12)
+            _rule_note(self, d)
         else:
             super().sky(t, d)
 
 
-def fight_stops(foe: str) -> tuple:
-    """The fight against `foe` alone, with the narrator's own weapon (never the bow)."""
+def fight_stops(foe: str, opts: dict | None = None) -> tuple:
+    """The fight against `foe` alone, with the narrator's own weapon (never the bow; another with another `v`)."""
     from . import spin
 
     if foe not in twice_foes():
         raise ValueError(f"No such mob for a fight Short: {foe}")
-    rng = random.Random(f"fight-{foe}")
-    fight = type("Duel", (Duel,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"])})
-    fight.AFTER = HEARTS + fight.mine().delta
+    varied = _varied(opts or {}, foe, homes(foe))
+    rng = random.Random(f"fight-{foe}-{varied['V'] or ''}".rstrip("-"))
+    fight = type("Duel", (Duel,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"]), **varied})
     return (fight,)
 
 
@@ -2060,7 +2213,8 @@ class Pet(Ambush):
             mine, theirs, won = cls.outcome(name)
             sub = "CAN'T ATTACK" if mine is None else f"WINS IN {mine} HIT{'' if mine == 1 else 'S'}" if won else \
                 f"FALLS AFTER {theirs} HIT{'' if theirs == 1 else 'S'}"
-            out.append(Option(name, arena.ALLIES[name][0], sub, 0 if won else -3 if mine is None else -2, weight, name))
+            out.append(Option(name, arena.ALLIES[name][0], sub, -cls.lose(0 if won else 3 if mine is None else 2),
+                              weight, name))
         return out
 
     @classmethod
@@ -2070,11 +2224,18 @@ class Pet(Ambush):
         told = f"It wins in {_say(mine)} hit{'' if mine == 1 else 's'}. No hearts lost." if won else \
             f"It can't even attack. I lose {_hearts(lost)}." if mine is None else f"It falls, and I lose {_hearts(lost)}."
         boss = "The Ender Dragon" if cls.FOE == "Ender Dragon" else _a(cls.FOE).capitalize()
-        return [("title", f"Ten hearts. Can your mob beat the {cls.FOE.lower()}?"),
-                ("threat", f"{boss} is coming for you."),
-                ("pause", "Pause the video now! The mob you stop on fights for you. If it falls, you lose hearts."),
+        foe, hearts = cls.FOE.lower(), _say(cls.START).capitalize()
+        return [("title", _hook(cls, [f"{hearts} hearts. Can your mob beat the {foe}?",
+                                      f"{hearts} hearts. Which mob will fight the {foe} for you?",
+                                      f"{hearts} hearts, and a mob on your side. Can it beat the {foe}?"])),
+                ("threat", _say_it(cls, "threat", [f"{boss} is coming for you.", f"{boss} just spotted you.",
+                                                   f"{boss} wants a fight."])),
+                ("pause", _say_it(cls, "pause", [
+                    "Pause the video now! The mob you stop on fights for you. If it falls, you lose hearts.",
+                    "Pause right now! That mob is on your side. If it loses, the hearts are yours to lose.",
+                    "Quick, pause! That mob fights for you. A weak one costs you hearts."])),
                 ("mine", f"I stopped on {_a(cls.MINE.lower())}. {told}"),
-                ("count", f"I have {_hearts(cls.AFTER)} left. How about you?"),
+                ("count", _left(cls, lost)),
                 ("next", "Comment your hearts.")]
 
     def before(self):
@@ -2164,6 +2325,7 @@ class Pet(Ambush):
             dare = f"THE {self.FOE.upper()}?"
             _label(d, (W // 2, 400), "CAN YOUR MOB BEAT", self.art.fit(d, "CAN YOUR MOB BEAT", 960), (255, 255, 255), 12)
             _label(d, (W // 2, 560), dare, self.art.fit(d, dare, 960), self.COLOUR, 12)
+            _rule_note(self, d, 700)
         else:
             super().sky(t, d)
 
@@ -2174,21 +2336,20 @@ def pet_bosses() -> list[str]:
     return list(arena.PET_BOSSES)
 
 
-def pet_stops(boss: str) -> tuple:
-    """The boss and the narrator's own mob (the same for a boss every time; one that can lose, too)."""
+def pet_stops(boss: str, opts: dict | None = None) -> tuple:
+    """The boss and the narrator's own mob (one that can lose, too; another with another `v`)."""
     from . import arena
 
     if boss not in arena.PET_BOSSES:
         raise ValueError(f"No such boss for a mob Short: {boss}")
-    mob = random.Random(f"pet-{boss}").choice([m for m in arena.ALLIES if m != boss])
-    pet = type("Pet", (Pet,), {"FOE": boss, "MINE": mob})
-    pet.AFTER = HEARTS + pet.mine().delta
-    return (pet,)
+    varied = _varied(opts or {}, boss, homes(boss))
+    mob = random.Random(f"pet-{boss}-{varied['V'] or ''}".rstrip("-")).choice([m for m in arena.ALLIES if m != boss])
+    return (type("Pet", (Pet,), {"FOE": boss, "MINE": mob, **varied}),)
 
 
 def _pet(only) -> str:
     """The boss of a mob Short's `only` ("pet:Ravager"), "" otherwise."""
-    return only[len(PET):] if isinstance(only, str) and only.startswith(PET) else ""
+    return _parse(only)[1] if _parse(only)[0] == "pet" else ""
 
 
 WALL = "wall:"
@@ -2222,20 +2383,49 @@ class Wall(Cave):
     def options(cls) -> list[Option]:
         from . import spin
 
-        return [Option(name, tier, f"{spin.break_seconds(cls.BLOCK, name):g} S A BLOCK", -cls.lost(name), share, name)
+        return [Option(name, tier, f"{spin.break_seconds(cls.BLOCK, name):g} S A BLOCK", -cls.lose(cls.lost(name)), share,
+                       name)
                 for name, (tier, _, share) in spin.AXES.items()]
 
     @classmethod
     def lines(cls, before: int) -> list[tuple[str, str]]:
         lost = -cls.mine().delta
         mine = "Fast enough. No hearts lost." if not lost else f"Too slow. I lose {_hearts(lost)}."
-        return [("title", "Ten hearts. Can you break this wall?"),
-                ("threat", f"A wall of {WALLS[cls.BLOCK][0]}, and a skeleton is shooting at your back."),
-                ("pause", "Pause the video now! That is your axe. A fast axe breaks through in time. "
-                          "A slow one, and the arrows find you."),
+        hearts, wall = _say(cls.START).capitalize(), WALLS[cls.BLOCK][0]
+        return [("title", _hook(cls, [f"{hearts} hearts. Can you break this wall?",
+                                      f"{hearts} hearts and a wall. Can you get through?",
+                                      f"{hearts} hearts. How fast can you break out?"])),
+                ("threat", _say_it(cls, "threat", [f"A wall of {wall}, and a skeleton is shooting at your back.",
+                                                   f"A wall of {wall} drops in your way, and a skeleton takes aim.",
+                                                   f"You are trapped behind {wall}, and a skeleton has found you."])),
+                ("pause", _say_it(cls, "pause", [
+                    "Pause the video now! That is your axe. A fast axe breaks through in time. "
+                    "A slow one, and the arrows find you.",
+                    "Pause right now! You break out with that axe. Too slow, and the arrows find you.",
+                    "Quick, pause! That axe is yours. A slow one costs you hearts."])),
                 ("mine", f"I stopped on {_a(cls.MINE.lower())}. {mine}"),
-                ("count", "Fun fact: on wood, gold is the fastest axe."),
+                ("count", _say_it(cls, "count", ["Fun fact: on wood, gold is the fastest axe.",
+                                                 "And yes: on wood, the golden axe beats netherite.",
+                                                 "Gold breaks wood faster than any other axe."])),
                 ("next", "Comment your hearts.")]
+
+    PLACE = "cave"
+
+    def build(self) -> None:
+        super().build()
+        if self.PLACE != "cave":
+            _place_build(self, self.PLACE)
+
+    def backdrop(self, t: float, scroll: float):
+        return _place_backdrop(self, self.PLACE, t, scroll)
+
+    def before(self):
+        return self.art.rules(self.TAG, big=f"{self.START} HEARTS")
+
+    def sky(self, t: float, d) -> None:
+        super().sky(t, d)
+        if self.title <= t < self.threat + 0.3:
+            _rule_note(self, d)
 
     def sharp(self, c, img, d) -> None:
         super().sharp(c, img, d)
@@ -2245,20 +2435,22 @@ class Wall(Cave):
                    self.art.small, stroke=6)
 
 
-def wall_stops(block: str) -> tuple:
-    """The wall of `block` alone, with the narrator's own axe (the same for a block every time)."""
+def wall_stops(block: str, opts: dict | None = None) -> tuple:
+    """The wall of `block` alone, with the narrator's own axe (another with another `v`)."""
     from . import spin
 
     if block not in WALLS:
         raise ValueError(f"No such wall for an axe Short: {block}")
     slug = block.lower().replace(" ", "-")
-    axe = random.Random(f"wall-{block}").choice(list(spin.AXES))
-    return (type("Wall", (Wall,), {"BLOCK": block, "MINE": axe, "TILE": f"tile:{slug}", "BITS": WALLS[block][1]}),)
+    varied = _varied(opts or {}, block, INDOORS)
+    axe = random.Random(f"wall-{block}-{varied['V'] or ''}".rstrip("-")).choice(list(spin.AXES))
+    return (type("Wall", (Wall,), {"BLOCK": block, "MINE": axe, "TILE": f"tile:{slug}", "BITS": WALLS[block][1],
+                                   **varied}),)
 
 
 def _wall(only) -> str:
     """The block of a wall Short's `only` ("wall:Oak Log"), "" otherwise."""
-    return only[len(WALL):] if isinstance(only, str) and only.startswith(WALL) else ""
+    return _parse(only)[1] if _parse(only)[0] == "wall" else ""
 
 
 def twice_foes() -> list[str]:
@@ -2268,16 +2460,20 @@ def twice_foes() -> list[str]:
     return sorted({**spin.FOES, **spin.BOSSES})
 
 
-def twice_stops(foe: str) -> tuple:
+def twice_stops(foe: str, opts: dict | None = None) -> tuple:
     """The chest and the fight against `foe`, with the narrator's own loot and weapon (the same for a mob every
     time): his loot changes his hearts, his weapon is never the bow (arrows bounce off some mobs)."""
     from . import spin
 
     if foe not in twice_foes():
         raise ValueError(f"No such mob for a Pause Twice Short: {foe}")
-    rng = random.Random(f"twice-{foe}")
-    loot = type("Loot", (Loot,), {"FOE": foe, "MINE": rng.choice(("Bread", "Golden Carrot", "Golden Apple", "Rotten Flesh"))})
-    fight = type("Ambush", (Ambush,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"])})
+    varied = {**_varied(opts or {}, foe, homes(foe)), "RULE": "", "START": TWICE_HEARTS}  # its own rule: five hearts
+    rng = random.Random(f"twice-{foe}-{varied['V'] or ''}".rstrip("-"))
+    look = {"LOOK": varied["LOOK"], "V": varied["V"], "START": TWICE_HEARTS}
+    loot = type("Loot", (Loot,), {"FOE": foe, "MINE": rng.choice(("Bread", "Golden Carrot", "Golden Apple", "Rotten Flesh")),
+                                  **look})
+    fight = type("Ambush", (Ambush,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"]), **look,
+                                       "PLACE": varied["PLACE"]})
     fight.AFTER = TWICE_HEARTS + loot.mine().delta + fight.mine().delta
     return loot, fight
 
@@ -2288,12 +2484,12 @@ FIGHT_TITLE = "Pause To Beat The {foe} ⚔️"
 
 def _foe(only) -> str:
     """The mob of a Pause Twice Short's `only` ("twice:Creeper"), "" for the road and its stops."""
-    return only[len(TWICE):] if isinstance(only, str) and only.startswith(TWICE) else ""
+    return _parse(only)[1] if _parse(only)[0] == "twice" else ""
 
 
 def _duel(only) -> str:
     """The mob of a fight Short's `only` ("fight:Creeper"), "" otherwise."""
-    return only[len(FIGHT):] if isinstance(only, str) and only.startswith(FIGHT) else ""
+    return _parse(only)[1] if _parse(only)[0] == "fight" else ""
 
 
 STOPS = (Forest, Cave, Village, Nether, Fortress, Stronghold, End)
@@ -2321,14 +2517,15 @@ def solos() -> list[type]:
 
 def _stops(only=0) -> tuple:
     """The whole road, stop number `only` alone, or a Pause Twice Short's two stops ("twice:<mob>")."""
+    opts = _parse(only)[2]
     if foe := _foe(only):
-        return twice_stops(foe)
+        return twice_stops(foe, opts)
     if foe := _duel(only):
-        return fight_stops(foe)
+        return fight_stops(foe, opts)
     if block := _wall(only):
-        return wall_stops(block)
+        return wall_stops(block, opts)
     if boss := _pet(only):
-        return pet_stops(boss)
+        return pet_stops(boss, opts)
     if not only:
         return STOPS
     stop = next((s for s in solos() if s.N == only), None)
@@ -2365,7 +2562,7 @@ class Quest:
         self.hurts = sorted((t0 + x, dl) for t0, stop in zip(self.starts, self.stops) for x, dl in stop.hurts)
         self.sounds = sorted((t0 + x, kind) for t0, stop in zip(self.starts, self.stops) for x, kind in stop.sounds)
         self.sounds += [(t0, "whoosh") for t0 in self.starts[1:]]
-        self.start = TWICE_HEARTS if _foe(only) else HEARTS
+        self.start = self.stops[0].START if _parse(only)[0] else HEARTS
         self.changes, hearts = [], self.start  # (time, hearts before, hearts after)
         for x, dl in self.hurts:
             after = max(0, min(HEARTS, hearts + dl))
@@ -2586,26 +2783,28 @@ def texts(only: int = 0) -> dict:
                                "hearts you have left.",
                 "pinned": f"How many hearts do you have left? 👇 You start with 5: the chest, then the fight ❤️\n"
                           f"I kept {left}. 7 is the perfect run. Send this to a friend and see who survives."}
-    if foe := _duel(only):
-        return {"title": FIGHT_TITLE.format(foe=foe), "card": f"PAUSE TO BEAT THE {foe.upper()}",
-                "description": f"Ten hearts. Can you beat the {foe}? Pause the video: the weapon you stop on is "
-                               "yours, and a slow weapon costs more hearts. Comment how many hearts you have left.",
-                "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].AFTER}. "
-                          "Send this to a friend and see who keeps more."}
-    if boss := _pet(only):
-        return {"title": PET_TITLE.format(boss=boss), "card": f"CAN YOUR MOB BEAT THE {boss.upper()}?",
-                "description": f"Ten hearts, and the {boss} is coming. Pause the video: the mob you stop on fights "
-                               "for you, hit for hit, your mob first (Java Edition, Normal). If it falls, you lose "
-                               "hearts. Comment how many hearts you have left.",
-                "pinned": f"Which mob did you get, and how many hearts do you have left? 👇\nI kept "
-                          f"{_stops(only)[0].AFTER}. Send this to a friend and see whose mob wins."}
-    if block := _wall(only):
-        return {"title": WALL_TITLE.format(block=block), "card": "PAUSE TO BREAK THE WALL",
-                "description": f"Ten hearts and a wall of {WALLS[block][0]}. Pause the video: the axe you stop on is "
-                               "yours. A slow axe, and the skeleton's arrows find you. Comment how many hearts you "
-                               "have left.",
-                "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].after()}. "
-                          "Gold is the fastest axe on wood. Send this to a friend and see who breaks out first."}
+    kind, subject, _ = _parse(only)
+    if kind in ("fight", "pet", "wall"):
+        stop = _stops(only)[0]
+        hearts, extra = _say(stop.START).capitalize(), (" " + RULES[stop.RULE][3]).rstrip()
+        kept = stop.after()
+        mine = f"I kept {kept}." if kept else "I did not make it."
+        title, card, about, pin = {
+            "fight": (FIGHT_TITLE.format(foe=subject), f"PAUSE TO BEAT THE {subject.upper()}",
+                      f"{hearts} hearts. Can you beat the {subject}?{extra} Pause the video: the weapon you stop on is "
+                      "yours, and a slow weapon costs more hearts.", "Send this to a friend and see who keeps more."),
+            "pet": (PET_TITLE.format(boss=subject), f"CAN YOUR MOB BEAT THE {subject.upper()}?",
+                    f"{hearts} hearts, and the {subject} is coming.{extra} Pause the video: the mob you stop on fights "
+                    "for you, hit for hit, your mob first (Java Edition, Normal). If it falls, you lose hearts.",
+                    "Tell me your mob too. Send this to a friend and see whose mob wins."),
+            "wall": (WALL_TITLE.format(block=subject), "PAUSE TO BREAK THE WALL",
+                     f"{hearts} hearts and a wall of {WALLS.get(subject, ('blocks',))[0]}.{extra} Pause the video: the axe "
+                     "you stop on is yours. A slow axe, and the skeleton's arrows find you.",
+                     "Gold is the fastest axe on wood. Send this to a friend and see who breaks out first."),
+        }[kind]
+        return {"title": title + RULE_TITLE.get(stop.RULE, ""), "card": card,
+                "description": f"{about} Comment how many hearts you have left.",
+                "pinned": f"How many hearts do you have left? 👇\n{mine} {pin}"}
     if not only:
         return {"title": TITLE, "card": TITLE_CARD, "description": DESCRIPTION,
                 "pinned": PINNED.format(hearts=run()[-1])}
@@ -2632,7 +2831,7 @@ def record(settings: Settings, output: Path, track=None, only: int = 0):
         duration_seconds=round(media_duration(output), 2), background="", credit=credit,
         music_title=track.title if track else "", music_url=track.url if track else "", title_card=text["card"],
         end_card="Comment your hearts", pinned_comment=text["pinned"],
-        channel_handle=settings.channel_handle,
+        channel_handle=settings.channel_handle, render_settings={"quest": str(only)},
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     return short
@@ -2659,6 +2858,54 @@ def _make(settings: Settings, output: Path, progress, only: int = 0) -> None:
                 pass
     if proc.wait() != 0 or not output.with_suffix(".json").is_file():
         raise RuntimeError(f"The quest could not be made: {last[:300] or 'no output'}")
+
+
+def kind_of(filename: str) -> str:
+    """A quest video's format by its file name: "fight", "pet", "wall", "twice", "stop", "long", or "" (not one)."""
+    if not filename.startswith(PREFIX):
+        return ""
+    part = filename[len(PREFIX):].split("_")[0]
+    return part if part in ("fight", "pet", "wall", "twice") else "long" if part[:1].isdigit() else "stop"
+
+
+def history(settings: Settings) -> list[tuple[str, str, dict]]:
+    """The drawn Shorts made on this machine, the newest first, as _parse gives them."""
+    made = sorted(videos(settings), key=lambda v: v.created_at, reverse=True)
+    return [spec for spec in (_parse((v.render_settings or {}).get("quest", "")) for v in made) if spec[0]]
+
+
+def choose(settings: Settings, kind: str, subject: str = "", rng: random.Random | None = None) -> str:
+    """A whole `only` for a new Short of `kind`: the subject asked for, or one the last ten Shorts of the kind did
+    not have; a place the last two Shorts did not have (when the subject lives in more than one); a rule (plain
+    four times in ten) that the last three did not have; another skin and wording than the last Short's."""
+    from . import dungeon
+
+    rng = rng or random.Random()
+    past = history(settings)
+    found = dungeon.pictures(settings)
+    pool = {"fight": [m for m in twice_foes() if m in found], "twice": [m for m in twice_foes() if m in found],
+            "pet": [b for b in pet_bosses() if b in found], "wall": list(WALLS)}[kind]
+    if not pool:
+        raise ValueError("No pictures yet: make a pause Short first, it fetches them")
+    if subject and subject not in pool:
+        raise ValueError(f"No such {'wall' if kind == 'wall' else 'mob'}, or no picture of it: {subject}")
+    if not subject:
+        recent = [s for k, s, _ in past if k == kind][:min(10, len(pool) - 1)]
+        subject = rng.choice([s for s in pool if s not in recent] or pool)
+    places = INDOORS if kind == "wall" else homes(subject)
+    last_places = [o.get("place") for _, _, o in past[:2]]
+    place = rng.choice([p for p in places if p not in last_places] or list(places))
+    opts = {"place": place}
+    if kind != "twice":
+        last_rules = [o.get("rule", "") for _, _, o in past[:3]]
+        rules = [r for r in RULES if r and r not in last_rules]
+        rule = "" if rng.random() < 0.4 or not rules else rng.choice(rules)
+        if rule:
+            opts["rule"] = rule
+    last = past[0][2] if past else {}
+    opts["skin"] = rng.choice([i for i in range(len(LOOKS)) if str(i) != last.get("skin")])
+    opts["v"] = rng.choice([i for i in range(1, 10) if str(i) != last.get("v")])
+    return f"{kind}:{subject}|" + "|".join(f"{k}={v}" for k, v in opts.items())
 
 
 def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):

@@ -248,3 +248,54 @@ def test_a_video_made_from_the_card_takes_the_next_free_slot(tmp_path, monkeypat
     monkeypatch.setattr(web, "_base_settings", lambda: s)
     [video] = TestClient(web.app).get("/api/gamer/quest").json()["videos"]
     assert video["planned"] == f"{item.date.isoformat()} {item.slot}" and video["title"] == item.title
+
+
+def test_a_short_carries_its_place_rule_skin_and_wording():
+    plain = quest._stops("fight:Blaze")[0]
+    assert (plain.PLACE, plain.RULE, plain.START, plain.LOOK, plain.V) == ("nether", "", 10, quest.HERO_LOOK, 0)
+    [stop] = quest._stops("fight:Blaze|place=fortress|rule=hardcore|skin=2|v=4")
+    assert (stop.PLACE, stop.RULE, stop.START, stop.TAG) == ("fortress", "hardcore", 3, "HARDCORE")
+    assert stop.LOOK is quest.LOOKS[2] and quest._stops("fight:Blaze|place=meadow")[0].PLACE == "nether"  # not its home
+    [lines] = quest.scripts("fight:Blaze|place=fortress|rule=hardcore|skin=2|v=4")
+    assert lines[0][1].startswith("Three hearts") and "hardcore" in lines[0][1]
+    assert quest.texts("fight:Blaze|rule=hardcore")["title"] == "Pause To Beat The Blaze ⚔️ (Hardcore)"
+    # the rules change the hearts: twice as many, or one less
+    cost = lambda only: {o.name: -o.delta for o in quest._stops(only)[0].options()}  # noqa: E731
+    base, double, shield = cost("fight:Zombie"), cost("fight:Zombie|rule=double"), cost("fight:Zombie|rule=shield")
+    assert all(double[w] == 2 * base[w] and shield[w] == base[w] - 1 for w in base)
+    assert quest.Quest.__init__  # the hearts on top start at the rule's: stops[0].START
+    # another v: other words, and not always the same weapon in the narrator's hand
+    said = {" ".join(t for _, t in quest.scripts(f"fight:Zombie|v={v}")[0][:3]) for v in range(1, 10)}
+    assert len(said) >= 4 and len({quest._stops(f"fight:Zombie|v={v}")[0].MINE for v in range(1, 10)}) >= 3
+    for mob in quest.twice_foes():
+        assert set(quest.homes(mob)) <= set(quest.PLACES)
+    assert quest.homes("Blaze")[0] == "nether" and quest.homes("Enderman")[0] == "end" and quest.homes("Pig")[0] == "meadow"
+    assert quest.kind_of("quest_fight_blaze_20261111-1.mp4") == "fight" and quest.kind_of("quest_20261110-232121.mp4") == "long"
+    assert quest.kind_of("quest_end_20261110-234350.mp4") == "stop" and quest.kind_of("minecraft_1.mp4") == ""
+
+
+def test_the_next_short_is_chosen_away_from_the_last_ones(tmp_path, monkeypatch):
+    import random
+
+    s = settings(tmp_path)
+    monkeypatch.setattr("trendclip.dungeon.pictures", lambda settings: {m: {} for m in quest.twice_foes()})
+    past: list = []
+    monkeypatch.setattr(quest, "history", lambda settings: list(past))
+    rng = random.Random(3)
+    for _ in range(40):
+        only = quest.choose(s, "fight", rng=rng)
+        kind, subject, opts = quest._parse(only)
+        assert kind == "fight" and subject not in [p[1] for p in past[:10]]
+        assert opts["place"] in quest.homes(subject)
+        if len(quest.homes(subject)) > 2:
+            assert opts["place"] not in [p[2].get("place") for p in past[:2]]
+        if opts.get("rule"):
+            assert opts["rule"] not in [p[2].get("rule") for p in past[:3]]
+        if past:
+            assert opts["skin"] != past[0][2]["skin"] and opts["v"] != past[0][2]["v"]
+        past.insert(0, (kind, subject, {k: str(v) for k, v in opts.items()}))
+    assert len({p[2].get("rule", "") for p in past}) == len(quest.RULES)
+    assert quest._parse(quest.choose(s, "wall", "Melon", rng=rng))[1] == "Melon"
+    assert "rule=" not in quest.choose(s, "twice", rng=rng)
+    with pytest.raises(ValueError, match="No such"):
+        quest.choose(s, "pet", "Warden")
