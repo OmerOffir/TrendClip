@@ -290,12 +290,35 @@ def queued(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list
             if p.name not in used and p.name not in removed and (s := _read(p)) is not None and not blocking(s)]
 
 
+MIX_DAYS = ("2026-11-12", "2026-11-18")  # the week's test (the owner, 2026-11-11): a "Same $X" story and a true story every day
+
+
+def wanted(job: "Job") -> str | None:
+    """The kind of script a slot asks for during the test: "story" or "true", swapping the two slots day by day (so
+    the hour is not what is compared); None outside the test."""
+    if not MIX_DAYS[0] <= job.day.isoformat() <= MIX_DAYS[1]:
+        return None
+    return "story" if (job.day.toordinal() + (job.slot >= "18:00")) % 2 == 0 else "true"
+
+
+def kind_of(path: Path) -> str:
+    script = _read(path) or {}
+    return "story" if is_story(script) else "true" if is_world(script) or is_tags(script) else "why"
+
+
+def take(left: list[Path], job: "Job") -> Path | None:
+    """The slot's script out of the free ones: the first of the kind it asks for, else simply the first."""
+    kind = wanted(job)
+    return next((p for p in left if kind and kind_of(p) == kind), left[0] if left else None)
+
+
 def script_for(job: "Job", out_dir: Path | None = None, scripts_dir: Path | None = None) -> Path | None:
-    """The script a slot is made from: the one pinned to it, else the first queued script no slot is pinned to."""
+    """The script a slot is made from: the one pinned to it, else the first queued script no slot is pinned to (of
+    the kind the slot asks for, while the test runs)."""
     left = queued(out_dir, scripts_dir)
     pins = load_plan(out_dir)["pins"]
     pinned = next((p for p in left if p.name == pins.get(job.key)), None)
-    return pinned or next((p for p in left if p.name not in pins.values()), None)
+    return pinned or take([p for p in left if p.name not in pins.values()], job)
 
 
 def remove_script(name: str, out_dir: Path | None = None) -> None:
@@ -522,7 +545,9 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
             info = load_info(job.key, out_dir)
             script = None
             if info is None and now < job.post_at and not on_hold(day):
-                script = by_name.get(pins.get(job.key)) or (left.pop(0) if left else None)
+                script = by_name.get(pins.get(job.key)) or take(left, job)
+                if script in left:
+                    left.remove(script)
             prog = make_progress(job.key, out_dir) if info is None else None
             rows.append({**job.view(), "state": "making" if prog else slot_state(job, info, now, script), "video": _plan_video(info),
                          "progress": prog, "sample": samples.get(script.name) if script and info is None else None,

@@ -255,7 +255,9 @@
   }
 
   const FORMAT_TEXT = { why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
-  const formatPick = (kind) => `<span class="pill good" title="A true money story on the price-tag pegboard: a real founder or company, from tiny to huge">🌆 true story · 55-75 s</span>`;
+  // the week's test (2026-11-11): a "Same $X" money story and a true story every day, so both can be written again
+  const formatPick = (kind) => `<select id="pwFormat-${kind}" title="What to write: a true money story on the price-tag pegboard, or a 'Same $X, N friends' money story on the whiteboard">${
+    ["world", "story"].map((f) => `<option value="${f}"${(state.format[kind] || "world") === f ? " selected" : ""}>${FORMAT_TEXT[f]}</option>`).join("")}</select>`;
   const topicItems = (list) => (list || []).map((t) => `<li>${esc(t.question)}${t.pillar ? ` <span class="hint">(${esc(t.pillar)})</span>` : ""}</li>`).join("");
 
   function renderWrite(kind, v) {
@@ -364,7 +366,6 @@
     if (t.id === "pwNoIdea") {  // the "New topics from your own LLM" card: its format follows the Add row's, then copy
       const card = $("pwLlmTopics");
       const format = card.querySelector('[data-l="format"]');
-      if (format && $("pwAddFormat")) format.value = $("pwAddFormat").value;
       card.querySelector('[data-l="copy"]').click();
       card.scrollIntoView({ behavior: "smooth", block: "start" });
       card.classList.add("pw-flash");

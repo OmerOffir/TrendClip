@@ -1173,3 +1173,41 @@ def test_true_stories_are_written_as_tags_and_the_bot_places_them(tmp_path):
     assert session["format"] == "world" and "pegboard" in session["prompt"] and "true story for this idea" in session["prompt"]
     done = pw_write.answer("one", json.dumps({"scripts": [{k: v for k, v in bare.items() if k != "format"}]}), tmp_path)
     assert done["step"] == "facts" and pw_write.load("one", tmp_path)["drafts"][0]["format"] == "tags"
+
+
+def test_the_weeks_test_gives_every_day_a_same_x_story_and_a_true_story(tmp_path, monkeypatch):
+    """The owner (2026-11-11): the "Same $X" stories got 1,200 views and the true stories under 120, so for a week
+    every day takes one of each, the two slots swapping day by day; a slot whose kind has run out takes what is
+    left, and outside the week the queue's own order holds."""
+    from datetime import datetime
+
+    monkeypatch.setenv("PW_SLOTS", "14:00,23:00")
+    monkeypatch.setenv("PW_LEAD", "6")
+    monkeypatch.delenv("PW_HOLD_UNTIL", raising=False)
+    settings = _settings()
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    examples = pw_channel.PROJECT_ROOT / "content/pricetagwhy/examples"
+    story = json.loads((examples / "002-coffee-cart-story.json").read_text())
+    true = json.loads((examples / "005-coke-tags.json").read_text())
+    assert pw_channel.is_story(story) and pw_channel.check_script(story) == []
+    for name, script in (("a.json", true), ("b.json", true), ("c.json", true), ("d.json", story), ("e.json", story)):
+        (scripts / name).write_text(json.dumps({**script, "title": name}))
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", scripts)
+    out = tmp_path / "out"
+    assert [pw_channel.kind_of(scripts / n) for n in ("a.json", "d.json")] == ["true", "story"]
+
+    days = pw_channel.plan_days(settings, datetime(2026, 11, 12, 1, 0, tzinfo=settings.tz), before=0, after=2, out_dir=out)
+    got = [(r["script"] or {}).get("file") for d in days for r in d["slots"]]
+    first, second = pw_channel.jobs_for(settings, datetime(2026, 11, 12).date())
+    assert {pw_channel.wanted(first), pw_channel.wanted(second)} == {"story", "true"}
+    nxt = pw_channel.jobs_for(settings, datetime(2026, 11, 13).date())
+    assert pw_channel.wanted(nxt[0]) == pw_channel.wanted(second)  # the hours swap from one day to the next
+    kinds = [pw_channel.kind_of(scripts / f) for f in got[:4]]
+    assert sorted(kinds[:2]) == sorted(kinds[2:]) == ["story", "true"]
+    assert got[4:] == ["c.json", None]  # the stories ran out: the slot takes the true story that is left
+    assert pw_channel.kind_of(pw_channel.script_for(first, out)) == pw_channel.wanted(first)
+
+    after = pw_channel.jobs_for(settings, datetime(2026, 11, 19).date())
+    assert pw_channel.wanted(after[0]) is None and pw_channel.script_for(after[0], out).name == "a.json"
+
