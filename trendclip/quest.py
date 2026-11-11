@@ -1957,6 +1957,38 @@ class Ambush(Forest):
             _label(d, (W // 2, 440), self.COUNT, art.fit(d, self.COUNT, 980, "Poppins-Black", 92), (255, 222, 0), 10)
 
 
+class Duel(Ambush):
+    """The fight alone, as a Short of its own: ten hearts, one pause, a mob that changes ("fight:<mob>")."""
+
+    N, TAG, AFTER = 1, "PAUSE CHALLENGE", HEARTS
+
+    @classmethod
+    def lines(cls, before: int) -> list[tuple[str, str]]:
+        swap = {"title": f"Ten hearts. Can you beat the {cls.FOE.lower()}?",
+                "pause": "Pause the video now! That weapon is yours. A slow weapon costs more hearts."}
+        return [(role, swap.get(role, text)) for role, text in super().lines(before)]
+
+    def sky(self, t: float, d) -> None:
+        if self.title <= t < self.pause:
+            dare = f"THE {self.FOE.upper()}?"
+            _label(d, (W // 2, 420), "CAN YOU BEAT", self.art.fit(d, "CAN YOU BEAT", 960), (255, 255, 255), 12)
+            _label(d, (W // 2, 590), dare, self.art.fit(d, dare, 960), self.COLOUR, 12)
+        else:
+            super().sky(t, d)
+
+
+def fight_stops(foe: str) -> tuple:
+    """The fight against `foe` alone, with the narrator's own weapon (never the bow)."""
+    from . import spin
+
+    if foe not in twice_foes():
+        raise ValueError(f"No such mob for a fight Short: {foe}")
+    rng = random.Random(f"fight-{foe}")
+    fight = type("Duel", (Duel,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"])})
+    fight.AFTER = HEARTS + fight.mine().delta
+    return (fight,)
+
+
 def twice_foes() -> list[str]:
     """The mobs a Pause Twice Short can be against (every one the weapon Shorts know)."""
     from . import spin
@@ -1978,9 +2010,18 @@ def twice_stops(foe: str) -> tuple:
     return loot, fight
 
 
+FIGHT = "fight:"
+FIGHT_TITLE = "Pause To Beat The {foe} ⚔️"
+
+
 def _foe(only) -> str:
     """The mob of a Pause Twice Short's `only` ("twice:Creeper"), "" for the road and its stops."""
     return only[len(TWICE):] if isinstance(only, str) and only.startswith(TWICE) else ""
+
+
+def _duel(only) -> str:
+    """The mob of a fight Short's `only` ("fight:Creeper"), "" otherwise."""
+    return only[len(FIGHT):] if isinstance(only, str) and only.startswith(FIGHT) else ""
 
 
 STOPS = (Forest, Cave, Village, Nether, Fortress, Stronghold, End)
@@ -2010,6 +2051,8 @@ def _stops(only=0) -> tuple:
     """The whole road, stop number `only` alone, or a Pause Twice Short's two stops ("twice:<mob>")."""
     if foe := _foe(only):
         return twice_stops(foe)
+    if foe := _duel(only):
+        return fight_stops(foe)
     if not only:
         return STOPS
     stop = next((s for s in solos() if s.N == only), None)
@@ -2023,6 +2066,8 @@ def scripts(only: int = 0) -> list[list[tuple[str, str]]]:
     if _foe(only):
         loot, fight = _stops(only)
         return [loot.lines(TWICE_HEARTS), fight.lines(TWICE_HEARTS + loot.mine().delta)]
+    if _duel(only):
+        return [_stops(only)[0].lines(HEARTS)]
     if only:
         return [_stops(only)[0].alone()]
     return [stop.lines(before) for stop, before in zip(STOPS, run())]
@@ -2265,6 +2310,12 @@ def texts(only: int = 0) -> dict:
                                "hearts you have left.",
                 "pinned": f"How many hearts do you have left? 👇 You start with 5: the chest, then the fight ❤️\n"
                           f"I kept {left}. 7 is the perfect run. Send this to a friend and see who survives."}
+    if foe := _duel(only):
+        return {"title": FIGHT_TITLE.format(foe=foe), "card": f"PAUSE TO BEAT THE {foe.upper()}",
+                "description": f"Ten hearts. Can you beat the {foe}? Pause the video: the weapon you stop on is "
+                               "yours, and a slow weapon costs more hearts. Comment how many hearts you have left.",
+                "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].AFTER}. "
+                          "Send this to a friend and see who keeps more."}
     if not only:
         return {"title": TITLE, "card": TITLE_CARD, "description": DESCRIPTION,
                 "pinned": PINNED.format(hearts=run()[-1])}
@@ -2326,11 +2377,13 @@ def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):
 
     from . import dungeon
 
-    if lost := missing(settings) or [m for m in [_foe(only)] if m and m not in dungeon.pictures(settings)]:
+    if lost := missing(settings) or [m for m in [_foe(only) or _duel(only)] if m and m not in dungeon.pictures(settings)]:
         raise ValueError(f"No picture of {', '.join(lost[:6])}: make a pause Short first, it fetches the pictures")
     stops = _stops(only)  # an unknown stop stops here
     progress(0.02, "Reading the stop" if only else "Reading the seven stops")
-    name = f"twice_{_foe(only).lower().replace(' ', '-')}_" if _foe(only) else f"{stops[0].SLUG}_" if only else ""
+    slug = lambda mob: mob.lower().replace(" ", "-")  # noqa: E731
+    name = f"twice_{slug(_foe(only))}_" if _foe(only) else f"fight_{slug(_duel(only))}_" if _duel(only) else \
+        f"{stops[0].SLUG}_" if only else ""
     output = settings.shorts_dir / f"{PREFIX}{name}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
     _make(settings, output, progress, only)
     return shorts.get_short(settings, output.name)

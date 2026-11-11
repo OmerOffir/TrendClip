@@ -156,3 +156,28 @@ def test_pause_twice_waits_in_upload_and_the_dashboard_asks_for_it(tmp_path, mon
     client = TestClient(web.app)
     assert "Creeper" in client.get("/api/gamer/quest").json()["foes"]
     assert client.post("/api/gamer/quest", json={"twice": True, "foe": "Herobrine"}).status_code == 400
+
+
+def test_the_fight_alone_is_a_short_on_ten_hearts(tmp_path, monkeypatch):
+    for foe in ("Creeper", "Warden", "Chicken"):
+        only = f"{quest.FIGHT}{foe}"
+        [fight] = quest._stops(only)
+        [lines] = quest.scripts(only)
+        assert lines[0][1] == f"Ten hearts. Can you beat the {foe.lower()}?" and lines[-1][1] == "Comment your hearts."
+        left = quest.HEARTS + fight.mine().delta
+        assert 7 <= left <= 9 and f"I have {quest._hearts(left)} left" in " ".join(t for _, t in lines)
+        text = quest.texts(only)
+        assert text["title"] == f"Pause To Beat The {foe} ⚔️" and f"I kept {left}" in text["pinned"]
+    s = settings(tmp_path)
+    monkeypatch.setattr(quest, "missing", lambda settings: [])
+    monkeypatch.setattr("trendclip.dungeon.pictures", lambda settings: {m: {} for m in quest.twice_foes()})
+    monkeypatch.setattr("trendclip.video_assembler.media_duration", lambda path: 18.0)
+
+    def fake(settings, output, progress, only=0):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mp4")
+        quest.record(settings, output, None, only)
+
+    monkeypatch.setattr(quest, "_make", fake)
+    short = quest.create(s, only="fight:Creeper")
+    assert short.filename.startswith("quest_fight_creeper_") and short.script.startswith("Ten hearts")

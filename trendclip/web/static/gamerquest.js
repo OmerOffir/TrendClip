@@ -9,6 +9,7 @@
   const stop = $("gqStop");
   const makeTwice = $("gqMakeTwice");
   const foe = $("gqFoe");
+  const makeFight = $("gqMakeFight");
   const state = $("gqState");
   const list = $("gqVideos");
   const error = $("gwError");
@@ -19,7 +20,7 @@
 
   async function load() {
     const q = (await api("/api/gamer/quest")).body;
-    make.disabled = makeOne.disabled = makeTwice.disabled = q.missing.length > 0 || make.dataset.busy === "1";
+    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = q.missing.length > 0 || make.dataset.busy === "1";
     if (!foe.options.length) {
       foe.innerHTML = `<option value="">🎲 A random mob</option>` + q.foes.map((m) => `<option value="${esc(m)}">${esc(m)}</option>`).join("");
     }
@@ -49,7 +50,7 @@
     }
     if (job.status === "queued" || job.status === "running") {
       make.dataset.busy = "1";
-      make.disabled = makeOne.disabled = makeTwice.disabled = true;
+      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = true;
       state.textContent = job.status === "queued" ? "Waiting for the video before it…"
         : `${job.message}${job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : ""}…`;
       return setTimeout(() => watch(id), 3000);
@@ -63,20 +64,21 @@
 
   async function start(only, twice) {
     showError("");
-    make.disabled = makeOne.disabled = makeTwice.disabled = true;
+    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = true;
     try {
-      const id = (await api("/api/gamer/quest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(twice ? { twice: true, foe: foe.value } : { stop: only }) })).body.job;
+      const id = (await api("/api/gamer/quest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(twice ? { [twice]: true, foe: foe.value } : { stop: only }) })).body.job;
       remember(id);
       watch(id);
     } catch (err) {
       showError(err.message);
-      make.disabled = makeOne.disabled = makeTwice.disabled = false;
+      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = false;
     }
   }
 
   make.addEventListener("click", () => start(0));
   makeOne.addEventListener("click", () => start(Number(stop.value)));
-  makeTwice.addEventListener("click", () => start(0, true));
+  makeTwice.addEventListener("click", () => start(0, "twice"));
+  makeFight.addEventListener("click", () => start(0, "fight"));
 
   load().catch((err) => showError(err.message));
   if (recalled()) watch(recalled());

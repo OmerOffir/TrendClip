@@ -1210,6 +1210,7 @@ def gamer_quest_view() -> dict[str, Any]:
 class QuestRequest(BaseModel):
     stop: int = Field(0, ge=0, le=7)  # 0: the whole road; a stop's number: that stop as a Short of its own
     twice: bool = False  # a Pause Twice Short instead: a chest, then a fight
+    fight: bool = False  # the fight alone: ten hearts, one pause
     foe: str = Field("", max_length=40)  # its mob; empty: a random one
 
 
@@ -1219,7 +1220,7 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
     from .. import quest
 
     settings, only = _base_settings(), req.stop if req else 0
-    if req and req.twice:
+    if req and (req.twice or req.fight):
         import random
 
         from .. import dungeon
@@ -1227,7 +1228,7 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
         foes = [m for m in quest.twice_foes() if m in dungeon.pictures(settings)]
         if not foes or (req.foe and req.foe not in foes):
             raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any mob'}: make a pause Short first")
-        only = f"{quest.TWICE}{req.foe or random.choice(foes)}"
+        only = f"{quest.TWICE if req.twice else quest.FIGHT}{req.foe or random.choice(foes)}"
         return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
     if only and only not in [stop.N for stop in quest.solos()]:
         raise HTTPException(status_code=400, detail=f"Stop {only} is not a Short of its own")
