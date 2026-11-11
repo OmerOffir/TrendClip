@@ -582,15 +582,29 @@ class Art:
         self._cards[key] = im
         return im
 
-    def rules(self, tag: str):
+    def rules(self, tag: str, top: str = "YOU START WITH", big: str = "10 HEARTS", bar: str = "COMMENT YOUR HEARTS"):
         """A stop alone: what the viewer starts with, where the road card stands in the long video."""
-        key = ("rules", tag)
+        key = ("rules", tag, top, big, bar)
         if key not in self._cards:
-            im, d = self.shell((255, 196, 0), tag, "COMMENT YOUR HEARTS", GREY)
-            d.text((480, 150), "YOU START WITH", font=self.bar, fill=(255, 255, 255), anchor="mm")
-            d.text((480, 248), "10 HEARTS", font=self.big, fill=(255, 222, 0), anchor="mm")
+            im, d = self.shell((255, 196, 0), tag, bar, GREY)
+            d.text((480, 150), top, font=self.fit(d, top, 900, "Poppins-Black", 54), fill=(255, 255, 255), anchor="mm")
+            d.text((480, 248), big, font=self.fit(d, big, 900, "Poppins-Black", 92), fill=(255, 222, 0), anchor="mm")
             self._cards[key] = im
         return self._cards[key]
+
+    def mob(self, name: str, box: tuple[int, int] = (400, 350)):
+        """A mob's own picture (the pause Shorts' render), fitted into `box` with its shape kept."""
+        from PIL import Image
+
+        key = ("mob", name, box)
+        if key not in self._icons:
+            if name not in self.pics:
+                raise ValueError(f"No picture of {name}: run the pause Shorts' picture fetch first")
+            im = Image.open(self.pics[name]["path"]).convert("RGBA")
+            k = min(box[0] / im.width, box[1] / im.height)
+            self._icons[key] = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
+                                         Image.NEAREST if max(im.size) < 160 else Image.LANCZOS)
+        return self._icons[key]
 
     def road(self, here: int):
         """The seven stops in a row: the ones passed ticked green, this one gold."""
@@ -961,7 +975,7 @@ class Forest(Fight):
             x = int((cx - t * speed - scroll * 0.06) % (LW + 80)) - 60
             d.rectangle([x, cy + 4, x + cw, cy + 9], fill=cloud)
             d.rectangle([x + 6, cy, x + cw - 10, cy + 4], fill=cloud)
-            d.rectangle([x + 14, cy - 3, x + cw // 2, cy], fill=cloud)
+            d.rectangle([x + 14, cy - 3, x + max(15, cw // 2), cy], fill=cloud)
         sky.alpha_composite(lights)
         land = _blank((LW, LH))
         for strip, speed in ((self.hills, 0.12), (self.far, 0.45), (self.near, 1.0), (self.ground, 1.0)):
@@ -1784,6 +1798,191 @@ class End(Fight):
 
 
 # --------------------------------------------------------------------------- the whole road
+# --------------------------------------------------------------------------- Pause Twice: a chest, then a mob
+# A Short of two pauses in the quest's own world (the owner, 2026-11-11: drawn like the long adventure, not cards
+# over gameplay). Five hearts of the ten; the first pause opens a chest (food gives hearts back), then night falls,
+# a mob comes, and the second pause gives the weapon. The mob changes from Short to Short: any mob the pause Shorts
+# have a picture of, drawn from that picture. `only` is "twice:<mob>" wherever a stop's number goes.
+TWICE, TWICE_HEARTS = "twice:", 5
+TWICE_TITLE = "Pause Twice To Beat The {foe} 🎁⚔️"
+
+
+def _a(word: str) -> str:
+    return f"an {word}" if word[0].lower() in "aeiou" else f"a {word}"
+
+
+class Loot(Village):
+    """Pause one: the chest."""
+
+    N, NAME, NEXT, TAG, COUNT, FOE = 1, "THE CHEST", "", "PAUSE 1 OF 2", "", "Zombie"
+
+    @classmethod
+    def lines(cls, before: int) -> list[tuple[str, str]]:
+        gives = cls.mine().delta
+        mine = f"I win {_hearts(gives)}." if gives > 0 else f"Yuck. I lose {_hearts(gives)}." if gives else "Not food."
+        return [("title", f"Five hearts. Can you beat the {cls.FOE.lower()}?"),
+                ("threat", "First, a chest. Nobody is watching."),
+                ("pause", "Pause the video now! That is your loot. Food gives hearts back. And some food bites back."),
+                ("mine", f"I stopped on {cls.MINE.lower() if cls.MINE in ('Bread', 'Rotten Flesh') else _a(cls.MINE.lower())}. {mine}"),
+                ("next", "Now, the fight.")]
+
+    def before(self):
+        return self.art.rules(self.TAG, big=f"{TWICE_HEARTS} HEARTS", bar="PAUSE TWICE")
+
+    def sky(self, t: float, d) -> None:
+        art = self.art
+        if t >= self.next:
+            _label(d, (W // 2, 420), "NOW", art.title, (255, 255, 255), 12)
+            _label(d, (W // 2, 590), "THE FIGHT", art.title, (255, 222, 0), 12)
+        elif self.title <= t < self.threat + 0.3:
+            dare = f"THE {self.FOE.upper()}?"
+            _label(d, (W // 2, 420), "CAN YOU BEAT", art.fit(d, "CAN YOU BEAT", 960), (255, 255, 255), 12)
+            _label(d, (W // 2, 590), dare, art.fit(d, dare, 960), self.COLOUR, 12)
+        elif self.pause <= t < self.mine_at:
+            self.pause_words(t, d)
+
+
+class Ambush(Forest):
+    """Pause two: night falls, the mob comes, the weapon you stop on fights it."""
+
+    N, NAME, NEXT, TAG, COUNT, AFTER = 2, "THE FIGHT", "", "PAUSE 2 OF 2", "COUNT YOUR HEARTS", TWICE_HEARTS
+    COLOUR = (255, 110, 110)
+
+    @classmethod
+    def lost(cls, hits: int) -> int:
+        raise NotImplementedError  # by the weapon, not by the hits alone: options()
+
+    @classmethod
+    def options(cls) -> list[Option]:
+        from . import arena, spin
+
+        names = list(spin.WEAPONS)
+        out = []
+        for name, weight in zip(names, _by_tier([spin.WEAPONS[n][0] for n in names])):
+            hits = spin.hits_to_kill(cls.FOE, name)
+            sub = spin.ARROW_PROOF[cls.FOE] if hits is None else \
+                f"{hits} {'SHOT' if name == 'Bow' else 'HIT'}{'S' if hits != 1 else ''} TO WIN"
+            out.append(Option(name, spin.WEAPONS[name][0], sub, -arena.hearts_lost(cls.FOE, name), weight, name))
+        return out
+
+    @classmethod
+    def lines(cls, before: int) -> list[tuple[str, str]]:
+        hits, lost = cls.mine_hits(), -cls.mine().delta
+        blows = f"{_say(hits).capitalize()} hit{'' if hits == 1 else 's'}"
+        return [("title", "Night falls."),
+                ("threat", f"{_a(cls.FOE).capitalize() if cls.FOE != 'Ender Dragon' else 'The Ender Dragon'} "
+                           "is coming for you."),
+                ("pause", "Pause again! That weapon is yours. A slow weapon costs more hearts."),
+                ("mine", f"I stopped on {_a(cls.MINE.lower())}. {blows}, and I lose {_hearts(lost)}."),
+                ("count", f"I have {_hearts(cls.AFTER)} left. How about you?"),
+                ("next", "Comment your hearts.")]
+
+    def build(self) -> None:
+        super().build()
+        self.total += 1.2  # the last words stay on screen
+        self.pic = self.art.mob(self.FOE)
+
+    def before(self):
+        from . import spin
+
+        return self.art.rules(self.TAG, top=self.FOE.upper(), big=f"{spin.health_of(self.FOE)} HEALTH",
+                              bar="PAUSE FOR YOUR WEAPON")
+
+    def scene(self, c) -> None:
+        t, d = c.t, c.d
+        c.zx = None
+        if t >= self.act:
+            c.hx += 4 * c.hit
+        if self.threat <= t < self.dead + 0.45:
+            if t < self.pause:
+                zx = 214 - 84 * _ease((t - self.threat) / (self.pause - self.threat))
+            elif t < self.act:
+                zx = 130 - 12 * (t - self.pause) / (self.act - self.pause)
+            else:
+                zx = 118 + 6 * c.hit - 12 * math.sin(math.pi * c.bite)
+            wide = self.pic.width / S / 2
+            c.du.ellipse([zx - wide * 0.8, GROUND - 2, zx + wide * 0.8, GROUND + 3], fill=(0, 0, 0, 90))
+            c.zx = zx
+        if self.dead + 0.15 <= t < self.dead + 1.0:
+            k = (t - self.dead - 0.15) / 0.85
+            for px, py, pr in self.puff:
+                x, y = 118 + px * 32 * k, GROUND - 24 + py * 40 * k
+                size = 1 + int(pr * 3)
+                if pr > k * 0.9:
+                    d.rectangle([x, y, x + size, y + size], fill=(*_shade((238, 238, 238), 0.7 + 0.3 * pr), 255))
+        if c.hit > 0.3 and c.zx is not None:  # the blade's arc and the sparks
+            d.arc([c.hx + 2, GROUND - 74, c.hx + 58, GROUND - 14], -62, 58, fill=(255, 255, 255, int(255 * c.hit)), width=3)
+            for dx, dy in ((-8, -6), (6, -10), (-4, 8), (8, 4), (0, -14), (-12, 2)):
+                d.rectangle([c.zx - 12 + dx, GROUND - 44 + dy, c.zx - 10 + dx, GROUND - 42 + dy], fill=(255, 244, 170, 255))
+
+    def sharp(self, c, img, d) -> None:
+        from PIL import Image
+
+        t = c.t
+        if c.zx is not None:
+            pic = self.pic
+            flash = max(c.hit, 1.0 if t >= self.dead else 0.0) * 0.6
+            if flash > 0.05:  # the hit flash: the mob goes red
+                red = Image.new("RGBA", pic.size, (255, 56, 56, 255))
+                red.putalpha(pic.getchannel("A"))
+                pic = Image.blend(pic, red, flash)
+            if t >= self.dead:  # it sinks and fades
+                k = min(1.0, (t - self.dead) / 0.45)
+                pic = pic.copy()
+                pic.putalpha(pic.getchannel("A").point(lambda a: int(a * (1 - k))))
+            bob = int(6 * math.sin(t * 7)) if t < self.act else 0
+            x = int(c.zx * S) - pic.width // 2 + c.shake[0]
+            y = GROUND * S - pic.height + 8 + bob + c.shake[1]
+            img.alpha_composite(pic, (max(0, min(W - pic.width, x)), y))
+            if self.pause <= t < self.dead:  # its name and health, once the title over it is gone
+                cx, cy = max(130, min(W - 130, int(c.zx * S))), GROUND * S - self.pic.height - 64
+                _label(d, (cx, cy - 34), self.FOE.upper(), self.art.small, stroke=6)
+                d.rectangle([cx - 110, cy, cx + 110, cy + 26], fill=(12, 12, 16, 255))
+                if self.health(t) > 0:
+                    d.rectangle([cx - 104, cy + 6, cx - 104 + int(208 * self.health(t)), cy + 20], fill=(226, 30, 40, 255))
+        self.blows(t, d, 118 * S - self.pic.width // 2 - 40, GROUND * S - self.pic.height // 2)
+
+    def sky(self, t: float, d) -> None:
+        art = self.art
+        if t >= self.next:
+            _label(d, (W // 2, 420), "COMMENT", art.title, (255, 255, 255), 12)
+            _label(d, (W // 2, 590), "YOUR HEARTS", art.title, (255, 222, 0), 12)
+        elif self.title <= t < self.pause:
+            name = f"{self.FOE.upper()}!"
+            _label(d, (W // 2, 420), self.TAG, art.big, (255, 255, 255), 10)
+            _label(d, (W // 2, 560), name, art.fit(d, name, 960), self.COLOUR, 12)
+        elif self.pause <= t < self.mine_at:
+            self.pause_words(t, d)
+        elif self.count is not None and self.count <= t < self.next:
+            _label(d, (W // 2, 440), self.COUNT, art.fit(d, self.COUNT, 980, "Poppins-Black", 92), (255, 222, 0), 10)
+
+
+def twice_foes() -> list[str]:
+    """The mobs a Pause Twice Short can be against (every one the weapon Shorts know)."""
+    from . import spin
+
+    return sorted({**spin.FOES, **spin.BOSSES})
+
+
+def twice_stops(foe: str) -> tuple:
+    """The chest and the fight against `foe`, with the narrator's own loot and weapon (the same for a mob every
+    time): his loot changes his hearts, his weapon is never the bow (arrows bounce off some mobs)."""
+    from . import spin
+
+    if foe not in twice_foes():
+        raise ValueError(f"No such mob for a Pause Twice Short: {foe}")
+    rng = random.Random(f"twice-{foe}")
+    loot = type("Loot", (Loot,), {"FOE": foe, "MINE": rng.choice(("Bread", "Golden Carrot", "Golden Apple", "Rotten Flesh"))})
+    fight = type("Ambush", (Ambush,), {"FOE": foe, "MINE": rng.choice([w for w in spin.WEAPONS if w != "Bow"])})
+    fight.AFTER = TWICE_HEARTS + loot.mine().delta + fight.mine().delta
+    return loot, fight
+
+
+def _foe(only) -> str:
+    """The mob of a Pause Twice Short's `only` ("twice:Creeper"), "" for the road and its stops."""
+    return only[len(TWICE):] if isinstance(only, str) and only.startswith(TWICE) else ""
+
+
 STOPS = (Forest, Cave, Village, Nether, Fortress, Stronghold, End)
 TITLE = "Can You Beat Minecraft? Pause Edition"
 TITLE_CARD = "CAN YOU BEAT MINECRAFT? - PAUSE EDITION"
@@ -1807,8 +2006,10 @@ def solos() -> list[type]:
     return [stop for stop in STOPS if stop.SOLO]
 
 
-def _stops(only: int = 0) -> tuple:
-    """The whole road, or stop number `only` alone."""
+def _stops(only=0) -> tuple:
+    """The whole road, stop number `only` alone, or a Pause Twice Short's two stops ("twice:<mob>")."""
+    if foe := _foe(only):
+        return twice_stops(foe)
     if not only:
         return STOPS
     stop = next((s for s in solos() if s.N == only), None)
@@ -1819,6 +2020,9 @@ def _stops(only: int = 0) -> tuple:
 
 def scripts(only: int = 0) -> list[list[tuple[str, str]]]:
     """Every stop's sentences by role, written for the narrator's own run."""
+    if _foe(only):
+        loot, fight = _stops(only)
+        return [loot.lines(TWICE_HEARTS), fight.lines(TWICE_HEARTS + loot.mine().delta)]
     if only:
         return [_stops(only)[0].alone()]
     return [stop.lines(before) for stop, before in zip(STOPS, run())]
@@ -1840,7 +2044,8 @@ class Quest:
         self.hurts = sorted((t0 + x, dl) for t0, stop in zip(self.starts, self.stops) for x, dl in stop.hurts)
         self.sounds = sorted((t0 + x, kind) for t0, stop in zip(self.starts, self.stops) for x, kind in stop.sounds)
         self.sounds += [(t0, "whoosh") for t0 in self.starts[1:]]
-        self.changes, hearts = [], HEARTS  # (time, hearts before, hearts after)
+        self.start = TWICE_HEARTS if _foe(only) else HEARTS
+        self.changes, hearts = [], self.start  # (time, hearts before, hearts after)
         for x, dl in self.hurts:
             after = max(0, min(HEARTS, hearts + dl))
             self.changes.append((x, hearts, after))
@@ -1848,7 +2053,7 @@ class Quest:
         self.final = hearts
 
     def hearts(self, t: float) -> int:
-        out = HEARTS
+        out = self.start
         for x, _, after in self.changes:
             if x <= t:
                 out = after
@@ -2052,6 +2257,14 @@ def render(settings: Settings, output: Path, workers: int = 6, music: float = 0.
 
 def texts(only: int = 0) -> dict:
     """What YouTube shows: the long video's own texts, or a stop's as a Short of its own."""
+    if foe := _foe(only):
+        left = _stops(only)[1].AFTER
+        return {"title": TWICE_TITLE.format(foe=foe), "card": "PAUSE TWICE!",
+                "description": f"Two pauses, five hearts. Open the chest: food gives hearts back. Then pause again "
+                               f"for your weapon against the {foe}: a slow weapon costs hearts. Comment how many "
+                               "hearts you have left.",
+                "pinned": f"How many hearts do you have left? 👇 You start with 5: the chest, then the fight ❤️\n"
+                          f"I kept {left}. 7 is the perfect run. Send this to a friend and see who survives."}
     if not only:
         return {"title": TITLE, "card": TITLE_CARD, "description": DESCRIPTION,
                 "pinned": PINNED.format(hearts=run()[-1])}
@@ -2111,11 +2324,13 @@ def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):
     """The quest (or stop `only` alone) as a video in output/shorts, waiting in Upload like any other Short."""
     from . import shorts
 
-    if lost := missing(settings):
+    from . import dungeon
+
+    if lost := missing(settings) or [m for m in [_foe(only)] if m and m not in dungeon.pictures(settings)]:
         raise ValueError(f"No picture of {', '.join(lost[:6])}: make a pause Short first, it fetches the pictures")
     stops = _stops(only)  # an unknown stop stops here
     progress(0.02, "Reading the stop" if only else "Reading the seven stops")
-    name = f"{stops[0].SLUG}_" if only else ""
+    name = f"twice_{_foe(only).lower().replace(' ', '-')}_" if _foe(only) else f"{stops[0].SLUG}_" if only else ""
     output = settings.shorts_dir / f"{PREFIX}{name}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
     _make(settings, output, progress, only)
     return shorts.get_short(settings, output.name)
@@ -2125,7 +2340,8 @@ def main(argv: list[str]) -> int:
     from .config import get_settings
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stdout)
-    settings, output, only = get_settings(), Path(argv[0]), int(argv[1]) if len(argv) > 1 else 0
+    only = argv[1] if len(argv) > 1 else "0"
+    settings, output, only = get_settings(), Path(argv[0]), int(only) if only.isdigit() else only
     workers = max(2, min(6, (os.cpu_count() or 4) - 2))
     record(settings, output, render(settings, output, workers=workers, only=only), only)
     return 0

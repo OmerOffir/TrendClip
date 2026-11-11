@@ -1195,10 +1195,13 @@ def index() -> HTMLResponse:
 def gamer_quest_view() -> dict[str, Any]:
     from .. import quest
 
+    from .. import dungeon
+
     settings = _base_settings()
     return {"title": quest.TITLE, "stops": [stop.NAME.title() for stop in quest.STOPS], "hearts": quest.run()[-1],
             "missing": quest.missing(settings),
             "solos": [{"stop": stop.N, "name": stop.NAME.title(), "title": stop.SOLO} for stop in quest.solos()],
+            "foes": [m for m in quest.twice_foes() if m in dungeon.pictures(settings)],
             "videos": [{"filename": v.filename, "seconds": v.duration_seconds, "created_at": v.created_at.isoformat(),
                         "uploaded": bool((v.uploads.get("youtube") or {}).get("video_id"))}
                        for v in quest.videos(settings)]}
@@ -1206,6 +1209,8 @@ def gamer_quest_view() -> dict[str, Any]:
 
 class QuestRequest(BaseModel):
     stop: int = Field(0, ge=0, le=7)  # 0: the whole road; a stop's number: that stop as a Short of its own
+    twice: bool = False  # a Pause Twice Short instead: a chest, then a fight
+    foe: str = Field("", max_length=40)  # its mob; empty: a random one
 
 
 @app.post("/api/gamer/quest", status_code=202)
@@ -1214,6 +1219,16 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
     from .. import quest
 
     settings, only = _base_settings(), req.stop if req else 0
+    if req and req.twice:
+        import random
+
+        from .. import dungeon
+
+        foes = [m for m in quest.twice_foes() if m in dungeon.pictures(settings)]
+        if not foes or (req.foe and req.foe not in foes):
+            raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any mob'}: make a pause Short first")
+        only = f"{quest.TWICE}{req.foe or random.choice(foes)}"
+        return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
     if only and only not in [stop.N for stop in quest.solos()]:
         raise HTTPException(status_code=400, detail=f"Stop {only} is not a Short of its own")
     if lost := quest.missing(settings):

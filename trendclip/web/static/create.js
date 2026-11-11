@@ -498,8 +498,7 @@
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to fight your friend": "🤝 Make a Pause to Fight Your Friend",
-    "pause to get your mob": "🐺 Make a Pause to Get Your Mob",
-    "pause twice": "🎁 Make a Pause Twice Short" };
+    "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };
 
   function updateButtons() {
     const busyScript = state.scriptJob != null;

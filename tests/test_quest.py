@@ -110,3 +110,49 @@ def test_a_stop_alone_waits_in_upload_under_its_own_title(tmp_path, monkeypatch)
     assert seen == [7] and short.filename.startswith("quest_end_") and short.title == quest.End.SOLO
     assert short.title_card == "PAUSE TO FIGHT THE ENDER DRAGON" and "Next stop" not in short.script
     assert f"I kept {quest.End.after()}" in short.pinned_comment and quest.TITLE in short.description
+
+
+def test_pause_twice_is_a_chest_then_a_fight_on_five_hearts():
+    from trendclip import arena, spin
+
+    for foe in ("Creeper", "Warden", "Pig", "Ender Dragon", "Wither"):
+        only = f"{quest.TWICE}{foe}"
+        loot, fight = quest._stops(only)
+        chest, battle = quest.scripts(only)
+        assert chest[0][1] == f"Five hearts. Can you beat the {foe.lower()}?" and chest[-1][1] == "Now, the fight."
+        assert battle[-1][1] == "Comment your hearts." and foe.lower() in battle[1][1].lower()
+        left = quest.TWICE_HEARTS + loot.mine().delta + fight.mine().delta
+        assert 1 <= left <= 7 and f"I have {quest._hearts(left)} left" in battle[4][1]
+        assert fight.MINE != "Bow" and loot.mine().delta != 0
+        for option in fight.options():  # the hearts a weapon costs are the pause Shorts' own rule
+            assert option.delta == -arena.hearts_lost(foe, option.name)
+        text = quest.texts(only)
+        assert text["title"] == f"Pause Twice To Beat The {foe} 🎁⚔️" and f"I kept {left}" in text["pinned"]
+        assert len(" ".join(t for lines in (chest, battle) for _, t in lines).split()) < 100
+    assert quest._stops(f"{quest.TWICE}Creeper")[1].MINE == quest._stops(f"{quest.TWICE}Creeper")[1].MINE
+    assert set(quest.twice_foes()) == set(spin.BOSSES) | set(spin.FOES)
+    with pytest.raises(ValueError, match="No such mob"):
+        quest.scripts(f"{quest.TWICE}Herobrine")
+
+
+def test_pause_twice_waits_in_upload_and_the_dashboard_asks_for_it(tmp_path, monkeypatch):
+    s = settings(tmp_path)
+    monkeypatch.setattr(quest, "missing", lambda settings: [])
+    monkeypatch.setattr("trendclip.dungeon.pictures", lambda settings: {m: {} for m in quest.twice_foes()})
+    monkeypatch.setattr("trendclip.video_assembler.media_duration", lambda path: 31.7)
+    seen = []
+
+    def fake(settings, output, progress, only=0):
+        seen.append(only)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mp4")
+        quest.record(settings, output, None, only)
+
+    monkeypatch.setattr(quest, "_make", fake)
+    short = quest.create(s, only="twice:Iron Golem")
+    assert seen == ["twice:Iron Golem"] and short.filename.startswith("quest_twice_iron-golem_")
+    assert short.title == "Pause Twice To Beat The Iron Golem 🎁⚔️" and short.end_card == "Comment your hearts"
+    monkeypatch.setattr(web, "_base_settings", lambda: s)
+    client = TestClient(web.app)
+    assert "Creeper" in client.get("/api/gamer/quest").json()["foes"]
+    assert client.post("/api/gamer/quest", json={"twice": True, "foe": "Herobrine"}).status_code == 400
