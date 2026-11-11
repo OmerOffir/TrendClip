@@ -69,7 +69,11 @@
     make.dataset.busy = "";
     if (job.status === "error") showError(`The adventure was not made: ${job.error}`);
     await load();
-    if (job.status === "done") state.textContent = "✅ Made: it waits in Upload";
+    if (job.status === "done") {  // which video: every button on this card reports here
+      const made = job.result || {};
+      state.textContent = made.filename ? `✅ Made "${made.title || made.filename}" (${made.filename}): it waits in Upload`
+        : "✅ Made: it waits in Upload";
+    }
   }
 
   async function start(only, twice) {
