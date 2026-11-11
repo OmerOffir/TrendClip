@@ -42,8 +42,10 @@ FRIEND_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#1v1"
 
 # --------------------------------------------------------------------------- pet
 PET_MARK = "The mob you stop on fights for you"
-# name -> (tier, attack damage in Java Edition on Normal; 0 = it never attacks). Left out: the mobs whose damage
-# is random or depends on the distance (skeletons, pillagers, creepers, ghasts, witches, hoglins).
+# name -> (tier, attack damage in Java Edition on Normal; 0 = it never attacks), each checked against its
+# minecraft.wiki infobox on 2026-11-11 (a phantom's 6 is Bedrock's, Java's is 2; a panda's 6 is the aggressive
+# kind's only). Left out: the mobs whose damage is random or depends on the distance (skeletons, pillagers,
+# creepers, ghasts, witches, hoglins).
 ALLIES: dict[str, tuple[str, float]] = {
     "Chicken": ("common", 0), "Pig": ("common", 0), "Cow": ("common", 0), "Sheep": ("common", 0),
     "Rabbit": ("common", 0), "Villager": ("common", 0), "Bat": ("common", 0), "Parrot": ("common", 0),
@@ -51,13 +53,14 @@ ALLIES: dict[str, tuple[str, float]] = {
     "Silverfish": ("common", 1), "Bee": ("common", 2), "Fox": ("common", 2), "Axolotl": ("common", 2),
     "Spider": ("rare", 2), "Endermite": ("rare", 2), "Zombie": ("rare", 3), "Husk": ("rare", 3),
     "Drowned": ("rare", 3), "Dolphin": ("rare", 3), "Wolf": ("rare", 4), "Slime": ("rare", 4),
-    "Shulker": ("rare", 4),
-    "Polar Bear": ("epic", 6), "Panda": ("epic", 6), "Magma Cube": ("epic", 6), "Phantom": ("epic", 6),
+    "Shulker": ("rare", 4), "Panda": ("rare", 2), "Phantom": ("rare", 2),
+    "Polar Bear": ("epic", 6), "Magma Cube": ("epic", 6),
     "Guardian": ("epic", 6), "Enderman": ("epic", 7), "Piglin": ("epic", 8), "Elder Guardian": ("epic", 8),
     "Vex": ("epic", 9),
     "Ravager": ("legendary", 12), "Iron Golem": ("legendary", 14.5), "Ender Dragon": ("legendary", 10),
     "Wither": ("legendary", 8), "Warden": ("legendary", 30),
 }
+ALLY_HEALTH = {"Wolf": 40}  # yours is tamed (a wild one has 8)
 ABOUT = {"Iron Golem"}  # hits 7.5 to 21.5 at random: counted at the middle, and the card says "about"
 # The bosses a pet Short can be against: name -> attack damage (their health and armour are spin's). Each leaves
 # between one card in twenty and half of them a winner (tests/test_arena.py), so pausing again is worth it; against
@@ -183,6 +186,7 @@ def pet_fight(boss: str, mob: str) -> tuple[int | None, int]:
     health, armour = stats(boss)
     mine = ALLIES[mob][1]
     my_health, my_armour = stats(mob)
+    my_health = ALLY_HEALTH.get(mob, my_health)
     theirs = math.ceil(my_health / _armoured(PET_BOSSES[boss], my_armour) - 1e-9)
     return (math.ceil(health / _armoured(mine, armour) - 1e-9) if mine else None), theirs
 

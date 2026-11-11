@@ -47,9 +47,10 @@ def test_your_mob_fights_hit_for_hit_and_strikes_first():
     assert arena.pet_verdict("Zombie", "Chicken")[0] == "CAN'T ATTACK: YOU LOSE"
     mine, theirs = arena.pet_fight("Zombie", "Warden")
     assert mine == 1 and theirs > 100 and arena.pet_verdict("Zombie", "Warden")[0] == "YOU WIN IN 1 HIT!"
-    # a wolf (8 health, 4 damage) against a zombie (20 health, 2 armour, 3 damage): it falls on the third hit
-    mine, theirs = arena.pet_fight("Zombie", "Wolf")
-    assert theirs == 3 and mine > theirs and arena.pet_verdict("Zombie", "Wolf")[0].startswith("YOU LOSE")
+    # your wolf is tamed (40 health, 4 damage) against a zombie (20 health, 2 armour, 3 damage)
+    assert arena.pet_fight("Zombie", "Wolf") == (6, 14) and arena.pet_verdict("Zombie", "Wolf")[0] == "YOU WIN IN 6 HITS!"
+    assert arena.pet_fight("Zombie", "Fox")[1] == 4 and arena.pet_verdict("Zombie", "Fox")[0].startswith("YOU LOSE")
+    assert arena.ALLIES["Phantom"][1] == 2 and arena.ALLIES["Panda"][1] == 2  # Java's numbers, not Bedrock's
     assert "ABOUT" in arena.pet_verdict("Ravager", "Iron Golem")[0]
     for boss in arena.PET_BOSSES:  # a win is rare, never hopeless and never the rule
         assert 0.05 <= arena.win_share(boss) <= 0.5, boss
