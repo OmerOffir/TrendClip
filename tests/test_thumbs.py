@@ -68,3 +68,45 @@ def test_a_newer_video_makes_the_thumbnail_stale(tmp_path):
     thumb.write_bytes(b"x")
     os.utime(thumb, (1, 1))
     assert thumbs.fresh("darkarchives", "3", tmp_path) is None
+
+
+@pytest.mark.parametrize("title, script, kind, what", [
+    ("Pause To Get Your Weapon vs The Warden ⚔️", "", "fight", "Warden"),
+    ("Pause To Beat The Skeleton | Dungeon Run 3/8 ⚔️", "", "fight", "Skeleton"),
+    ("Pause To Beat The Final Boss | Dungeon Run 8/8 💀", "The final boss. A Wither is waiting.", "fight", "Wither"),
+    ("Pause To Fight The Ender Dragon 🐉", "Ten hearts. Can you beat the Ender Dragon?", "fight", "Ender Dragon"),
+    ("Can You Beat Minecraft? Pause Edition", "Ten hearts.", "fight", "Ender Dragon"),
+    ("Pause To Get Your Minecraft Axe 🪓", "", "wall", "obsidian"),
+    ("Pause To Break The Wall | Dungeon Run 4/8 ⛏️", "A Cobblestone wall blocks the way.", "wall", "cobble"),
+    ("Pause To Dig Out Of The Cave ⛏️", "Ten hearts.", "wall", "stone"),
+    ("Pause To Open The Chest | Dungeon Run 2/8 🎁", "", "chest", None),
+    ("Pause To Get Your Minecraft Block 🎮", "", "blocks", None),
+    ("Pause To Cross The Lava Lake 🔥", "Ten hearts.", "lava", None),
+])
+def test_the_scene_comes_from_the_title(title, script, kind, what):
+    from modules import sql_thumb
+
+    scene = sql_thumb.plan({"title": title, "script": script})
+    assert scene["kind"] == kind
+    if what:
+        assert what in (scene.get("mob"), scene.get("block"))
+
+
+def test_question_levels_keep_the_title_card():
+    from modules import sql_thumb
+
+    assert sql_thumb.plan({"title": "Real Minecraft Players Know This | Level 29 🎮"}) is None
+
+
+def test_a_weapon_short_draws_the_fight(tmp_path):
+    from modules import sql_thumb
+
+    info = {"title": "Pause To Get Your Weapon vs The Zombie ⚔️", "title_card": "PAUSE NOW!"}
+    if not sql_thumb.available(sql_thumb.plan(info)):
+        pytest.skip("no mob pictures on this machine")
+    _video(tmp_path / "shorts" / "mc_2.mp4", "blue")
+    (tmp_path / "shorts" / "mc_2.json").write_text(json.dumps(info))
+    img = Image.open(thumbs.draw("sidequestlogic", "mc_2.mp4", tmp_path))
+    assert img.size == (1080, 1920)
+    r, g, b = img.getpixel((540, 140))[:3]  # the yellow PAUSE NOW! box
+    assert r > 200 and g > 170 and b < 80

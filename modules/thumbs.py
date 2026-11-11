@@ -4,7 +4,8 @@ One 1080x1920 JPEG per video, drawn once and kept beside the video (redrawn when
   - Borderline Why  the place close up on the map with the story's sides, circled in red marker, the cover
                     question in huge letters and the panda as a sticker (modules.bw_long.thumbnail, portrait)
   - Dark Outliers   the hook's picture, darkened, the cover text huge with its last words in red
-  - SideQuestLogic  a clean frame of the gameplay, "LEVEL N" huge in yellow, the rest of the title card under it
+  - SideQuestLogic  the Short's moment as a scene when it has one (a fight, a wall breaking, a chest:
+                    modules.sql_thumb), else a clean frame of the gameplay with "LEVEL N" huge in yellow
   - Price Tag Why   the opening's frame once the price tag, the question and the price are all drawn
 
 The dashboard's Upcoming tab shows each one with a Download button (trendclip.web.app). Drawing runs in its own
@@ -207,6 +208,12 @@ def sidequest(video: Path, out: Path) -> None:
         img = video_frame(clip, duration(clip) * 0.3)
     else:
         img = video_frame(video, 0.1)
+    from modules import sql_thumb
+
+    scene = sql_thumb.plan(info)
+    if sql_thumb.available(scene):  # a fight, a wall, a chest...: the moment drawn as a scene
+        sql_thumb.draw(scene, ImageEnhance.Color(cover(img)).enhance(1.3)).convert("RGB").save(out, quality=92)
+        return
     img = ImageEnhance.Color(ImageEnhance.Contrast(cover(img)).enhance(1.15)).enhance(1.3).convert("RGBA")
     shade(img, 0.5, 0.25, 190)
     card = " ".join(str(info.get("title_card") or info.get("title") or "").upper().split())
