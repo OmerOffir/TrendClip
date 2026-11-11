@@ -62,6 +62,9 @@ def plan(info: dict) -> dict | None:
         return fight("Blaze", "CAN YOU BLOCK IT?", "Iron Sword", hearts=hearts)
     if m := re.search(r"(?:Beat|Fight) The ([A-Za-z ]+?)(?: \||$)", title):
         return fight(m.group(1).strip(), "CAN YOU WIN?", "Diamond Sword", hearts=hearts)
+    if m := re.search(r"Break The ([A-Za-z ]+) Wall", title):  # the drawn axe Short: its own block
+        return {"kind": "wall", "block": m.group(1).strip().lower().replace(" ", "-"), "tool": "Golden Axe",
+                "text": "CAN YOU BREAK IT?", "hearts": hearts}
     if "dig out" in low:
         return {"kind": "wall", "block": "stone", "tool": "Diamond Pickaxe", "text": "CAN YOU DIG OUT?",
                 "hearts": hearts}

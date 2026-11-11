@@ -181,3 +181,25 @@ def test_the_fight_alone_is_a_short_on_ten_hearts(tmp_path, monkeypatch):
     monkeypatch.setattr(quest, "_make", fake)
     short = quest.create(s, only="fight:Creeper")
     assert short.filename.startswith("quest_fight_creeper_") and short.script.startswith("Ten hearts")
+
+
+def test_the_wall_alone_is_the_axe_short_drawn():
+    from trendclip import spin
+
+    assert set(quest.WALLS) == {name for name, (_, _, axe) in spin.WALL.items() if axe}  # the walls an axe is for
+    assert {b.lower().replace(" ", "-") for b in quest.WALLS} == set(quest.WALL_TILES)
+    costs = {}
+    for block in quest.WALLS:
+        only = f"{quest.WALL}{block}"
+        [wall] = quest._stops(only)
+        [lines] = quest.scripts(only)
+        assert lines[0][1] == "Ten hearts. Can you break this wall?" and lines[-1][1] == "Comment your hearts."
+        assert quest.WALLS[block][0] in lines[1][1] and wall.MINE in spin.AXES
+        costs[block] = {o.name: -o.delta for o in wall.options()}
+        assert costs[block]["Golden Axe"] == min(costs[block].values())  # gold is the fastest on wood
+        assert quest.texts(only)["title"] == f"Pause To Break The {block} Wall 🪓"
+        assert quest._tile(block.lower().replace(" ", "-")).size == (16, 16)
+    assert costs["Pumpkin"]["Iron Axe"] == 0 and costs["Oak Log"]["Iron Axe"] == 1 and costs["Chest"]["Iron Axe"] == 2
+    assert min(costs["Chest"].values()) == 1 and costs["Oak Log"]["Wooden Axe"] == 3
+    with pytest.raises(ValueError, match="No such wall"):
+        quest.scripts(f"{quest.WALL}Bedrock")

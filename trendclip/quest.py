@@ -337,8 +337,39 @@ def _house(d, x: int, salt: int) -> None:
     d.line([(x + 38, GROUND - 26), (x + 38, GROUND - 17)], fill=(74, 52, 32))
 
 
+WALL_TILES = ("oak-log", "oak-planks", "crafting-table", "bookshelf", "chest", "jukebox", "pumpkin", "melon")
+
+
+def _wall_pixel(kind: str, x: int, y: int, n: float, m: float) -> tuple:
+    """One pixel of a wooden wall block's side (the walls an axe is the tool for)."""
+    planks = _shade((166, 134, 80), (0.78 if y % 4 == 3 else 1.0) * (0.9 + 0.2 * n))
+    if kind == "oak-log":
+        return _shade((104, 82, 50), (0.72 if _noise(x, y // 5, 71) < 0.3 else 1.0) * (0.88 + 0.24 * n))
+    if kind == "oak-planks":
+        return planks
+    if kind == "crafting-table":
+        if y < 4:
+            return _shade((120, 84, 44), 0.8 + 0.3 * n)
+        return (70, 70, 76) if (x, y) in ((4, 7), (4, 8), (5, 8), (10, 7), (11, 7), (11, 8), (10, 9)) else planks
+    if kind == "bookshelf":
+        if y in (0, 1, 7, 8, 14, 15):
+            return planks
+        book = ((176, 44, 40), (48, 110, 60), (52, 78, 160), (196, 160, 60), (120, 60, 140))[int(_noise(x // 2, y // 7, 73) * 5) % 5]
+        return _shade(book, 0.75 if x % 2 else 1.0)
+    if kind == "chest":
+        if 6 <= x <= 9 and 5 <= y <= 8:
+            return (190, 190, 196) if 7 <= x <= 8 else (90, 90, 96)
+        return _shade((158, 108, 42), (0.7 if y in (5, 6) else 1.0) * (0.9 + 0.2 * n))
+    if kind == "jukebox":
+        inner = 3 <= x <= 12 and 3 <= y <= 12
+        return _shade((104, 64, 46), (0.7 if inner and (x in (3, 12) or y in (3, 12)) else 1.0) * (0.86 + 0.24 * n))
+    if kind == "pumpkin":
+        return _shade((208, 126, 30), (0.74 if x % 5 == 2 else 1.0) * (0.9 + 0.2 * n))
+    return _shade((112, 152, 38), (0.7 if x % 4 == 1 else 1.0) * (0.85 + 0.3 * m))  # melon
+
+
 def _tile(kind: str, salt: int = 41):
-    """A 16x16 block seen from the side: stone, cobble, magma or lava."""
+    """A 16x16 block seen from the side: stone, cobble, magma, lava or a wooden wall block."""
     from PIL import Image
 
     im = Image.new("RGBA", (16, 16), (0, 0, 0, 255))
@@ -350,6 +381,8 @@ def _tile(kind: str, salt: int = 41):
                 c = _shade((126, 128, 134), 0.84 + 0.3 * n)
             elif kind == "cobble":
                 c = _shade((122, 122, 126), 0.62 if m < 0.3 else 0.86 + 0.34 * n)
+            elif kind in WALL_TILES:
+                c = _wall_pixel(kind, x, y, n, m)
             elif kind == "magma":
                 c = (255, 150, 36) if abs(_noise(x // 2 + y // 4, y // 2, salt + 7) - 0.5) < 0.13 else _shade((78, 26, 22), 0.8 + 0.4 * n)
             else:
@@ -510,7 +543,7 @@ class Art:
         self.small = self.font("Poppins-Bold", 36)
         self.tiny = self.font("Poppins-Bold", 26)
         self.pics = dungeon.pictures(settings)
-        self.extra = {f"tile:{k}": _tile(k) for k in ("stone", "cobble", "magma", "lava")}
+        self.extra = {f"tile:{k}": _tile(k) for k in ("stone", "cobble", "magma", "lava") + WALL_TILES}
         self.forest = _strips()
         self.vignette = _vignette()
         self._icons: dict = {}
@@ -1047,6 +1080,7 @@ class Cave(Stop):
     DARE, SLUG = "DIG OUT?", "cave"
     L = 20.0
     WALL, BLOCKS = 100, 4  # the fallen blocks' left edge when the hero has stopped, and how many
+    TILE, BITS = "tile:cobble", (122, 122, 126)  # the blocks' picture, and their splinters' colour
 
     @classmethod
     def options(cls) -> list[Option]:
@@ -1131,7 +1165,7 @@ class Cave(Stop):
     def scene(self, c) -> None:
         t, d, du = c.t, c.d, c.du
         x0 = int(self.WALL + c.shift)
-        tile = self.art.extra["tile:cobble"]
+        tile = self.art.extra[self.TILE]
         for i in range(self.BLOCKS):  # block 0 is the lowest; the top one breaks first
             broke = self.breaks[self.BLOCKS - 1 - i]
             if t < self.lands[i] - 0.3 or t >= broke:
@@ -1139,7 +1173,7 @@ class Cave(Stop):
                     k = (t - broke) / 0.45
                     for px, py, pr in self.bits:
                         x, y = x0 + 8 + px * 22 * k, GROUND - 8 - 16 * i + py * 18 * k + 30 * k * k
-                        d.rectangle([x, y, x + 2, y + 2], fill=(*_shade((122, 122, 126), 0.6 + 0.5 * pr), 255))
+                        d.rectangle([x, y, x + 2, y + 2], fill=(*_shade(self.BITS, 0.6 + 0.5 * pr), 255))
                 continue
             drop = 1 - min(1.0, (t - self.lands[i] + 0.3) / 0.3)
             y = GROUND - 16 * (i + 1) - int(drop * drop * 130)
@@ -1989,6 +2023,76 @@ def fight_stops(foe: str) -> tuple:
     return (fight,)
 
 
+WALL = "wall:"
+WALL_TITLE = "Pause To Break The {block} Wall 🪓"
+WALLS = {  # the walls an axe is the tool for (spin.WALL): how the narrator says a wall of them, its splinters
+    "Oak Log": ("oak logs", (104, 82, 50)), "Oak Planks": ("oak planks", (166, 134, 80)),
+    "Crafting Table": ("crafting tables", (150, 116, 66)), "Bookshelf": ("bookshelves", (166, 134, 80)),
+    "Chest": ("chests", (158, 108, 42)), "Jukebox": ("jukeboxes", (104, 64, 46)),
+    "Pumpkin": ("pumpkins", (208, 126, 30)), "Melon": ("melons", (112, 152, 38)),
+}
+
+
+class Wall(Cave):
+    """The axe Short, drawn ("wall:<block>"): a wall of one block drops in the way, a skeleton shoots from
+    behind, and the axe you stop on breaks through. The break times are the game's (spin.break_seconds); the hearts
+    go by the seconds a block takes: a quarter of a second or less, none; up to half a second, one; up to a second,
+    two; slower, three. So the wall matters: pumpkins are soft and three axes get through unhurt, a wall of chests
+    costs every axe a heart."""
+
+    N, NAME, NEXT, KIND, TAG, BLOCK = 1, "THE WALL", "", "AXE", "PAUSE CHALLENGE", "Oak Log"
+    DARE = "BREAK THE WALL?"
+
+    @classmethod
+    def lost(cls, axe: str) -> int:
+        from . import spin
+
+        secs = spin.break_seconds(cls.BLOCK, axe)
+        return 0 if secs <= 0.25 else 1 if secs <= 0.5 else 2 if secs <= 1 else 3
+
+    @classmethod
+    def options(cls) -> list[Option]:
+        from . import spin
+
+        return [Option(name, tier, f"{spin.break_seconds(cls.BLOCK, name):g} S A BLOCK", -cls.lost(name), share, name)
+                for name, (tier, _, share) in spin.AXES.items()]
+
+    @classmethod
+    def lines(cls, before: int) -> list[tuple[str, str]]:
+        lost = -cls.mine().delta
+        mine = "Fast enough. No hearts lost." if not lost else f"Too slow. I lose {_hearts(lost)}."
+        return [("title", "Ten hearts. Can you break this wall?"),
+                ("threat", f"A wall of {WALLS[cls.BLOCK][0]}, and a skeleton is shooting at your back."),
+                ("pause", "Pause the video now! That is your axe. A fast axe breaks through in time. "
+                          "A slow one, and the arrows find you."),
+                ("mine", f"I stopped on {_a(cls.MINE.lower())}. {mine}"),
+                ("count", "Fun fact: on wood, gold is the fastest axe."),
+                ("next", "Comment your hearts.")]
+
+    def sharp(self, c, img, d) -> None:
+        super().sharp(c, img, d)
+        if self.threat + 0.8 <= c.t < self.breaks[0]:  # what the wall is made of, over it
+            name = f"{self.BLOCK.upper()} WALL"
+            _label(d, (min(W - 250, int((self.WALL + c.shift + 8) * S)), (GROUND - 16 * self.BLOCKS - 14) * S), name,
+                   self.art.small, stroke=6)
+
+
+def wall_stops(block: str) -> tuple:
+    """The wall of `block` alone, with the narrator's own axe (the same for a block every time)."""
+    from . import spin
+
+    if block not in WALLS:
+        raise ValueError(f"No such wall for an axe Short: {block}")
+    slug = block.lower().replace(" ", "-")
+    axe = random.Random(f"wall-{block}").choice(list(spin.AXES))
+    return (type("Wall", (Wall,), {"BLOCK": block, "MINE": axe, "TILE": f"tile:{slug}", "BITS": WALLS[block][1]}),)
+
+
+def _wall(only) -> str:
+    """The block of a wall Short's `only` ("wall:Oak Log"), "" otherwise."""
+    return only[len(WALL):] if isinstance(only, str) and only.startswith(WALL) else ""
+
+
 def twice_foes() -> list[str]:
     """The mobs a Pause Twice Short can be against (every one the weapon Shorts know)."""
     from . import spin
@@ -2053,6 +2157,8 @@ def _stops(only=0) -> tuple:
         return twice_stops(foe)
     if foe := _duel(only):
         return fight_stops(foe)
+    if block := _wall(only):
+        return wall_stops(block)
     if not only:
         return STOPS
     stop = next((s for s in solos() if s.N == only), None)
@@ -2066,7 +2172,7 @@ def scripts(only: int = 0) -> list[list[tuple[str, str]]]:
     if _foe(only):
         loot, fight = _stops(only)
         return [loot.lines(TWICE_HEARTS), fight.lines(TWICE_HEARTS + loot.mine().delta)]
-    if _duel(only):
+    if _duel(only) or _wall(only):
         return [_stops(only)[0].lines(HEARTS)]
     if only:
         return [_stops(only)[0].alone()]
@@ -2316,6 +2422,13 @@ def texts(only: int = 0) -> dict:
                                "yours, and a slow weapon costs more hearts. Comment how many hearts you have left.",
                 "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].AFTER}. "
                           "Send this to a friend and see who keeps more."}
+    if block := _wall(only):
+        return {"title": WALL_TITLE.format(block=block), "card": "PAUSE TO BREAK THE WALL",
+                "description": f"Ten hearts and a wall of {WALLS[block][0]}. Pause the video: the axe you stop on is "
+                               "yours. A slow axe, and the skeleton's arrows find you. Comment how many hearts you "
+                               "have left.",
+                "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].after()}. "
+                          "Gold is the fastest axe on wood. Send this to a friend and see who breaks out first."}
     if not only:
         return {"title": TITLE, "card": TITLE_CARD, "description": DESCRIPTION,
                 "pinned": PINNED.format(hearts=run()[-1])}
@@ -2382,7 +2495,7 @@ def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):
     stops = _stops(only)  # an unknown stop stops here
     progress(0.02, "Reading the stop" if only else "Reading the seven stops")
     slug = lambda mob: mob.lower().replace(" ", "-")  # noqa: E731
-    name = f"twice_{slug(_foe(only))}_" if _foe(only) else f"fight_{slug(_duel(only))}_" if _duel(only) else \
+    name = f"wall_{slug(_wall(only))}_" if _wall(only) else f"twice_{slug(_foe(only))}_" if _foe(only) else f"fight_{slug(_duel(only))}_" if _duel(only) else \
         f"{stops[0].SLUG}_" if only else ""
     output = settings.shorts_dir / f"{PREFIX}{name}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
     _make(settings, output, progress, only)
