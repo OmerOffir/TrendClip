@@ -49,17 +49,17 @@ WALLS = {"Cobblestone": (2.0, 0), "Obsidian": (50.0, 3)}  # name -> (hardness, m
 
 NARRATION = {
     "mob": ("{game} dungeon run, part {n} of {total}. {article} {what} blocks the way. Pause the video right now. "
-            "The weapon you stop on is yours. How many hits to win? Comment your hits. "
+            "The weapon you stop on is yours. How many hits to win? {mythic} Comment your hits. "
             "Then send this to a friend, and see who wins the fight. {follow}"),
     "chest": ("{game} dungeon run, part {n} of {total}. You found a chest. Pause the video right now. "
-              "The loot you stop on is yours. Keep it for the final boss. Comment your loot. "
+              "The loot you stop on is yours. Keep it for the final boss. {mythic} Comment your loot. "
               "Then send this to a friend, and see who gets the better loot for the dungeon. {follow}"),
     "wall": ("{game} dungeon run, part {n} of {total}. {article} {what} wall blocks the way. Pause the video right "
-             "now. The tool you stop on is yours. How long to break through? Comment your time. "
+             "now. The tool you stop on is yours. How long to break through? {mythic} Comment your time. "
              "Then send this to a friend, and see who breaks through first. {follow}"),
     "boss": ("{game} dungeon run, part {n} of {total}. The final boss. {article} {what} is waiting. Pause the video "
              "right now. The weapon you stop on is yours. How many hits to win? Got a totem from a chest? You get "
-             "one more life. Comment your hits. Then send this to a friend, and see who beats "
+             "one more life. {mythic} Comment your hits. Then send this to a friend, and see who beats "
              "the boss. {follow}"),
 }
 TITLES = {
@@ -70,8 +70,9 @@ TITLES = {
 }
 END_CARDS = {"mob": "Comment your hits", "chest": "Comment your loot", "wall": "Comment your time",
              "boss": "Comment your hits"}
-PINNED = "What did you get? 👇\nDungeon Run part {n} of {total}: part {next} is next. Can you reach the boss?"
-PINNED_LAST = "What did you get? 👇\nThe end of the Dungeon Run: did you beat the {what}?"
+PINNED = ("What did you get? 👇\nDungeon Run part {n} of {total}: part {next} is next. Can you reach the boss?"
+          "{mythic_pin}")
+PINNED_LAST = "What did you get? 👇\nThe end of the Dungeon Run: did you beat the {what}?{mythic_pin}"
 DESCRIPTION = ("A Minecraft dungeon run, one room per Short: part {n} of {total}. Pause the video: what you stop on "
                "is yours. Comment what you got.")
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftdungeon"]
@@ -178,7 +179,7 @@ def script(settings: Settings, game: str, part: int, *, format: str = "short"):
     fill = {"game": game_name, "n": part, "total": PARTS, "what": what.lower() if kind == "wall" else what,
             "article": spin.article(what), "next": part + 1,
             "follow": f"Follow, so you don't miss part {part + 1}." if part < PARTS
-            else "Follow for the next dungeon."}  # the owner, 2026-11-10: longer, with share + follow
+            else "Follow for the next dungeon.", **spin.MYTHIC_FILL}  # the owner, 2026-11-10: longer, with share + follow
     title = TITLES[kind].format(**fill)
     pack = SimpleNamespace(title=title, description=DESCRIPTION.format(**fill), hashtags=HASHTAGS,
                            title_card=f"PART {part} OF {PARTS}")
@@ -335,6 +336,7 @@ def plan(settings: Settings, words: list[Word], script_text: str, seed: str = ""
     rng = random.Random(seed or f"dungeon-{part}")
     count = int((total - switch) * fps / spin.HOLD) + 2
     cards = [room_card(settings, part, n, found, cache) for n in deck(names, count, rng)]
+    spin.add_mythic(settings, cards, script_text, seed or f"dungeon-{part}", set(names), fps=fps, start=switch)
     path = out_dir / f"{stem}.webp"
     cards[0].save(path, save_all=True, append_images=cards[1:], duration=round(1000 * spin.HOLD / fps), loop=0,
                   lossless=False, quality=90)

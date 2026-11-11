@@ -496,7 +496,10 @@
   const GAMER_BUTTON = { "catch the zombie": "🧟 Make a Catch the Zombie level",
     "guess the picture": "🧱 Make a Guess the Picture level", "pause to get your block": "⏸️ Make a Pause to Get Your Block",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
-    "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon" };
+    "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
+    "pause to fight your friend": "🤝 Make a Pause to Fight Your Friend",
+    "pause to get your mob": "🐺 Make a Pause to Get Your Mob",
+    "pause twice": "🎁 Make a Pause Twice Short" };
 
   function updateButtons() {
     const busyScript = state.scriptJob != null;

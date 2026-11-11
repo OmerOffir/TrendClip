@@ -1325,6 +1325,12 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     if dungeon.wanted(notes) and dungeon.ready(settings):  # Dungeon Run: the part asked for
         progress(None, f"Dungeon Run part {dungeon.wanted(notes)}")
         return dungeon.script(settings, game, dungeon.wanted(notes), format=format)
+    from . import arena
+
+    if (kind := arena.wanted(notes)) and arena.ready(settings, kind):  # fight your friend / your mob / pause twice
+        progress(None, {"friend": "A Pause to Fight Your Friend Short", "pet": "A Pause to Get Your Mob Short",
+                        "double": "A Pause Twice Short"}[kind])
+        return arena.script(settings, game, kind, format=format, rng=rng)
     if spin.wanted(notes) and spin.weapon_wanted(notes) and spin.weapon_catalog(settings):  # Pause to Get Your Weapon
         progress(None, "A Pause to Get Your Weapon Short")
         return spin.script(settings, game, format=format, kind="weapon", rng=rng)

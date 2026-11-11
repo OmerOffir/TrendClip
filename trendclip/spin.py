@@ -56,12 +56,13 @@ PANEL = (128, 132, 146)
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. Pause the video right now. The block you stop on is yours. Grey is common. Blue is rare. "
-          "Purple is epic. Gold is legendary. Got gold? Comment your block. Then send this to a friend, "
+          "Purple is epic. Gold is legendary. Got gold? {mythic} Comment your block. Then send this to a friend, "
           "and see who gets the better one.")
 TITLE = "Pause To Get Your {game} Block 🎮"
 CARD = "PAUSE NOW!"  # one line: the four-line "PAUSE NOW - WHAT DID YOU GET?" covered the rarity label
 END_CARD = "Comment your block"
-PINNED = "What block did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better one."
+PINNED = ("What block did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better one."
+          "{mythic_pin}")
 DESCRIPTION = "Pause the video: the {game} block you stop on is yours. Comment what you got and challenge a friend."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftblocks"]
 
@@ -84,11 +85,18 @@ def weapon_wanted(notes: str = "") -> bool:
 def kind_of(script_text: str) -> str:
     """Which cards a spin Short flicks through, read off its fixed narration."""
     text = script_text or ""
-    from . import dungeon
+    from . import arena, dungeon
 
     if dungeon.MARK in text.lower():
         return "dungeon"
+    if kind := arena.kind_of(text):
+        return kind
     return "weapon" if WEAPON_MARK in text else "axe" if AXE_MARK in text else "block"
+
+
+def tall(script_text: str) -> bool:
+    """Whether the Short's card is the tall one (the boss card's size and place): captions and stickers move."""
+    return kind_of(script_text) in ("weapon", "dungeon", "pet", "double")
 
 
 def library_dir(settings: Settings) -> Path:
@@ -127,7 +135,7 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
     }.get(kind, (SCRIPT, TITLE, DESCRIPTION, HASHTAGS, PINNED, END_CARD))
     boss = (rng or random.Random()).choice([b["name"] for b in weapon_catalog(settings)["bosses"]]) \
         if kind == "weapon" else ""
-    fill = {"game": game_name, "boss": boss, "article": article(boss) if boss else ""}
+    fill = {"game": game_name, "boss": boss, "article": article(boss) if boss else "", **MYTHIC_FILL}
     pack = SimpleNamespace(title=title.format(**fill), description=description.format(**fill),
                            hashtags=hashtags, title_card=CARD)
     out = quiz._script(settings, game, "builtin", "gamer", format, words.format(**fill),
@@ -135,6 +143,80 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
                        on_screen=f"Pause to get your {kind if kind in ('axe', 'weapon') else 'block'}", card=CARD,
                        end_card=end_card)
     return out.model_copy(update={"spin": True, "reactions": []})
+
+
+# --------------------------------------------------------------------------- the mythic card
+# One card in the whole video is a mythic: it shows once, for one card's HOLD frames, somewhere in the middle. There
+# are eight to collect across the channel's pause Shorts, so a viewer hunts for it frame by frame and comes back for
+# the ones they lack (the owner, 2026-11-11). Only a Short whose narration says so has one.
+
+MYTHIC_MARK = "mythic card"
+MYTHIC_FILL = {"mythic": "One frame hides a mythic card.",
+               "mythic_pin": "\n🔮 One frame hides a MYTHIC card. Caught it? Comment its name."}
+MYTHICS = ["Dragon Egg", "Totem of Undying", "Enchanted Golden Apple", "Bedrock", "Beacon", "Conduit", "Mace",
+           "Trident"]
+MYTHIC_COLOUR = (255, 60, 190)
+assert MYTHIC_MARK in MYTHIC_FILL["mythic"]
+
+
+def mythic_pick(settings: Settings, seed: str, shown: set[str]) -> dict | None:
+    """The video's mythic: one of MYTHICS that has a picture and is not among the video's own cards."""
+    from . import dungeon
+
+    found = dungeon.pictures(settings)
+    names = [n for n in MYTHICS if n in found and n not in shown]
+    return found[random.Random(f"{seed}-mythic").choice(names)] if names else None
+
+
+def mythic_card(size: tuple[int, int], entry: dict, cache: dict | None = None):
+    """The mythic card, as big as the video's other cards: pink frame, the item huge, its number of the eight."""
+    from PIL import Image, ImageDraw
+
+    from .reveal import _font
+
+    w, h = size
+    img = Image.new("RGBA", size, (16, 8, 22, 255))
+    d = ImageDraw.Draw(img)
+    for k in range(0, w + h, 46):  # diagonal stripes: it looks like no other card, even for one frame
+        d.line([(k, 0), (k - h, h)], fill=(52, 16, 52), width=18)
+    d.rectangle([0, 0, w - 1, h - 1], outline=MYTHIC_COLOUR, width=FRAME + 8)
+    d.rectangle([FRAME, FRAME, w - FRAME, FRAME + 110], fill=MYTHIC_COLOUR)
+
+    def centred(words: str, y: float, size_: int, fill: tuple) -> None:
+        while size_ > 28 and d.textlength(words, font=_font(size_)) > w - 2 * FRAME - 40:
+            size_ -= 4
+        d.text(((w - d.textlength(words, font=_font(size_))) / 2, y), words, font=_font(size_), fill=fill)
+
+    centred("MYTHIC CARD", FRAME + 12, 72, (255, 255, 255))
+    bar, top = 150, FRAME + 110 + 20
+    side = max(120, min(w - 2 * FRAME - 160, h - FRAME - bar - top - 20 - 150))  # 150: the name and the number
+    d.rounded_rectangle([(w - side) // 2 - 20, top, (w + side) // 2 + 20, top + side + 20], radius=28, fill=PANEL)
+    pic = _fit(entry["path"], side - 20, cache if cache is not None else {})
+    img.alpha_composite(pic, ((w - pic.width) // 2, top + 10 + (side - pic.height) // 2))
+    number = f"{MYTHICS.index(entry['name']) + 1} OF {len(MYTHICS)}"
+    centred(entry["name"].upper(), top + side + 24, 62, (255, 255, 255))
+    centred(f"MYTHIC {number}", top + side + 96, 42, MYTHIC_COLOUR)
+    y0 = h - FRAME - bar
+    d.rectangle([FRAME, y0, w - FRAME, h - FRAME], fill=MYTHIC_COLOUR)
+    centred("YOU CAUGHT THE 1-FRAME CARD!", y0 + 12, 60, (255, 255, 255))
+    centred("COMMENT ITS NAME", y0 + 82, 48, (30, 8, 30))
+    return img
+
+
+def add_mythic(settings: Settings, cards: list, script_text: str, seed: str, shown: set[str], fps: int = 30,
+               start: float = 0.0) -> tuple[str, float] | None:
+    """Swap one card in the middle of `cards` (35% to 85% of the way) for the video's mythic, when the narration
+    promises one. Returns (its name, the second it shows) for the log."""
+    if MYTHIC_MARK not in (script_text or "").lower() or len(cards) < 10:
+        return None
+    entry = mythic_pick(settings, seed, shown)
+    if entry is None:
+        return None
+    at = random.Random(f"{seed}-mythic-at").randrange(int(len(cards) * 0.35), int(len(cards) * 0.85))
+    cards[at] = mythic_card(cards[at].size, entry)
+    second = round(start + at * HOLD / fps, 2)
+    logger.info("Mythic card: %s at %.2f s", entry["name"], second)
+    return entry["name"], second
 
 
 # --------------------------------------------------------------------------- the cards
@@ -200,18 +282,27 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         from . import dungeon
 
         return dungeon.plan(settings, words, script_text, seed=seed, tail=tail, fps=fps)
+    if kind in ("friend", "pet", "double"):
+        from . import arena
+
+        return arena.plan(settings, words, script_text, kind, seed=seed, tail=tail, fps=fps)
     rng = random.Random(seed or "spin")
     total = words[-1].end + tail
     count = int(total * fps / HOLD) + 2
     cache: dict = {}
+    spoken = script_text or " ".join(w.text for w in words)
     if kind == "axe":
         cards = [axe_card(settings, a, w, cache) for a, w in axe_deck(axe_catalog(settings), count, rng)]
+        shown = set(AXES) | set(WALL)
     elif kind == "weapon":
         found = weapon_catalog(settings)
-        boss = next(b for b in found["bosses"] if b["name"] == boss_of(script_text or " ".join(w.text for w in words)))
+        boss = next(b for b in found["bosses"] if b["name"] == boss_of(spoken))
         cards = [boss_card(settings, boss, w, cache) for w in weapon_deck(found, count, rng)]
+        shown = set(WEAPONS)
     else:
         cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
+        shown = set(BLOCKS)
+    add_mythic(settings, cards, spoken, seed or "spin", shown, fps=fps)
     out_dir = settings.assets_dir / "cache" / "spin"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / (re.sub(r"[^a-z0-9]+", "-", (seed or "spin").lower())[:40].strip("-") + ".webp")
@@ -248,11 +339,12 @@ WALL = {  # name -> (hardness or None for unbreakable, needs a pickaxe to drop, 
 }
 AXE_SCRIPT = ("{game} fans only. Pause the video right now. The axe you stop on is yours, and so is the wall next "
               "to it. Can your axe break through? Netherite is legendary. But on wood, gold is the fastest. "
-              "Comment your time. Then send this to a friend, and see who breaks out first.")
-assert AXE_MARK in AXE_SCRIPT
+              "{mythic} Comment your time. Then send this to a friend, and see who breaks out first.")
+assert AXE_MARK in AXE_SCRIPT and "{mythic}" in AXE_SCRIPT
 AXE_TITLE = "Pause To Get Your {game} Axe 🪓"
 AXE_END_CARD = "Comment your time"
-AXE_PINNED = "What did you get? 👇 Axe + wall + time ⏱️\nSend this to a friend and see who breaks out first."
+AXE_PINNED = ("What did you get? 👇 Axe + wall + time ⏱️\nSend this to a friend and see who breaks out first."
+              "{mythic_pin}")
 AXE_DESCRIPTION = ("Pause the video: the {game} axe you stop on is yours, and so is the wall. How long does it take "
                    "to break? Comment your time and challenge a friend.")
 AXE_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftaxe"]
@@ -352,7 +444,8 @@ def axe_card(settings: Settings, axe: dict, wall: dict, cache: dict):
 
 
 def versus_card(left: dict, left_label: str, right: dict, tier: str, text: str, bar: tuple, cache: dict,
-                right_size: int | None = None):
+                right_size: int | None = None, left_colour: tuple = WALL_COLOUR, right_label: str = "",
+                left_size: int | None = None):
     """Two pictures side by side with VS between them: `left` under a grey label, `right` under its tier, the
     frame in the tier's colour and `text` on a `bar`-coloured strip across the bottom."""
     from PIL import Image, ImageDraw
@@ -365,15 +458,21 @@ def versus_card(left: dict, left_label: str, right: dict, tier: str, text: str, 
     half = AW // 2
     d.rectangle([0, 0, AW - 1, AH - 1], outline=colour, width=FRAME)
     head = 92
-    d.rectangle([FRAME, FRAME, half - 6, FRAME + head], fill=WALL_COLOUR)
+    d.rectangle([FRAME, FRAME, half - 6, FRAME + head], fill=left_colour)
     d.rectangle([half + 6, FRAME, AW - FRAME, FRAME + head], fill=colour)
     label = _font(58)
-    for words, x0, x1, fill in ((left_label, FRAME, half - 6, (255, 255, 255)),
-                                (tier.upper(), half + 6, AW - FRAME,
+    light = lambda c: (20, 20, 20) if sum(c) > 400 else (255, 255, 255)  # noqa: E731
+    for words, x0, x1, fill in ((left_label, FRAME, half - 6, light(left_colour) if left_colour != WALL_COLOUR
+                                 else (255, 255, 255)),
+                                (right_label or tier.upper(), half + 6, AW - FRAME,
                                  (20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))):
-        d.text(((x0 + x1 - d.textlength(words, font=label)) / 2, FRAME + 8), words, font=label, fill=fill)
+        size = 58
+        while size > 34 and d.textlength(words, font=_font(size)) > x1 - x0 - 20:
+            size -= 4
+        d.text(((x0 + x1 - d.textlength(words, font=_font(size))) / 2, FRAME + 8 + (58 - size) // 2), words,
+               font=_font(size), fill=fill)
     top = FRAME + head + 24
-    for entry, x0, x1, size in ((left, FRAME, half - 6, APIC), (right, half + 6, AW - FRAME, right_size or APIC)):
+    for entry, x0, x1, size in ((left, FRAME, half - 6, left_size or APIC), (right, half + 6, AW - FRAME, right_size or APIC)):
         mid = (x0 + x1) // 2
         d.rounded_rectangle([mid - APIC // 2 - 20, top, mid + APIC // 2 + 20, top + APIC + 40], radius=26,
                             fill=PANEL)
@@ -440,12 +539,12 @@ FOES = {"Zombie": (20, 2), "Skeleton": (20, 0), "Enderman": (40, 0)}  # the dung
 ARROW_PROOF = {"Wither": "ARROWS BOUNCE OFF", "Enderman": "DODGES ARROWS", "Breeze": "DEFLECTS ARROWS"}
 WEAPON_SCRIPT = ("{game} fans only. {article} {boss} is coming for you. Pause the video right now. "
                  "The weapon you stop on is yours. How many hits to win? Netherite and the mace are legendary. "
-                 "Comment your hits. Then send this to a friend, and see who wins the fight.")
+                 "{mythic} Comment your hits. Then send this to a friend, and see who wins the fight.")
 assert WEAPON_MARK in WEAPON_SCRIPT
 WEAPON_TITLE = "Pause To Get Your Weapon vs The {boss} ⚔️"
 WEAPON_END_CARD = "Comment your hits"
 WEAPON_PINNED = ("What did you get vs the {boss}? 👇 Weapon + hits ⚔️\n"
-                 "Send this to a friend and see who wins the fight.")
+                 "Send this to a friend and see who wins the fight.{mythic_pin}")
 WEAPON_DESCRIPTION = ("Pause the video: the {game} weapon you stop on is yours. How many hits to beat the {boss}? "
                       "Comment your hits and challenge a friend.")
 WEAPON_HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftweapons"]

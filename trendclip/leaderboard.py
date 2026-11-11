@@ -747,6 +747,18 @@ def about(v: Video) -> str:
             return (f"{none}\nA pause game: the viewer pauses on a random weapon and comments the weapon and how "
                     f"many hits it needs to beat the {boss} ({spin.health_of(boss)} health). Hits by weapon: {hits}. "
                     f"Fewer hits is better. Weapon rarity: {tiers(spin.WEAPONS)}.")
+    mythic = (" One frame of the video hides a mythic card (one of: " + ", ".join(spin.MYTHICS) + "); a viewer who "
+              "names it caught it: congratulate them.")
+    if "Fight Your Friend" in v.title:
+        return (f"{none}\nA pause game: the viewer pauses on two random weapons, the left one theirs and the right "
+                "one their friend's; the one with more attack damage wins. They comment who won." + mythic)
+    if m := re.search(r"Your Mob vs The ([A-Za-z ]+)", v.title):
+        return (f"{none}\nA pause game: the viewer pauses on a random mob that fights the {m.group(1).strip()} for "
+                "them, hit for hit, their mob first. They comment the mob they got and whether it won." + mythic)
+    if v.title.startswith("Pause Twice"):
+        return (f"{none}\nA pause game with two pauses: the viewer starts with 5 hearts, opens a chest (food gives "
+                "up to 3 hearts back, rotten flesh takes 1), then fights with a random weapon (losing 1 to 3 hearts). "
+                "They comment the hearts left: 1 to 7, and 7 is the perfect run." + mythic)
     if re.search(r"Pause To Get Your .*Axe", v.title):
         return (f"{none}\nA pause game: the viewer pauses on a random axe and a wall and comments how long the axe "
                 f"takes to break out. Axe rarity: {tiers(spin.AXES)}. On wood the golden axe is the fastest.")

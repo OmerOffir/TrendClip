@@ -43,7 +43,14 @@ def plan(info: dict) -> dict | None:
     hearts = 10 if quest else 0
     low = title.lower()
     if m := re.search(r"Weapon vs The ([A-Za-z ]+)", title):
-        return fight(m.group(1), "HOW MANY HITS?", "Netherite Sword")
+        return fight(m.group(1).strip(), "HOW MANY HITS?", "Netherite Sword")
+    if m := re.search(r"Your Mob vs The ([A-Za-z ]+)", title):  # your mob (a wolf here) bites the boss
+        ally = "Iron Golem" if m.group(1).strip() == "Wolf" else "Wolf"
+        return {**fight(m.group(1).strip(), "CAN YOUR MOB WIN?", ally), "ally": True}
+    if "fight your friend" in low:
+        return {"kind": "duel", "text": "WHO WINS?"}
+    if m := re.search(r"Pause Twice To Beat The ([A-Za-z ]+)", title):
+        return fight(m.group(1).strip(), "CAN YOU SURVIVE?", "Diamond Sword", hearts=5, top="PAUSE TWICE!")
     if "final boss" in low:
         m = re.search(r"(?:A|An|The) ([A-Z][A-Za-z ]+?) is waiting", script)
         return fight(m.group(1) if m else DUNGEON_BOSS, "FINAL BOSS", "Diamond Sword", top="CAN YOU WIN?")
@@ -95,6 +102,8 @@ def available(scene: dict | None) -> bool:
         return picture(scene["tool"]) is not None
     if scene["kind"] == "chest":
         return picture("Chest") is not None
+    if scene["kind"] == "duel":
+        return picture("Diamond Sword") is not None and picture("Netherite Axe") is not None
     if scene["kind"] == "blocks":
         return picture("Netherite Block") is not None
     return True
@@ -316,7 +325,7 @@ def sky() -> Image.Image:
 
 def draw(scene: dict, base: Image.Image) -> Image.Image:
     return {"fight": draw_fight, "wall": draw_wall, "chest": draw_chest, "blocks": draw_blocks,
-            "lava": draw_lava}[scene["kind"]](scene, base)
+            "lava": draw_lava, "duel": draw_duel}[scene["kind"]](scene, base)
 
 
 def draw_fight(scene: dict, base: Image.Image) -> Image.Image:
@@ -330,8 +339,11 @@ def draw_fight(scene: dict, base: Image.Image) -> Image.Image:
     img = backdrop(base, (255, 40, 30), hit, scene.get("night", False))
     paste_glowing(img, outline(hurt(sprite), (40, 0, 0), 6), (at[0] - 6, at[1] - 6), (255, 40, 30), 30, 1.6)
     blade = scaled(weapon, 480, 480)
-    blade = outline(blade, BLACK, 10).rotate(8, expand=True, resample=Image.NEAREST)
-    swing_trail(img, (hit[0] - 60, hit[1] + 360), 520, 200, 300)
+    if scene.get("ally"):  # a mob, not a weapon: it stands low on the left and looks at the boss
+        blade = outline(blade.transpose(Image.FLIP_LEFT_RIGHT), BLACK, 8)
+    else:
+        blade = outline(blade, BLACK, 10).rotate(8, expand=True, resample=Image.NEAREST)
+        swing_trail(img, (hit[0] - 60, hit[1] + 360), 520, 200, 300)
     burst(img, hit, 190)
     bx, by = hit[0] - int(blade.width * 0.84), hit[1] - int(blade.height * 0.2)
     paste_glowing(img, blade, (max(-60, bx), by), (255, 255, 255), 22, 1.2)
@@ -345,8 +357,32 @@ def draw_fight(scene: dict, base: Image.Image) -> Image.Image:
     headline(img, scene["top"], 110, 120, box=YELLOW, lines=1)
     boss_bar(img, scene["mob"], 330)
     if scene.get("hearts"):
-        hearts_row(img, 1320)
+        hearts_row(img, 1320, scene["hearts"])
     headline(img, scene["text"], None, 150)
+    badge(img)
+    return img
+
+
+def draw_duel(scene: dict, base: Image.Image) -> Image.Image:
+    """You against your friend: two weapons clash in the middle, YOU on the left, YOUR FRIEND on the right."""
+    centre = (540, 930)
+    img = backdrop(base, (255, 60, 40), centre)
+    half = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(half)
+    d.polygon([(0, 300), (600, 300), (480, 1560), (0, 1560)], fill=(40, 110, 255, 90))  # blue corner, red corner
+    d.polygon([(600, 300), (W, 300), (W, 1560), (480, 1560)], fill=(255, 50, 40, 90))
+    img.alpha_composite(half)
+    mine = outline(scaled(picture("Diamond Sword"), 520, 520), BLACK, 10)
+    theirs = outline(scaled(picture("Netherite Axe"), 520, 520), BLACK, 10).transpose(Image.FLIP_LEFT_RIGHT)
+    burst(img, (centre[0], centre[1] - 150), 210)
+    paste_glowing(img, mine, (centre[0] - mine.width + 110, centre[1] - 190), (90, 160, 255), 24, 1.4)
+    paste_glowing(img, theirs, (centre[0] - 110, centre[1] - 190), (255, 80, 60), 24, 1.4)
+    d = ImageDraw.Draw(img)
+    for words, x, colour in (("YOU", 240, (90, 170, 255)), ("FRIEND", 820, (255, 90, 70))):
+        d.text((x, 440), words, font=font(120), fill=colour, stroke_width=10, stroke_fill=BLACK, anchor="mm")
+    d.text((centre[0] - 30, 440), "VS", font=font(70), fill=WHITE, stroke_width=8, stroke_fill=BLACK, anchor="mm")
+    headline(img, "PAUSE NOW!", 110, 120, box=YELLOW, lines=1)
+    headline(img, scene["text"], None, 190)
     badge(img)
     return img
 

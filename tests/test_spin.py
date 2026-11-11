@@ -22,7 +22,7 @@ def library(s: Settings) -> None:
     (folder / "catalog.json").write_text(json.dumps(entries))
 
 
-SPOKEN = spin.SCRIPT.format(game="Minecraft")
+SPOKEN = spin.SCRIPT.format(game="Minecraft", **spin.MYTHIC_FILL)
 
 
 def words() -> list[Word]:
@@ -178,7 +178,7 @@ def test_a_weapon_short_puts_one_boss_over_the_flicking_weapons(tmp_path):
         seen.add(boss)
         assert result.title == f"Pause To Get Your Weapon vs The {boss} ⚔️" and spin.kind_of(result.script) == "weapon"
     assert "Elder Guardian" in seen and "An Elder Guardian is coming" in spin.WEAPON_SCRIPT.format(
-        game="Minecraft", article=spin.article("Elder Guardian"), boss="Elder Guardian")
+        game="Minecraft", article=spin.article("Elder Guardian"), boss="Elder Guardian", **spin.MYTHIC_FILL)
     spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
     [overlay] = spin.plan(s, spoken, seed="w", kind="weapon", script_text=result.script)
     assert overlay.center == spin.BOSS_CENTER
@@ -237,5 +237,5 @@ def test_every_dungeon_part_ends_on_share_and_follow():
     for part in range(1, dungeon.PARTS + 1):
         kind, what = dungeon.ROOMS[part - 1]
         text = dungeon.NARRATION[kind].format(game="Minecraft", n=part, total=8, what=what, article="A",
-                                              next=part + 1, follow="Follow.")
+                                              next=part + 1, follow="Follow.", **spin.MYTHIC_FILL)
         assert "send this to a friend" in text and text.endswith("Follow.")
