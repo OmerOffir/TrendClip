@@ -297,6 +297,20 @@ def texture(kind: str, seed: int) -> Image.Image:
     return tex
 
 
+def sky() -> Image.Image:
+    """A Minecraft night sky with square stars, for a Short with no gameplay behind it."""
+    img = Image.new("RGB", (W, H))
+    d = ImageDraw.Draw(img)
+    for y in range(0, H, 8):
+        t = y / H
+        d.rectangle([0, y, W, y + 8], fill=(int(30 + 30 * t), int(36 + 10 * t), int(90 - 60 * t)))
+    rng = random.Random(1)
+    for _ in range(90):
+        x, y, s = rng.randrange(W), rng.randrange(H), rng.choice((6, 8, 12))
+        d.rectangle([x, y, x + s, y + s], fill=(230, 230, 255))
+    return img
+
+
 # --------------------------------------------------------------------------- the scenes
 
 

@@ -204,16 +204,17 @@ def sidequest(video: Path, out: Path) -> None:
     """A clean frame of the gameplay (the clip the video was cut from), else of the video itself."""
     info = json.loads(video.with_suffix(".json").read_text(encoding="utf-8"))
     clip = PROJECT_ROOT / "assets" / "backgrounds" / str(info.get("background") or "")
-    if info.get("background") and clip.is_file():
-        img = video_frame(clip, duration(clip) * 0.3)
-    else:
-        img = video_frame(video, 0.1)
+    has_clip = bool(info.get("background")) and clip.is_file()
     from modules import sql_thumb
 
     scene = sql_thumb.plan(info)
     if sql_thumb.available(scene):  # a fight, a wall, a chest...: the moment drawn as a scene
-        sql_thumb.draw(scene, ImageEnhance.Color(cover(img)).enhance(1.3)).convert("RGB").save(out, quality=92)
+        # behind it the gameplay, or a night sky when the Short has none (a quest's first frame is all words)
+        base = ImageEnhance.Color(cover(video_frame(clip, duration(clip) * 0.3))).enhance(1.3) if has_clip \
+            else sql_thumb.sky()
+        sql_thumb.draw(scene, base).convert("RGB").save(out, quality=92)
         return
+    img = video_frame(clip, duration(clip) * 0.3) if has_clip else video_frame(video, 0.1)
     img = ImageEnhance.Color(ImageEnhance.Contrast(cover(img)).enhance(1.15)).enhance(1.3).convert("RGBA")
     shade(img, 0.5, 0.25, 190)
     card = " ".join(str(info.get("title_card") or info.get("title") or "").upper().split())
