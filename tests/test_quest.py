@@ -226,3 +226,25 @@ def test_the_mob_short_drawn_counts_hearts_by_how_the_fight_ends():
     assert seen == {7, 8, 10}  # the narrator wins some, loses some, and once his mob can't even attack
     with pytest.raises(ValueError, match="No such boss"):
         quest.scripts(f"{quest.PET}Warden")
+
+
+def test_a_video_made_from_the_card_takes_the_next_free_slot(tmp_path, monkeypatch):
+    from trendclip import planner
+
+    s = settings(tmp_path)
+    monkeypatch.setattr(quest, "missing", lambda settings: [])
+    monkeypatch.setattr("trendclip.dungeon.pictures", lambda settings: {m: {} for m in quest.twice_foes()})
+    monkeypatch.setattr("trendclip.video_assembler.media_duration", lambda path: 19.0)
+
+    def fake(settings, output, progress, only=0):
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"mp4")
+        quest.record(settings, output, None, only)
+
+    monkeypatch.setattr(quest, "_make", fake)
+    short = web._quest_job(s, "fight:Creeper")(lambda *a: None)
+    [item] = planner.load(s).items
+    assert item.short == short.filename and item.slot and item.title == "Pause To Beat The Creeper ⚔️"
+    monkeypatch.setattr(web, "_base_settings", lambda: s)
+    [video] = TestClient(web.app).get("/api/gamer/quest").json()["videos"]
+    assert video["planned"] == f"{item.date.isoformat()} {item.slot}" and video["title"] == item.title

@@ -45,7 +45,8 @@
     }
     list.innerHTML = q.videos.map((v) => {
       const mins = v.seconds ? ` · ${Math.floor(v.seconds / 60)}:${String(Math.round(v.seconds % 60)).padStart(2, "0")}` : "";
-      return `<li>🎬 ${esc(v.filename)}${mins} · ${v.uploaded ? "on YouTube" : "waiting in Upload"}</li>`;
+      const where = v.uploaded ? "on YouTube" : v.planned ? `📅 planned for ${esc(v.planned)}` : "waiting in Upload, not planned";
+      return `<li>🎬 <b>${esc(v.title || "")}</b> · ${esc(v.filename)}${mins} · ${where}</li>`;
     }).join("");
   }
 
@@ -71,7 +72,7 @@
     await load();
     if (job.status === "done") {  // which video: every button on this card reports here
       const made = job.result || {};
-      state.textContent = made.filename ? `✅ Made "${made.title || made.filename}" (${made.filename}): it waits in Upload`
+      state.textContent = made.filename ? `✅ Made "${made.title || made.filename}" (${made.filename}): it is in Upload and on the plan's next free slot (the list below says when)`
         : "✅ Made: it waits in Upload";
     }
   }

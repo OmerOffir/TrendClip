@@ -1198,14 +1198,32 @@ def gamer_quest_view() -> dict[str, Any]:
     from .. import dungeon
 
     settings = _base_settings()
+    planned = {i.short: f"{i.date.isoformat()} {i.slot or ''}".strip() for i in planner.load(settings).items if i.short}
     return {"title": quest.TITLE, "stops": [stop.NAME.title() for stop in quest.STOPS], "hearts": quest.run()[-1],
             "missing": quest.missing(settings),
             "solos": [{"stop": stop.N, "name": stop.NAME.title(), "title": stop.SOLO} for stop in quest.solos()],
             "walls": list(quest.WALLS), "bosses": quest.pet_bosses(),
             "foes": [m for m in quest.twice_foes() if m in dungeon.pictures(settings)],
             "videos": [{"filename": v.filename, "seconds": v.duration_seconds, "created_at": v.created_at.isoformat(),
+                        "title": v.title, "planned": planned.get(v.filename, ""),
                         "uploaded": bool((v.uploads.get("youtube") or {}).get("video_id"))}
                        for v in quest.videos(settings)]}
+
+
+def _quest_job(settings: Settings, only):
+    """Make the video, then put it on the plan's next free slot (the owner, 2026-11-11: a video left in Upload
+    alone was not found); with every slot taken it just waits in Upload."""
+    def run(progress):
+        from .. import quest
+
+        short = quest.create(settings, progress, only)
+        try:
+            assistant.plan_short(settings, short.filename)
+        except ValueError as err:
+            logger.warning("%s is not planned: %s", short.filename, err)
+        return short
+
+    return run
 
 
 def arena_allies() -> list[str]:
@@ -1242,7 +1260,7 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
         if lost := [m for m in arena_allies() if m not in found][:6]:
             raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost)}: make a Guess the Picture level first")
         only = f"{quest.PET}{req.foe or random.choice(bosses)}"
-        return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
+        return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
     if req and req.wall:
         import random
 
@@ -1251,7 +1269,7 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
         only = f"{quest.WALL}{req.block or random.choice(list(quest.WALLS))}"
         if lost := quest.missing(settings):
             raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost[:6])}: make a pause Short first")
-        return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
+        return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
     if req and (req.twice or req.fight):
         import random
 
@@ -1261,12 +1279,12 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
         if not foes or (req.foe and req.foe not in foes):
             raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any mob'}: make a pause Short first")
         only = f"{quest.TWICE if req.twice else quest.FIGHT}{req.foe or random.choice(foes)}"
-        return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
+        return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
     if only and only not in [stop.N for stop in quest.solos()]:
         raise HTTPException(status_code=400, detail=f"Stop {only} is not a Short of its own")
     if lost := quest.missing(settings):
         raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost[:6])}: make a pause Short first")
-    return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
+    return {"job": _create.submit_call("Minecraft", _quest_job(settings, only)).id}
 
 
 # ---- Gamer IQ "Write a week": any LLM writes the coming week's questions; they go to the hub's queue (trendclip/gamer_week.py)
