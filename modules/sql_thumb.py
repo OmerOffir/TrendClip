@@ -44,6 +44,9 @@ def plan(info: dict) -> dict | None:
     low = title.lower()
     if m := re.search(r"Weapon vs The ([A-Za-z ]+)", title):
         return fight(m.group(1).strip(), "HOW MANY HITS?", "Netherite Sword")
+    if m := re.search(r"Your Mob Beat The ([A-Za-z ]+)", title):  # the drawn mob Short: ten hearts
+        ally = "Iron Golem" if m.group(1).strip() == "Wolf" else "Wolf"
+        return {**fight(m.group(1).strip(), "CAN YOUR MOB WIN?", ally, hearts=10), "ally": True}
     if m := re.search(r"Your Mob vs The ([A-Za-z ]+)", title):  # your mob (a wolf here) bites the boss
         ally = "Iron Golem" if m.group(1).strip() == "Wolf" else "Wolf"
         return {**fight(m.group(1).strip(), "CAN YOUR MOB WIN?", ally), "ally": True}

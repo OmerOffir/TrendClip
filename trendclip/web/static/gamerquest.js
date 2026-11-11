@@ -11,6 +11,8 @@
   const foe = $("gqFoe");
   const makeFight = $("gqMakeFight");
   const makeWall = $("gqMakeWall");
+  const makePet = $("gqMakePet");
+  const boss = $("gqBoss");
   const block = $("gqBlock");
   const state = $("gqState");
   const list = $("gqVideos");
@@ -22,7 +24,10 @@
 
   async function load() {
     const q = (await api("/api/gamer/quest")).body;
-    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = q.missing.length > 0 || make.dataset.busy === "1";
+    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = makePet.disabled = q.missing.length > 0 || make.dataset.busy === "1";
+    if (!boss.options.length) {
+      boss.innerHTML = `<option value="">🎲 A random boss</option>` + q.bosses.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
+    }
     if (!block.options.length) {
       block.innerHTML = `<option value="">🎲 A random wall</option>` + q.walls.map((b) => `<option value="${esc(b)}">${esc(b)}</option>`).join("");
     }
@@ -55,7 +60,7 @@
     }
     if (job.status === "queued" || job.status === "running") {
       make.dataset.busy = "1";
-      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = true;
+      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = makePet.disabled = true;
       state.textContent = job.status === "queued" ? "Waiting for the video before it…"
         : `${job.message}${job.progress != null ? ` (${Math.round(job.progress * 100)}%)` : ""}…`;
       return setTimeout(() => watch(id), 3000);
@@ -69,14 +74,14 @@
 
   async function start(only, twice) {
     showError("");
-    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = true;
+    make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = makePet.disabled = true;
     try {
-      const id = (await api("/api/gamer/quest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(twice ? { [twice]: true, foe: foe.value, block: block.value } : { stop: only }) })).body.job;
+      const id = (await api("/api/gamer/quest", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(twice ? { [twice]: true, foe: twice === "pet" ? boss.value : foe.value, block: block.value } : { stop: only }) })).body.job;
       remember(id);
       watch(id);
     } catch (err) {
       showError(err.message);
-      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = false;
+      make.disabled = makeOne.disabled = makeTwice.disabled = makeFight.disabled = makeWall.disabled = makePet.disabled = false;
     }
   }
 
@@ -85,6 +90,7 @@
   makeTwice.addEventListener("click", () => start(0, "twice"));
   makeFight.addEventListener("click", () => start(0, "fight"));
   makeWall.addEventListener("click", () => start(0, "wall"));
+  makePet.addEventListener("click", () => start(0, "pet"));
 
   load().catch((err) => showError(err.message));
   if (recalled()) watch(recalled());

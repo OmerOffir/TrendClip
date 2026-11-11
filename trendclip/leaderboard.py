@@ -765,7 +765,7 @@ def about(v: Video) -> str:
     if re.search(r"Pause To Get Your .*Block", v.title):
         return (f"{none}\nA pause game: the viewer pauses on a random block and comments which one they got. "
                 f"Block rarity: {tiers(spin.BLOCKS)}.")
-    if re.search(r"Can You Beat Minecraft|^Pause To |^Pick A Door", v.title):
+    if re.search(r"Can You Beat Minecraft|^Pause To |^Pick A Door|^Can Your Mob Beat", v.title):
         return (f"{none}\nA pause game: the viewer starts with 10 hearts, pauses at each danger, and comments how "
                 "many hearts they have left at the end (0 to 10; more is better, 0 means they died).")
     return none

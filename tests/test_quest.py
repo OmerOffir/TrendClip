@@ -203,3 +203,26 @@ def test_the_wall_alone_is_the_axe_short_drawn():
     assert min(costs["Chest"].values()) == 1 and costs["Oak Log"]["Wooden Axe"] == 3
     with pytest.raises(ValueError, match="No such wall"):
         quest.scripts(f"{quest.WALL}Bedrock")
+
+
+def test_the_mob_short_drawn_counts_hearts_by_how_the_fight_ends():
+    from trendclip import arena
+
+    seen = set()
+    for boss in quest.pet_bosses():
+        only = f"{quest.PET}{boss}"
+        [pet] = quest._stops(only)
+        [lines] = quest.scripts(only)
+        assert lines[0][1] == f"Ten hearts. Can your mob beat the {boss.lower()}?" and lines[-1][1] == "Comment your hearts."
+        for option in pet.options():
+            mine, theirs = arena.pet_fight(boss, option.name)
+            won = mine is not None and mine <= theirs
+            assert option.delta == (0 if won else -3 if mine is None else -2) and option.name != boss
+            assert option.sub.startswith("WINS IN" if won else "CAN'T ATTACK" if mine is None else "FALLS AFTER")
+        left = quest.HEARTS + pet.mine().delta
+        seen.add(left)
+        assert f"I have {quest._hearts(left)} left" in lines[4][1]
+        assert quest.texts(only)["title"] == f"Can Your Mob Beat The {boss}? 🐺"
+    assert seen == {7, 8, 10}  # the narrator wins some, loses some, and once his mob can't even attack
+    with pytest.raises(ValueError, match="No such boss"):
+        quest.scripts(f"{quest.PET}Warden")

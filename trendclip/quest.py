@@ -572,7 +572,13 @@ class Art:
                 im = Image.open(self.pics[name]["path"]).convert("RGBA")
             else:
                 raise ValueError(f"No picture of {name}: run the pause Shorts' picture fetch first")
-            im = im.resize((size, size), Image.NEAREST)
+            if max(im.size) > 64 and abs(im.width - im.height) > 0.15 * max(im.size):  # a mob's render: keep its shape
+                k = size / max(im.size)
+                small = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))), Image.LANCZOS)
+                im = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+                im.alpha_composite(small, ((size - small.width) // 2, (size - small.height) // 2))
+            else:
+                im = im.resize((size, size), Image.NEAREST)
             self._icons[key] = im.rotate(turn, resample=Image.NEAREST) if turn else im
         return self._icons[key]
 
@@ -2023,6 +2029,168 @@ def fight_stops(foe: str) -> tuple:
     return (fight,)
 
 
+PET = "pet:"
+PET_TITLE = "Can Your Mob Beat The {boss}? 🐺"
+
+
+class Pet(Ambush):
+    """The mob Short, drawn ("pet:<boss>"): a boss comes, and the mob you stop on fights it for you, hit for hit,
+    your mob first (arena.pet_fight: the game's health, armour and damage). It wins: no hearts lost. It falls: two.
+    It never attacks: three."""
+
+    N, TAG, KIND, AFTER = 1, "PAUSE CHALLENGE", "MOB", HEARTS
+    ZERO = ("YOUR MOB WINS!", GREEN)
+    BOSS_X, ALLY_X = 142, 90  # where the boss stops and where your mob stands, in world pixels
+
+    @classmethod
+    def outcome(cls, mob: str) -> tuple[int | None, int, bool]:
+        """(the hits your mob needs, the hits the boss needs, whether your mob wins)."""
+        from . import arena
+
+        mine, theirs = arena.pet_fight(cls.FOE, mob)
+        return mine, theirs, mine is not None and mine <= theirs
+
+    @classmethod
+    def options(cls) -> list[Option]:
+        from . import arena
+
+        names = [m for m in arena.ALLIES if m != cls.FOE]
+        out = []
+        for name, weight in zip(names, _by_tier([arena.ALLIES[n][0] for n in names])):
+            mine, theirs, won = cls.outcome(name)
+            sub = "CAN'T ATTACK" if mine is None else f"WINS IN {mine} HIT{'' if mine == 1 else 'S'}" if won else \
+                f"FALLS AFTER {theirs} HIT{'' if theirs == 1 else 'S'}"
+            out.append(Option(name, arena.ALLIES[name][0], sub, 0 if won else -3 if mine is None else -2, weight, name))
+        return out
+
+    @classmethod
+    def lines(cls, before: int) -> list[tuple[str, str]]:
+        mine, theirs, won = cls.outcome(cls.MINE)
+        lost = -cls.mine().delta
+        told = f"It wins in {_say(mine)} hit{'' if mine == 1 else 's'}. No hearts lost." if won else \
+            f"It can't even attack. I lose {_hearts(lost)}." if mine is None else f"It falls, and I lose {_hearts(lost)}."
+        boss = "The Ender Dragon" if cls.FOE == "Ender Dragon" else _a(cls.FOE).capitalize()
+        return [("title", f"Ten hearts. Can your mob beat the {cls.FOE.lower()}?"),
+                ("threat", f"{boss} is coming for you."),
+                ("pause", "Pause the video now! The mob you stop on fights for you. If it falls, you lose hearts."),
+                ("mine", f"I stopped on {_a(cls.MINE.lower())}. {told}"),
+                ("count", f"I have {_hearts(cls.AFTER)} left. How about you?"),
+                ("next", "Comment your hearts.")]
+
+    def before(self):
+        from . import spin
+
+        return self.art.rules(self.TAG, top=self.FOE.upper(), big=f"{spin.health_of(self.FOE)} HEALTH",
+                              bar="PAUSE FOR YOUR MOB")
+
+    def plan(self) -> None:
+        mine, theirs, self.won = self.outcome(self.MINE)
+        self.real = mine if self.won else theirs  # the blows shown: your mob's, or the boss's on it
+        shown = min(self.real, self.SHOWN)
+        lost = -self.pick.delta
+        room = (self.count if self.count is not None else self.go) - 0.3 - self.act
+        span = min(max(1.2, room - 0.5 * lost), 0.5 * shown + 0.5)
+        self.hits = [self.act + span * (i + 0.6) / shown for i in range(shown)]
+        self.dead = self.hits[-1]
+        self.hurts = [(self.dead + 0.35 + 0.4 * j, -1) for j in range(lost)]  # the boss turns on you
+        self.sounds.append((self.dead, "boom"))
+        self.puff = [(self.rng.uniform(-1, 1), self.rng.uniform(-1.4, 0.2), self.rng.random()) for _ in range(30)]
+
+    def pose(self, t: float) -> tuple:
+        return None, 0.0, None, 192
+
+    def scene(self, c) -> None:
+        t, d = c.t, c.d
+        c.zx = None
+        if t >= self.threat and (not self.won or t < self.dead + 0.45):
+            if t < self.pause:
+                zx = 214 - (214 - self.BOSS_X) * _ease((t - self.threat) / (self.pause - self.threat))
+            else:
+                zx = self.BOSS_X + (4 * c.hit if self.won else -10 * c.hit if t >= self.act else 0)
+                zx -= 26 * math.sin(math.pi * c.bite)  # it reaches the hero
+            wide = self.pic.width / S / 2
+            c.du.ellipse([zx - wide * 0.8, GROUND - 2, zx + wide * 0.8, GROUND + 3], fill=(0, 0, 0, 90))
+            c.zx = zx
+        if self.dead + 0.15 <= t < self.dead + 1.0:  # the loser goes up in smoke
+            k = (t - self.dead - 0.15) / 0.85
+            at = self.BOSS_X if self.won else self.ALLY_X
+            for px, py, pr in self.puff:
+                x, y = at + px * 32 * k, GROUND - 24 + py * 40 * k
+                size = 1 + int(pr * 3)
+                if pr > k * 0.9:
+                    d.rectangle([x, y, x + size, y + size], fill=(*_shade((238, 238, 238), 0.7 + 0.3 * pr), 255))
+
+    def _put(self, img, pic, x: float, flash: float, gone: float, shake: tuple) -> None:
+        from PIL import Image
+
+        if flash > 0.05:
+            red = Image.new("RGBA", pic.size, (255, 56, 56, 255))
+            red.putalpha(pic.getchannel("A"))
+            pic = Image.blend(pic, red, min(0.6, flash))
+        if gone > 0:
+            pic = pic.copy()
+            pic.putalpha(pic.getchannel("A").point(lambda a: int(a * (1 - min(1.0, gone)))))
+        at = (int(x * S) - pic.width // 2 + shake[0], GROUND * S - pic.height + 8 + shake[1])
+        img.alpha_composite(pic, (max(0, min(W - pic.width, at[0])), at[1]))
+
+    def sharp(self, c, img, d) -> None:
+        from PIL import ImageOps
+
+        t, option = c.t, c.option if c.option is not None else (self.pick if c.t >= self.mine_at else None)
+        if c.zx is not None:
+            self._put(img, self.pic, c.zx, c.hit * 0.6 if self.won else 0.0,
+                      (t - self.dead) / 0.45 if self.won and t >= self.dead else 0.0, c.shake)
+            if self.pause <= t and not (self.won and t >= self.dead):
+                cx, cy = max(130, min(W - 130, int(c.zx * S))), GROUND * S - self.pic.height - 64
+                _label(d, (cx, cy - 34), self.FOE.upper(), self.art.small, stroke=6)
+                d.rectangle([cx - 110, cy, cx + 110, cy + 26], fill=(12, 12, 16, 255))
+                left = self.health(t) if self.won and t >= self.act else 1.0
+                if left > 0:
+                    d.rectangle([cx - 104, cy + 6, cx - 104 + int(208 * left), cy + 20], fill=(226, 30, 40, 255))
+        if option is not None and (self.won or t < self.dead + 0.45):  # your mob, looking at the boss
+            pic = ImageOps.mirror(self.art.mob(option.name, (210, 230)))
+            fighting = t >= self.act
+            lunge = 8 * c.hit if fighting and self.won else 0.0
+            self._put(img, pic, self.ALLY_X + lunge, c.hit * 0.6 if fighting and not self.won else 0.0,
+                      (t - self.dead) / 0.45 if not self.won and t >= self.dead else 0.0, (0, 0))
+            _label(d, (int(self.ALLY_X * S), GROUND * S - pic.height - 30), "YOUR MOB", self.art.tiny, (255, 222, 0), 5)
+        if self.won:
+            self.blows(t, d, int(self.BOSS_X * S), GROUND * S - self.pic.height - 150)
+        else:
+            self.blows(t, d, int(self.ALLY_X * S), GROUND * S - 330)
+
+    def sky(self, t: float, d) -> None:
+        if self.title <= t < self.pause:
+            dare = f"THE {self.FOE.upper()}?"
+            _label(d, (W // 2, 400), "CAN YOUR MOB BEAT", self.art.fit(d, "CAN YOUR MOB BEAT", 960), (255, 255, 255), 12)
+            _label(d, (W // 2, 560), dare, self.art.fit(d, dare, 960), self.COLOUR, 12)
+        else:
+            super().sky(t, d)
+
+
+def pet_bosses() -> list[str]:
+    from . import arena
+
+    return list(arena.PET_BOSSES)
+
+
+def pet_stops(boss: str) -> tuple:
+    """The boss and the narrator's own mob (the same for a boss every time; one that can lose, too)."""
+    from . import arena
+
+    if boss not in arena.PET_BOSSES:
+        raise ValueError(f"No such boss for a mob Short: {boss}")
+    mob = random.Random(f"pet-{boss}").choice([m for m in arena.ALLIES if m != boss])
+    pet = type("Pet", (Pet,), {"FOE": boss, "MINE": mob})
+    pet.AFTER = HEARTS + pet.mine().delta
+    return (pet,)
+
+
+def _pet(only) -> str:
+    """The boss of a mob Short's `only` ("pet:Ravager"), "" otherwise."""
+    return only[len(PET):] if isinstance(only, str) and only.startswith(PET) else ""
+
+
 WALL = "wall:"
 WALL_TITLE = "Pause To Break The {block} Wall 🪓"
 WALLS = {  # the walls an axe is the tool for (spin.WALL): how the narrator says a wall of them, its splinters
@@ -2159,6 +2327,8 @@ def _stops(only=0) -> tuple:
         return fight_stops(foe)
     if block := _wall(only):
         return wall_stops(block)
+    if boss := _pet(only):
+        return pet_stops(boss)
     if not only:
         return STOPS
     stop = next((s for s in solos() if s.N == only), None)
@@ -2172,7 +2342,7 @@ def scripts(only: int = 0) -> list[list[tuple[str, str]]]:
     if _foe(only):
         loot, fight = _stops(only)
         return [loot.lines(TWICE_HEARTS), fight.lines(TWICE_HEARTS + loot.mine().delta)]
-    if _duel(only) or _wall(only):
+    if _duel(only) or _wall(only) or _pet(only):
         return [_stops(only)[0].lines(HEARTS)]
     if only:
         return [_stops(only)[0].alone()]
@@ -2422,6 +2592,13 @@ def texts(only: int = 0) -> dict:
                                "yours, and a slow weapon costs more hearts. Comment how many hearts you have left.",
                 "pinned": f"How many hearts do you have left? 👇\nI kept {_stops(only)[0].AFTER}. "
                           "Send this to a friend and see who keeps more."}
+    if boss := _pet(only):
+        return {"title": PET_TITLE.format(boss=boss), "card": f"CAN YOUR MOB BEAT THE {boss.upper()}?",
+                "description": f"Ten hearts, and the {boss} is coming. Pause the video: the mob you stop on fights "
+                               "for you, hit for hit, your mob first (Java Edition, Normal). If it falls, you lose "
+                               "hearts. Comment how many hearts you have left.",
+                "pinned": f"Which mob did you get, and how many hearts do you have left? 👇\nI kept "
+                          f"{_stops(only)[0].AFTER}. Send this to a friend and see whose mob wins."}
     if block := _wall(only):
         return {"title": WALL_TITLE.format(block=block), "card": "PAUSE TO BREAK THE WALL",
                 "description": f"Ten hearts and a wall of {WALLS[block][0]}. Pause the video: the axe you stop on is "
@@ -2490,12 +2667,12 @@ def create(settings: Settings, progress=lambda frac, msg: None, only: int = 0):
 
     from . import dungeon
 
-    if lost := missing(settings) or [m for m in [_foe(only) or _duel(only)] if m and m not in dungeon.pictures(settings)]:
+    if lost := missing(settings) or [m for m in [_foe(only) or _duel(only) or _pet(only)] if m and m not in dungeon.pictures(settings)]:
         raise ValueError(f"No picture of {', '.join(lost[:6])}: make a pause Short first, it fetches the pictures")
     stops = _stops(only)  # an unknown stop stops here
     progress(0.02, "Reading the stop" if only else "Reading the seven stops")
     slug = lambda mob: mob.lower().replace(" ", "-")  # noqa: E731
-    name = f"wall_{slug(_wall(only))}_" if _wall(only) else f"twice_{slug(_foe(only))}_" if _foe(only) else f"fight_{slug(_duel(only))}_" if _duel(only) else \
+    name = f"pet_{slug(_pet(only))}_" if _pet(only) else f"wall_{slug(_wall(only))}_" if _wall(only) else f"twice_{slug(_foe(only))}_" if _foe(only) else f"fight_{slug(_duel(only))}_" if _duel(only) else \
         f"{stops[0].SLUG}_" if only else ""
     output = settings.shorts_dir / f"{PREFIX}{name}{time.strftime('%Y%m%d-%H%M%S')}.mp4"
     _make(settings, output, progress, only)

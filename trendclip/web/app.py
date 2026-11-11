@@ -1201,17 +1201,24 @@ def gamer_quest_view() -> dict[str, Any]:
     return {"title": quest.TITLE, "stops": [stop.NAME.title() for stop in quest.STOPS], "hearts": quest.run()[-1],
             "missing": quest.missing(settings),
             "solos": [{"stop": stop.N, "name": stop.NAME.title(), "title": stop.SOLO} for stop in quest.solos()],
-            "walls": list(quest.WALLS),
+            "walls": list(quest.WALLS), "bosses": quest.pet_bosses(),
             "foes": [m for m in quest.twice_foes() if m in dungeon.pictures(settings)],
             "videos": [{"filename": v.filename, "seconds": v.duration_seconds, "created_at": v.created_at.isoformat(),
                         "uploaded": bool((v.uploads.get("youtube") or {}).get("video_id"))}
                        for v in quest.videos(settings)]}
 
 
+def arena_allies() -> list[str]:
+    from .. import arena
+
+    return list(arena.ALLIES)
+
+
 class QuestRequest(BaseModel):
     stop: int = Field(0, ge=0, le=7)  # 0: the whole road; a stop's number: that stop as a Short of its own
     twice: bool = False  # a Pause Twice Short instead: a chest, then a fight
     fight: bool = False  # the fight alone: ten hearts, one pause
+    pet: bool = False  # your mob against a boss (`foe`: the boss; empty: a random one)
     wall: bool = False  # the axe against a wall of one block (`block`; empty: a random one)
     block: str = Field("", max_length=40)
     foe: str = Field("", max_length=40)  # its mob; empty: a random one
@@ -1223,6 +1230,19 @@ def gamer_quest_make(req: QuestRequest | None = None) -> dict[str, Any]:
     from .. import quest
 
     settings, only = _base_settings(), req.stop if req else 0
+    if req and req.pet:
+        import random
+
+        from .. import dungeon
+
+        found = dungeon.pictures(settings)
+        bosses = [b for b in quest.pet_bosses() if b in found]
+        if not bosses or (req.foe and req.foe not in bosses):
+            raise HTTPException(status_code=400, detail=f"No picture of {req.foe or 'any boss'}: make a pause Short first")
+        if lost := [m for m in arena_allies() if m not in found][:6]:
+            raise HTTPException(status_code=400, detail=f"No picture of {', '.join(lost)}: make a Guess the Picture level first")
+        only = f"{quest.PET}{req.foe or random.choice(bosses)}"
+        return {"job": _create.submit_call("Minecraft", lambda progress: quest.create(settings, progress, only)).id}
     if req and req.wall:
         import random
 
