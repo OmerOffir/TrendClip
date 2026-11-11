@@ -311,8 +311,10 @@ def test_one_reply_per_fan_per_video_with_its_result(settings):
     assert "a1" not in got  # amy's earlier wrong guess gets nothing: one reply per fan per video
     assert [q["result"] for q in queued][:2] == ["first", "correct"]  # the best news goes out first
     texts = {q["comment_id"]: q["text"] for q in queued}
-    assert "+10" in texts["b1"] and "+3" in texts["a2"] and "+1" in texts["c1"]
-    assert texts["d1"] in [t.format(rank=3, total="1 pt") for t in lb.REPLY_TEXTS["comment"]]
+    assert "63" in texts["c1"] or "Not quite" in texts["c1"]  # a miss hears the answer, kindly
+    assert texts["b1"] in [t.format(answer="63") for t in lb.REPLY_TEXTS["first"]]
+    assert texts["d1"] in lb.REPLY_TEXTS["comment"]
+    assert not any(lb.REPLY_BANNED.search(t) for t in texts.values())  # the competition is over
     assert all("http" not in t for t in texts.values())
     assert lb.plan_replies(settings, board, DAY, NOW) == []  # never queued twice
     for _ in range(5):
@@ -412,8 +414,12 @@ class FakeGemini:
             ids = _re.findall(r"- id (\S+):", contents[0])
             verdict = {"b1": "correct", "c1": "wrong", "d1": "not_an_answer"}
 
+            reply = {"b1": "Yes, 63 it is!", "c1": "It was 63, so close.", "d1": "You earned +3 pts, rank #1!",
+                     "e1": "Glad you love it! 🙌"}
+
             class R:
-                parsed = lb._Verdicts(items=[lb._Verdict(id=i, verdict=verdict.get(i, "wrong")) for i in ids])
+                parsed = lb._Verdicts(items=[lb._Verdict(id=i, verdict=verdict.get(i, "wrong"),
+                                                         reply=reply.get(i, "")) for i in ids])
                 text = ""
             return R()
 
@@ -426,6 +432,26 @@ def test_gemini_verdicts_win_and_are_kept(settings):
     assert board.verdicts["d1"] == "comment" and board.verdicts["c1"] == "wrong"
     assert board.verdicts["e1"] == "comment"  # a story video has no right / wrong
     assert lb.verify(settings, board, client=FakeGemini()) == 0  # each comment once
+    assert board.replies["e1"] == "Glad you love it! 🙌" and "d1" not in board.replies  # no talk of points
+    board.people = lb.score(board.videos, board.comments, set(), board.verdicts)
+    texts = {q["comment_id"]: q["text"] for q in lb.plan_replies(settings, board, DAY, NOW)}
+    assert texts["b1"] == "⚡ First to get it! Yes, 63 it is!" and texts["c1"] == "It was 63, so close."
+    assert texts["e1"] == "Glad you love it! 🙌" and texts["d1"] in lb.REPLY_TEXTS["comment"]
+
+
+def test_replies_fit_to_post_and_video_facts():
+    assert lb.clean_reply('  "Netherite Block is\nlegendary! 🏆" ') == "Netherite Block is legendary! 🏆"
+    for bad in ("You're #2 on the leaderboard", "+3 pts for you", "Subscribe for more", "see www.x.com",
+                "thanks @bob", "x" * 200, ""):
+        assert lb.clean_reply(bad) == ""
+    assert lb.reply_text("correct", "", "s") == "✅ Nailed it!"  # no answer known: none is named
+    block = lb.about(Video("b", "Pause To Get Your Minecraft Block 🎮 #shorts"))
+    assert "legendary: Diamond Block, Netherite Block" in block and "only skip or not_an_answer" in block
+    weapon = lb.about(Video("w", "Pause To Get Your Weapon vs The Ender Dragon ⚔️ #shorts"))
+    assert "Ender Dragon (200 health)" in weapon and "Netherite Sword 25," in weapon
+    assert "10 hearts" in lb.about(Video("q", "Can You Beat Minecraft? (Pause Edition) #shorts"))
+    assert "Axe rarity" in lb.about(Video("a", "Pause To Get Your Minecraft Axe 🪓 #shorts"))
+    assert lb.about(Video("z", "Quiz", kind="quiz", answer="63")) == "Quiz. Correct answer: 63"
 
 
 def test_links_and_flagged_comments_get_no_reply_and_no_points(settings, monkeypatch):

@@ -1397,7 +1397,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
         lines = [question, OPEN_ASK, COUNTDOWN]
         flashes.append(Flash(word="No", text="NO OPTIONS"))
         seen = f"Answer: {correct}" + (f" (most forget: {trap})" if trap else "") + f". {result.fact.strip()}"
-        pin = (f"{question} Name every part. 👇\nHint: {hint}.\n🏆 First complete answer gets 10 leaderboard points. "
+        pin = (f"{question} Name every part. 👇\nHint: {hint}.\n"
                f"Level {level + 1} drops next!")
     else:
         trap, distractor, correct = options
@@ -1413,7 +1413,7 @@ def gamer_script(settings: Settings, game: str, result: GeminiGamer, *, shape: s
             word = (said + " ".join(option.split()[:3])).strip()[:40]
             flashes.append(Flash(word=word, text=label if len(label) <= 16 else letter))
         seen = f"Answer: {correct} (trap: {trap}). {result.fact.strip()}"
-        pin = (public_pin(question, hint) + f"\n🏆 First correct answer gets 10 leaderboard points. "
+        pin = (public_pin(question, hint) + f"\n"
                f"Level {level + 1} drops next!")
     if record:
         _remember(settings, "gamer", answer=correct, question=question, game=game, shape=shape, level=str(level))

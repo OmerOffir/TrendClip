@@ -50,7 +50,7 @@ def test_the_catch_script_holds_a_few_emoji_never_says_how_many_and_asks_for_the
     assert result.end_card == "Comment every emoji"  # no next level, no subscribe
     assert not re.search(r"\b(three|four|five|six) times\b", result.script + result.pinned_comment)  # the count is the game
     assert result.title == "Can You Catch The Zombie? | Level 2 🎮" and result.title_card == "LEVEL 2 - CATCH THE ZOMBIE"
-    assert "All of them = 10 leaderboard points. Level 3 drops next!" in result.pinned_comment
+    assert "Level 3 drops next!" in result.pinned_comment and "leaderboard" not in result.pinned_comment
     assert not any(e in result.pinned_comment for e in result.catch)  # never the answer
     assert [f.text for f in result.flashes] == ["x?", "CATCH THEM ALL?!"]
     assert len(result.script.split()) < 75  # about 25 s spoken: a level, not a lecture

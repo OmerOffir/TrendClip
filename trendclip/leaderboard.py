@@ -11,7 +11,8 @@ older comments stay stored for last month's final standings.
 
 Quiz answers come from the Shorts on this machine (matched by YouTube id, else by title); /answer sets
 them for videos made elsewhere. Word rules judge each answer; Gemini double-checks quiz answers (typos,
-synonyms, other languages) when GEMINI_API_KEY is set. Every fan then gets one reply per video.
+synonyms, other languages) when GEMINI_API_KEY is set. Every fan then gets one reply per video, about
+what they wrote (the competition is over since 2026-11-11: a reply never mentions points or ranks).
 """
 
 from __future__ import annotations
@@ -98,6 +99,7 @@ class Board:
     subscribers: set[str] = field(default_factory=set)
     answers: dict[str, dict[str, Any]] = field(default_factory=dict)  # set with /answer
     verdicts: dict[str, str] = field(default_factory=dict)  # comment id -> Gemini's correct / wrong / comment
+    replies: dict[str, str] = field(default_factory=dict)  # comment id -> the reply Gemini wrote for it
     updated_at: str = ""
     channel_id: str = ""
     people: list[dict[str, Any]] = field(default_factory=list)  # this month's, best first
@@ -459,7 +461,8 @@ def load(settings: Settings) -> Board:
                           for v in data.get("videos", [])},
                   comments=[Comment(**c) for c in data.get("comments", [])],
                   subscribers=set(data.get("subscribers", [])), answers=data.get("answers", {}),
-                  verdicts=data.get("verdicts", {}), updated_at=data.get("updated_at", ""), channel_id=data.get("channel_id", ""))
+                  verdicts=data.get("verdicts", {}), replies=data.get("replies", {}),
+                  updated_at=data.get("updated_at", ""), channel_id=data.get("channel_id", ""))
     return _rescore(settings, board)
 
 
@@ -469,7 +472,7 @@ def _save(settings: Settings, board: Board) -> None:
     data = {"updated_at": board.updated_at, "channel_id": board.channel_id,
             "videos": [asdict(v) for v in board.videos.values()],
             "comments": [asdict(c) for c in board.comments], "subscribers": sorted(board.subscribers),
-            "answers": board.answers, "verdicts": board.verdicts}
+            "answers": board.answers, "verdicts": board.verdicts, "replies": board.replies}
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
     tmp.replace(path)
@@ -485,8 +488,8 @@ def refresh(settings: Settings, youtube=None, gemini=None) -> tuple[Board, list[
     subscribers = channel_subscribers(youtube)
     board = Board(videos={v.id: v for v in videos}, comments=comments,
                   subscribers=old.subscribers if subscribers is None else subscribers,
-                  answers=old.answers, verdicts=old.verdicts, updated_at=utcnow().isoformat(),
-                  channel_id=channel_id)
+                  answers=old.answers, verdicts=old.verdicts, replies=old.replies,
+                  updated_at=utcnow().isoformat(), channel_id=channel_id)
     _apply_answers(settings, videos, board.answers)
     verify(settings, board, gemini)
     _rescore(settings, board)
@@ -503,6 +506,7 @@ def set_answer(settings: Settings, video_id: str, answer: str, choices: str = ""
     for c in board.comments:  # checked against the old answer: check again on the next refresh
         if c.video_id == video_id:
             board.verdicts.pop(c.id, None)
+            board.replies.pop(c.id, None)
     _rescore(settings, board)
     _save(settings, board)
     return board.videos[video_id]
@@ -511,52 +515,52 @@ def set_answer(settings: Settings, video_id: str, answer: str, choices: str = ""
 # --------------------------------------------------------------------------- replies to every fan
 #
 # A reply is the one thing YouTube always notifies about. Every fan gets exactly one per video, under
-# the comment that earned their points for it, saying what it earned (spam, links and rude ones excepted).
+# their best comment on it, about what they wrote (spam, links and rude ones excepted): Gemini writes it
+# in the same call that checks the comment (no extra calls), knowing the video's facts - the quiz's
+# answer, each block's rarity, the hits every weapon needs. A reply Gemini didn't write, or one that
+# breaks the rules (a link, points, "subscribe"), falls back to the plain texts below. Never points,
+# ranks or a leaderboard: the competition is over (the owner, 2026-11-11).
 # Quiz / paradox videos wait until they're REPLY_AFTER_HOURS old so "Correct!" doesn't spoil the answer
-# for the people still guessing. "Wrong" is only said when Gemini agreed (else the plain "+1 pt" text).
+# for the people still guessing. "Wrong" is only said when Gemini agreed (else a plain thank-you).
 # Never a second reply to a fan on a video, nor one the channel already answered; at most
 # settings.youtube_reply_daily_max a day, one at a time (the bot waits between them), with varied wording
 # and no links or tags. A reply YouTube refuses for a moment is tried REPLY_TRIES times; when it can't be
 # posted at all (comment deleted), the fan's other comment on that video gets the one reply instead.
 
 REPLY_AFTER_HOURS, REPLY_MAX_AGE_DAYS, REPLY_TRIES = 10, 30, 3
-REPLY_TEXTS = {
+REPLY_MAX_CHARS = 160
+REPLY_TEXTS = {  # the fallback; a text with {answer} is only used when the video's answer is known
     "first": (
-        "FIRST & CORRECT! ⚡ You secured the +10 pts mega bonus! You're #{rank} on the SideQuest Leaderboard! 👑",
-        "⚡ Fastest brain in the comments! First correct answer = +10 pts. Current rank: #{rank} 🏆",
-        "🥇 You cracked it before anyone else! +10 pts bonus. You're now #{rank} on the leaderboard 🧠",
-        "👑 First to solve it! That's the +10 pts mega bonus. Rank #{rank} with {total} total!",
+        "⚡ First one to get it! {answer} is right 🧠",
+        "🥇 You cracked it before anyone else: {answer}!",
+        "⚡ First correct answer in the comments. Fast brain!",
     ),
     "correct": (
-        "BOOM! Correct answer! 🧠 You just earned +3 pts on the SideQuest Leaderboard! [Current Rank: #{rank}] 🏆",
-        "✅ Nailed it! +3 pts for you. You're #{rank} on the SideQuest Leaderboard 🏆",
-        "🧠 Big brain! Correct answer, +3 pts. Current rank: #{rank} with {total} 🔥",
-        "🎯 Spot on! +3 pts added. You're sitting at #{rank} on our leaderboard!",
+        "✅ Correct, it's {answer}! 🧠",
+        "🎯 Spot on: {answer}!",
+        "🧠 Yes! {answer} is the one.",
+        "✅ Nailed it!",
     ),
     "wrong": (
-        "Ouch! You fell for the trap! 🪤 But no worries, you still earned +1 pt for trying! Check the community "
-        "tab for daily rankings! 🧠",
-        "🪤 The trap got you this time! You still get +1 pt for playing. You're #{rank} on the leaderboard, "
-        "so try the next one!",
-        "Not quite! 😅 That one's sneaky. +1 pt for trying, and the next trap is your comeback 🧠",
-        "🪤 So close! This trap fools a lot of people. +1 pt for jumping in! Current rank: #{rank}",
+        "So close! It was {answer} 😅 This one fools a lot of people.",
+        "🪤 Not this time: the answer was {answer}. Sneaky one!",
+        "Good guess, but it was {answer}. The next one is your comeback 🧠",
+        "Not quite! 😅 That one's sneaky.",
     ),
     "voted": (
-        "🗳️ Vote counted! +3 pts on the SideQuest Leaderboard. Current rank: #{rank} 🧠",
-        "🌀 Bold pick! Your vote earned +3 pts. You're #{rank} on our leaderboard!",
-        "🗳️ Side chosen! +3 pts for taking a stand. Rank #{rank}, now defend your answer 👇",
+        "🌀 Bold pick! This one splits the comments every time.",
+        "🗳️ Team chosen! Now defend your side 👇",
+        "🌀 Interesting pick. Half the comments disagree with you!",
     ),
     "comment": (
-        "🙌 Thanks for commenting! +1 pt on the SideQuest Leaderboard. Current rank: #{rank} 🏆",
-        "🧠 +1 pt for joining in! Answer the next trap to climb fast. You're #{rank} right now!",
-        "🔥 Appreciate you! That's +1 pt on our leaderboard. Rank #{rank} so far!",
-    ),
-    "again": (  # their scoring comment is gone: no points claimed here
-        "🙌 Thanks for commenting! Your points for this video are in. You're #{rank} with {total} 🏆",
-        "🔥 Love the energy! You're #{rank} on the SideQuest Leaderboard. The next trap = more points 🧠",
-        "🧠 Appreciate you! You're #{rank} right now, so catch the next video for more points!",
+        "🙌 Thanks for playing along!",
+        "🎮 Love it, thanks for commenting!",
+        "🔥 Appreciate you watching!",
     ),
 }
+# Never in a reply: the old competition, begging, tags (a written reply with any of these is dropped).
+REPLY_BANNED = re.compile(r"\b(?:pts?|points?|leaderboards?|ranks?|ranking|prizes?|giveaway|subscribe\w*|subs?)\b|[@#]",
+                          re.IGNORECASE)
 _replies_lock = threading.Lock()
 
 
@@ -589,9 +593,21 @@ def ranks(people: list[dict[str, Any]]) -> dict[str, int]:
     return {p["id"]: 1 + sum(q["points"] > p["points"] for q in people) for p in people}
 
 
-def reply_text(result: str, rank: int, total: int, seed: str) -> str:
-    texts = REPLY_TEXTS.get(result, REPLY_TEXTS["comment"])
-    return random.Random(seed).choice(texts).format(rank=rank, total=f"{total} pt" + "s" * (total != 1))
+def clean_reply(text: str) -> str:
+    """Gemini's reply when it is fit to post: one short line, no links, tags or talk of points; else ""."""
+    text = " ".join((text or "").split()).strip("\"' ")
+    if not text or len(text) > REPLY_MAX_CHARS or LINK.search(text) or REPLY_BANNED.search(text):
+        return ""
+    return text
+
+
+def reply_text(result: str, answer: str, seed: str, written: str = "") -> str:
+    """What to answer: the reply written for this comment, else a plain text for its result."""
+    if written := clean_reply(written):
+        return ("⚡ First to get it! " if result == "first" else "") + written
+    answer = "" if answer == NO_ANSWER else answer.strip()
+    texts = [t for t in REPLY_TEXTS.get(result, REPLY_TEXTS["comment"]) if answer or "{answer}" not in t]
+    return random.Random(seed).choice(texts).format(answer=answer[:1].upper() + answer[1:])
 
 
 def _replyable(settings: Settings, board: Board, c: Comment) -> bool:
@@ -650,8 +666,6 @@ def plan_replies(settings: Settings, board: Board, today: date, now: datetime | 
     """Queue one reply per fan per video (the comment that scored, scoring ones first); returns what was queued.
     wait=False: quiz / paradox videos too, without the REPLY_AFTER_HOURS spoiler wait."""
     now = now or datetime.now(timezone.utc)
-    rank_of = ranks(board.people)
-    total_of = {p["id"]: p["points"] for p in board.people}
     order = {"first": 0, "correct": 1, "voted": 2, "wrong": 3, "comment": 4}
     with _replies_lock:
         data = _load_replies(settings)
@@ -668,7 +682,7 @@ def plan_replies(settings: Settings, board: Board, today: date, now: datetime | 
                 result = "comment"  # only Gemini's "wrong" is said out loud
             item = {"comment_id": c.id, "author_id": c.author_id, "name": c.author, "video_id": c.video_id,
                     "result": result,
-                    "text": reply_text(result, rank_of.get(c.author_id, 0), total_of.get(c.author_id, 0), c.id)}
+                    "text": reply_text(result, board.videos[c.video_id].answer, c.id, board.replies.get(c.id, ""))}
             data["pending"].append(item)
             data["done"][_fan_key(c)] = now.isoformat()
             queued.append(item)
@@ -683,6 +697,7 @@ def plan_replies(settings: Settings, board: Board, today: date, now: datetime | 
 class _Verdict(BaseModel):
     id: str
     verdict: Literal["correct", "wrong", "not_an_answer", "skip"]
+    reply: str = ""
 
 
 class _Verdicts(BaseModel):
@@ -701,7 +716,47 @@ For each comment decide:
   or every fine comment on a video without a quiz).
 Return one item per comment id.
 
+For every comment that is not skip also write `reply`: what the channel answers under it. Rules:
+- it is about what THEY wrote: react to the thing they named, using the video's facts below when they
+  help (the rarity of their block, whether their number of hits is right for their weapon, what the right
+  answer was when they missed it), or answer their question;
+- on a quiz: confirm a correct answer by name; for a wrong one say the right answer kindly;
+- one short sentence, at most 15 words, warm and playful, at most one emoji, in English unless the comment
+  is clearly in another language;
+- never mention points, ranks, prizes, a leaderboard or a competition; no links, no hashtags, no @names,
+  never "subscribe", and don't ask them to do anything;
+- don't invent game facts that aren't given below: when unsure, just react warmly to what they said.
+
 {videos}"""
+
+
+def about(v: Video) -> str:
+    """What Gemini should know about a video to judge and answer its comments."""
+    from . import spin
+
+    if v.kind == "quiz" and v.answer:
+        choices = " | ".join(f"{l}) {t}" for l, t in v.choices)
+        return f"Quiz. Correct answer: {v.answer}" + (f"\nChoices: {choices}" if choices else "")
+    none = "No quiz on this video: only skip or not_an_answer."
+    tiers = lambda table: "; ".join(  # noqa: E731
+        f"{tier}: " + ", ".join(n for n, row in table.items() if row[0] == tier) for tier in spin.TIERS)
+    if m := re.search(r"Weapon vs The ([A-Za-z ]+)", v.title):
+        boss = m.group(1).strip()
+        if boss in spin.BOSSES:
+            hits = ", ".join(f"{w} {spin.hits_to_kill(boss, w) or 'cannot hurt it'}" for w in spin.WEAPONS)
+            return (f"{none}\nA pause game: the viewer pauses on a random weapon and comments the weapon and how "
+                    f"many hits it needs to beat the {boss} ({spin.health_of(boss)} health). Hits by weapon: {hits}. "
+                    f"Fewer hits is better. Weapon rarity: {tiers(spin.WEAPONS)}.")
+    if re.search(r"Pause To Get Your .*Axe", v.title):
+        return (f"{none}\nA pause game: the viewer pauses on a random axe and a wall and comments how long the axe "
+                f"takes to break out. Axe rarity: {tiers(spin.AXES)}. On wood the golden axe is the fastest.")
+    if re.search(r"Pause To Get Your .*Block", v.title):
+        return (f"{none}\nA pause game: the viewer pauses on a random block and comments which one they got. "
+                f"Block rarity: {tiers(spin.BLOCKS)}.")
+    if re.search(r"Can You Beat Minecraft|^Pause To |^Pick A Door", v.title):
+        return (f"{none}\nA pause game: the viewer starts with 10 hearts, pauses at each danger, and comments how "
+                "many hearts they have left at the end (0 to 10; more is better, 0 means they died).")
+    return none
 
 
 def verify(settings: Settings, board: Board, client=None, batch: int = 80) -> int:
@@ -732,12 +787,8 @@ def verify(settings: Settings, board: Board, client=None, batch: int = 80) -> in
         blocks = []
         for vid, items in by_video.items():
             v = board.videos[vid]
-            if v.kind == "quiz" and v.answer:
-                choices = " | ".join(f"{l}) {t}" for l, t in v.choices)
-                about = f"Quiz. Correct answer: {v.answer}" + (f"\nChoices: {choices}" if choices else "")
-            else:
-                about = "No quiz on this video: only skip or not_an_answer."
-            blocks.append(f"Video: {v.name}\n{about}\n"
+            about_it = about(v)
+            blocks.append(f"Video: {v.name}\n{about_it}\n"
                           + "\n".join(f"- id {c.id}: {json.dumps(c.text[:300], ensure_ascii=False)}" for c in items))
         try:
             response, model = sw._generate_with_fallback(client, model, [VERIFY_PROMPT.format(videos="\n\n".join(blocks))],
@@ -755,6 +806,8 @@ def verify(settings: Settings, board: Board, client=None, batch: int = 80) -> in
                 if verdict == "not_an_answer" or (verdict in ("correct", "wrong") and not quiz):
                     verdict = "comment"
                 board.verdicts[item.id] = verdict
+                if verdict != "skip" and (text := clean_reply(item.reply)):
+                    board.replies[item.id] = text
                 done += 1
     return done
 

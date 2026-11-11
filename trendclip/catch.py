@@ -57,7 +57,7 @@ END_CARD = "Comment every emoji"  # no "Level N next" or subscribe: the video en
 TAIL = 0.6  # seconds after "Catch them all?" (not the usual 2 s): a quick end that loops back to the zombie banner
 PINNED = ("🧟 The zombie showed up more than once. Which emojis did it hold? Comment every one 👇\n"
           "Hint: pause and step frames, most last 2 frames. Empty hands don't count. How many? That's the game.\n"
-          "🏆 All of them = 10 leaderboard points. Level {next} drops next!")
+          "Level {next} drops next!")
 DESCRIPTION = "A zombie hides a few times in this video, each time with a different emoji. Catch them all and comment them."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#catchthezombie", "#quiz"]
 

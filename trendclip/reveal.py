@@ -61,8 +61,7 @@ WINDOW = ("Something", "One")  # the blocks break between these two spoken words
 TITLE = "Guess The {game} {Kind} | Level {level} 🎮"
 CARD = "LEVEL {level} - WHAT IS IT?"
 END_CARD = "Comment the second you knew"
-PINNED = ("What is it? And which second did you know? 👇\n🏆 First correct answer gets 10 leaderboard points. "
-          "Level {next} drops next!")
+PINNED = "What is it? And which second did you know? 👇\nLevel {next} drops next!"
 DESCRIPTION = "A {game} {kind} hides behind the blocks. Guess it before it shows, and comment the second you knew."
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#guessthepicture", "#quiz"]
 
