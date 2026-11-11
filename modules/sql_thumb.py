@@ -36,8 +36,18 @@ DUNGEON_BOSS = "Wither"  # trendclip.dungeon's final room
 
 
 def plan(info: dict) -> dict | None:
-    """The scene for a Short (its saved JSON), or None for the title-card look."""
+    """The scene for a Short (its saved JSON), or None for the title-card look. A drawn Short's rule, the
+    "(Hardcore)" at the end of its title, goes on top instead of PAUSE NOW!."""
     title = re.sub(r"[^\x00-\x7f]+", "", str(info.get("title") or "")).strip()
+    rule = re.search(r"\(([^)]+)\)$", title)
+    scene = _plan({**info, "title": title[:rule.start()].strip() if rule else title})
+    if scene and rule:
+        scene["top"] = rule.group(1).upper() + "!"
+    return scene
+
+
+def _plan(info: dict) -> dict | None:
+    title = str(info.get("title") or "")
     script = str(info.get("script") or "")
     start = re.match(r"(Ten|Five|Three) hearts", script)  # a drawn Short says what it starts with
     quest = bool(start) or "Pause Edition" in title
@@ -447,9 +457,9 @@ def draw_wall(scene: dict, base: Image.Image) -> Image.Image:
     at = (centre[0] - int(tool.width * 0.28), centre[1] - int(tool.height * 0.24))
     swing_trail(img, (at[0] + tool.width, at[1] + tool.height), 640, 205, 265)
     paste_glowing(img, tool, at, (255, 255, 255), 22, 1.2)
-    headline(img, "PAUSE NOW!", 110, 120, box=YELLOW, lines=1)
+    headline(img, scene.get("top", "PAUSE NOW!"), 110, 120, box=YELLOW, lines=1)
     if scene.get("hearts"):
-        hearts_row(img, 330)
+        hearts_row(img, 330, scene["hearts"])
     headline(img, scene["text"], None, 150)
     badge(img)
     return img

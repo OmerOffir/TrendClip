@@ -110,3 +110,15 @@ def test_a_weapon_short_draws_the_fight(tmp_path):
     assert img.size == (1080, 1920)
     r, g, b = img.getpixel((540, 140))[:3]  # the yellow PAUSE NOW! box
     assert r > 200 and g > 170 and b < 80
+
+
+def test_a_drawn_shorts_rule_goes_on_top_of_its_thumbnail():
+    from modules import sql_thumb
+
+    scene = sql_thumb.plan({"title": "Pause To Beat The Stray ⚔️ (Hardcore)", "script": "Three hearts, one stray. Can you win?"})
+    assert (scene["kind"], scene["mob"], scene["top"], scene["hearts"]) == ("fight", "Stray", "HARDCORE!", 3)
+    scene = sql_thumb.plan({"title": "Pause To Break The Bookshelf Wall 🪓 (Half Health)", "script": "Five hearts and a wall."})
+    assert (scene["kind"], scene["block"], scene["top"], scene["hearts"]) == ("wall", "bookshelf", "HALF HEALTH!", 5)
+    scene = sql_thumb.plan({"title": "Can Your Mob Beat The Spider? 🐺 (With A Shield)", "script": "Ten hearts, and a mob"})
+    assert scene["mob"] == "Spider" and scene["top"] == "WITH A SHIELD!" and scene["hearts"] == 10
+    assert sql_thumb.plan({"title": "Pause To Beat The Creeper ⚔️", "script": "Ten hearts."})["top"] == "PAUSE NOW!"
