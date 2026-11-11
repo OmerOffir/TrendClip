@@ -816,7 +816,7 @@ claim them) to copy into a YouTube and Instagram post.
 The picture says "OCTOBER LEADERBOARD", and the caption says the board resets on the 1st. The bot's
 replies give the fan's rank and points for this month.
 
-Every day at `DISCORD_LEADERBOARD_TIME` (default 13:30, empty = off) the bot sends a podium picture of
+Every day at `DISCORD_LEADERBOARD_TIME` (off by default since the competition ended; set e.g. 13:30 to turn it on) the bot sends a podium picture of
 the top 13 and a caption that tags all of them. Any time, `/leaderboard image:True` sends both and
 `/leaderboard post:True` just the caption; its "Next trap drops…" line follows the next upload time. YouTube's
 API can't create posts, so post it yourself: save the picture, copy the text, YouTube → Create → Post.

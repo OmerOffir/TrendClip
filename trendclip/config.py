@@ -216,8 +216,10 @@ class Settings(BaseModel):
 
 
 
-    # The leaderboard picture + a post caption to copy to YouTube; empty = off.
-    discord_leaderboard_time: str = Field("13:30", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
+    # The leaderboard picture + a post caption to copy to YouTube (and the month's champions on the 1st), at
+    # this time, e.g. "13:30". Off by default since 2026-11-11: the competition is over (an empty value in
+    # .env counts as not set, so off has to be the default).
+    discord_leaderboard_time: str = Field("", pattern=r"^(([01]\d|2[0-3]):[0-5]\d)?$")
     # Reply on YouTube to every fan's comment (they get a notification); see leaderboard.py.
     youtube_auto_replies: bool = True
     # A reply costs 50 of the 10,000 daily API units (an upload ~1,600): 100 replies use half.
