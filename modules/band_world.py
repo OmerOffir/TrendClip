@@ -41,6 +41,12 @@ from modules.pw_world import GOLD, INK, RED, SS, WHITE, back, big_text, counted,
 
 BPM = 124
 BEAT = 60.0 / BPM
+
+
+def set_tempo(bpm: float) -> None:
+    """The members play, bob and jump at the music's tempo (the owner's tracks are about 123)."""
+    global BEAT
+    BEAT = 60.0 / max(60.0, min(200.0, float(bpm)))
 FLOOR = 1380  # where the members' feet stand
 CAPTION_Y = 1545
 FADE = 0.18

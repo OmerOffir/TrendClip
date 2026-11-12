@@ -62,6 +62,65 @@ def style_for(script: dict) -> str:
     return asked if asked in STYLES else DEFAULT_STYLE
 
 
+# --------------------------------------------------------------------------- the owner's tracks (music/encore)
+
+SR = 22050  # analysis rate
+HOP = 512
+
+
+def load(path: Path) -> np.ndarray:
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le", "-ac", "1", "-ar", str(SR), "-"],
+                         capture_output=True, check=True, timeout=120).stdout
+    return np.frombuffer(raw, "<i2").astype(np.float32) / 32768
+
+
+def onsets(x: np.ndarray) -> np.ndarray:
+    """How much louder each 23 ms frame is than the one before: peaks are drum hits."""
+    frames = x[: len(x) // HOP * HOP].reshape(-1, HOP)
+    energy = np.sqrt((frames ** 2).mean(1))
+    return np.maximum(0, np.diff(np.log1p(energy * 100), prepend=0.0))
+
+
+def tempo(x: np.ndarray, lo: float = 70, hi: float = 180) -> float:
+    """The beats per minute, by how well the drum hits line up with themselves a beat later."""
+    o = onsets(x)
+    o = o - o.mean()
+    fps = SR / HOP
+    best, bpm = -1.0, 120.0
+    for b in np.arange(lo, hi, 0.1):
+        lag = fps * 60 / b
+        l0, frac = int(lag), lag - int(lag)
+        c = (1 - frac) * np.dot(o[:-l0 - 1], o[l0:-1]) + frac * np.dot(o[:-l0 - 1], o[l0 + 1:])
+        if c > best:
+            best, bpm = c, float(b)
+    if bpm < 95:  # a ballad's slow pulse: the multiple nearest a band's pace (124), so the members don't crawl
+        bpm = min((bpm * 1.5, bpm * 2), key=lambda b: abs(b - 124))
+    return round(bpm, 1)
+
+
+def pick_start(x: np.ndarray, need: float, seed: int, bpm: float) -> float:
+    """Where in the track this video starts: a different place per seed, every two bars, never in a quiet break
+    or the last seconds (the fade), and moved onto the nearest strong hit so the members' downbeat is the music's."""
+    dur = len(x) / SR
+    latest = dur - need - 6.0
+    if latest <= 0:
+        return 0.0
+    two_bars = 8 * 60.0 / bpm
+    level = float(np.sqrt((x ** 2).mean()))
+    good = [0.0]
+    for t in np.arange(two_bars, latest, two_bars):
+        a, b = int(t * SR), int((t + 4) * SR)
+        if float(np.sqrt((x[a:b] ** 2).mean())) >= 0.8 * level:
+            good.append(float(t))
+    start = good[np.random.default_rng(seed).integers(len(good))]
+    if start <= 0:
+        return 0.0
+    o = onsets(x)
+    k = int(start * SR / HOP)
+    window = o[max(0, k - 12):k + 12]
+    return round(max(0.0, (max(0, k - 12) + int(np.argmax(window))) * HOP / SR), 3)
+
+
 # --------------------------------------------------------------------------- the instruments
 
 

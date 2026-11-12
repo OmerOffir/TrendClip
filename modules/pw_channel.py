@@ -836,25 +836,33 @@ BAND_MUSIC = "encore"  # music/encore/: the owner's Suno instrumentals for Encor
 BAND_LOUDNESS = -17.0  # LUFS: Suno masters loud; brought to the level of our own beds so the voice stays on top
 
 
-def band_track(script: dict, seconds: float, out: Path) -> Path:
-    """A band story's music: one of the owner's tracks in music/encore (a different one per seed, made as loud as the
-    rest), else an original anthem made in code (modules.band_music). Never the band's own song: covers get claimed."""
+def band_track(script: dict, seconds: float, out: Path) -> tuple[Path, float, str]:
+    """A band story's music and its tempo: one of the owner's tracks in music/encore (a different track and starting
+    point per seed, on a strong beat, faded in, as loud as the rest), else an original anthem made in code
+    (modules.band_music). Never the band's own song: covers get claimed. Returns (file, bpm, what was used)."""
     import subprocess
 
-    from modules import band_music
+    from modules import band_music, band_world
 
     tracks = sorted((PROJECT_ROOT / "music" / setting("PW_BAND_MUSIC", BAND_MUSIC)).glob("*.mp3"))
+    seed = int(script.get("seed") or 0)
     if tracks:
-        track = random.Random(int(script.get("seed") or 0)).choice(tracks)
+        track = random.Random(seed).choice(tracks)
         try:
-            subprocess.run(["ffmpeg", "-v", "error", "-y", "-i", str(track), "-t", f"{seconds + 3:.2f}",
-                            "-af", f"loudnorm=I={BAND_LOUDNESS}:TP=-2:LRA=11", "-ar", "44100", "-b:a", "192k", str(out)],
+            x = band_music.load(track)
+            bpm = band_music.tempo(x)
+            start = band_music.pick_start(x, seconds + 3, seed, bpm)
+            fade = "afade=t=in:d=0.4," if start > 0 else ""
+            subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.3f}", "-i", str(track), "-t", f"{seconds + 3:.2f}",
+                            "-af", f"{fade}loudnorm=I={BAND_LOUDNESS}:TP=-2:LRA=11", "-ar", "44100", "-b:a", "192k", str(out)],
                            check=True, timeout=120)
-            logger.info("Encore Story music: %s", track.name)
-            return out
+            used = f"{track.stem} from {start:.1f} s at {bpm} BPM"
+            logger.info("Encore Story music: %s", used)
+            return out, bpm, used
         except Exception as err:  # noqa: BLE001 - the made-here anthem still makes the video
             logger.warning("The track %s could not be used (%s): the anthem made in code instead", track.name, err)
-    return band_music.bed(seconds + 2, out, band_music.style_for(script), int(script.get("seed") or 0))
+    path = band_music.bed(seconds + 2, out, band_music.style_for(script), seed)
+    return path, float(band_world.BPM), "anthem made in code"
 
 
 def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f, m: None, job: dict | None = None,
@@ -895,7 +903,9 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         spec.hold = 0.8
         script = band_world.titled(script, spec.duration)
         (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        music = band_track(script, spec.duration, work / "music.mp3")
+        music, bpm, used = band_track(script, spec.duration, work / "music.mp3")
+        band_world.set_tempo(bpm)
+        progress(None, f"Music: {used}")
         volume = float(script.get("music_volume") or setting("PW_BAND_MUSIC_VOLUME", "0.15"))
         band_world.render(spec, script["band"], work / "voice.mp3", work / "video.mp4", music, volume,
                           lambda f, m: progress(0.1 + 0.85 * (f or 0), m))

@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from modules import band_world, bw_render, pw_channel, pw_write
@@ -184,10 +185,26 @@ def test_a_band_story_takes_the_owners_track_when_there_is_one(tmp_path, monkeyp
     folder.mkdir(parents=True)
     subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=220:d=8", str(folder / "Arena One.mp3")], check=True)
     monkeypatch.setattr(pw_channel, "PROJECT_ROOT", tmp_path)
-    out = pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "music.mp3")
-    assert out.is_file() and out.stat().st_size > 10_000
+    out, bpm, used = pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "music.mp3")
+    assert out.is_file() and out.stat().st_size > 10_000 and "Arena One" in used and 95 <= bpm <= 180
     (folder / "Arena One.mp3").unlink()
     from modules import band_music
 
     monkeypatch.setattr(band_music, "bed", lambda seconds, out, style, seed=0: (out.write_bytes(b"made"), out)[1])
-    assert pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "bed.mp3").read_bytes() == b"made"
+    assert pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "bed.mp3")[0].read_bytes() == b"made"
+
+
+
+def test_a_track_starts_somewhere_new_on_a_beat_and_its_tempo_is_found():
+    from modules import band_music
+
+    sr, bpm = band_music.SR, 123.0
+    x = np.zeros(int(sr * 90), np.float32)
+    for k in range(int(90 * bpm / 60)):  # a click on every beat
+        a = int(k * 60 / bpm * sr)
+        x[a:a + 200] = 0.8
+    assert abs(band_music.tempo(x) - bpm) < 1.5
+    starts = {band_music.pick_start(x, 50.0, seed, bpm) for seed in range(12)}
+    assert len(starts) > 2 and max(starts) <= 90 - 50 - 6 + 0.6
+    beat = 60 / bpm
+    assert all(min(s % beat, beat - s % beat) < 0.05 for s in starts)
