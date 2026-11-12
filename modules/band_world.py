@@ -656,7 +656,7 @@ class BandRenderer:
             spots = [(W * 0.28, 1.25, FLOOR + 150.0), (W * 0.72, 1.25, FLOOR + 150.0)]
         elif empty:  # the members stand aside: the singer's mic alone in the light
             left = (n + 1) // 2
-            sides = [W * (0.14 + 0.18 * j / max(1, left - 1)) for j in range(left)] if left > 1 else [W * 0.2]
+            sides = [W * (0.11 + 0.23 * j / max(1, left - 1)) for j in range(left)] if left > 1 else [W * 0.2]
             sides += [W - x for x in sides][: n - left][::-1]
             spots = [(x, 0.78, float(FLOOR)) for x in sides]
         else:  # one column each; the drummer's column, raised on a riser, is never behind someone
@@ -703,7 +703,7 @@ class BandRenderer:
             elif shot == "close":  # beside the head, on the left (the studio's sign is on the right)
                 x, y, sc = W * (0.18 if k == 0 else 0.82), 780.0, 0.72
             elif o.get("big"):
-                x, y, sc = W * 0.8, 690.0, 0.66
+                x, y, sc = W * 0.8, 690.0, 0.85
             else:
                 x, y, sc = W * (0.5 if len(centre) < 2 else 0.28 + 0.44 * k), 700.0, 0.85 if len(centre) < 2 else 0.75
             items.append({"type": "prop", "at": at(pr.get("cue"), k), "kind": pr["kind"], "text": str(pr.get("text") or "")[:16],
@@ -849,7 +849,7 @@ class BandRenderer:
             text = it["text"] if parts is None or parts[1] < 10 else counted(it["text"], ease(u))  # "#1" never shows "#0"
             put(img, big_text(text, 150, it["color"]), (it.get("x", W / 2), it["y"]), scale=s, alpha=a)
         elif kind == "news":
-            put(img, news_sprite(it["text"]), (W / 2, 740), scale=0.86 * s, alpha=a)
+            put(img, news_sprite(it["text"]), (W / 2, 775), scale=0.86 * s, alpha=a)
         elif kind == "prop":
             bob = 8 * math.sin(t * 3 + it["k"])
             put(img, prop_sprite(it["kind"], it["text"], round(t * 12) / 12), (it["x"], it["y"] + bob), scale=it["sc"] * s, alpha=a)
