@@ -668,6 +668,8 @@ class BandRenderer:
         else:  # one column each; the drummer's column, raised on a riser, is never behind someone
             cols = n
             scale = {1: 1.0, 2: 0.98, 3: 0.86, 4: 0.74}.get(cols, 0.64)
+            if isinstance(o.get("news"), dict):  # the front page needs the middle: the heads stay under it
+                scale = min(scale, 0.74)
             xs = [W / 2] if cols == 1 else [W * 0.15 + W * 0.7 * c / (cols - 1) for c in range(cols)]
             drum_col = cols // 2
             order = [c for c in range(cols) if c != drum_col] if "drums" in plays else list(range(cols))
@@ -706,6 +708,8 @@ class BandRenderer:
             who = next((it for it in items if it["type"] == "member" and it["name"] == pr.get("who")), None)
             if who:  # over that member's head
                 x, y, sc = min(W - 150, max(150, who["x"])), who["foot"] - 560 * who["s"] - 140, 0.8
+            elif shot == "duo":  # above the two big heads, clear of the cards and the studio's sign
+                x, y, sc = W * (0.5 if len(centre) < 2 else 0.32 + 0.33 * k), 650.0, 0.58
             elif shot == "close":  # beside the head, on the left (the studio's sign is on the right)
                 x, y, sc = W * (0.18 if k == 0 else 0.82), 780.0, 0.72
             elif o.get("big"):
