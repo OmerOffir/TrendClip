@@ -1,0 +1,45 @@
+{
+  "title": "Oasis in 45 Seconds",
+  "seed": 11,
+  "music_volume": 0.15,
+  "band": {
+    "name": "OASIS",
+    "sub": "in 45 seconds",
+    "members": {
+      "Liam": {"hair": "mop", "hair_color": "brown", "glasses": "round", "top": "parka", "top_color": "khaki", "pants": "denim", "play": "mic"},
+      "Noel": {"hair": "fringe", "hair_color": "dark", "brows": "mono", "top": "jacket", "top_color": "black", "pants": "black", "play": "guitar", "guitar": "flag"},
+      "Bonehead": {"hair": "bald", "beard": "stubble", "top": "tee", "top_color": "grey", "pants": "denim", "play": "guitar", "guitar": "sunburst"},
+      "Guigsy": {"hair": "short", "hair_color": "dark", "top": "tee", "top_color": "navy", "pants": "black", "play": "bass"},
+      "Tony": {"hair": "short", "hair_color": "brown", "top": "tee", "top_color": "white", "play": "drums"}
+    }
+  },
+  "scenes": [
+    {"kind": "band", "set": "dark", "line": "BROTHERS. RIVALS. LEGENDS.",
+     "members": [{"name": "Liam", "expr": "angry", "play": "none", "pose": "cross"}, {"name": "Noel", "expr": "angry", "play": "none", "pose": "cross"}],
+     "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain."},
+    {"kind": "band", "set": "garage", "year": "1991", "line": "MANCHESTER",
+     "members": ["Liam", "Bonehead", "Guigsy", {"name": "Noel", "cue": "Noel", "expr": "cool"}],
+     "narration": "Manchester, 1991. Liam Gallagher sings in a little band called Oasis. His big brother Noel joins, on one condition: he writes every song."},
+    {"kind": "band", "set": "club", "sign": "KING TUT'S", "year": "1993", "line": "GLASGOW",
+     "members": ["Liam", "Noel", "Bonehead", "Guigsy", "Tony"],
+     "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night."},
+    {"kind": "band", "set": "studio", "year": "1994", "line": "FIRST ALBUM",
+     "members": [{"name": "Liam", "expr": "cool"}, {"name": "Noel", "expr": "grin"}],
+     "big": {"text": "#1", "cue": "fastest"},
+     "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen."},
+    {"kind": "band", "set": "stadium", "year": "1996", "line": "KNEBWORTH",
+     "members": ["Liam", "Noel", "Bonehead", "Guigsy"],
+     "big": {"text": "250,000", "cue": "fifty"},
+     "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets."},
+    {"kind": "band", "set": "dark", "year": "2009", "line": "BACKSTAGE IN PARIS",
+     "members": [{"name": "Liam", "expr": "angry", "play": "none", "pose": "point"}, {"name": "Noel", "expr": "angry", "play": "none", "pose": "cross"}],
+     "crack": {"cue": "fight"}, "news": {"text": "OASIS SPLIT", "cue": "over"},
+     "narration": "But the brothers never stop fighting. In 2009, one last fight backstage in Paris. Noel walks out. Oasis is over."},
+    {"kind": "band", "set": "street", "year": "15 YEARS", "line": "NOT A WORD",
+     "members": [{"name": "Liam", "expr": "sad", "play": "none"}, {"name": "Noel", "expr": "sad", "play": "none"}],
+     "narration": "For fifteen years, they barely speak."},
+    {"kind": "band", "set": "stadium", "year": "2025", "line": "THEY'RE BACK", "confetti": true,
+     "members": [{"name": "Liam", "expr": "cool"}, {"name": "Noel", "expr": "grin"}, "Bonehead"],
+     "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?"}
+  ]
+}
