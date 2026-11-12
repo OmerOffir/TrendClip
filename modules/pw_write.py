@@ -282,8 +282,21 @@ def band_problems(script: dict) -> list[str]:
             if cue and not any(w.startswith(cue.lower()) for w in words_):
                 problems.append(f"scene {k}'s {what} cue {cue!r} is not a word of its narration")
         for m in sc.get("members") or []:
-            if isinstance(m, dict) and m.get("cue") and not any(w.startswith(str(m["cue"]).lower()) for w in words_):
-                problems.append(f"scene {k}: {m.get('name')}'s cue {m['cue']!r} is not a word of its narration")
+            if not isinstance(m, dict):
+                continue
+            who = m.get("name")
+            for key in ("cue", "say_cue"):
+                if m.get(key) and not any(w.startswith(str(m[key]).lower()) for w in words_):
+                    problems.append(f"scene {k}: {who}'s {key} {m[key]!r} is not a word of its narration")
+            if m.get("pose") and m["pose"] not in band_world.POSES:
+                problems.append(f"scene {k}: {who}'s pose is one of {', '.join(band_world.POSES)}")
+            if m.get("move") and m["move"] not in band_world.MOVES:
+                problems.append(f"scene {k}: {who}'s move is one of {', '.join(band_world.MOVES)}")
+            bubble = str(m.get("say") or m.get("think") or "")
+            if len(bubble) > band_world.BUBBLE_TEXT or len(bubble.split()) > 4:
+                problems.append(f"scene {k}: {who}'s bubble {bubble!r} is over 4 words or {band_world.BUBBLE_TEXT} characters")
+    if scenes and sum(1 for sc in scenes for m in sc.get("members") or [] if isinstance(m, dict) and (m.get("say") or m.get("think"))) < len(scenes) // 2:
+        problems.append(f"speech bubbles in at least {len(scenes) // 2} scenes (a member's say/think: they keep eyes on the screen)")
     return problems
 
 
@@ -323,8 +336,18 @@ A scene's keys (all optional except kind and narration):
   "set": {"|".join(band_world.SETS)} ("sign": a neon word on the club wall, the venue's name, 12 characters at most)
   "year": "1991" (or "15 YEARS" for a gap); "line": a card under it, {BAND_LINE} characters at most, capitals ("MANCHESTER", "FIRST ALBUM")
   "members": who is on stage, by their key in band.members: ["Liam", {{"name": "Noel", "cue": "Noel", "expr": "cool",
-    "play": "none", "pose": "cross"}}] (expr: smile|grin|laugh|cool|angry|sad|shocked; pose when not playing: hang|up|cross|point;
+    "play": "none", "pose": "cross"}}] (expr: smile|grin|laugh|cool|angry|sad|shocked;
     "play": "none" for a scene where they don't play: a fight, a sad scene; a cue makes someone appear as their name is said)
+    A member may also carry:
+    "say": a speech bubble, no voice, 1-4 words, {band_world.BUBBLE_TEXT} characters at most ("I WRITE THE SONGS",
+      "WE'RE ON!", "YOUR FAULT!"), with "say_cue": the word it pops on. "think": a thought cloud instead ("CALL HIM?").
+      A cartoon reaction to what the narrator says, never a made-up quote passed off as real; nothing cruel.
+      Angry or shocked members shout (a spiky bubble). One bubble on screen at a time: they take turns. A bubble in at
+      least half the scenes, never in a scene about a death.
+    "pose" when not playing: {"|".join(band_world.POSES)}; "move": {"|".join(band_world.MOVES)} (jump: hops on the
+      beat, a big win; bounce: a happy bob; spin: a turn on the spot; shake: angry trembling; lean: rocking side to
+      side; slide: slides in from the side as they arrive). Give 1-3 members a move in most scenes, never the same
+      move in every scene, none in a sad scene.
   "big": {{"text": "250,000", "cue": a word}}: a figure that counts up as it is said ("#1" works too)
   "news": {{"text": "OASIS SPLIT", "cue": a word}}: a newspaper front page (a split, a scandal, a record)
   "crack": {{"cue": a word}}: lightning between the first two members (a fight)

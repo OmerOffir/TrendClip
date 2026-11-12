@@ -14,7 +14,9 @@ A script is the usual scenes list (narration per scene) plus:
 A scene (kind "band") may carry:
     set       garage | club | studio | stadium | dark | street   (sign: a neon word in the club)
     year      the big year under the title;  line: a short card under it ("KING TUT'S, GLASGOW")
-    members   [name | {name, expr, play, pose, cue}] (expr: smile grin laugh cool angry sad shocked; pose: hang up cross point)
+    members   [name | {name, expr, play, pose, move, say|think, say_cue, cue}] (expr: smile grin laugh cool angry sad
+              shocked; pose: hang up cross point wave fist shrug; move: jump bounce spin shake lean slide; say: a
+              speech bubble of a few words, no voice, one on screen at a time, the speaker hops)
     big       {text: "250,000", cue, color}: a figure that counts up when it is said
     news      {text: "OASIS SPLIT", cue}: a newspaper front page that spins in
     stamps    [{text, cue}];  crack: {cue}: lightning between the first two members (a fight);  confetti: true
@@ -79,6 +81,9 @@ LOOK_VALUES = {"hair": ("mop", "fringe", "short", "side_part", "slick", "quiff",
                "skin": tuple(SKINS), "top_color": tuple(TOPS), "pants": tuple(TOPS)}
 EXTRAS = ("mustache", "sideburns", "earring", "chain", "scarf", "bowtie", "armband", "tattoos", "wristband", "headband", "teeth")
 EXPRS = ("smile", "grin", "laugh", "cool", "angry", "sad", "shocked")
+POSES = ("hang", "up", "cross", "point", "wave", "fist", "shrug")
+MOVES = ("jump", "bounce", "spin", "shake", "lean", "slide")  # how a member moves on stage, on top of playing
+BUBBLE_TEXT = 18  # characters a speech bubble may have
 
 
 def rgb(table: dict, name: Any, default: str) -> tuple[int, int, int]:
@@ -242,8 +247,13 @@ def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "ha
         stick = math.sin(math.pi * 2 * beat)
         arms = [(sh_l, (100, 430 - 30 * max(0, stick) + hy)), (sh_r, (262, 430 - 30 * max(0, -stick) + hy))]
     else:
+        wave = math.sin(t * 9 + seed)
+        pump = 60 * (1 - hit)  # the fist punches up on every beat
         arms = {"up": [(sh_l, (96, 210 + hy)), (sh_r, (264, 210 + hy))],
                 "point": [(sh_l, (110, 470 + hy)), (sh_r, (300, 300 + hy))],
+                "wave": [(sh_l, (104, 486 + hy)), (sh_r, (282 + 34 * wave, 196 + 10 * abs(wave) + hy))],
+                "fist": [(sh_l, (104, 486 + hy)), (sh_r, (250, 250 - pump + hy))],
+                "shrug": [(sh_l, (70, 330 + hy)), (sh_r, (290, 330 + hy))],
                 "cross": [(sh_l, (214, 420 + hy)), (sh_r, (146, 420 + hy))]}.get(pose, [(sh_l, (104, 486 + hy)), (sh_r, (256, 486 + hy))])
     for k, (a, b) in enumerate(arms):
         d.line([P(*a), P(*b)], fill=OUTLINE, width=int(30 * u))
@@ -687,8 +697,15 @@ class BandRenderer:
             shown = -1.0 if (first or (m["name"] in prev_names and not m.get("cue"))) else at(m.get("cue"), k)
             items.append({"type": "member", "at": shown, "name": m["name"], "look": look, "play": play, "x": x, "s": s,
                           "foot": foot, "expr": str(m.get("expr") or "smile"), "pose": str(m.get("pose") or "hang"),
-                          "seed": sum(map(ord, m["name"])) % 23, "tag": bool(m.get("tag", m["name"] not in self.seen and not m["name"].startswith("_")))})
+                          "seed": sum(map(ord, m["name"])) % 23, "tag": bool(m.get("tag", m["name"] not in self.seen and not m["name"].startswith("_"))),
+                          "move": str(m.get("move") or ""), "move_at": shown if shown >= 0 else scene.start + 0.3,
+                          "from_prev": m["name"] in prev_names, "hops": []})
             self.seen.add(m["name"])
+            said = str(m.get("say") or m.get("think") or "").strip()[:BUBBLE_TEXT + 4]
+            if said:
+                kind = "think" if m.get("think") and not m.get("say") else "shout" if items[-1]["expr"] in ("angry", "shocked") or said.endswith("!!") else "say"
+                when = at(m.get("say_cue"), k) if m.get("say_cue") else (shown + 0.35 if shown >= 0 else scene.start + 0.35 + 0.9 * k)
+                items.append({"type": "bubble", "at": when, "text": said.upper(), "kind": kind, "who": items[-1]})
         if empty:
             items.append({"type": "emptymic", "at": -1.0})
         items.sort(key=lambda it: it.get("play") != "drums")  # the drummer behind
@@ -726,6 +743,22 @@ class BandRenderer:
             items.append({"type": "crack", "at": at(o["crack"].get("cue"), 2)})
         for k, st in enumerate(o.get("stamps") or []):
             items.append({"type": "stamp", "at": at(st.get("cue"), k), "text": str(st.get("text") or "NO"), "k": k})
+        bubbles = sorted((it for it in items if it["type"] == "bubble"), key=lambda it: it["at"])
+        for b in bubbles:  # said on the scene's last word: a moment earlier, so it is read before the cut
+            b["at"] = max(scene.start + 0.2, min(b["at"], scene.end - 1.1))
+        for b0, b1 in zip(bubbles, bubbles[1:]):  # they take turns: one bubble on screen at a time, each read for 0.9 s
+            b1["at"] = max(b1["at"], b0["at"] + 0.9)
+        papers = [it["at"] for it in items if it["type"] in ("news", "poll") and it["at"] >= 0]
+        for k, b in enumerate(bubbles):
+            b["end"] = bubbles[k + 1]["at"] - 0.04 if k + 1 < len(bubbles) else scene.end + 0.3
+            b["end"] = min([b["end"]] + [p_ for p_ in papers if p_ > b["at"]])  # a front page or the question clears it
+            if b["at"] < scene.end - 0.3:
+                b["who"]["hops"].append(b["at"])  # whoever speaks hops a little
+        for it in items:  # a front page or a stamp lands: the band jumps
+            if it["type"] in ("news", "stamp") and it["at"] >= 0:
+                for m in items:
+                    if m["type"] == "member" and m["play"] != "drums":
+                        m["hops"].append(it["at"] + 0.08)
         return items
 
     def members_of(self, scene: Scene) -> list[dict[str, Any]]:
@@ -771,6 +804,7 @@ class BandRenderer:
         if name == "stadium":
             lights(img, t)
         items = self.items[i]
+        self.items_now, self.set_now = items, name
         shake = 0.0
         for it in items:
             if it["type"] == "crack" and 0 < t - it["at"] < 0.4:
@@ -787,10 +821,10 @@ class BandRenderer:
             crowd(img, t, (self.spec.seed or 7) + i, dense=False)
         self.notes(img, t, items)
         poll = next((it for it in items if it["type"] == "poll" and 0 <= it["at"] <= t), None)
-        for it in items:
+        for it in sorted(items, key=lambda it: it["type"] == "bubble"):  # bubbles on top
             if it["type"] in ("member", "emptymic"):
                 continue
-            if poll and it["type"] in ("big", "news", "prop", "stamp") and not (it["type"] == "prop" and it["sc"] < 0.65):
+            if poll and it["type"] in ("big", "news", "prop", "stamp", "bubble") and not (it["type"] == "prop" and it["sc"] < 0.65):
                 fade = 1 - min(1.0, (t - poll["at"]) / 0.25)  # the question takes the middle of the screen
                 if fade <= 0:
                     continue
@@ -812,24 +846,63 @@ class BandRenderer:
         if sub:
             put(img, text_sprite(sub, 40, (235, 235, 245), "Bold"), (W / 2, 240))
 
+    @staticmethod
+    def motion(it: dict[str, Any], t: float) -> tuple[float, float, float, float]:
+        """How a member moves on top of playing: (dx, dy, angle, width) in screen pixels, degrees and a 1 = normal
+        width (below 0: turned round, mid-spin)."""
+        k = it["s"]
+        dx = dy = ang = 0.0
+        sx = 1.0
+        for h in it["hops"]:  # a little hop when they speak or a front page lands
+            u = (t - h) / 0.34
+            if 0 <= u <= 1:
+                dy -= 46 * k * 4 * u * (1 - u)
+        mv, m0 = it["move"], it["move_at"]
+        if mv == "jump":
+            ph = (t / (2 * BEAT) + it["seed"] * 0.1) % 1.0
+            dy -= 70 * k * 4 * ph * (1 - ph)
+        elif mv == "bounce":
+            dy -= 22 * k * abs(math.sin(math.pi * t / BEAT))
+        elif mv == "lean":
+            ang = 8 * math.sin(math.pi * t / BEAT + it["seed"])
+        elif mv == "shake":
+            dx += 7 * k * math.sin(t * 55)
+            ang = 2.5 * math.sin(t * 41)
+        elif mv == "spin" and t >= m0:
+            u = ((t - m0) % (8 * BEAT)) / 0.6  # a turn on the spot every two bars
+            if u < 1:
+                sx = math.cos(2 * math.pi * ease(u))
+                dy -= 30 * k * math.sin(math.pi * u)
+        elif mv == "slide" and not it["from_prev"]:
+            u = (t - m0) / 0.5
+            if u < 1:  # in from the nearer side of the screen
+                dx += (1 - ease(max(0.0, u))) * (-1 if it["x"] < W / 2 else 1) * W * 0.75
+        return dx, dy, ang, sx
+
     def draw_member(self, img: Image.Image, it: dict[str, Any], t: float, shake: float) -> None:
         s, a = self.pop(it, t)
+        if it["move"] == "slide" and not it["from_prev"]:
+            s, a = (1.0, 1.0) if t >= it["move_at"] else (0.0, 0.0)  # it slides in instead of popping
         if s <= 0:
             return
+        k = it["s"] * s
+        dx, dy, ang, sx = self.motion(it, t) if it["play"] != "drums" else (0.0, 0.0, 0.0, 1.0)
         if it["play"] == "drums":
             spr = member(it["look"], t, "drums", it["expr"], it["pose"], it["seed"])
-            k = it["s"] * s
             put(img, spr, (it["x"], it["foot"] - SH * k / 2 + 40 * k), scale=k, alpha=a)
             kit = drum_kit(t, str(self.band.get("name") or ""))
             put(img, kit, (it["x"], it["foot"] + 10 - kit.height * k * 0.5), scale=k * 1.1, alpha=a)
         else:
             spr = member(it["look"], t, it["play"], it["expr"], it["pose"], it["seed"])
-            k = it["s"] * s
-            put(img, spr, (it["x"] + shake, it["foot"] - SH * k / 2), scale=k, alpha=a)
+            if abs(sx) < 0.999:
+                spr = spr.resize((max(1, int(spr.width * abs(sx))), spr.height), Image.BILINEAR)
+                if sx < 0:
+                    spr = spr.transpose(Image.FLIP_LEFT_RIGHT)
+            put(img, spr, (it["x"] + shake + dx, it["foot"] - SH * k / 2 + dy), scale=k, alpha=a, angle=ang)
         if it["tag"]:
             name_pill = pill(it["name"].upper(), "dark", 30)
             y = min(it["foot"] + 52, 1440) if it["play"] != "drums" else it["foot"] - 640 * it["s"]
-            put(img, name_pill, (it["x"], y), alpha=a)
+            put(img, name_pill, (it["x"] + dx, y), alpha=a)
 
     def notes(self, img: Image.Image, t: float, items: list[dict[str, Any]]) -> None:
         """Music notes float up from whoever is playing."""
@@ -868,10 +941,80 @@ class BandRenderer:
                 beat = 1 + 0.05 * max(0.0, math.sin(math.pi * 2 * (t / BEAT) + k * math.pi))
                 put(img, poll_sprite(text, style), (W / 2, 640 + k * 190), scale=s * beat, alpha=a)
             put(img, text_sprite("OR", 64, GOLD, "Black"), (W / 2, 735), scale=s, alpha=a)
+        elif kind == "bubble":
+            self.draw_bubble(img, it, t, s, a)
         elif kind == "crack":
             put(img, crack_sprite(), (W / 2, 1050), scale=s, alpha=a * (0.75 + 0.25 * math.sin(t * 30)))
         elif kind == "stamp":
             put(img, pw_world.stamp(it["text"]), (W / 2, 700 + it["k"] * 150), scale=1 + 0.8 * (1 - s) if s < 1 else 1.0, alpha=a)
+
+    def busy(self, t: float, skip: dict[str, Any]) -> list[tuple[float, float, float, float]]:
+        """Where things already are on screen at t (the title, cards, props, figures, papers, heads): a bubble keeps
+        off them."""
+        boxes = [(0.0, 0.0, W, 285.0)]
+        if self.set_now == "studio":  # the RECORDING light on the wall
+            boxes.append((W - 300.0, 650.0, W, 750.0))
+        for o in self.items_now:
+            if o is skip or (o["at"] >= 0 and o["at"] > t) or o["type"] in ("bubble", "emptymic", "crack"):
+                continue
+            ty = o["type"]
+            if ty == "year":
+                boxes.append((W / 2 - 300, 290, W / 2 + 300, 450))
+            elif ty == "line":
+                boxes.append((W / 2 - 380, 465, W / 2 + 380, 548))
+            elif ty == "prop":
+                r = 165 * o["sc"]
+                boxes.append((o["x"] - r, o["y"] - r, o["x"] + r, o["y"] + r))
+            elif ty == "big":
+                hw = 50 * len(o["text"]) + 40
+                boxes.append((o["x"] - hw, o["y"] - 90, o["x"] + hw, o["y"] + 90))
+            elif ty == "news":
+                boxes.append((W / 2 - 360, 775 - 200, W / 2 + 360, 775 + 200))
+            elif ty == "stamp":
+                y = 700 + o["k"] * 150
+                boxes.append((W / 2 - 45 * len(o["text"]) - 40, y - 65, W / 2 + 45 * len(o["text"]) + 40, y + 65))
+            elif ty == "member":
+                k = o["s"]
+                head = o["foot"] - (570 if o["play"] == "drums" else 610) * k
+                boxes.append((o["x"] - 135 * k, head + 20 * k, o["x"] + 135 * k, head + 270 * k))
+        return boxes
+
+    def draw_bubble(self, img: Image.Image, it: dict[str, Any], t: float, s: float, a: float) -> None:
+        """A speech bubble over the member who speaks, its tail at their head; it pops from the tail and goes when
+        the next one comes. Of a few places round the head, it takes the one that covers the least."""
+        if t >= it["end"]:
+            return
+        a *= min(1.0, (it["end"] - t) / 0.12)
+        m = it["who"]
+        k = m["s"]
+        dx, dy, _, _ = self.motion(m, t) if m["play"] != "drums" else (0.0, 0.0, 0.0, 1.0)
+        if "spot" not in it:  # chosen once, where the member stands still
+            head = m["foot"] - (570 if m["play"] == "drums" else 610) * k
+            boxes = self.busy(max(t, it["at"] + 0.3), m)
+            mid = 1 if m["x"] <= W / 2 else -1
+            best = None
+            for size in (1.0, 0.8):
+                probe = bubble_sprite(it["text"], it["kind"], 0.5)
+                w, h = probe.width * size, probe.height * size
+                for side in (mid, -mid):
+                    for drop in (0, 70, 150):
+                        tx, ty = m["x"] + side * 70 * k, head - 6 + drop * k
+                        left = min(W - 24 - w, max(24.0, tx - (0.22 if side > 0 else 0.78) * w))
+                        r = (left, ty - h, left + w, ty)
+                        cover = sum(max(0.0, min(r[2], bx[2]) - max(r[0], bx[0])) * max(0.0, min(r[3], bx[3]) - max(r[1], bx[1]))
+                                    for bx in boxes)
+                        score = cover + (1 - size) * 30000 + drop * 40 + (side != mid) * 3000
+                        if best is None or score < best[0]:
+                            best = (score, tx, ty, left, w, size)
+            _, tx, ty, left, w, size = best
+            it["spot"] = (tx - m["x"], ty, left - m["x"], size, round(min(0.85, max(0.15, (tx - left) / w)) * 20) / 20)
+        ox, ty, lx, size, frac = it["spot"]
+        spr = bubble_sprite(it["text"], it["kind"], frac)
+        tip = (m["x"] + dx + ox, ty + dy)
+        w, h = spr.width * size, spr.height * size
+        cx, cy = m["x"] + dx + lx + w / 2, tip[1] - h / 2
+        sc = s * (1 + 0.025 * math.sin(t * 7))
+        put(img, spr, (tip[0] + (cx - tip[0]) * sc, tip[1] + (cy - tip[1]) * sc), scale=sc * size, alpha=a)
 
     def confetti(self, img: Image.Image, t: float) -> None:
         d = ImageDraw.Draw(img)
@@ -988,6 +1131,68 @@ def crack_sprite() -> Image.Image:
     pts = [(x * SS, y * SS) for x, y in pts]
     d.line(pts, fill=(255, 230, 80), width=26 * SS, joint="curve")
     d.line(pts, fill=WHITE, width=10 * SS, joint="curve")
+    return shrink(img)
+
+
+@lru_cache(maxsize=64)
+def bubble_sprite(text: str, kind: str = "say", tail: float = 0.25) -> Image.Image:
+    """A comic speech bubble: "say" round, "shout" spiky (angry, shocked), "think" a cloud with dots. Its tail's tip is
+    at the bottom edge, `tail` of the way across."""
+    f = font(int(50 * SS), "Black")
+    words, lines = text.split(), []
+    for wd in words:  # two lines at most, about 11 characters each
+        if lines and len(lines[-1]) + 1 + len(wd) <= 11:
+            lines[-1] += " " + wd
+        else:
+            lines.append(wd)
+    if len(lines) > 2:
+        lines = [" ".join(words[: len(words) // 2]), " ".join(words[len(words) // 2:])]
+    tw = max(f.getlength(ln) for ln in lines)
+    lh = 58 * SS
+    pad_x, pad_y = (70 if kind == "shout" else 52) * SS, (44 if kind == "shout" else 30) * SS
+    bw, bh = int(tw + 2 * pad_x), int(lh * len(lines) + 2 * pad_y)
+    tail_h = 56 * SS
+    img = Image.new("RGBA", (bw + 16 * SS, bh + tail_h + 16 * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    o = 6 * SS
+    tx = bw * tail
+    lw = int(6 * SS)
+    paper = (255, 255, 255) if kind != "shout" else (255, 236, 120)
+    for shadow in (True, False):
+        off = 8 * SS if shadow else 0
+        fill = (0, 0, 0, 90) if shadow else paper
+        line = None if shadow else OUTLINE
+        if kind == "shout":
+            pts = []
+            n = 22
+            for j in range(n):
+                ang = 2 * math.pi * j / n
+                r = 1.0 if j % 2 == 0 else 0.8
+                pts.append((o + bw / 2 + math.cos(ang) * bw / 2 * r + off, o + bh / 2 + math.sin(ang) * bh / 2 * r + off))
+            d.polygon(pts, fill=fill, outline=line, width=lw if line else 0)
+            d.polygon([(o + tx - 26 * SS + off, o + bh - 20 * SS + off), (o + tx + 26 * SS + off, o + bh - 20 * SS + off),
+                       (o + tx + off, o + bh + tail_h - 6 * SS + off)], fill=fill, outline=line, width=lw if line else 0)
+        elif kind == "think":
+            for j in range(12):  # a cloud of bumps round an ellipse
+                ang = 2 * math.pi * j / 12
+                bx, by = o + bw / 2 + math.cos(ang) * bw * 0.42 + off, o + bh / 2 + math.sin(ang) * bh * 0.36 + off
+                r = min(bw, bh) * 0.24
+                d.ellipse([bx - r, by - r, bx + r, by + r], fill=fill, outline=line, width=lw if line else 0)
+            d.ellipse([o + bw * 0.1 + off, o + bh * 0.12 + off, o + bw * 0.9 + off, o + bh * 0.88 + off], fill=fill)
+            for j, r in enumerate((16, 11)):
+                cy = o + bh + 14 * SS + j * 30 * SS + off
+                d.ellipse([o + tx - r * SS + off, cy - r * SS, o + tx + r * SS + off, cy + r * SS], fill=fill, outline=line, width=lw if line else 0)
+        else:
+            d.rounded_rectangle([o + off, o + off, o + bw + off, o + bh + off], radius=bh // 2, fill=fill, outline=line, width=lw if line else 0)
+            d.polygon([(o + tx - 30 * SS + off, o + bh - 4 * SS + off), (o + tx + 24 * SS + off, o + bh - 4 * SS + off),
+                       (o + tx - 10 * SS + off, o + bh + tail_h - 6 * SS + off)], fill=fill)
+            if line:
+                d.line([(o + tx - 30 * SS, o + bh - 1 * SS), (o + tx - 10 * SS, o + bh + tail_h - 6 * SS), (o + tx + 24 * SS, o + bh - 1 * SS)],
+                       fill=line, width=lw, joint="curve")
+    if kind == "think":  # the cloud's inner bumps covered: one clean fill
+        d.ellipse([o + bw * 0.12, o + bh * 0.14, o + bw * 0.88, o + bh * 0.86], fill=paper)
+    for j, ln in enumerate(lines):
+        d.text((o + bw / 2, o + pad_y + lh * (j + 0.5)), ln, font=f, fill=INK if kind != "shout" else (170, 20, 30), anchor="mm")
     return shrink(img)
 
 

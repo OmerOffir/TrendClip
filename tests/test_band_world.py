@@ -37,7 +37,7 @@ def test_band_rules_catch_what_the_drawing_cannot_do():
     s["band"]["members"]["Liam"]["hair"] = "beehive"
     s["scenes"][1]["members"].append("Ringo")
     s["scenes"][-1]["narration"] = "They are back."
-    s["scenes"][3]["big"]["cue"] = "nowhere"
+    s["scenes"][4]["big"]["cue"] = "nowhere"
     found = " | ".join(pw_channel.check_script(s) + pw_write.format_problems(s))
     assert "Ringo" in found and "hair=beehive" in found
     assert "question" in found and "'nowhere'" in found

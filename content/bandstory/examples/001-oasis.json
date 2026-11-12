@@ -11,24 +11,24 @@
       "Liam": {
         "hair": "mop",
         "hair_color": "brown",
-        "face": "long",
         "glasses": "round",
         "top": "parka",
         "top_color": "khaki",
         "pants": "denim",
-        "play": "mic"
+        "play": "mic",
+        "face": "long"
       },
       "Noel": {
         "hair": "fringe",
         "hair_color": "dark",
-        "face": "wide",
-        "nose": "big",
         "brows": "mono",
         "top": "jacket",
         "top_color": "black",
         "pants": "black",
         "play": "guitar",
-        "guitar": "flag"
+        "guitar": "flag",
+        "face": "wide",
+        "nose": "big"
       },
       "Bonehead": {
         "hair": "bald",
@@ -56,7 +56,6 @@
       }
     }
   },
-  "thumbnail": {"text": "BROTHERS AT WAR"},
   "scenes": [
     {
       "kind": "band",
@@ -67,16 +66,23 @@
           "name": "Liam",
           "expr": "angry",
           "play": "none",
-          "pose": "cross"
+          "pose": "cross",
+          "say": "YOUR FAULT!",
+          "say_cue": "stand",
+          "move": "shake"
         },
         {
           "name": "Noel",
           "expr": "angry",
           "play": "none",
-          "pose": "cross"
+          "pose": "cross",
+          "say": "NO, YOURS!",
+          "say_cue": "together",
+          "move": "shake"
         }
       ],
-      "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain."
+      "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain.",
+      "shot": "duo"
     },
     {
       "kind": "band",
@@ -84,13 +90,23 @@
       "year": "1991",
       "line": "MANCHESTER",
       "members": [
-        "Liam",
-        "Bonehead",
-        "Guigsy",
+        {
+          "name": "Liam",
+          "move": "bounce"
+        },
+        {
+          "name": "Bonehead"
+        },
+        {
+          "name": "Guigsy"
+        },
         {
           "name": "Noel",
           "cue": "Noel",
-          "expr": "cool"
+          "expr": "cool",
+          "say": "I WRITE THE SONGS",
+          "say_cue": "condition",
+          "move": "slide"
         }
       ],
       "narration": "Manchester, 1991. Liam Gallagher sings in a little band called Oasis. His big brother Noel joins, on one condition: he writes every song."
@@ -98,17 +114,37 @@
     {
       "kind": "band",
       "set": "club",
-      "sign": "KING TUT'S",
       "year": "1993",
-      "line": "GLASGOW",
+      "line": "KING TUT'S, GLASGOW",
       "members": [
-        "Liam",
-        "Noel",
-        "Bonehead",
-        "Guigsy",
-        "Tony"
+        {
+          "name": "Liam",
+          "say": "WE'RE ON!",
+          "say_cue": "stage",
+          "move": "jump"
+        },
+        {
+          "name": "Noel"
+        },
+        {
+          "name": "Bonehead",
+          "move": "lean"
+        },
+        {
+          "name": "Guigsy"
+        },
+        {
+          "name": "Tony"
+        }
       ],
-      "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night."
+      "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night.",
+      "props": [
+        {
+          "kind": "vinyl",
+          "text": "DEAL",
+          "cue": "record"
+        }
+      ]
     },
     {
       "kind": "band",
@@ -118,18 +154,32 @@
       "members": [
         {
           "name": "Liam",
-          "expr": "cool"
+          "expr": "cool",
+          "say": "FASTEST EVER!",
+          "say_cue": "fastest",
+          "move": "bounce"
         },
         {
           "name": "Noel",
-          "expr": "grin"
+          "expr": "grin",
+          "pose": "fist",
+          "move": "spin"
         }
       ],
-      "big": {
-        "text": "#1",
-        "cue": "fastest"
-      },
-      "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen."
+      "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen.",
+      "shot": "duo",
+      "props": [
+        {
+          "kind": "album",
+          "text": "DEBUT ALBUM",
+          "cue": "album"
+        },
+        {
+          "kind": "trophy",
+          "text": "NO. 1",
+          "cue": "fastest"
+        }
+      ]
     },
     {
       "kind": "band",
@@ -137,16 +187,36 @@
       "year": "1996",
       "line": "KNEBWORTH",
       "members": [
-        "Liam",
-        "Noel",
-        "Bonehead",
-        "Guigsy"
+        {
+          "name": "Liam",
+          "say": "HELLO KNEBWORTH!",
+          "say_cue": "Knebworth",
+          "move": "jump"
+        },
+        {
+          "name": "Noel",
+          "move": "lean"
+        },
+        {
+          "name": "Bonehead"
+        },
+        {
+          "name": "Guigsy",
+          "move": "bounce"
+        }
       ],
       "big": {
         "text": "250,000",
         "cue": "fifty"
       },
-      "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets."
+      "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets.",
+      "props": [
+        {
+          "kind": "ticket",
+          "text": "2.5 MILLION",
+          "cue": "million"
+        }
+      ]
     },
     {
       "kind": "band",
@@ -158,13 +228,16 @@
           "name": "Liam",
           "expr": "angry",
           "play": "none",
-          "pose": "point"
+          "pose": "point",
+          "move": "shake"
         },
         {
           "name": "Noel",
           "expr": "angry",
           "play": "none",
-          "pose": "cross"
+          "pose": "cross",
+          "say": "I'M DONE.",
+          "say_cue": "walks"
         }
       ],
       "crack": {
@@ -185,15 +258,20 @@
         {
           "name": "Liam",
           "expr": "sad",
-          "play": "none"
+          "play": "none",
+          "think": "NOPE.",
+          "say_cue": "barely"
         },
         {
           "name": "Noel",
           "expr": "sad",
-          "play": "none"
+          "play": "none",
+          "think": "CALL HIM?",
+          "say_cue": "fifteen"
         }
       ],
-      "narration": "For fifteen years, they barely speak."
+      "narration": "For fifteen years, they barely speak.",
+      "shot": "duo"
     },
     {
       "kind": "band",
@@ -204,15 +282,34 @@
       "members": [
         {
           "name": "Liam",
-          "expr": "cool"
+          "expr": "cool",
+          "say": "WE'RE BACK!",
+          "say_cue": "together",
+          "move": "jump"
         },
         {
           "name": "Noel",
-          "expr": "grin"
+          "expr": "grin",
+          "pose": "wave",
+          "move": "bounce"
         },
-        "Bonehead"
+        {
+          "name": "Bonehead"
+        }
       ],
-      "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?"
+      "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?",
+      "props": [
+        {
+          "kind": "ticket",
+          "text": "SOLD OUT",
+          "cue": "tickets"
+        }
+      ],
+      "poll": {
+        "a": "LIAM",
+        "b": "NOEL",
+        "cue": "Liam"
+      }
     }
   ],
   "description": "Two brothers from Manchester, one band: Oasis from a garage in 1991 to Knebworth in 1996, the split in Paris in 2009 and the reunion in 2025.",
@@ -287,5 +384,8 @@
         7
       ]
     }
-  ]
+  ],
+  "thumbnail": {
+    "text": "BROTHERS AT WAR"
+  }
 }
