@@ -955,7 +955,7 @@ class BandRenderer:
         if self.set_now == "studio":  # the RECORDING light on the wall
             boxes.append((W - 300.0, 650.0, W, 750.0))
         for o in self.items_now:
-            if o is skip or (o["at"] >= 0 and o["at"] > t) or o["type"] in ("bubble", "emptymic", "crack"):
+            if o is skip or (o["at"] >= 0 and o["at"] > t) or o["type"] in ("bubble", "emptymic", "crack", "poll"):
                 continue
             ty = o["type"]
             if ty == "year":
@@ -990,7 +990,7 @@ class BandRenderer:
         dx, dy, _, _ = self.motion(m, t) if m["play"] != "drums" else (0.0, 0.0, 0.0, 1.0)
         if "spot" not in it:  # chosen once, where the member stands still
             head = m["foot"] - (570 if m["play"] == "drums" else 610) * k
-            boxes = self.busy(max(t, it["at"] + 0.3), m)
+            boxes = self.busy(it["end"], m)  # clear of what is there and of what comes while it is read
             mid = 1 if m["x"] <= W / 2 else -1
             best = None
             for size in (1.0, 0.8):
