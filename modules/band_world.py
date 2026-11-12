@@ -828,8 +828,11 @@ def make_sample(script_path: Path, work: Path, voice: str = "am_puck", speed: fl
     script = json.loads(script_path.read_text(encoding="utf-8"))
     work.mkdir(parents=True, exist_ok=True)
     text = " ".join(" ".join(str(s.get("narration") or "").split()) for s in script["scenes"])
-    words = kokoro_voice.synthesize(text, work / "voice.mp3", voice, speed)
+    got = kokoro_voice.synthesize(text, work / "voice.mp3", voice, speed)
     kokoro_voice.unload()
+    from modules import pw_channel
+
+    words = pw_channel.tighten(work / "voice.mp3", [bw_render.Word(w.text, float(w.start), float(w.end)) for w in got], 0.2)
     script = {**script, "look": "satellite"}
     spec = bw_render.spec_from_dict(script, words)
     spec.hold = 0.8
