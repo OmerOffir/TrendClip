@@ -250,10 +250,34 @@ def band_problems(script: dict) -> list[str]:
             problems.append(f"scene {k}'s line card is over {BAND_LINE} characters")
         if len(sc.get("members") or []) > 5:
             problems.append(f"scene {k} has more than 5 members on stage")
-        if not (sc.get("members") or sc.get("big") or sc.get("news")):
-            problems.append(f"scene {k} shows nobody and nothing: members, a big figure or a newspaper")
+        if not (sc.get("members") or sc.get("big") or sc.get("news") or sc.get("props")):
+            problems.append(f"scene {k} shows nobody and nothing: members, a big figure, a prop or a newspaper")
+        if sc.get("shot") and sc["shot"] not in ("wide", "close", "duo"):
+            problems.append(f"scene {k}'s shot is wide, close or duo")
+        on_stage = {m.get("name") if isinstance(m, dict) else m for m in sc.get("members") or []}
+        props = sc.get("props") or []
+        if not isinstance(props, list) or len(props) > 2:
+            problems.append(f"scene {k} has more than 2 props")
+            props = []
+        for pr in props:
+            if not isinstance(pr, dict) or pr.get("kind") not in band_world.PROPS:
+                problems.append(f"scene {k}: a prop's kind is one of {', '.join(band_world.PROPS)}")
+                continue
+            if len(str(pr.get("text") or "")) > band_world.PROP_TEXT:
+                problems.append(f"scene {k}: the {pr['kind']}'s text is over {band_world.PROP_TEXT} characters")
+            if pr.get("who") and pr["who"] not in on_stage:
+                problems.append(f"scene {k}: the {pr['kind']} is over {pr['who']}, who is not on stage")
+            cue = str(pr.get("cue") or "")
+            if cue and not any(w.startswith(cue.lower()) for w in {w.lower().strip(".,!?:;'\"") for w in str(sc.get("narration") or "").split()}):
+                problems.append(f"scene {k}'s {pr['kind']} cue {cue!r} is not a word of its narration")
+        if isinstance(sc.get("poll"), dict):
+            if k != len(scenes):
+                problems.append(f"scene {k} has a poll: only the last scene asks")
+            for side in ("a", "b"):
+                if not 0 < len(str(sc["poll"].get(side) or "")) <= 20:
+                    problems.append(f"the poll's answer {side} is 1-20 characters")
         words_ = {w.lower().strip(".,!?:;'\"") for w in str(sc.get("narration") or "").split()}
-        for what in ("big", "news", "crack"):
+        for what in ("big", "news", "crack", "poll"):
             cue = str((sc.get(what) or {}).get("cue") or "") if isinstance(sc.get(what), dict) else ""
             if cue and not any(w.startswith(cue.lower()) for w in words_):
                 problems.append(f"scene {k}'s {what} cue {cue!r} is not a word of its narration")
@@ -305,7 +329,20 @@ A scene's keys (all optional except kind and narration):
   "news": {{"text": "OASIS SPLIT", "cue": a word}}: a newspaper front page (a split, a scandal, a record)
   "crack": {{"cue": a word}}: lightning between the first two members (a fight)
   "confetti": true (the big win)
+  "shot": "wide" (the band on stage, the default) | "close" (the FIRST member listed, big, from the waist up: a
+    singer's big moment, one person's turn) | "duo" (the first two, bigger: brothers, a pair, a fight)
+  "props": up to 2 things that show what is said, each {{"kind": {"|".join(band_world.PROPS)}, "text": {band_world.PROP_TEXT}
+    characters at most, "cue": a word, "who": a member on stage (optional: the prop pops up over their head)}}.
+    "a dental student" → {{"kind": "tooth", "who": "Roger", "cue": "dental"}}; "a DJ plays it" → radio; "watched by
+    1.9 billion" → tv with "1.9 BILLION"; "streams" → phone; "six minutes long" → clock with "5:55"; an album → album
+    with its name; a record deal → vinyl; a sold-out show → ticket; an award or #1 → trophy
+  "poll": {{"a": answer one, "b": answer two, "cue": a word}}: the closing question as two big buttons (last scene
+    only, each answer 20 characters at most, e.g. "BOHEMIAN RHAPSODY" / "DON'T STOP ME NOW")
+  "empty_mic": true: the singer's mic alone in the spotlight, the others aside (a singer who died or left)
   Every cue is a word of THAT scene's narration.
+- Something new on screen every 2-3 seconds: in each scene at least one entrance on a cue (a member, a big figure,
+  a prop, a newspaper). Show every claim literally with a prop. Never 3 scenes in a row with the same shot and the
+  same members: change the shot (close on the singer, duo for a pair) or who is on stage.
 - "sources": 2 or more real pages (music press, interviews, the band's site, official charts; never Wikipedia),
   "claims": every fact and figure, each with 2 or more source numbers. Nothing invented: no made-up quotes, no
   guessed numbers. Keep it about the music and the band's story: no rumours, no private life beyond what the band

@@ -523,10 +523,11 @@ def set_image(name: str, seed: int, sign: str = "") -> Image.Image:
             d.rectangle([(x + 18) * S, (FLOOR - 200) * S, (x + 162) * S, (FLOOR - 50) * S], fill=(70, 66, 70))
             for gx in range(x + 26, x + 160, 16):
                 d.line([(gx * S, (FLOOR - 200) * S), (gx * S, (FLOOR - 50) * S)], fill=(52, 50, 54), width=2 * S)
-        d.line([(wide / 2 * S, 0), (wide / 2 * S, 600 * S)], fill=(30, 30, 30), width=4 * S)
+        bx, by = wide * 0.8, 420  # the bulb hangs in the top corner, clear of the heads and the cards
+        d.line([(bx * S, 0), (bx * S, (by - 30) * S)], fill=(30, 30, 30), width=4 * S)
         for k, a in ((3.2, 40), (2.0, 70), (1.0, 255)):
-            r = 26 * k
-            d.ellipse([(wide / 2 - r) * S, (630 - r) * S, (wide / 2 + r) * S, (630 + r) * S], fill=(255, 236, 160, a))
+            r = 22 * k
+            d.ellipse([(bx - r) * S, (by - r) * S, (bx + r) * S, (by + r) * S], fill=(255, 236, 160, a))
     elif name in ("club", "dark"):
         top, bot = ((40, 18, 56), (90, 30, 70)) if name == "club" else ((10, 10, 16), (18, 18, 26))
         yy = np.linspace(0, 1, H)[:, None, None]
@@ -643,42 +644,72 @@ class BandRenderer:
 
         prev = self.members_of(self.spec.scenes[i - 1]) if i else []
         prev_names = {m["name"] for m in prev}
+        shot = str(o.get("shot") or "wide")
         ms = self.members_of(scene)
+        ms = ms[:1] if shot == "close" else ms[:2] if shot == "duo" else ms
         n = len(ms)
-        front = [m for m in ms if (m.get("play") or self.looks.get(m["name"], {}).get("play")) != "drums"]
-        drummer = len(front) < n
-        scale = {1: 1.0, 2: 0.98, 3: 0.92, 4: 0.8}.get(len(front), 0.7) * (0.9 if drummer and len(front) > 2 else 1.0)
+        plays = [str(m.get("play") or self.looks.get(m["name"], {}).get("play") or "none") for m in ms]
+        empty = bool(o.get("empty_mic"))
+        if shot == "close":  # one member, big, from the waist up: the head under the cards
+            spots = [(W / 2, 1.75, 1800.0)]
+        elif shot == "duo":
+            spots = [(W * 0.28, 1.25, FLOOR + 150.0), (W * 0.72, 1.25, FLOOR + 150.0)]
+        elif empty:  # the members stand aside: the singer's mic alone in the light
+            left = (n + 1) // 2
+            sides = [W * (0.14 + 0.18 * j / max(1, left - 1)) for j in range(left)] if left > 1 else [W * 0.2]
+            sides += [W - x for x in sides][: n - left][::-1]
+            spots = [(x, 0.78, float(FLOOR)) for x in sides]
+        else:  # one column each; the drummer's column, raised on a riser, is never behind someone
+            cols = n
+            scale = {1: 1.0, 2: 0.98, 3: 0.86, 4: 0.74}.get(cols, 0.64)
+            xs = [W / 2] if cols == 1 else [W * 0.15 + W * 0.7 * c / (cols - 1) for c in range(cols)]
+            drum_col = cols // 2
+            order = [c for c in range(cols) if c != drum_col] if "drums" in plays else list(range(cols))
+            spots, j = [], 0
+            for p_ in plays:
+                if p_ == "drums" and "drums" in plays:
+                    spots.append((xs[drum_col], scale * 0.86, FLOOR - 120.0))  # a low riser: the head stays under the middle
+                else:
+                    spots.append((xs[order[j]] if j < len(order) else W / 2, scale, float(FLOOR)))
+                    j += 1
         for k, m in enumerate(ms):
             look = self.looks.get(m["name"], {})
-            play = str(m.get("play") or look.get("play") or "none")
-            if play == "drums":
-                x, s, foot = W / 2, scale * 0.8, FLOOR - 190  # on a riser behind the front row
-            else:
-                j = front.index(m)
-                x = W * ((j + 0.5) / len(front)) if len(front) > 1 else W / 2
-                x = W * 0.12 + (W * 0.76) * (j / (len(front) - 1)) if len(front) > 2 else x
-                if drummer and len(front) > 1:  # the front row opens in the middle, so the kit shows
-                    half = (len(front) + 1) // 2
-                    side = [j, len(front) - 1 - j][j >= half]
-                    span = max(1, half)
-                    off = 0.14 + 0.22 * (span - 1 - side) / max(1, span - 1) if span > 1 else 0.25
-                    x = W * (0.5 - off if j < half else 0.5 + off) if len(front) > 2 else W * (0.5 + (-0.27 if j == 0 else 0.27))
-                s, foot = scale, FLOOR
+            play = plays[k]
+            x, s, foot = spots[k]
             shown = -1.0 if (first or (m["name"] in prev_names and not m.get("cue"))) else at(m.get("cue"), k)
             items.append({"type": "member", "at": shown, "name": m["name"], "look": look, "play": play, "x": x, "s": s,
                           "foot": foot, "expr": str(m.get("expr") or "smile"), "pose": str(m.get("pose") or "hang"),
                           "seed": sum(map(ord, m["name"])) % 23, "tag": bool(m.get("tag", m["name"] not in self.seen and not m["name"].startswith("_")))})
             self.seen.add(m["name"])
-        items.sort(key=lambda it: it["play"] != "drums")  # the drummer behind
+        if empty:
+            items.append({"type": "emptymic", "at": -1.0})
+        items.sort(key=lambda it: it.get("play") != "drums")  # the drummer behind
         if o.get("year"):
             same = i and self.spec.scenes[i - 1].opts.get("year") == o.get("year")
             items.append({"type": "year", "at": -1.0 if first or same else scene.start + 0.05, "text": str(o["year"]), "slam": not same})
         if o.get("line"):
             items.append({"type": "line", "at": -1.0 if first else at(o.get("line_cue"), 1), "text": str(o["line"])})
-        y = 620.0
+        props = [pr for pr in (o.get("props") or []) if isinstance(pr, dict) and pr.get("kind") in PROPS][:2]
+        centre = [pr for pr in props if not any(it["type"] == "member" and it["name"] == pr.get("who") for it in items)]
+        big_y = 820.0 if o.get("sign") else 690.0
+        big_x = W * 0.36 if centre and shot != "close" else W / 2  # a prop beside it, not under it
         if isinstance(o.get("big"), dict):
-            items.append({"type": "big", "at": at(o["big"].get("cue"), 0), "y": y + 70, "text": str(o["big"]["text"]),
+            items.append({"type": "big", "at": at(o["big"].get("cue"), 0), "y": big_y, "x": big_x, "text": str(o["big"]["text"]),
                           "color": pw_world.COLORS.get(str(o["big"].get("color") or "gold"), GOLD)})
+        for k, pr in enumerate(props):
+            who = next((it for it in items if it["type"] == "member" and it["name"] == pr.get("who")), None)
+            if who:  # over that member's head
+                x, y, sc = min(W - 150, max(150, who["x"])), who["foot"] - 560 * who["s"] - 140, 0.8
+            elif shot == "close":  # beside the head, on the left (the studio's sign is on the right)
+                x, y, sc = W * (0.18 if k == 0 else 0.82), 780.0, 0.72
+            elif o.get("big"):
+                x, y, sc = W * 0.8, 690.0, 0.66
+            else:
+                x, y, sc = W * (0.5 if len(centre) < 2 else 0.28 + 0.44 * k), 700.0, 0.85 if len(centre) < 2 else 0.75
+            items.append({"type": "prop", "at": at(pr.get("cue"), k), "kind": pr["kind"], "text": str(pr.get("text") or "")[:16],
+                          "x": x, "y": y, "sc": sc, "k": k})
+        if isinstance(o.get("poll"), dict) and o["poll"].get("a") and o["poll"].get("b"):
+            items.append({"type": "poll", "at": at(o["poll"].get("cue"), 3), "a": str(o["poll"]["a"]), "b": str(o["poll"]["b"])})
         if isinstance(o.get("news"), dict):
             items.append({"type": "news", "at": at(o["news"].get("cue"), 0), "text": str(o["news"]["text"])})
         if isinstance(o.get("crack"), dict) and n >= 2:
@@ -735,6 +766,9 @@ class BandRenderer:
             if it["type"] == "crack" and 0 < t - it["at"] < 0.4:
                 shake = 10 * (1 - (t - it["at"]) / 0.4) * math.sin(t * 90)
         for it in items:
+            if it["type"] == "emptymic":
+                put(img, empty_mic(), (W / 2, FLOOR - 170))
+        for it in items:
             if it["type"] == "member":
                 self.draw_member(img, it, t, shake)
         if name == "stadium" or o.get("crowd"):
@@ -742,9 +776,15 @@ class BandRenderer:
         elif name == "club":
             crowd(img, t, (self.spec.seed or 7) + i, dense=False)
         self.notes(img, t, items)
+        poll = next((it for it in items if it["type"] == "poll" and 0 <= it["at"] <= t), None)
         for it in items:
-            if it["type"] != "member":
-                self.draw_item(img, it, t)
+            if it["type"] in ("member", "emptymic"):
+                continue
+            if poll and it["type"] in ("big", "news", "prop", "stamp") and not (it["type"] == "prop" and it["sc"] < 0.65):
+                fade = 1 - min(1.0, (t - poll["at"]) / 0.25)  # the question takes the middle of the screen
+                if fade <= 0:
+                    continue
+            self.draw_item(img, it, t)
         if o.get("confetti"):
             self.confetti(img, t - scene.start)
         self.header(img)
@@ -778,7 +818,8 @@ class BandRenderer:
             put(img, spr, (it["x"] + shake, it["foot"] - SH * k / 2), scale=k, alpha=a)
         if it["tag"]:
             name_pill = pill(it["name"].upper(), "dark", 30)
-            put(img, name_pill, (it["x"], it["foot"] + 52 if it["play"] != "drums" else it["foot"] - 640 * it["s"]), alpha=a)
+            y = min(it["foot"] + 52, 1440) if it["play"] != "drums" else it["foot"] - 640 * it["s"]
+            put(img, name_pill, (it["x"], y), alpha=a)
 
     def notes(self, img: Image.Image, t: float, items: list[dict[str, Any]]) -> None:
         """Music notes float up from whoever is playing."""
@@ -804,11 +845,19 @@ class BandRenderer:
             put(img, line_sprite(it["text"]), (W / 2, 505), scale=s, alpha=a)
         elif kind == "big":
             u = min(1.0, max(0.0, (t - it["at"]) / 0.75)) if it["at"] >= 0 else 1.0
-            put(img, big_text(counted(it["text"], ease(u)), 150, it["color"]), (W / 2, it["y"]), scale=s, alpha=a)
+            parts = pw_world.number_parts(it["text"])
+            text = it["text"] if parts is None or parts[1] < 10 else counted(it["text"], ease(u))  # "#1" never shows "#0"
+            put(img, big_text(text, 150, it["color"]), (it.get("x", W / 2), it["y"]), scale=s, alpha=a)
         elif kind == "news":
-            put(img, news_sprite(it["text"]), (W / 2, 690), scale=0.72 * s, alpha=a)
-            if it["at"] >= 0 and t - it["at"] < POP * 1.6:
-                pass
+            put(img, news_sprite(it["text"]), (W / 2, 740), scale=0.86 * s, alpha=a)
+        elif kind == "prop":
+            bob = 8 * math.sin(t * 3 + it["k"])
+            put(img, prop_sprite(it["kind"], it["text"], round(t * 12) / 12), (it["x"], it["y"] + bob), scale=it["sc"] * s, alpha=a)
+        elif kind == "poll":
+            for k, (text, style) in enumerate(((it["a"], "red"), (it["b"], "blue"))):
+                beat = 1 + 0.05 * max(0.0, math.sin(math.pi * 2 * (t / BEAT) + k * math.pi))
+                put(img, poll_sprite(text, style), (W / 2, 640 + k * 190), scale=s * beat, alpha=a)
+            put(img, text_sprite("OR", 64, GOLD, "Black"), (W / 2, 735), scale=s, alpha=a)
         elif kind == "crack":
             put(img, crack_sprite(), (W / 2, 1050), scale=s, alpha=a * (0.75 + 0.25 * math.sin(t * 30)))
         elif kind == "stamp":
@@ -896,20 +945,28 @@ def line_sprite(text: str) -> Image.Image:
 
 @lru_cache(maxsize=8)
 def news_sprite(text: str) -> Image.Image:
-    w, h = 640, 330
+    """A front page: a long headline goes on two lines, so it stays big."""
+    w, h = 680, 380
     img = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rectangle([0, 0, w * SS, h * SS], fill=(246, 242, 228), outline=OUTLINE, width=5 * SS)
     d.text((w / 2 * SS, 46 * SS), "THE DAILY NEWS", font=font(int(40 * SS), "Black"), fill=INK, anchor="mm")
     d.line([(20 * SS, 80 * SS), ((w - 20) * SS, 80 * SS)], fill=INK, width=4 * SS)
-    f = font(int(96 * SS), "Black")
-    k = min(1.0, (w - 50) * SS / max(1.0, f.getlength(text)))
-    f = font(int(96 * SS * k), "Black")
-    d.text((w / 2 * SS, 160 * SS), text, font=f, fill=RED, anchor="mm")
-    for y in range(230, 316, 20):
+    words = text.split()
+    lines = [text]
+    if len(text) > 13 and len(words) > 1:
+        cut = min(range(1, len(words)), key=lambda c: abs(len(" ".join(words[:c])) - len(" ".join(words[c:]))))
+        lines = [" ".join(words[:cut]), " ".join(words[cut:])]
+    size = 96 if len(lines) == 1 else 84
+    f = font(int(size * SS), "Black")
+    k = min(1.0, (w - 50) * SS / max(1.0, max(f.getlength(ln) for ln in lines)))
+    f = font(int(size * SS * k), "Black")
+    for j, ln in enumerate(lines):
+        y = 165 if len(lines) == 1 else 140 + j * 96 * k
+        d.text((w / 2 * SS, y * SS), ln, font=f, fill=RED, anchor="mm")
+    for y in range(300 if len(lines) > 1 else 240, h - 20, 20):
         d.line([(30 * SS, y * SS), ((w - 30) * SS, y * SS)], fill=(170, 166, 156), width=6 * SS)
-    out = shrink(img).rotate(-4, expand=True, resample=Image.BICUBIC)
-    return out
+    return shrink(img).rotate(-4, expand=True, resample=Image.BICUBIC)
 
 
 @lru_cache(maxsize=2)
@@ -922,6 +979,194 @@ def crack_sprite() -> Image.Image:
     d.line(pts, fill=(255, 230, 80), width=26 * SS, joint="curve")
     d.line(pts, fill=WHITE, width=10 * SS, joint="curve")
     return shrink(img)
+
+
+PROPS = ("vinyl", "album", "radio", "tv", "globe", "phone", "clock", "trophy", "ticket", "tooth", "telescope", "crown")
+PROP_TEXT = 14  # characters a prop's text may have
+
+
+@lru_cache(maxsize=1)
+def empty_mic() -> Image.Image:
+    """The singer's microphone alone on its stand."""
+    w, h = 160, 380
+    img = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    u = SS
+    d.line([(80 * u, 70 * u), (80 * u, 360 * u)], fill=(150, 150, 160), width=int(9 * u))
+    d.line([(36 * u, 362 * u), (124 * u, 362 * u)], fill=(150, 150, 160), width=int(12 * u))
+    d.rounded_rectangle([62 * u, 10 * u, 98 * u, 74 * u], radius=18 * u, fill=(70, 70, 80), outline=OUTLINE, width=int(4 * u))
+    for y in (26, 40, 54):
+        d.line([(66 * u, y * u), (94 * u, y * u)], fill=(120, 120, 130), width=int(3 * u))
+    return shrink(img)
+
+
+@lru_cache(maxsize=8)
+def poll_sprite(text: str, style: str) -> Image.Image:
+    """One answer of the closing question, a big button."""
+    fill = {"red": (214, 52, 64), "blue": (52, 104, 214)}.get(style, (214, 52, 64))
+    f = font(int(62 * SS), "Black")
+    k = min(1.0, (W - 160) * SS / max(1.0, f.getlength(text)))
+    f = font(int(62 * SS * k), "Black")
+    w, h = int(f.getlength(text)) + 90 * SS, int(120 * SS)
+    img = Image.new("RGBA", (w + 10 * SS, h + 14 * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([6 * SS, 12 * SS, w + 6 * SS, h + 12 * SS], radius=h // 2, fill=(0, 0, 0, 130))
+    d.rounded_rectangle([0, 0, w, h], radius=h // 2, fill=fill, outline=WHITE, width=6 * SS)
+    d.text((w / 2, h / 2), text, font=f, fill=WHITE, anchor="mm")
+    return shrink(img)
+
+
+@lru_cache(maxsize=64)
+def prop_sprite(kind: str, text: str = "", t: float = 0.0) -> Image.Image:
+    """A thing that shows what the narrator just said: a record, a radio, a TV, the world, a phone's play count..."""
+    w, h = 340, 340
+    img = Image.new("RGBA", (w * SS, h * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    u = SS
+    lw = int(6 * u)
+
+    def B(x0, y0, x1, y1):
+        return [x0 * u, y0 * u, x1 * u, y1 * u]
+
+    def label(x, y, size, color=INK, max_w=260):
+        if not text:
+            return
+        f = font(int(size * u), "Black")
+        k = min(1.0, max_w * u / max(1.0, f.getlength(text)))
+        d.text((x * u, y * u), text, font=font(int(size * u * k), "Black"), fill=color, anchor="mm")
+
+    pill_under = False
+    if kind == "vinyl":
+        rec = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        r_ = ImageDraw.Draw(rec)
+        r_.ellipse(B(20, 20, 320, 320), fill=(24, 24, 28), outline=OUTLINE, width=lw)
+        for r in range(60, 145, 14):
+            r_.ellipse(B(170 - r, 170 - r, 170 + r, 170 + r), outline=(60, 60, 70), width=int(2 * u))
+        r_.ellipse(B(110, 110, 230, 230), fill=(214, 52, 64))
+        r_.arc(B(40, 40, 300, 300), 200, 250, fill=(140, 140, 160), width=int(6 * u))
+        r_.ellipse(B(164, 164, 176, 176), fill=OUTLINE)
+        img = rec.rotate(-t * 200, resample=Image.BICUBIC)
+        d = ImageDraw.Draw(img)
+        if text:
+            f = font(int(22 * u), "Black")
+            k = min(1.0, 100 * u / max(1.0, f.getlength(text)))
+            d.text((170 * u, 146 * u), text, font=font(int(22 * u * k), "Black"), fill=WHITE, anchor="mm")
+    elif kind == "album":
+        d.rectangle(B(30, 30, 310, 310), fill=(236, 196, 64), outline=OUTLINE, width=lw)
+        d.ellipse(B(90, 60, 250, 220), fill=(214, 52, 64), outline=OUTLINE, width=lw)
+        d.ellipse(B(150, 120, 190, 160), fill=(236, 196, 64))
+        d.rectangle(B(30, 236, 310, 310), fill=(34, 30, 50))
+        label(170, 273, 38, WHITE)
+    elif kind == "radio":
+        for k in range(3):  # sound waves going out
+            ph = (t * 1.6 + k / 3) % 1.0
+            r = 40 + ph * 90
+            d.arc(B(250 - r, 90 - r, 250 + r, 90 + r), 290, 340, fill=(255, 255, 255, int(255 * (1 - ph))), width=int(7 * u))
+        d.line([(110 * u, 150 * u), (70 * u, 40 * u)], fill=(150, 150, 160), width=int(6 * u))
+        d.rounded_rectangle(B(30, 140, 310, 310), radius=30 * u, fill=(176, 64, 52), outline=OUTLINE, width=lw)
+        d.ellipse(B(56, 172, 166, 282), fill=(240, 220, 190), outline=OUTLINE, width=lw)
+        for y in range(190, 270, 16):
+            d.line([(70 * u, y * u), (152 * u, y * u)], fill=(176, 150, 120), width=int(4 * u))
+        d.rounded_rectangle(B(186, 176, 290, 226), radius=8 * u, fill=(250, 236, 180), outline=OUTLINE, width=int(4 * u))
+        d.line([(210 * u, 180 * u), (210 * u, 222 * u)], fill=(214, 52, 64), width=int(4 * u))
+        d.ellipse(B(206, 244, 238, 276), fill=(60, 50, 50))
+        d.ellipse(B(250, 244, 282, 276), fill=(60, 50, 50))
+        pill_under = True
+    elif kind == "tv":
+        d.line([(170 * u, 70 * u), (110 * u, 10 * u)], fill=(150, 150, 160), width=int(6 * u))
+        d.line([(170 * u, 70 * u), (230 * u, 10 * u)], fill=(150, 150, 160), width=int(6 * u))
+        d.rounded_rectangle(B(20, 70, 320, 300), radius=26 * u, fill=(70, 60, 56), outline=OUTLINE, width=lw)
+        d.rounded_rectangle(B(44, 92, 256, 278), radius=20 * u, fill=(120, 190, 230), outline=OUTLINE, width=int(4 * u))
+        for y in range(98, 274, 8):
+            d.line([(48 * u, y * u), (252 * u, y * u)], fill=(100, 170, 214), width=int(2 * u))
+        if int(t * 2) % 2 == 0:
+            d.ellipse(B(60, 106, 80, 126), fill=(230, 40, 50))
+        d.text((90 * u, 116 * u), "LIVE", font=font(int(22 * u), "Black"), fill=WHITE, anchor="lm")
+        label(150, 190, 44, WHITE, 190)
+        for y in (130, 190):
+            d.ellipse(B(270, y, 300, y + 30), fill=(40, 34, 30))
+    elif kind == "globe":
+        d.ellipse(B(30, 20, 310, 300), fill=(60, 140, 220), outline=OUTLINE, width=lw)
+        rot = (t * 30) % 280
+        for cx_, cy_, rx_, ry_ in ((90, 110, 50, 60), (200, 90, 60, 40), (230, 200, 40, 60), (120, 230, 50, 30)):
+            x = 30 + (cx_ - 30 + rot) % 280
+            if 50 < x < 290:
+                d.ellipse(B(x - rx_ * 0.8, cy_ - ry_, x + rx_ * 0.8, cy_ + ry_), fill=(90, 190, 110))
+        d.arc(B(30, 20, 310, 300), 0, 360, fill=OUTLINE, width=lw)
+        d.arc(B(60, 40, 200, 180), 190, 250, fill=(220, 240, 255), width=int(8 * u))
+        pill_under = True
+    elif kind == "phone":
+        d.rounded_rectangle(B(90, 10, 250, 330), radius=26 * u, fill=(30, 30, 36), outline=OUTLINE, width=lw)
+        d.rounded_rectangle(B(102, 36, 238, 304), radius=12 * u, fill=(250, 250, 252))
+        d.ellipse(B(126, 70, 214, 158), fill=(230, 40, 50))
+        d.polygon([(156 * u, 92 * u), (156 * u, 136 * u), (192 * u, 114 * u)], fill=WHITE)
+        for k in range(3):
+            d.rounded_rectangle(B(114, 236 + k * 18, 226 - k * 30, 246 + k * 18), radius=4 * u, fill=(210, 210, 220))
+        label(170, 196, 34, INK, 124)
+    elif kind == "clock":
+        d.rounded_rectangle(B(150, 10, 190, 50), radius=6 * u, fill=(150, 150, 160), outline=OUTLINE, width=int(4 * u))
+        d.ellipse(B(40, 40, 300, 300), fill=WHITE, outline=OUTLINE, width=int(10 * u))
+        for k in range(12):
+            a = math.pi * 2 * k / 12
+            d.line([((170 + 112 * math.sin(a)) * u, (170 - 112 * math.cos(a)) * u), ((170 + 126 * math.sin(a)) * u, (170 - 126 * math.cos(a)) * u)],
+                   fill=OUTLINE, width=int(5 * u))
+        a = t * 4
+        d.line([(170 * u, 170 * u), ((170 + 96 * math.sin(a)) * u, (170 - 96 * math.cos(a)) * u)], fill=(214, 52, 64), width=int(6 * u))
+        label(170, 226, 52, INK, 170)
+    elif kind == "trophy":
+        d.arc(B(30, 50, 130, 170), 90, 270, fill=(200, 160, 40), width=int(16 * u))
+        d.arc(B(210, 50, 310, 170), 270, 90, fill=(200, 160, 40), width=int(16 * u))
+        d.chord(B(70, -40, 270, 200), 0, 180, fill=(236, 196, 64), outline=OUTLINE, width=lw)
+        d.rectangle(B(150, 196, 190, 250), fill=(220, 180, 50), outline=OUTLINE, width=int(4 * u))
+        d.rounded_rectangle(B(80, 246, 260, 320), radius=10 * u, fill=(60, 44, 34), outline=OUTLINE, width=lw)
+        label(170, 283, 30, (240, 210, 120), 160)
+        d.polygon([(110 * u, 70 * u), (122 * u, 60 * u), (126 * u, 120 * u)], fill=(255, 240, 180))
+    elif kind == "ticket":
+        d.rounded_rectangle(B(10, 90, 330, 250), radius=14 * u, fill=(250, 226, 120), outline=OUTLINE, width=lw)
+        for y in (90, 250):
+            d.ellipse(B(236, y - 18, 272, y + 18), fill=(0, 0, 0, 0))
+        for y in range(104, 240, 18):
+            d.line([(254 * u, y * u), (254 * u, (y + 9) * u)], fill=OUTLINE, width=int(4 * u))
+        d.text((130 * u, 130 * u), "ADMIT ONE", font=font(int(26 * u), "Black"), fill=(214, 52, 64), anchor="mm")
+        label(130, 190, 40, INK, 210)
+    elif kind == "tooth":  # one smooth outline: two bumps on top, two roots below
+        pts = [(80, 120), (88, 70), (120, 46), (150, 52), (170, 70), (190, 52), (220, 46), (252, 70), (260, 120),
+               (250, 200), (236, 290), (204, 300), (188, 230), (170, 214), (152, 230), (136, 300), (104, 290), (90, 200)]
+        d.polygon([(x * u, y * u) for x, y in pts], fill=WHITE, outline=OUTLINE, width=lw)
+        d.arc(B(108, 70, 160, 130), 200, 260, fill=(200, 220, 235), width=int(6 * u))
+        for x, y, r in ((280, 60, 16), (300, 120, 9)):
+            d.polygon([((x) * u, (y - r) * u), ((x + r * 0.3) * u, (y - r * 0.3) * u), ((x + r) * u, y * u), ((x + r * 0.3) * u, (y + r * 0.3) * u),
+                       (x * u, (y + r) * u), ((x - r * 0.3) * u, (y + r * 0.3) * u), ((x - r) * u, y * u), ((x - r * 0.3) * u, (y - r * 0.3) * u)], fill=(255, 230, 90))
+        pill_under = True
+    elif kind == "telescope":
+        d.line([(150 * u, 220 * u), (90 * u, 330 * u)], fill=(90, 60, 36), width=int(10 * u))
+        d.line([(150 * u, 220 * u), (210 * u, 330 * u)], fill=(90, 60, 36), width=int(10 * u))
+        d.line([(150 * u, 220 * u), (150 * u, 330 * u)], fill=(90, 60, 36), width=int(10 * u))
+        d.polygon([(40 * u, 250 * u), (230 * u, 120 * u), (258 * u, 162 * u), (66 * u, 290 * u)], fill=(64, 110, 190), outline=OUTLINE)
+        d.polygon([(220 * u, 110 * u), (260 * u, 84 * u), (296 * u, 140 * u), (256 * u, 168 * u)], fill=(236, 196, 64), outline=OUTLINE)
+        x, y, r = 290, 40, 30
+        tw = 0.8 + 0.2 * math.sin(t * 8)
+        d.polygon([(x * u, (y - r * tw) * u), ((x + 8) * u, (y - 8) * u), ((x + r * tw) * u, y * u), ((x + 8) * u, (y + 8) * u),
+                   (x * u, (y + r * tw) * u), ((x - 8) * u, (y + 8) * u), ((x - r * tw) * u, y * u), ((x - 8) * u, (y - 8) * u)], fill=(255, 230, 90))
+        pill_under = True
+    elif kind == "crown":
+        pts = [(40, 270), (40, 110), (100, 190), (170, 70), (240, 190), (300, 110), (300, 270)]
+        d.polygon([(x * u, y * u) for x, y in pts], fill=(236, 196, 64), outline=OUTLINE)
+        d.line([(x * u, y * u) for x, y in pts + [pts[0]]], fill=OUTLINE, width=lw)
+        d.rectangle(B(40, 236, 300, 270), fill=(214, 170, 40), outline=OUTLINE, width=int(4 * u))
+        for x, col in ((100, (214, 52, 64)), (170, (52, 104, 214)), (240, (60, 170, 90))):
+            d.ellipse(B(x - 14, 238, x + 14, 266), fill=col)
+        for x, y in ((40, 110), (170, 70), (300, 110)):
+            d.ellipse(B(x - 14, y - 14, x + 14, y + 14), fill=WHITE, outline=OUTLINE, width=int(3 * u))
+        pill_under = True
+    out = shrink(img)
+    if pill_under and text:
+        tag = pill(text.upper(), "gold", 40)
+        both = Image.new("RGBA", (max(out.width, tag.width), out.height + tag.height - 10), (0, 0, 0, 0))
+        both.alpha_composite(out, ((both.width - out.width) // 2, 0))
+        both.alpha_composite(tag, ((both.width - tag.width) // 2, out.height - 10))
+        out = both
+    return out
 
 
 def thumbnail(script: dict, out: Path, t: float = 0.62) -> Path:

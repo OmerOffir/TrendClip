@@ -132,3 +132,26 @@ def test_every_look_value_draws(key):
 def test_the_blush_is_painted_over_the_skin_not_through_it():
     img = band_world.member({"hair": "short"}, 0.3, "none", "smile", "hang", 1)
     assert img.getpixel((180 - 76, 188 + 70 - 18 + band_world.OY))[3] == 255
+
+
+def test_shots_props_poll_and_the_empty_mic_draw_and_pass_the_rules():
+    s = example()
+    sc = s["scenes"]
+    sc[1]["shot"] = "close"
+    sc[3]["props"] = [{"kind": "vinyl", "text": "OASIS", "cue": "fastest"}, {"kind": "trophy", "who": "Liam", "cue": "debut"}]
+    sc[5]["empty_mic"] = True
+    sc[6]["shot"] = "duo"
+    sc[-1]["poll"] = {"a": "LIAM", "b": "NOEL", "cue": "Liam"}
+    assert pw_write.format_problems(s) == []
+    spec = bw_render.spec_from_dict({**s, "look": "satellite"}, fake_words(s))
+    bw_render.align(spec)
+    r = band_world.BandRenderer(spec, s["band"])
+    for scene in spec.scenes:
+        assert r.frame(scene.end - 0.05).size == (bw_render.W, bw_render.H)
+    assert {it["type"] for items in r.items for it in items} >= {"prop", "poll", "emptymic"}
+    for kind in band_world.PROPS:
+        assert band_world.prop_sprite(kind, "TEXT", 0.5).getbbox()
+    sc[2]["props"] = [{"kind": "piano", "cue": "Glasgow"}]
+    sc[2]["poll"] = {"a": "X", "b": "Y"}
+    found = " | ".join(pw_write.format_problems(s))
+    assert "kind is one of" in found and "only the last scene" in found
