@@ -739,6 +739,88 @@ def crack_sprite() -> Image.Image:
     return shrink(img)
 
 
+def thumbnail(script: dict, out: Path, t: float = 0.62) -> Path:
+    """A picture made to be clicked, not a frame of the video: the whole band big on the stadium stage, the band's
+    name huge on top, a gold "IN 45 SECONDS" ribbon and the hook (script.thumbnail.text, else the first scene's line)."""
+    pw_world.ensure_fonts()
+    band = dict(script.get("band") or {})
+    looks = dict(band.get("members") or {})
+    drop = 320  # the stage sits lower than in the video, so the band fills the picture
+    base = set_image("stadium", int(script.get("seed") or 7)).crop((60, 0, 60 + W, H))
+    img = Image.new("RGBA", (W, H))
+    img.paste(base.crop((0, 0, W, 1)).resize((W, drop)), (0, 0))
+    img.paste(base.crop((0, 0, W, H - drop)), (0, drop))
+    lights(img, t)
+    front = [n for n, lk in looks.items() if lk.get("play") != "drums"]
+    drummers = [n for n, lk in looks.items() if lk.get("play") == "drums"]
+    foot = FLOOR + drop
+    k = {1: 1.15, 2: 1.1, 3: 1.0, 4: 0.86}.get(len(front), 0.74)
+    for n in drummers[:1]:  # on a high riser behind, so the kit shows over the front row
+        lk, kd = looks[n], k * 0.82
+        y = foot - 470 * k
+        put(img, member(lk, t, "drums", "grin", "hang", 5), (W / 2, y - SH * kd / 2 + 40 * kd), scale=kd)
+        kit = drum_kit(t, str(band.get("name") or ""))
+        put(img, kit, (W / 2, y + 10 - kit.height * kd * 0.5), scale=kd * 1.1)
+    span = W * (0.74 if len(front) > 2 else 0.5)
+    for j, n in enumerate(front):
+        x = W / 2 if len(front) == 1 else W / 2 - span / 2 + span * j / (len(front) - 1)
+        lk = looks[n]
+        put(img, member(lk, t, str(lk.get("play") or "none"), "grin", "hang", j), (x, foot - SH * k / 2), scale=k)
+    fans = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    crowd(fans, t, int(script.get("seed") or 7), dense=True)
+    img.alpha_composite(fans.crop((0, 0, W, H - 130)), (0, 130))
+    shade = np.zeros((H, W, 4), np.uint8)  # the top darkens, so the words read over the lights
+    shade[..., 3] = (np.clip(1 - np.linspace(0, 1, H) / 0.42, 0, 1) ** 1.4 * 200).astype(np.uint8)[:, None]
+    img.alpha_composite(Image.fromarray(shade, "RGBA"))
+    name = str(band.get("name") or script.get("title") or "").upper()
+    f = font(int(250 * SS), "Black")
+    k = min(1.0, (W - 70) * SS / max(1.0, f.getlength(name)))
+    f = font(int(250 * SS * k), "Black")
+    w, h = int(f.getlength(name)) + 80 * SS, int(330 * SS * k) + 40 * SS
+    title = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    ImageDraw.Draw(title).text((w / 2, h / 2), name, font=f, fill=(255, 196, 40, 255), anchor="mm",
+                               stroke_width=int(22 * SS * k), stroke_fill=(255, 150, 20, 255))
+    from PIL import ImageFilter
+
+    title = title.filter(ImageFilter.GaussianBlur(16 * SS))  # a gold glow behind the letters
+    ImageDraw.Draw(title).text((w / 2, h / 2), name, font=f, fill=WHITE, anchor="mm", stroke_width=int(10 * SS * k),
+                               stroke_fill=OUTLINE)
+    put(img, shrink(title), (W / 2, 250))
+    sub = str(band.get("sub") or "").upper()
+    m = re.search(r"in (\d+) seconds", str(script.get("title") or ""), re.I)
+    sub = f"IN {m.group(1)} SECONDS" if m else (sub or "IN UNDER A MINUTE")
+    put(img, ribbon(sub), (W / 2, 445), angle=-2)
+    hook = str((script.get("thumbnail") or {}).get("text") or (script.get("scenes") or [{}])[0].get("line") or "").upper()
+    if hook:
+        put(img, hook_sprite(hook), (W / 2, 640), angle=3)
+    img.convert("RGB").save(out, quality=92)
+    return out
+
+
+def ribbon(text: str) -> Image.Image:
+    f = font(int(64 * SS), "Black")
+    w, h = int(f.getlength(text)) + 90 * SS, 108 * SS
+    img = Image.new("RGBA", (w + 10 * SS, h + 12 * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rounded_rectangle([6 * SS, 10 * SS, w + 6 * SS, h + 10 * SS], radius=18 * SS, fill=(0, 0, 0, 120))
+    d.rounded_rectangle([0, 0, w, h], radius=18 * SS, fill=GOLD, outline=OUTLINE, width=6 * SS)
+    d.text((w / 2, h / 2), text, font=f, fill=INK, anchor="mm")
+    return shrink(img)
+
+
+def hook_sprite(text: str) -> Image.Image:
+    f = font(int(70 * SS), "Black")
+    k = min(1.0, (W - 150) * SS / max(1.0, f.getlength(text)))
+    f = font(int(70 * SS * k), "Black")
+    w, h = int(f.getlength(text)) + 70 * SS, int(112 * SS * k) + 10 * SS
+    img = Image.new("RGBA", (w + 10 * SS, h + 12 * SS), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.rectangle([6 * SS, 10 * SS, w + 6 * SS, h + 10 * SS], fill=(0, 0, 0, 120))
+    d.rectangle([0, 0, w, h], fill=RED, outline=WHITE, width=6 * SS)
+    d.text((w / 2, h / 2), text, font=f, fill=WHITE, anchor="mm")
+    return shrink(img)
+
+
 # --------------------------------------------------------------------------- the rock bed (ours, made here)
 
 RATE = 44100

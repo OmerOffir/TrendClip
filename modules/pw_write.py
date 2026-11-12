@@ -232,6 +232,9 @@ def band_problems(script: dict) -> list[str]:
         bad = [f"{k}={look.get(k)}" for k, allowed in band_world.LOOK_VALUES.items() if look.get(k) not in (None, "", *allowed)]
         if bad:
             problems.append(f"{name}'s look has values the drawing doesn't know: {', '.join(bad)}")
+    hook = str((script.get("thumbnail") or {}).get("text") or "")
+    if len(hook) > BAND_LINE:
+        problems.append(f"the thumbnail text is {len(hook)} characters (at most {BAND_LINE})")
     if scenes and not (scenes[0].get("line") or scenes[0].get("year")):
         problems.append("scene 1 is the hook: a line card (or a year) on the first frame")
     if scenes and not pw_channel.narration({"scenes": scenes[-1:]}).rstrip().endswith("?"):
@@ -287,6 +290,8 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   glasses, beard, clothes, instrument). A look's keys: {looks}.
   "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
   The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
+"thumbnail": {{"text": the hook for the picture people click (the whole band on stage under the name), 2-5 words,
+  capitals, {BAND_LINE} characters at most, a question or a shock: "TOO LONG FOR RADIO?", "BROTHERS AT WAR"}}
 A scene's keys (all optional except kind and narration):
   "set": {"|".join(band_world.SETS)} ("sign": a neon word on the club wall, the venue's name, 12 characters at most)
   "year": "1991" (or "15 YEARS" for a gap); "line": a card under it, {BAND_LINE} characters at most, capitals ("MANCHESTER", "FIRST ALBUM")

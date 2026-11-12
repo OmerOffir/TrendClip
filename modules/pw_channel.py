@@ -887,12 +887,10 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
     }
     try:  # a picture made to be clicked (modules.pw_thumb), not a frame of the video; a world story's hook frame
-        if is_band(script):  # the hook's frame, fully popped in
+        if is_band(script):  # the whole band on stage, the name, "IN 45 SECONDS" and the hook (band_world.thumbnail)
             from modules import band_world
 
-            at = max(0.3, spec.scenes[0].end - 0.3)
-            band_world.BandRenderer(spec, script["band"]).frame(at).save(work / "thumb.jpg", quality=92)
-            info["thumb_at"] = round(at, 2)
+            band_world.thumbnail(script, work / "thumb.jpg")
         elif is_world(script):
             from modules import pw_world
 

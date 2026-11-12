@@ -108,3 +108,14 @@ def test_the_band_prompts(tmp_path):
     item = pw_write.add_topic("Nirvana: how did a garage band from Aberdeen change rock?", "90s and 2000s", tmp_path, "band")
     assert item["format"] == "band"
     assert pw_write.view("week", tmp_path)["bands"][0]["question"].startswith("Nirvana")
+
+
+def test_the_thumbnail_is_a_picture_of_the_whole_band(tmp_path):
+    s = example()
+    s["thumbnail"] = {"text": "BROTHERS AT WAR"}
+    out = band_world.thumbnail(s, tmp_path / "thumb.jpg")
+    from PIL import Image
+
+    assert Image.open(out).size == (bw_render.W, bw_render.H)
+    s["thumbnail"]["text"] = "X" * 40
+    assert any("thumbnail" in p for p in pw_write.format_problems(s))
