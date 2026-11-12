@@ -9,13 +9,12 @@ Content ID claimed, which costs the video its money).
 
 A script is the usual scenes list (narration per scene) plus:
     band      {"name": "OASIS", "sub": "in 45 seconds", "members": {<name>: <look>}}
-              a look: {hair: mop|short|bald|long|curly|spiky|fringe, hair_color, skin, brows: thin|thick|mono,
-                       glasses: none|round|shades, beard: none|stubble|full|mustache, top: tee|parka|jacket|shirt,
-                       top_color, pants, play: guitar|bass|drums|mic|none, guitar: flag|sunburst|black|red|white}
+              a look: the musician as fans picture them (hair, face, nose, brows, glasses, beard, hat, top, colours,
+                       play, guitar, extras): every key and value is in LOOK_VALUES and EXTRAS below
 A scene (kind "band") may carry:
     set       garage | club | studio | stadium | dark | street   (sign: a neon word in the club)
     year      the big year under the title;  line: a short card under it ("KING TUT'S, GLASGOW")
-    members   [name | {name, expr, play, pose, cue}] (expr: smile grin cool angry sad shocked; pose: hang up cross point)
+    members   [name | {name, expr, play, pose, cue}] (expr: smile grin laugh cool angry sad shocked; pose: hang up cross point)
     big       {text: "250,000", cue, color}: a figure that counts up when it is said
     news      {text: "OASIS SPLIT", cue}: a newspaper front page that spins in
     stamps    [{text, cue}];  crack: {cue}: lightning between the first two members (a fight);  confetti: true
@@ -46,21 +45,34 @@ FLOOR = 1380  # where the members' feet stand
 CAPTION_Y = 1545
 FADE = 0.18
 POP = 0.32
-SKINS = {"light": (255, 220, 190), "tan": (232, 188, 150), "brown": (176, 120, 84), "dark": (120, 80, 56)}
+SKINS = {"pale": (255, 232, 214), "light": (255, 220, 190), "olive": (226, 190, 150), "tan": (232, 188, 150),
+         "brown": (176, 120, 84), "dark": (120, 80, 56)}
 HAIRS = {"brown": (92, 62, 40), "dark": (44, 34, 30), "black": (24, 22, 26), "blond": (238, 200, 110),
-         "red": (184, 74, 40), "grey": (170, 170, 170), "white": (240, 240, 240)}
+         "platinum": (248, 240, 210), "red": (184, 74, 40), "auburn": (130, 50, 30), "grey": (170, 170, 170),
+         "white": (240, 240, 240), "pink": (240, 110, 170), "blue": (60, 110, 220), "green": (70, 180, 90),
+         "purple": (130, 70, 180)}
 TOPS = {"khaki": (150, 140, 90), "navy": (40, 52, 96), "black": (36, 36, 42), "white": (240, 240, 240),
         "red": (196, 48, 52), "green": (60, 120, 80), "grey": (120, 124, 132), "blue": (64, 110, 190),
-        "brown": (120, 84, 56), "denim": (84, 110, 150), "yellow": (236, 196, 64)}
+        "brown": (120, 84, 56), "denim": (84, 110, 150), "yellow": (236, 196, 64), "pink": (230, 110, 160),
+        "purple": (120, 70, 160), "orange": (230, 130, 50), "gold": (212, 175, 55), "silver": (190, 194, 204),
+        "maroon": (120, 30, 40), "teal": (40, 140, 140)}
 OUTLINE = (30, 26, 36)
 
 
 SETS = ("garage", "club", "studio", "stadium", "dark", "street")
-LOOK_VALUES = {"hair": ("mop", "fringe", "short", "long", "curly", "spiky", "bald"),
-               "hair_color": tuple(HAIRS), "brows": ("thin", "thick", "mono"), "glasses": ("none", "round", "shades"),
-               "beard": ("none", "stubble", "full", "mustache"), "top": ("tee", "parka", "jacket", "shirt"),
-               "play": ("guitar", "bass", "drums", "mic", "none"), "guitar": ("flag", "sunburst", "black", "red", "white"),
+LOOK_VALUES = {"hair": ("mop", "fringe", "short", "side_part", "slick", "quiff", "long", "curly", "big_curly", "afro",
+                        "spiky", "mohawk", "mullet", "ponytail", "dreads", "bald"),
+               "hair_color": tuple(HAIRS), "face": ("round", "long", "narrow", "square", "wide"),
+               "nose": ("small", "big", "long", "none"), "brows": ("thin", "thick", "mono"),
+               "glasses": ("none", "round", "shades", "square", "aviators"),
+               "beard": ("none", "stubble", "full", "long", "goatee", "mustache", "sideburns"),
+               "hat": ("none", "top_hat", "fedora", "cowboy", "beanie", "cap", "beret", "bandana"), "hat_color": tuple(TOPS),
+               "top": ("tee", "tank", "shirt", "jacket", "suit", "leather", "parka", "hoodie", "stripes", "flannel"),
+               "play": ("guitar", "bass", "drums", "mic", "none"),
+               "guitar": ("flag", "sunburst", "black", "red", "white", "gold", "blue", "green", "wood"),
                "skin": tuple(SKINS), "top_color": tuple(TOPS), "pants": tuple(TOPS)}
+EXTRAS = ("mustache", "sideburns", "earring", "chain", "scarf", "bowtie", "armband", "tattoos", "wristband", "headband", "teeth")
+EXPRS = ("smile", "grin", "laugh", "cool", "angry", "sad", "shocked")
 
 
 def rgb(table: dict, name: Any, default: str) -> tuple[int, int, int]:
@@ -71,45 +83,75 @@ def rgb(table: dict, name: Any, default: str) -> tuple[int, int, int]:
 
 # --------------------------------------------------------------------------- a band member
 
-SW, SH = 360, 640  # a member's sprite, in units (drawn at SS)
+SW, SH = 360, 740  # a member's sprite, in units (drawn at SS); the top 100 is room for big hair and hats
+OY = 100
 
 
 def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "hang", seed: int = 0) -> Image.Image:
-    """One member at time t: a big-headed cartoon who plays their instrument in time with the beat."""
+    """One member at time t: a big-headed cartoon of a real musician (their hair, face, hat, beard, glasses, clothes
+    and extras), who plays their instrument in time with the beat."""
     img = Image.new("RGBA", (SW * SS, SH * SS), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     u = SS
 
     def P(x: float, y: float) -> tuple[float, float]:
-        return x * u, y * u
+        return x * u, (y + OY) * u
 
     def box(x0, y0, x1, y1):
-        return [x0 * u, y0 * u, x1 * u, y1 * u]
+        return [x0 * u, (y0 + OY) * u, x1 * u, (y1 + OY) * u]
 
     lw = int(5 * u)
+
+    def glaze(paint) -> None:
+        """See-through paint (blush, stubble) laid over what is drawn: ImageDraw would punch holes in the sprite."""
+        layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        paint(ImageDraw.Draw(layer))
+        img.alpha_composite(layer)
     skin = rgb(SKINS, look.get("skin"), "light")
     hair = rgb(HAIRS, look.get("hair_color"), "brown")
     top = rgb(TOPS, look.get("top_color"), "navy")
     pants = rgb(TOPS, look.get("pants"), "denim")
+    extras = set(look.get("extras") or [])
+    dark = tuple(int(c * 0.7) for c in top)
     beat = (t + seed * 0.07) / BEAT
     hit = abs(math.sin(math.pi * beat))  # 0 on the beat, 1 between
     bob = 7 * (1 - hit) if play != "none" else 3 * math.sin(t * 2.2 + seed)
     hy = -bob  # head and body ride the beat
     drums = play == "drums"
+    style = str(look.get("top") or "tee")
+    sleeve = skin if style == "tank" else top
 
     # legs and shoes (a drummer sits behind the kit: no legs)
     if not drums:
         for x0 in (138, 190):
             d.rounded_rectangle(box(x0, 500, x0 + 34, 606), radius=12 * u, fill=pants, outline=OUTLINE, width=lw)
             d.ellipse(box(x0 - 10, 590, x0 + 44, 626), fill=(40, 36, 44), outline=OUTLINE, width=lw)
-    # arms behind the body (the singer's hands behind his back)
     sh_l, sh_r = (128, 352 + hy), (232, 352 + hy)
     arms: list[tuple[tuple[float, float], tuple[float, float]]] = []
     behind = play == "mic" and pose != "up"
+    if style == "hoodie":  # the hood behind the neck
+        d.ellipse(box(124, 296 + hy, 236, 360 + hy), fill=dark, outline=OUTLINE, width=lw)
     # the body
-    style = str(look.get("top") or "tee")
-    body_bottom = 540 if style == "parka" else 512
+    body_bottom = 540 if style in ("parka", "suit", "leather") else 512
     d.rounded_rectangle(box(112, 318 + hy, 248, body_bottom + hy * 0.5), radius=40 * u, fill=top, outline=OUTLINE, width=lw)
+    body = box(112, 318 + hy, 248, body_bottom + hy * 0.5)
+    if style in ("stripes", "flannel"):  # a pattern clipped to the body
+        pat = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        q = ImageDraw.Draw(pat)
+        light = tuple(min(255, c + 90) for c in top)
+        if style == "stripes":
+            for y in range(330, body_bottom, 26):
+                q.rectangle(box(100, y + hy, 260, y + 12 + hy), fill=WHITE)
+        else:
+            for y in range(322, body_bottom, 36):
+                q.rectangle(box(100, y + hy, 260, y + 10 + hy), fill=(*dark, 255))
+            for x in range(118, 250, 36):
+                q.rectangle(box(x, 300 + hy, x + 10, body_bottom + hy), fill=(*light, 150))
+        mask = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle(body, radius=40 * u, fill=255)
+        img.paste(pat, (0, 0), Image.composite(pat, Image.new("RGBA", img.size, (0, 0, 0, 0)), mask).getchannel("A"))
+        d = ImageDraw.Draw(img)
+        d.rounded_rectangle(body, radius=40 * u, outline=OUTLINE, width=lw)
     if style == "parka":
         fur = tuple(min(255, c + 70) for c in top)
         d.ellipse(box(120, 300 + hy, 240, 350 + hy), fill=fur, outline=OUTLINE, width=lw)
@@ -117,14 +159,37 @@ def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "ha
         for y in (430, 480):
             d.rectangle(box(126, y + hy, 160, y + 24 + hy), outline=OUTLINE, width=int(3 * u))
             d.rectangle(box(200, y + hy, 234, y + 24 + hy), outline=OUTLINE, width=int(3 * u))
-    elif style == "jacket":
-        d.polygon([P(180, 330 + hy), P(150, 330 + hy), P(180, 420 + hy)], fill=(240, 240, 240))
-        d.polygon([P(180, 330 + hy), P(210, 330 + hy), P(180, 420 + hy)], fill=(240, 240, 240))
-        d.line([P(150, 330 + hy), P(180, 420 + hy), P(210, 330 + hy)], fill=OUTLINE, width=int(3 * u))
+    elif style in ("jacket", "suit"):
+        inner = (240, 240, 240)
+        d.polygon([P(180, 330 + hy), P(150, 330 + hy), P(180, 430 + hy)], fill=inner)
+        d.polygon([P(180, 330 + hy), P(210, 330 + hy), P(180, 430 + hy)], fill=inner)
+        d.line([P(150, 330 + hy), P(180, 430 + hy), P(210, 330 + hy)], fill=OUTLINE, width=int(3 * u))
+        if style == "suit":  # a thin dark tie
+            d.polygon([P(174, 336 + hy), P(186, 336 + hy), P(190, 410 + hy), P(180, 424 + hy), P(170, 410 + hy)], fill=(30, 30, 40))
+    elif style == "leather":  # a biker jacket: wide lapels, a slanted zip, a white tee under it
+        d.polygon([P(150, 326 + hy), P(200, 326 + hy), P(176, 420 + hy)], fill=(236, 236, 236))
+        d.polygon([P(140, 330 + hy), P(176, 330 + hy), P(150, 400 + hy)], fill=dark, outline=OUTLINE)
+        d.polygon([P(220, 330 + hy), P(184, 330 + hy), P(214, 400 + hy)], fill=dark, outline=OUTLINE)
+        d.line([P(200, 340 + hy), P(170, 530 + hy * 0.5)], fill=(200, 200, 210), width=int(4 * u))
     elif style == "shirt":
         d.polygon([P(160, 322 + hy), P(180, 350 + hy), P(200, 322 + hy)], fill=(250, 250, 250), outline=OUTLINE)
         for y in (380, 420, 460):
             d.ellipse(box(176, y + hy, 184, y + 8 + hy), fill=OUTLINE)
+    elif style == "tank":  # a vest top: the shoulders bare
+        d.chord(box(146, 300 + hy, 214, 372 + hy), 0, 180, fill=skin, outline=OUTLINE, width=int(3 * u))
+    elif style == "hoodie":
+        d.line([P(166, 340 + hy), P(164, 400 + hy)], fill=WHITE, width=int(4 * u))
+        d.line([P(194, 340 + hy), P(196, 400 + hy)], fill=WHITE, width=int(4 * u))
+        d.rounded_rectangle(box(140, 450 + hy, 220, 500 + hy * 0.5), radius=10 * u, outline=OUTLINE, width=int(3 * u))
+    if "chain" in extras:
+        d.arc(box(150, 290 + hy, 210, 400 + hy), 30, 150, fill=(240, 200, 70), width=int(5 * u))
+    if "scarf" in extras:
+        sc = (200, 50, 60) if top != TOPS["red"] else (240, 200, 70)
+        d.rounded_rectangle(box(140, 318 + hy, 220, 344 + hy), radius=12 * u, fill=sc, outline=OUTLINE, width=int(3 * u))
+        d.rounded_rectangle(box(196, 330 + hy, 220, 450 + hy), radius=8 * u, fill=sc, outline=OUTLINE, width=int(3 * u))
+    if "bowtie" in extras:
+        d.polygon([P(160, 322 + hy), P(180, 334 + hy), P(160, 346 + hy)], fill=(30, 30, 40))
+        d.polygon([P(200, 322 + hy), P(180, 334 + hy), P(200, 346 + hy)], fill=(30, 30, 40))
 
     # the instrument and the arms that play it
     if play in ("guitar", "bass"):
@@ -134,7 +199,8 @@ def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "ha
         d.rounded_rectangle(box(neck_end[0] - 10, neck_end[1] - 22, neck_end[0] + 16, neck_end[1] + 8), radius=5 * u, fill=(60, 40, 28))
         kind = str(look.get("guitar") or ("sunburst" if play == "guitar" else "black"))
         bodyc = {"sunburst": (196, 96, 40), "black": (34, 34, 40), "red": (200, 40, 48), "white": (236, 236, 236),
-                 "flag": (20, 50, 140)}.get(kind, (196, 96, 40))
+                 "flag": (20, 50, 140), "gold": (222, 184, 70), "blue": (50, 100, 200), "green": (60, 150, 90),
+                 "wood": (210, 160, 100)}.get(kind, (196, 96, 40))
         gb = Image.new("RGBA", img.size, (0, 0, 0, 0))
         g = ImageDraw.Draw(gb)
         g.ellipse(box(gx - 62, gy - 30, gx + 30, gy + 58), fill=bodyc)
@@ -173,72 +239,181 @@ def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "ha
         arms = {"up": [(sh_l, (96, 210 + hy)), (sh_r, (264, 210 + hy))],
                 "point": [(sh_l, (110, 470 + hy)), (sh_r, (300, 300 + hy))],
                 "cross": [(sh_l, (214, 420 + hy)), (sh_r, (146, 420 + hy))]}.get(pose, [(sh_l, (104, 486 + hy)), (sh_r, (256, 486 + hy))])
-    for (a, b) in arms:
+    for k, (a, b) in enumerate(arms):
         d.line([P(*a), P(*b)], fill=OUTLINE, width=int(30 * u))
-        d.line([P(*a), P(*b)], fill=top, width=int(21 * u))
+        d.line([P(*a), P(*b)], fill=sleeve, width=int(21 * u))
+        mx, my_ = a[0] + (b[0] - a[0]) * 0.3, a[1] + (b[1] - a[1]) * 0.3
+        if "armband" in extras and k == 1:
+            d.ellipse(box(mx - 14, my_ - 14, mx + 14, my_ + 14), fill=(40, 40, 46))
+        if "tattoos" in extras and style == "tank":
+            for f_ in (0.35, 0.6):
+                tx, ty = a[0] + (b[0] - a[0]) * f_, a[1] + (b[1] - a[1]) * f_
+                d.ellipse(box(tx - 6, ty - 6, tx + 6, ty + 6), fill=(60, 80, 120))
+        if "wristband" in extras:
+            wx, wy = a[0] + (b[0] - a[0]) * 0.86, a[1] + (b[1] - a[1]) * 0.86
+            d.ellipse(box(wx - 13, wy - 13, wx + 13, wy + 13), fill=(30, 30, 36))
         d.ellipse(box(b[0] - 17, b[1] - 17, b[0] + 17, b[1] + 17), fill=skin, outline=OUTLINE, width=lw)
         if drums:  # the sticks
             d.line([P(*b), P(b[0] + (40 if b[0] > 180 else -40), b[1] - 50)], fill=(220, 190, 130), width=int(8 * u))
 
-    # the head
-    cx, cy, r = 180, 188 + hy * 1.3, 122
-    hair_style = str(look.get("hair") or "short")
-    if hair_style == "long":  # long hair falls behind the head
-        d.rounded_rectangle(box(cx - r - 8, cy - 40, cx + r + 8, cy + 150), radius=50 * u, fill=hair, outline=OUTLINE, width=lw)
-    if hair_style == "curly":
-        for k in range(14):
-            a = math.pi * (0.9 + 1.2 * k / 13)
-            px, py = cx + (r + 4) * math.cos(a), cy + (r - 6) * math.sin(a) - 6
-            d.ellipse(box(px - 34, py - 34, px + 34, py + 34), fill=hair, outline=OUTLINE, width=lw)
-    d.ellipse(box(cx - r, cy - r, cx + r, cy + r), fill=skin, outline=OUTLINE, width=lw)
-    d.ellipse(box(cx - r - 14, cy + 2, cx - r + 18, cy + 44), fill=skin, outline=OUTLINE, width=lw)  # ears
-    d.ellipse(box(cx + r - 18, cy + 2, cx + r + 14, cy + 44), fill=skin, outline=OUTLINE, width=lw)
-    if look.get("beard") in ("stubble", "full"):
-        shade = tuple(int(c * 0.82) for c in skin) if look["beard"] == "stubble" else hair
-        d.chord(box(cx - r + 6, cy - r + 10, cx + r - 6, cy + r - 2), 20, 160, fill=shade)
-    if hair_style in ("mop", "fringe", "short", "long", "spiky"):
-        d.chord(box(cx - r - 6, cy - r - 10, cx + r + 6, cy + r - 30), 180, 360, fill=hair, outline=OUTLINE, width=lw)
-        if hair_style in ("mop", "fringe", "long"):  # a fringe down over the brows, with a ragged edge
-            low = cy - 30 if hair_style == "mop" else cy - 48
-            pts = [P(cx - r - 4, cy - 10)]
-            for k in range(9):
-                x = cx - r + 2 * r * k / 8
-                pts.append(P(x, low + (14 if k % 2 else 0)))
-            pts.append(P(cx + r + 4, cy - 10))
-            pts.append(P(cx + r + 4, cy - 60))
-            pts.append(P(cx - r - 4, cy - 60))
-            d.polygon(pts, fill=hair)
-            d.line(pts[:-2], fill=OUTLINE, width=lw)
-            if hair_style == "mop":  # sides down past the ears
-                d.rounded_rectangle(box(cx - r - 12, cy - 60, cx - r + 26, cy + 40), radius=16 * u, fill=hair, outline=OUTLINE, width=lw)
-                d.rounded_rectangle(box(cx + r - 26, cy - 60, cx + r + 12, cy + 40), radius=16 * u, fill=hair, outline=OUTLINE, width=lw)
-        if hair_style == "spiky":
-            for k in range(6):
-                x = cx - r + 20 + k * (2 * r - 40) / 5
-                d.polygon([P(x - 26, cy - r + 20), P(x, cy - r - 46), P(x + 26, cy - r + 20)], fill=hair, outline=OUTLINE)
-    elif hair_style == "bald":
+    # the head: its shape, then the hair behind it, the face, the hair in front, the hat
+    cx, cy = 180, 188 + hy * 1.3
+    rx, ry = {"round": (122, 122), "long": (108, 134), "narrow": (100, 128), "square": (124, 118),
+              "wide": (134, 114)}.get(str(look.get("face") or "round"), (122, 122))
+    hs = str(look.get("hair") or "short")
+    hat = str(look.get("hat") or "none")
+    hatc = rgb(TOPS, look.get("hat_color"), "black")
+
+    def curls(points, size):
+        for px, py in points:
+            d.ellipse(box(px - size, py - size, px + size, py + size), fill=hair, outline=OUTLINE, width=lw)
+
+    if hs == "long":  # long hair falls behind the head
+        d.rounded_rectangle(box(cx - rx - 8, cy - 40, cx + rx + 8, cy + 150), radius=50 * u, fill=hair, outline=OUTLINE, width=lw)
+    elif hs == "curly":
+        curls([(cx + (rx + 4) * math.cos(a), cy + (ry - 6) * math.sin(a) - 6)
+               for a in (math.pi * (0.9 + 1.2 * k / 13) for k in range(14))], 34)
+    elif hs == "big_curly":  # a huge halo of curls down to the shoulders
+        pts = [(cx + (rx + 34) * math.cos(a), cy - 10 + (ry + 30) * math.sin(a)) for a in (math.pi * (0.8 + 1.4 * k / 19) for k in range(20))]
+        pts += [(cx + side * (rx + 26 + 6 * (k % 2)), cy + 40 + k * 34) for side in (-1, 1) for k in range(4)]
+        curls(pts, 42)
+    elif hs == "afro":
+        d.ellipse(box(cx - rx - 60, cy - ry - 80, cx + rx + 60, cy + 50), fill=hair, outline=OUTLINE, width=lw)
+        curls([(cx + (rx + 52) * math.cos(a), cy - 15 + (ry + 62) * math.sin(a) * 0.8) for a in (math.pi * (1.0 + k / 11) for k in range(12))], 24)
+    elif hs == "mullet":  # short on top, long at the back
+        d.rounded_rectangle(box(cx - rx + 4, cy - 10, cx + rx - 4, cy + 150), radius=40 * u, fill=hair, outline=OUTLINE, width=lw)
+    elif hs == "dreads":
+        for k in range(9):
+            x = cx - rx - 10 + k * (2 * rx + 20) / 8
+            d.rounded_rectangle(box(x - 14, cy - 60, x + 14, cy + 160 - 20 * (k % 2)), radius=14 * u, fill=hair, outline=OUTLINE, width=int(3 * u))
+    elif hs == "ponytail":
+        d.rounded_rectangle(box(cx + rx - 30, cy - 40, cx + rx + 26, cy + 140), radius=26 * u, fill=hair, outline=OUTLINE, width=lw)
+
+    if str(look.get("face") or "round") == "square":
+        d.rounded_rectangle(box(cx - rx, cy - ry, cx + rx, cy + ry), radius=70 * u, fill=skin, outline=OUTLINE, width=lw)
+    else:
+        d.ellipse(box(cx - rx, cy - ry, cx + rx, cy + ry), fill=skin, outline=OUTLINE, width=lw)
+    d.ellipse(box(cx - rx - 14, cy + 2, cx - rx + 18, cy + 44), fill=skin, outline=OUTLINE, width=lw)  # ears
+    d.ellipse(box(cx + rx - 18, cy + 2, cx + rx + 14, cy + 44), fill=skin, outline=OUTLINE, width=lw)
+    if "earring" in extras:
+        d.ellipse(box(cx - rx - 8, cy + 42, cx - rx + 8, cy + 58), fill=(240, 200, 70), outline=OUTLINE, width=int(2 * u))
+    beard = str(look.get("beard") or "none")
+    if beard in ("stubble", "full", "long"):
+        jaw = box(cx - rx + 6, cy - ry + 10, cx + rx - 6, cy + ry - 2)
+        if beard == "stubble":
+            glaze(lambda g: g.chord(jaw, 20, 160, fill=(*hair, 90)))
+        else:
+            d.chord(jaw, 20, 160, fill=hair)
+        if beard == "long":
+            d.polygon([P(cx - rx + 30, cy + 60), P(cx + rx - 30, cy + 60), P(cx + 40, cy + ry + 90), P(cx, cy + ry + 110),
+                       P(cx - 40, cy + ry + 90)], fill=hair, outline=OUTLINE)
+    elif beard == "goatee":
+        d.ellipse(box(cx - 30, cy + ry - 40, cx + 30, cy + ry + 14), fill=hair, outline=OUTLINE, width=int(3 * u))
+    if beard == "sideburns" or "sideburns" in extras:
+        for s_ in (-1, 1):
+            x0 = cx + s_ * (rx - 14)
+            d.rounded_rectangle(box(min(x0, x0 - s_ * 24), cy - 20, max(x0, x0 - s_ * 24), cy + 60), radius=8 * u, fill=hair)
+
+    # hair in front
+    top_hair = box(cx - rx - 6, cy - ry - 10, cx + rx + 6, cy + ry - 30)
+    if hs in ("mop", "fringe", "short", "long", "spiky", "mullet", "dreads", "side_part"):
+        d.chord(top_hair, 180, 360, fill=hair, outline=OUTLINE, width=lw)
+    if hs in ("mop", "fringe", "long"):  # a fringe down over the brows, with a ragged edge
+        low = cy - 30 if hs == "mop" else cy - 48
+        pts = [P(cx - rx - 4, cy - 10)]
+        for k in range(9):
+            pts.append(P(cx - rx + 2 * rx * k / 8, low + (14 if k % 2 else 0)))
+        pts += [P(cx + rx + 4, cy - 10), P(cx + rx + 4, cy - 60), P(cx - rx - 4, cy - 60)]
+        d.polygon(pts, fill=hair)
+        d.line(pts[:-2], fill=OUTLINE, width=lw)
+        if hs == "mop":  # sides down past the ears
+            d.rounded_rectangle(box(cx - rx - 12, cy - 60, cx - rx + 26, cy + 40), radius=16 * u, fill=hair, outline=OUTLINE, width=lw)
+            d.rounded_rectangle(box(cx + rx - 26, cy - 60, cx + rx + 12, cy + 40), radius=16 * u, fill=hair, outline=OUTLINE, width=lw)
+    elif hs == "spiky":
+        for k in range(6):
+            x = cx - rx + 20 + k * (2 * rx - 40) / 5
+            d.polygon([P(x - 26, cy - ry + 20), P(x, cy - ry - 46), P(x + 26, cy - ry + 20)], fill=hair, outline=OUTLINE)
+    elif hs == "side_part":  # a swoop over one side of the forehead
+        d.polygon([P(cx - rx - 2, cy - 30), P(cx - 30, cy - 70), P(cx + rx, cy - 50), P(cx + rx + 4, cy - 90),
+                   P(cx - rx - 4, cy - 90)], fill=hair)
+        d.line([P(cx - rx - 2, cy - 30), P(cx - 30, cy - 70), P(cx + rx, cy - 50)], fill=OUTLINE, width=lw)
+        d.line([P(cx - 50, cy - ry + 4), P(cx - 40, cy - 70)], fill=OUTLINE, width=int(3 * u))
+    elif hs in ("slick", "ponytail", "quiff"):  # combed back, close to the head, with a shine
+        d.chord(box(cx - rx - 2, cy - ry - 4, cx + rx + 2, cy + ry - 80), 180, 360, fill=hair, outline=OUTLINE, width=lw)
+        d.arc(box(cx - 60, cy - ry + 6, cx + 40, cy - 40), 200, 260, fill=tuple(min(255, c + 80) for c in hair), width=int(5 * u))
+        if hs == "quiff":  # the wave piled up over the forehead
+            d.ellipse(box(cx - 80, cy - ry - 56, cx + 70, cy - ry + 36), fill=hair, outline=OUTLINE, width=lw)
+            d.arc(box(cx - 50, cy - ry - 36, cx + 40, cy - ry + 20), 200, 320, fill=tuple(min(255, c + 80) for c in hair), width=int(5 * u))
+    elif hs == "mohawk":
+        for k in range(5):
+            y = cy - ry + 10 + k * 22
+            d.polygon([P(cx - 18, y + 30), P(cx, y - 60 + k * 8), P(cx + 18, y + 30)], fill=hair, outline=OUTLINE)
+    elif hs == "big_curly":
+        curls([(cx - rx + 20 + k * (2 * rx - 40) / 5, cy - ry + 16 + (8 if k % 2 else 0)) for k in range(6)], 30)
+    elif hs == "curly":
+        curls([(cx - rx + 30 + k * (2 * rx - 60) / 4, cy - ry + 14) for k in range(5)], 26)
+    elif hs == "bald" and hat == "none":
         d.arc(box(cx - 70, cy - 104, cx - 10, cy - 60), 200, 300, fill=(255, 255, 255), width=int(7 * u))
+    if "headband" in extras:
+        d.chord(box(cx - rx, cy - ry + 34, cx + rx, cy + ry), 192, 348, fill=None, outline=(220, 40, 50), width=int(16 * u))
+
+    # the hat
+    ht = cy - ry  # the top of the head
+    if hat == "top_hat":
+        d.rounded_rectangle(box(cx - 78, ht - 120, cx + 78, ht + 30), radius=8 * u, fill=hatc, outline=OUTLINE, width=lw)
+        d.rectangle(box(cx - 78, ht - 4, cx + 78, ht + 18), fill=(200, 60, 50))
+        d.ellipse(box(cx - rx - 40, ht + 14, cx + rx + 40, ht + 54), fill=hatc, outline=OUTLINE, width=lw)
+    elif hat == "fedora":
+        d.polygon([P(cx - 84, ht + 30), P(cx - 70, ht - 50), P(cx, ht - 34), P(cx + 70, ht - 50), P(cx + 84, ht + 30)], fill=hatc, outline=OUTLINE)
+        d.rectangle(box(cx - 84, ht + 6, cx + 84, ht + 26), fill=(30, 30, 36))
+        d.ellipse(box(cx - rx - 30, ht + 16, cx + rx + 30, ht + 50), fill=hatc, outline=OUTLINE, width=lw)
+    elif hat == "cowboy":
+        d.polygon([P(cx - 80, ht + 30), P(cx - 66, ht - 54), P(cx, ht - 30), P(cx + 66, ht - 54), P(cx + 80, ht + 30)], fill=hatc, outline=OUTLINE)
+        d.chord(box(cx - rx - 70, ht - 30, cx + rx + 70, ht + 56), 0, 180, fill=hatc, outline=OUTLINE, width=lw)
+        d.line([P(cx - rx - 70, ht + 13), P(cx - rx - 50, ht - 20)], fill=OUTLINE, width=lw)
+        d.line([P(cx + rx + 70, ht + 13), P(cx + rx + 50, ht - 20)], fill=OUTLINE, width=lw)
+    elif hat in ("beanie", "cap"):
+        d.chord(box(cx - rx - 4, ht - 10, cx + rx + 4, cy + ry - 60), 180, 360, fill=hatc, outline=OUTLINE, width=lw)
+        if hat == "beanie":
+            d.rounded_rectangle(box(cx - rx - 6, cy - 70, cx + rx + 6, cy - 34), radius=14 * u, fill=dark if look.get("hat_color") is None else tuple(int(c * 0.8) for c in hatc), outline=OUTLINE, width=lw)
+        else:
+            d.chord(box(cx - 30, cy - 70, cx + rx + 70, cy - 30), 180, 360, fill=hatc, outline=OUTLINE, width=lw)
+    elif hat == "beret":
+        d.ellipse(box(cx - rx - 10, ht - 30, cx + rx - 10, ht + 50), fill=hatc, outline=OUTLINE, width=lw)
+    elif hat == "bandana":
+        d.chord(box(cx - rx - 4, ht - 6, cx + rx + 4, cy + ry - 64), 180, 360, fill=hatc, outline=OUTLINE, width=lw)
+        for k in range(5):
+            d.ellipse(box(cx - 80 + k * 38, cy - 92, cx - 72 + k * 38, cy - 84), fill=WHITE)
+        d.polygon([P(cx + rx - 6, cy - 60), P(cx + rx + 40, cy - 20), P(cx + rx + 10, cy - 10)], fill=hatc, outline=OUTLINE)
+
     # the face
     blink = (t + seed * 0.71) % (2.4 + seed % 3 * 0.4) < 0.12
     ey = cy + 14
     eyes = ((cx - 44, ey), (cx + 44, ey))
     glasses = str(look.get("glasses") or "none")
     for ex, yy in eyes:
-        if glasses in ("round", "shades"):
+        if glasses in ("round", "shades", "aviators"):
             continue
         if blink:
             d.line([P(ex - 14, yy), P(ex + 14, yy)], fill=OUTLINE, width=int(6 * u))
-        elif expr == "grin":
+        elif expr == "laugh":
             d.arc(box(ex - 16, yy - 12, ex + 16, yy + 14), 200, 340, fill=OUTLINE, width=int(7 * u))
         else:
             rr = 11 if expr == "shocked" else 15
             d.ellipse(box(ex - rr, yy - rr - 3, ex + rr, yy + rr + 3), fill=OUTLINE)
             d.ellipse(box(ex - 6 + 3, yy - 11, ex + 1 + 3, yy - 4), fill=WHITE)
-    if glasses in ("round", "shades"):
-        lens = (40, 44, 60) if glasses == "shades" else (70, 120, 90)
+    if glasses in ("round", "shades", "square", "aviators"):
+        lens = {"shades": (40, 44, 60), "round": (70, 120, 90), "aviators": (60, 50, 40), "square": None}[glasses]
         for ex, yy in eyes:
-            d.ellipse(box(ex - 30, yy - 24, ex + 30, yy + 24), fill=lens, outline=OUTLINE, width=lw)
-            d.arc(box(ex - 18, yy - 16, ex + 6, yy + 4), 190, 260, fill=(200, 220, 230), width=int(4 * u))
+            if glasses == "square":
+                d.rounded_rectangle(box(ex - 32, yy - 22, ex + 32, yy + 22), radius=6 * u, outline=OUTLINE, width=int(8 * u))
+            elif glasses == "aviators":
+                d.polygon([P(ex - 34, yy - 20), P(ex + 34, yy - 20), P(ex + 26, yy + 18), P(ex, yy + 30), P(ex - 26, yy + 18)],
+                          fill=lens, outline=(200, 170, 80))
+            else:
+                d.ellipse(box(ex - 30, yy - 24, ex + 30, yy + 24), fill=lens, outline=OUTLINE, width=lw)
+            if lens:
+                d.arc(box(ex - 18, yy - 16, ex + 6, yy + 4), 190, 260, fill=(200, 220, 230), width=int(4 * u))
         d.line([P(cx - 14, ey - 4), P(cx + 14, ey - 4)], fill=OUTLINE, width=lw)
     brows = str(look.get("brows") or "thin")
     bw_ = int((14 if brows in ("thick", "mono") else 7) * u)
@@ -255,25 +430,35 @@ def member(look: dict, t: float, play: str, expr: str = "smile", pose: str = "ha
         lift = -10 if expr == "shocked" else 0
         d.line([P(cx - 68, by + lift), P(cx - 20, by - 4 + lift)], fill=hair, width=bw_)
         d.line([P(cx + 68, by + lift), P(cx + 20, by - 4 + lift)], fill=hair, width=bw_)
-    my = cy + 70
+    nose = str(look.get("nose") or "small")
+    ny = cy + 44
+    if nose == "small":
+        d.arc(box(cx - 10, ny - 10, cx + 10, ny + 8), 20, 160, fill=OUTLINE, width=int(4 * u))
+    elif nose == "big":
+        d.arc(box(cx - 20, ny - 16, cx + 20, ny + 14), 0, 180, fill=OUTLINE, width=int(5 * u))
+        d.line([P(cx - 12, ny - 30), P(cx - 18, ny)], fill=OUTLINE, width=int(4 * u))
+        d.line([P(cx + 12, ny - 30), P(cx + 18, ny)], fill=OUTLINE, width=int(4 * u))
+    elif nose == "long":
+        d.line([P(cx - 2, ny - 34), P(cx + 12, ny + 4), P(cx - 8, ny + 8)], fill=OUTLINE, width=int(4 * u), joint="curve")
+    my = cy + 70 + (ry - 122) * 0.5
     singing = play == "mic" and hit > 0.35
-    if look.get("beard") == "mustache":
+    if beard == "mustache" or "mustache" in extras:
         d.chord(box(cx - 44, my - 26, cx + 44, my + 8), 180, 360, fill=hair)
     if singing or expr == "shocked":
         o = 14 + 12 * hit if singing else 18
         d.ellipse(box(cx - 18, my - o * 0.6, cx + 18, my + o), fill=(120, 30, 40), outline=OUTLINE, width=lw)
-    elif expr in ("grin", "smile"):
-        if expr == "grin":
-            d.chord(box(cx - 40, my - 30, cx + 40, my + 30), 0, 180, fill=(120, 30, 40), outline=OUTLINE, width=lw)
-        else:
-            d.arc(box(cx - 32, my - 26, cx + 32, my + 16), 20, 160, fill=OUTLINE, width=int(7 * u))
+    elif expr in ("grin", "laugh"):
+        d.chord(box(cx - 40, my - 30, cx + 40, my + 30), 0, 180, fill=(120, 30, 40), outline=OUTLINE, width=lw)
+        if "teeth" in extras or look.get("teeth") == "big":  # big front teeth (Freddie)
+            d.rectangle(box(cx - 26, my, cx + 26, my + 12), fill=WHITE, outline=OUTLINE, width=int(2 * u))
+    elif expr == "smile":
+        d.arc(box(cx - 32, my - 26, cx + 32, my + 16), 20, 160, fill=OUTLINE, width=int(7 * u))
     elif expr in ("angry", "sad"):
         d.arc(box(cx - 30, my, cx + 30, my + 36), 200, 340, fill=OUTLINE, width=int(7 * u))
     else:  # cool: a flat, slightly crooked line
         d.line([P(cx - 24, my + 6), P(cx + 26, my + 2)], fill=OUTLINE, width=int(7 * u))
-    if expr != "angry" and expr != "sad":
-        for ex in (cx - 76, cx + 76):
-            d.ellipse(box(ex - 18, my - 26, ex + 18, my - 10), fill=(255, 150, 150, 110))
+    if expr not in ("angry", "sad") and beard not in ("full", "long"):
+        glaze(lambda g: [g.ellipse(box(ex - 18, my - 26, ex + 18, my - 10), fill=(255, 120, 130, 110)) for ex in (cx - 76, cx + 76)])
     return shrink(img)
 
 

@@ -33,12 +33,12 @@ def test_the_oasis_example_passes_every_rule():
 
 def test_band_rules_catch_what_the_drawing_cannot_do():
     s = example()
-    s["band"]["members"]["Liam"]["hair"] = "mohawk"
+    s["band"]["members"]["Liam"]["hair"] = "beehive"
     s["scenes"][1]["members"].append("Ringo")
     s["scenes"][-1]["narration"] = "They are back."
     s["scenes"][3]["big"]["cue"] = "nowhere"
     found = " | ".join(pw_channel.check_script(s) + pw_write.format_problems(s))
-    assert "Ringo" in found and "hair=mohawk" in found
+    assert "Ringo" in found and "hair=beehive" in found
     assert "question" in found and "'nowhere'" in found
 
 
@@ -119,3 +119,16 @@ def test_the_thumbnail_is_a_picture_of_the_whole_band(tmp_path):
     assert Image.open(out).size == (bw_render.W, bw_render.H)
     s["thumbnail"]["text"] = "X" * 40
     assert any("thumbnail" in p for p in pw_write.format_problems(s))
+
+
+@pytest.mark.parametrize("key", ["hair", "face", "nose", "glasses", "beard", "hat", "top", "guitar"])
+def test_every_look_value_draws(key):
+    for value in band_world.LOOK_VALUES[key]:
+        look = {key: value, "extras": list(band_world.EXTRAS)}
+        img = band_world.member(look, 0.7, "guitar", "grin", "hang", seed=1)
+        assert img.size == (band_world.SW, band_world.SH) and img.getbbox()
+
+
+def test_the_blush_is_painted_over_the_skin_not_through_it():
+    img = band_world.member({"hair": "short"}, 0.3, "none", "smile", "hang", 1)
+    assert img.getpixel((180 - 76, 188 + 70 - 18 + band_world.OY))[3] == 255

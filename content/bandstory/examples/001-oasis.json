@@ -11,6 +11,7 @@
       "Liam": {
         "hair": "mop",
         "hair_color": "brown",
+        "face": "long",
         "glasses": "round",
         "top": "parka",
         "top_color": "khaki",
@@ -20,6 +21,8 @@
       "Noel": {
         "hair": "fringe",
         "hair_color": "dark",
+        "face": "wide",
+        "nose": "big",
         "brows": "mono",
         "top": "jacket",
         "top_color": "black",

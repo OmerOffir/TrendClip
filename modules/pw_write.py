@@ -230,6 +230,7 @@ def band_problems(script: dict) -> list[str]:
         problems.append(f"{len(members)} members drawn (at most 5: the ones the story is about)")
     for name, look in members.items():
         bad = [f"{k}={look.get(k)}" for k, allowed in band_world.LOOK_VALUES.items() if look.get(k) not in (None, "", *allowed)]
+        bad += [f"extras={x}" for x in (look.get("extras") or []) if x not in band_world.EXTRAS]
         if bad:
             problems.append(f"{name}'s look has values the drawing doesn't know: {', '.join(bad)}")
     hook = str((script.get("thumbnail") or {}).get("text") or "")
@@ -286,8 +287,10 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
 - the last scene ends on ONE question that splits the fans ("So, Liam or Noel: who was right?", "Best album: X or Y?").
   No "follow", no "subscribe", no "like".
 "band": {{"name": the band in capitals ("OASIS"), "sub": "in 45 seconds", "members": {{<first name or nickname>: look}}}}
-  2-5 members: the ones the story is about. Make each one recognisable from the look alone (their famous hair,
-  glasses, beard, clothes, instrument). A look's keys: {looks}.
+  2-5 members: the ones the story is about. Make each one recognisable from the look alone: how fans picture
+  them at the band's peak (their famous hair, face shape, nose, hat, beard, glasses, clothes, guitar). Use every key
+  that helps: Slash = big_curly black hair + top_hat + shades; Freddie = slick black hair + mustache + tank + armband.
+  A look's keys: {looks}; "extras": a list of {"|".join(band_world.EXTRAS)}.
   "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
   The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
 "thumbnail": {{"text": the hook for the picture people click (the whole band on stage under the name), 2-5 words,
@@ -296,7 +299,7 @@ A scene's keys (all optional except kind and narration):
   "set": {"|".join(band_world.SETS)} ("sign": a neon word on the club wall, the venue's name, 12 characters at most)
   "year": "1991" (or "15 YEARS" for a gap); "line": a card under it, {BAND_LINE} characters at most, capitals ("MANCHESTER", "FIRST ALBUM")
   "members": who is on stage, by their key in band.members: ["Liam", {{"name": "Noel", "cue": "Noel", "expr": "cool",
-    "play": "none", "pose": "cross"}}] (expr: smile|grin|cool|angry|sad|shocked; pose when not playing: hang|up|cross|point;
+    "play": "none", "pose": "cross"}}] (expr: smile|grin|laugh|cool|angry|sad|shocked; pose when not playing: hang|up|cross|point;
     "play": "none" for a scene where they don't play: a fight, a sad scene; a cue makes someone appear as their name is said)
   "big": {{"text": "250,000", "cue": a word}}: a figure that counts up as it is said ("#1" works too)
   "news": {{"text": "OASIS SPLIT", "cue": a word}}: a newspaper front page (a split, a scandal, a record)
