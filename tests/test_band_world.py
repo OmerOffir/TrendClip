@@ -174,3 +174,20 @@ def test_every_video_gets_the_anthem_unless_a_script_asks():
     assert band_music.style_for({"music": "heavy", "pillar": "rock legends"}) == "heavy"
     assert band_music.style_for({"pillar": "90s and 2000s"}) == "anthem"
     assert band_music.style_for({}) == "anthem"
+
+
+
+def test_a_band_story_takes_the_owners_track_when_there_is_one(tmp_path, monkeypatch):
+    import subprocess
+
+    folder = tmp_path / "music" / "encore"
+    folder.mkdir(parents=True)
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "sine=f=220:d=8", str(folder / "Arena One.mp3")], check=True)
+    monkeypatch.setattr(pw_channel, "PROJECT_ROOT", tmp_path)
+    out = pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "music.mp3")
+    assert out.is_file() and out.stat().st_size > 10_000
+    (folder / "Arena One.mp3").unlink()
+    from modules import band_music
+
+    monkeypatch.setattr(band_music, "bed", lambda seconds, out, style, seed=0: (out.write_bytes(b"made"), out)[1])
+    assert pw_channel.band_track({"seed": 3}, 5.0, tmp_path / "bed.mp3").read_bytes() == b"made"
