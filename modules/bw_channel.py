@@ -799,6 +799,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     progress(0.15, "Placing the maps")
     if balls:
         spec.cast = script.get("cast") or {}
+        spec.bars = script.get("bars", True)  # false: no columns (the smallest country: a bar of 0.44 says nothing)
         render = render or bw_balls.render
     elif missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))

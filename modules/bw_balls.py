@@ -14,7 +14,11 @@ A script of format "balls" has scenes of kind "balls", one line of speech each:
     badge      {text, sub, cue}: the round counter on the map ("14" / "NEIGHBORS"); with `show` it counts up as they
                light up and lands on `text`; without, it pops on the cue word
     with       a host line only: the countries standing beside it (["Russia", "China"] for "it's a tie")
-The script's cover_text is the question on the banner, on screen from frame 0. cast: {"Russia": {"voice", "flag"}}
+    tower      {height, label, shape}: a building drawn on the map that rises when the badge pops (2026-11-12, the
+               tallest-building race); the ones before it stay, so the skyline is the race. shape: spire | twist |
+               crystal | stepped | peak (a mountain) | falls (a waterfall) | block. Heights share one scale, the tallest reaching just under the banner.
+Columns: a race's badges become columns on one scale by themselves (auto_bars); "bars": false on the script
+leaves them out. The script's cover_text is the question on the banner, on screen from frame 0. cast: {"Russia": {"voice", "flag"}}
 overrides a ball's Kokoro voice or its Commons flag file.
 
 Voice: every speaker in its own voice (modules.bw_balls.record); the map, flags and fonts are Borderline Why's.
@@ -473,6 +477,108 @@ def caption(img: Image.Image, group: list[Word], t: float) -> None:
 # --------------------------------------------------------------------------- the renderer
 
 
+def tower_shape(d: ImageDraw.ImageDraw, cx: float, ground: float, h: float, w: float, shape: str, lit: bool) -> None:
+    """One building as a flat drawing: a lit left face, a shaded right face, floor lines and its own outline.
+    spire (One World Trade Center: a tapering block and a mast), twist (Shanghai Tower: a rounded taper with a
+    notched top), crystal (Merdeka 118: facets and a long spire), stepped (Burj Khalifa: setbacks and a needle
+    tip), block (any other)."""
+    if h < 8:  # still coming up out of the ground
+        return
+    face, side, ink = ((150, 196, 236), (92, 132, 176), (18, 22, 36)) if lit else ((172, 186, 204), (118, 132, 152), (18, 22, 36))
+    top = ground - h
+    polys: list[list[tuple[float, float]]] = []
+    if shape == "stepped":
+        body, tip = h * 0.8, h * 0.2
+        tiers = 6
+        for k in range(tiers):
+            y1 = ground - body * k / tiers
+            y0 = ground - body * (k + 1) / tiers
+            hw = w / 2 * (1 - k / (tiers + 0.6))
+            polys.append([(cx - hw, y1), (cx + hw, y1), (cx + hw * 0.96, y0), (cx - hw * 0.96, y0)])
+        hw = w / 2 * (1 - (tiers - 1) / (tiers + 0.6)) * 0.9
+        polys.append([(cx - hw, ground - body), (cx + hw, ground - body), (cx + 2, top), (cx - 2, top)])
+    elif shape == "spire":
+        body = h * 0.77
+        polys.append([(cx - w / 2, ground), (cx + w / 2, ground), (cx + w * 0.3, ground - body), (cx - w * 0.3, ground - body)])
+        polys.append([(cx - 3, ground - body), (cx + 3, ground - body), (cx + 2, top), (cx - 2, top)])
+    elif shape == "twist":
+        pts_l, pts_r = [], []
+        for k in range(13):
+            v = k / 12
+            hw = w / 2 * (1 - 0.45 * v) * (1 + 0.04 * math.sin(v * 6))
+            pts_l.append((cx - hw, ground - h * v))
+            pts_r.append((cx + hw * (0.92 if k == 12 else 1), ground - h * v + (h * 0.025 if k == 12 else 0)))
+        polys.append(pts_l + pts_r[::-1])
+    elif shape == "crystal":
+        body = h * 0.72
+        polys.append([(cx - w / 2, ground), (cx + w / 2, ground), (cx + w * 0.38, ground - body * 0.5), (cx + w * 0.16, ground - body),
+                      (cx - w * 0.16, ground - body), (cx - w * 0.38, ground - body * 0.5)])
+        polys.append([(cx - w * 0.16, ground - body), (cx + w * 0.16, ground - body), (cx + 2, top), (cx - 2, top)])
+    elif shape == "peak":  # a mountain: a wide rock triangle with a snow cap
+        hw = w * 0.95
+        rock = [(cx - hw, ground), (cx + hw, ground), (cx, top)]
+        d.polygon(rock, fill=(138, 112, 92, 255))
+        d.polygon([(cx, top), (cx + hw, ground), (cx + hw * 0.1, ground)], fill=(104, 82, 68, 255))
+        cap = 0.22
+        d.polygon([(cx - hw * cap, top + h * cap), (cx, top), (cx + hw * cap, top + h * cap), (cx + hw * 0.08, top + h * cap * 0.8),
+                   (cx - hw * 0.07, top + h * cap * 1.05)], fill=(250, 252, 255, 255))
+        d.line([*rock, rock[0]], fill=(*ink, 255), width=4)
+        return
+    elif shape == "falls":  # a waterfall: a dark cliff with white water down its face and a pool of spray
+        d.rectangle([cx - w / 2, top, cx + w / 2, ground], fill=(96, 84, 74, 255), outline=(*ink, 255), width=4)
+        d.rectangle([cx - w * 0.16, top + 4, cx + w * 0.16, ground - 2], fill=(214, 238, 255, 255))
+        for k in range(3):
+            x = cx - w * 0.1 + k * w * 0.1
+            d.line([(x, top + 6), (x, ground - 4)], fill=(150, 200, 240, 255), width=2)
+        d.ellipse([cx - w * 0.45, ground - 22, cx + w * 0.45, ground + 6], fill=(236, 248, 255, 255))
+        return
+    else:  # block / bar: a plain column
+        polys.append([(cx - w / 2, ground), (cx + w / 2, ground), (cx + w / 2, top), (cx - w / 2, top)])
+    for poly in polys:
+        d.polygon(poly, fill=(*face, 255))
+        xs = [x for x, _ in poly]
+        mid = (min(xs) + max(xs)) / 2
+        right = [(max(x, mid), y) for x, y in poly]
+        d.polygon(right, fill=(*side, 255))
+        d.line([*poly, poly[0]], fill=(*ink, 255), width=4)
+    if shape not in ("block", "bar"):
+        for k in range(1, int(h * 0.5 / 26)):  # floor lines on the wide lower half
+            y = ground - k * 26
+            d.line([(cx - w * 0.3, y), (cx + w * 0.3, y)], fill=(*ink, 70), width=2)
+
+
+def badge_value(text: str) -> float | None:
+    """A badge's number: "1,100" 1100, "18K" 18000, "1.45B" 1.45e9, "100+" 100; None when it isn't one."""
+    t = str(text).replace(",", "").replace("+", "").strip().upper()
+    mult = {"K": 1e3, "M": 1e6, "B": 1e9}.get(t[-1:], 1.0)
+    try:
+        v = float(t[:-1] if mult != 1.0 else t) * mult
+    except ValueError:
+        return None
+    return v if v > 0 else None
+
+
+def auto_bars(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Columns for a race without drawn towers (the owner, 2026-11-12: "columns, so the viewer remembers the
+    numbers"): every country's badge becomes a bar of its number on one scale. Not when a badge has no unit (years:
+    2002 next to 2011 would be two equal bars) or fewer than two countries give a number."""
+    got = []
+    for tn in turns:
+        bd = tn["badge"]
+        if not bd or tn["who"] == HOST or any(o["who"] == tn["who"] for o in got):
+            continue
+        v = badge_value(bd.get("text", ""))
+        if v is None or not str(bd.get("sub") or "").strip():
+            return []
+        tn["tower"] = {"height": v, "label": str(bd.get("text")), "shape": "bar", "at": bd["at"]}
+        got.append(tn)
+    if len(got) < 2:
+        for tn in got:
+            tn["tower"] = None
+        return []
+    return got
+
+
 class BallRenderer:
     """Draws a balls Spec frame by frame. Scenes must have their start and end (render sets them from the turns)."""
 
@@ -483,6 +589,10 @@ class BallRenderer:
         self.groups = chunks(spec.words)
         self.banner = banner(spec.cover) if spec.cover else None
         self.views = self._views()
+        self.towers = [tn for tn in self.turns if tn["tower"]]
+        if not self.towers and getattr(spec, "bars", True) is not False:
+            self.towers = auto_bars(self.turns)
+        self.tower_max = max([float(tn["tower"].get("height") or 0) for tn in self.towers] or [1.0]) or 1.0
         sounds: list[tuple[float, str, float]] = []
         for tn in self.turns:
             if tn["who"] != HOST and tn["enter"]:
@@ -507,8 +617,11 @@ class BallRenderer:
             hit = next((w.start for w in words if cue and tok(w.text).startswith(cue)), None)
             bd["at"] = show[0][1] if show else (hit if hit is not None else sc.start + 0.4)
             bd["land"] = show[-1][1] if show else bd["at"]
+        tw = dict(sc.opts.get("tower") or {}) or None
+        if tw:
+            tw["at"] = bd["at"] if bd else sc.start + 0.4
         prev = self.spec.scenes[i - 1].opts.get("who") if i else None
-        return {"i": i, "who": who, "start": sc.start, "end": sc.end, "words": words, "expr": str(sc.opts.get("expr") or "neutral"),
+        return {"tower": tw, "i": i, "who": who, "start": sc.start, "end": sc.end, "words": words, "expr": str(sc.opts.get("expr") or "neutral"),
                 "show": show, "badge": bd, "map": str(sc.opts.get("map") or ("" if who == HOST else who)),
                 "with": [str(n) for n in sc.opts.get("with") or []], "enter": who != HOST and prev != who}
 
@@ -570,6 +683,8 @@ class BallRenderer:
         img.alpha_composite(stage_shade())
         if self.banner is not None:
             img.alpha_composite(self.banner, ((W - self.banner.width) // 2, 132))
+        if self.towers:
+            self.draw_towers(img, tn, t)
         bd = tn["badge"] or (self.turns[tn["i"] - 1]["badge"] if tn["i"] and tn["who"] == HOST and not tn["map"] else None)
         if bd and t >= bd["at"]:
             owner = tn if tn["badge"] else self.turns[tn["i"] - 1]
@@ -585,6 +700,37 @@ class BallRenderer:
         if group:
             caption(img, group, t)
         return img.convert("RGB")
+
+    def draw_towers(self, img: Image.Image, tn: dict[str, Any], t: float) -> None:
+        """The skyline: every tower said so far stands on one ground line, left to right in the order they came;
+        the newest rises from the ground. All share one scale, so the race is the picture."""
+        shown = [o for o in self.towers if o["i"] <= tn["i"] and t >= o["tower"]["at"]]
+        if not shown:
+            return
+        n = len(self.towers)
+        gap = min(170.0, 660.0 / n)
+        x0 = 400 - gap * (n - 1) / 2
+        ground, top = 895, 475  # the tallest ends under the banner, with room for its label
+        lay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        d = ImageDraw.Draw(lay)
+        d.rounded_rectangle([x0 - gap / 2 - 10, ground - 6, x0 + gap * (n - 0.5) + 10, ground + 14], radius=8, fill=(18, 22, 36, 230))
+        for o in shown:
+            k = self.towers.index(o)
+            tw = o["tower"]
+            u = ease((t - tw["at"]) / 0.9)
+            h = (ground - top) * float(tw.get("height") or 0) / self.tower_max * u
+            if h < 2:
+                continue
+            tower_shape(d, x0 + k * gap, ground, h, min(gap * 0.62, 104), str(tw.get("shape") or "block"), o is tn)
+            if o["who"] != HOST:  # whose it is: a small ball of its flag at the foot
+                lay.alpha_composite(country_ball(flag_name(o["who"], self.cast), 30, "happy"), (int(x0 + k * gap - 30), int(ground - 52)))
+            if u > 0.6:
+                f = font(44)
+                text = str(tw.get("label") or "")
+                if text:
+                    d.text((x0 + k * gap, ground - h - 34), text, font=f, fill=(255, 255, 255, int(255 * min(1, (u - 0.6) / 0.3))),
+                           anchor="ms", stroke_width=6, stroke_fill=(15, 18, 30, 255))
+        img.alpha_composite(lay)
 
     def draw_cast(self, img: Image.Image, tn: dict[str, Any], t: float) -> None:
         blink = (t * 0.37 + 0.2) % 1 < 0.035
@@ -803,6 +949,7 @@ if __name__ == "__main__":
     sp = bw_render.spec_from_dict(data, ws)
     sp.hold = 1.2
     sp.cast = data.get("cast") or {}
+    sp.bars = data.get("bars", True)
     if a.stills:
         set_times(sp, tr)
         rd = BallRenderer(sp)

@@ -140,3 +140,20 @@ def test_balls_thumbnail_cast():
     script["scenes"][-1]["with"] = ["Germany", "Brazil", "Russia", "China"]  # everyone wins: all of them, no others
     others, win = bw_balls.thumb_cast(script)
     assert others == [] and len(win) == 3
+
+
+def test_balls_badge_values_and_bars():
+    from modules import bw_balls
+
+    assert bw_balls.badge_value("1,100") == 1100 and bw_balls.badge_value("18K") == 18000
+    assert bw_balls.badge_value("1.45B") == 1.45e9 and bw_balls.badge_value("100+") == 100
+    assert bw_balls.badge_value("?") is None
+
+    def turn(who, text, sub="km"):
+        return {"who": who, "badge": {"text": text, "sub": sub, "at": 1.0}, "tower": None}
+
+    turns = [{"who": "host", "badge": None, "tower": None}, turn("A", "25K"), turn("B", "202K")]
+    bars = bw_balls.auto_bars(turns)
+    assert [b["tower"]["height"] for b in bars] == [25000, 202000] and bars[0]["tower"]["shape"] == "bar"
+    assert bw_balls.auto_bars([turn("A", "2002", ""), turn("B", "2011", "")]) == []  # years: no bars
+    assert bw_balls.auto_bars([turn("A", "12")]) == []  # one number is no race
