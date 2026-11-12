@@ -1,0 +1,89 @@
+{
+ "format": "balls",
+ "title": "Which Country Has the Longest Coastline?",
+ "cover_text": "Who has the longest coastline?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which country has the longest coastline?",
+   "with": [
+    "Australia",
+    "Russia",
+    "Indonesia",
+    "Canada"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "Australia",
+   "narration": "I'm a whole continent. Twenty-five thousand kilometers.",
+   "expr": "happy",
+   "badge": {
+    "text": "25K",
+    "sub": "km",
+    "cue": "Twenty"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Russia",
+   "narration": "From the Arctic to the Pacific. Thirty-seven thousand.",
+   "expr": "suspicious",
+   "badge": {
+    "text": "37K",
+    "sub": "km",
+    "cue": "Thirty"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Indonesia",
+   "narration": "Thousands of islands. Fifty-four thousand.",
+   "expr": "smug",
+   "badge": {
+    "text": "54K",
+    "sub": "km",
+    "cue": "Fifty"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Canada",
+   "narration": "Two hundred and two thousand. Sorry.",
+   "expr": "happy",
+   "badge": {
+    "text": "202K",
+    "sub": "km",
+    "cue": "Two"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Canada wins, by a lot! How far do you live from the sea?",
+   "expr": "shocked",
+   "with": [
+    "Canada"
+   ]
+  }
+ ],
+ "description": "🌊 Canada's coastline is 202,080 km, the longest in the world and almost four times Indonesia's 54,716 km. Russia has 37,653 km and Australia 25,760 km (CIA World Factbook figures).",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "canada",
+  "coastline"
+ ],
+ "comment": "How far do you live from the sea? 🌊👇",
+ "sources": [
+  {
+   "title": "CIA World Factbook: Coastline",
+   "url": "https://www.cia.gov/the-world-factbook/field/coastline/"
+  },
+  {
+   "title": "Encyclopaedia Britannica: Canada",
+   "url": "https://www.britannica.com/place/Canada"
+  }
+ ]
+}

@@ -1,0 +1,148 @@
+{
+ "format": "balls",
+ "title": "Which Country Has the Most Neighbors?",
+ "cover_text": "Who has the most neighbors?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "with": [
+    "Germany",
+    "Brazil",
+    "Russia",
+    "China"
+   ],
+   "narration": "Which country has the most neighbors?"
+  },
+  {
+   "kind": "balls",
+   "who": "Germany",
+   "expr": "happy",
+   "narration": "Me! I have nine.",
+   "show": [
+    "Denmark",
+    "Poland",
+    "Czechia",
+    "Austria",
+    "Switzerland",
+    "France",
+    "Luxembourg",
+    "Belgium",
+    "Netherlands"
+   ],
+   "badge": {
+    "text": "9",
+    "sub": "neighbors"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Brazil",
+   "expr": "smug",
+   "narration": "Cute. I touch ten countries.",
+   "show": [
+    "Uruguay",
+    "Argentina",
+    "Paraguay",
+    "Bolivia",
+    "Peru",
+    "Colombia",
+    "Venezuela",
+    "Guyana",
+    "Suriname",
+    "France"
+   ],
+   "badge": {
+    "text": "10",
+    "sub": "neighbors"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Russia",
+   "expr": "suspicious",
+   "narration": "Amateurs. I have fourteen.",
+   "show": [
+    "Norway",
+    "Finland",
+    "Estonia",
+    "Latvia",
+    "Lithuania",
+    "Poland",
+    "Belarus",
+    "Ukraine",
+    "Georgia",
+    "Azerbaijan",
+    "Kazakhstan",
+    "China",
+    "Mongolia",
+    "North Korea"
+   ],
+   "badge": {
+    "text": "14",
+    "sub": "neighbors"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "China",
+   "expr": "shocked",
+   "narration": "Fourteen? Me too!",
+   "show": [
+    "North Korea",
+    "Russia",
+    "Mongolia",
+    "Kazakhstan",
+    "Kyrgyzstan",
+    "Tajikistan",
+    "Afghanistan",
+    "Pakistan",
+    "India",
+    "Nepal",
+    "Bhutan",
+    "Myanmar",
+    "Laos",
+    "Vietnam"
+   ],
+   "badge": {
+    "text": "14",
+    "sub": "neighbors"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "with": [
+    "Russia",
+    "China"
+   ],
+   "narration": "It's a tie! Russia and China, fourteen each."
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "with": [
+    "Russia",
+    "China"
+   ],
+   "narration": "How many neighbors does your country have?"
+  }
+ ],
+ "description": "Germany has nine neighbors, Brazil ten, and Russia and China fourteen each: the most land neighbors of any country.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "borders"
+ ],
+ "comment": "How many neighbors does YOUR country have? 👇",
+ "sources": [
+  {
+   "title": "CIA World Factbook: Land boundaries",
+   "url": "https://www.cia.gov/the-world-factbook/field/land-boundaries/"
+  },
+  {
+   "title": "Encyclopaedia Britannica: Russia",
+   "url": "https://www.britannica.com/place/Russia"
+  }
+ ]
+}

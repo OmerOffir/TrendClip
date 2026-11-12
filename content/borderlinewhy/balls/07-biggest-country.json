@@ -1,0 +1,89 @@
+{
+ "format": "balls",
+ "title": "Which Country Is the Biggest?",
+ "cover_text": "Who is the biggest country?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which country is the biggest?",
+   "with": [
+    "Australia",
+    "Brazil",
+    "Canada",
+    "Russia"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "Australia",
+   "narration": "Seven point seven million square kilometers.",
+   "expr": "happy",
+   "badge": {
+    "text": "7.7M",
+    "sub": "km²",
+    "cue": "Seven"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Brazil",
+   "narration": "Eight and a half million.",
+   "expr": "smug",
+   "badge": {
+    "text": "8.5M",
+    "sub": "km²",
+    "cue": "Eight"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Canada",
+   "narration": "Almost ten million. Sorry.",
+   "expr": "happy",
+   "badge": {
+    "text": "9.98M",
+    "sub": "km²",
+    "cue": "ten"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Russia",
+   "narration": "Seventeen million. A ninth of all the land on Earth.",
+   "expr": "suspicious",
+   "badge": {
+    "text": "17.1M",
+    "sub": "km²",
+    "cue": "Seventeen"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Russia wins! Is your country bigger than you thought?",
+   "expr": "shocked",
+   "with": [
+    "Russia"
+   ]
+  }
+ ],
+ "description": "🌍 Russia covers about 17.1 million km², roughly a ninth of all the land on Earth and almost twice Canada's 9.98 million. Brazil has 8.5 million km² and Australia 7.7 million.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "russia",
+  "maps"
+ ],
+ "comment": "Is your country bigger than you thought? 🌍👇",
+ "sources": [
+  {
+   "title": "CIA World Factbook: Area",
+   "url": "https://www.cia.gov/the-world-factbook/field/area/country-comparison/"
+  },
+  {
+   "title": "Encyclopaedia Britannica: Russia",
+   "url": "https://www.britannica.com/place/Russia"
+  }
+ ]
+}

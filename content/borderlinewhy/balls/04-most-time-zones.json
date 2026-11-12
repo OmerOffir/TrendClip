@@ -1,0 +1,89 @@
+{
+ "format": "balls",
+ "title": "Which Country Has the Most Time Zones?",
+ "cover_text": "Who has the most time zones?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which country has the most time zones?",
+   "with": [
+    "China",
+    "United States",
+    "Russia",
+    "France"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "China",
+   "narration": "I'm huge, but I use only one.",
+   "expr": "neutral",
+   "badge": {
+    "text": "1",
+    "sub": "time zone",
+    "cue": "one"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "United States",
+   "narration": "With my islands, I have eleven.",
+   "expr": "happy",
+   "badge": {
+    "text": "11",
+    "sub": "time zones",
+    "cue": "eleven"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Russia",
+   "narration": "Eleven too. From Europe to the Pacific.",
+   "expr": "suspicious",
+   "badge": {
+    "text": "11",
+    "sub": "time zones",
+    "cue": "Eleven"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "France",
+   "narration": "Twelve. My islands are everywhere.",
+   "expr": "smug",
+   "badge": {
+    "text": "12",
+    "sub": "time zones",
+    "cue": "Twelve"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "France wins! How many time zones does your country have?",
+   "expr": "shocked",
+   "with": [
+    "France"
+   ]
+  }
+ ],
+ "description": "🕐 France has 12 time zones, the most of any country, thanks to its overseas territories from the Pacific to the Indian Ocean. Russia and the United States (with its territories) have 11 each, and China uses just one.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "timezones",
+  "france"
+ ],
+ "comment": "How many time zones does YOUR country have? 🕐👇",
+ "sources": [
+  {
+   "title": "timeanddate: Which country has the most time zones?",
+   "url": "https://www.timeanddate.com/time/country-with-the-most-time-zones.html"
+  },
+  {
+   "title": "Guinness World Records: Country with the most time zones",
+   "url": "https://www.guinnessworldrecords.com/world-records/584626-country-with-the-most-time-zones"
+  }
+ ]
+}

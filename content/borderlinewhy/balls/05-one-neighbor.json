@@ -1,0 +1,85 @@
+{
+ "format": "balls",
+ "title": "Which Countries Have Only One Neighbor?",
+ "cover_text": "Who has only one neighbor?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which countries have only one neighbor?",
+   "with": [
+    "Portugal",
+    "South Korea",
+    "Lesotho"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "Portugal",
+   "narration": "Me. Just Spain.",
+   "expr": "neutral",
+   "show": [
+    "Spain"
+   ],
+   "badge": {
+    "text": "1",
+    "sub": "neighbor"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "South Korea",
+   "narration": "Only North Korea. It's complicated.",
+   "expr": "suspicious",
+   "show": [
+    "North Korea"
+   ],
+   "badge": {
+    "text": "1",
+    "sub": "neighbor"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Lesotho",
+   "narration": "South Africa. It is all around me!",
+   "expr": "shocked",
+   "show": [
+    "South Africa"
+   ],
+   "badge": {
+    "text": "1",
+    "sub": "neighbor"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "One neighbor each! Who is your country's favorite neighbor?",
+   "expr": "happy",
+   "with": [
+    "Portugal",
+    "South Korea",
+    "Lesotho"
+   ]
+  }
+ ],
+ "description": "🚪 Some countries have just one land neighbor: Portugal borders only Spain, South Korea only North Korea, and Lesotho is completely surrounded by South Africa.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "borders",
+  "portugal"
+ ],
+ "comment": "Who is your country's favorite neighbor? 👇",
+ "sources": [
+  {
+   "title": "CIA World Factbook: Land boundaries",
+   "url": "https://www.cia.gov/the-world-factbook/field/land-boundaries/"
+  },
+  {
+   "title": "Encyclopaedia Britannica: Lesotho",
+   "url": "https://www.britannica.com/place/Lesotho"
+  }
+ ]
+}

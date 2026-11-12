@@ -68,6 +68,25 @@ def slots() -> list[str]:
     return found or DEFAULT_SLOTS.split(",")
 
 
+def balls_slot() -> str:
+    """The slot kept for the talking flag balls (BW_BALLS_SLOT, e.g. "23:00"; empty: no slot is kept, the queue's
+    order decides): it takes only balls scripts from the queue, and the other slots leave those to it."""
+    slot = setting("BW_BALLS_SLOT", "").strip()
+    return slot if slot in slots() else ""
+
+
+def wants_balls(job: "Job") -> bool | None:
+    """True for the balls slot, False for the others while one is kept, None when no slot is kept."""
+    return (job.slot == balls_slot()) if balls_slot() else None
+
+
+def _is_balls_file(path: Path) -> bool:
+    try:
+        return json.loads(path.read_text(encoding="utf-8")).get("format") == "balls"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def lead_hours() -> float:
     try:
         value = float(setting("BW_LEAD", str(DEFAULT_LEAD)))
@@ -369,7 +388,7 @@ def remove_next(choice: str, out_dir: Path | None = None) -> None:
 
 
 def next_script(progress=lambda m: None, out_dir: Path | None = None, client=None, research=None, write=None,
-                choice: str | None = None) -> tuple[dict, str]:
+                choice: str | None = None, balls: bool | None = None) -> tuple[dict, str]:
     """(the script, where it came from): a queued script first, else the next topic with two readable sources
     whose script passes the checks. A topic that fails is marked rejected and the next is tried (TOPIC_TRIES);
     Wikipedia or Gemini being busy (TryLater) stops at once and leaves the topic on the list."""
@@ -379,6 +398,12 @@ def next_script(progress=lambda m: None, out_dir: Path | None = None, client=Non
     # dashboard's "Next video"), which goes before the queue
     choice = choice if choice is not None else stored
     queue = queued_scripts(out_dir)
+    if balls is not None:  # a slot is kept for the balls (wants_balls): it takes only those, the others never do
+        queue = [p for p in queue if _is_balls_file(p) == balls]
+        if balls and not queue:
+            raise ChannelError("No balls script is waiting in the queue for the balls slot")
+        if balls:
+            choice = choice if choice.startswith("queue:") else ""
     if choice.startswith("queue:") and not any(p.name == choice[6:] for p in queue):
         if choice == stored:
             bw_topics.pick(root, "")  # the picked script left the queue some other way
@@ -738,7 +763,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
           choice: str | None = None) -> dict:
     if script is None:
         progress(0.0, "Choosing the topic")
-        script, origin = next_script(progress.step, out_dir, client, choice=choice)
+        script, origin = next_script(progress.step, out_dir, client, choice=choice, balls=wants_balls(job))
     else:
         script = dict(script)
         origin = script.pop("origin", "given")
@@ -798,6 +823,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         "job": {"day": job.day.isoformat(), "slot": job.slot, "post_at": job.post_at.isoformat(timespec="minutes")},
         "rewind": spec.rewind,
+        **({"comment": str(script["comment"]).strip()} if balls and str(script.get("comment") or "").strip() else {}),
     }
     info["check"] = check_video(info)
     save_info(info, out_dir)
@@ -981,7 +1007,8 @@ def comment(info: dict, youtube=None, out_dir: Path | None = None) -> dict | Non
         error = "reconnect the Borderline Why YouTube channel once to allow comments (/bw connect)"
     else:
         try:
-            text = bw_series.comment_text(info.get("series") or "", info.get("kind") or "")
+            # a balls Short ends on its own question: that is the comment under it
+            text = str(info.get("comment") or "").strip() or bw_series.comment_text(info.get("series") or "", info.get("kind") or "")
             record["comment"] = bw_series.post_comment(youtube or publish._youtube(TOKEN), record["video_id"], text)
         except Exception as err:  # noqa: BLE001 - the video is up; only the comment failed
             error = publish._api_error_text(err).replace("YouTube upload failed", "YouTube refused the comment") \

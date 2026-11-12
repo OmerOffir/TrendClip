@@ -1,0 +1,89 @@
+{
+ "format": "balls",
+ "title": "Which Country Has the Most Islands?",
+ "cover_text": "Who has the most islands?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which country has the most islands?",
+   "with": [
+    "Indonesia",
+    "Canada",
+    "Finland",
+    "Sweden"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "Indonesia",
+   "narration": "Easy win. Seventeen thousand islands.",
+   "expr": "smug",
+   "badge": {
+    "text": "17K",
+    "sub": "islands",
+    "cue": "Seventeen"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Canada",
+   "narration": "Sorry. I have fifty-two thousand.",
+   "expr": "happy",
+   "badge": {
+    "text": "52K",
+    "sub": "islands",
+    "cue": "fifty"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Finland",
+   "narration": "One hundred seventy-eight thousand.",
+   "expr": "suspicious",
+   "badge": {
+    "text": "178K",
+    "sub": "islands",
+    "cue": "hundred"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "Sweden",
+   "narration": "Two hundred sixty-seven thousand. Nobody lives on most of them.",
+   "expr": "smug",
+   "badge": {
+    "text": "267K",
+    "sub": "islands",
+    "cue": "Two"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Sweden wins! Would you live on your own island?",
+   "expr": "shocked",
+   "with": [
+    "Sweden"
+   ]
+  }
+ ],
+ "description": "🏝️ Indonesia has about 17,500 islands, but others count far more: Canada 52,455, Finland 178,947, and Sweden 267,570, the most of any country. Most of Sweden's islands are tiny and empty.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "islands",
+  "sweden"
+ ],
+ "comment": "Would you live on your own island? 🏝️👇",
+ "sources": [
+  {
+   "title": "WorldAtlas: Which countries have the most islands?",
+   "url": "https://www.worldatlas.com/articles/which-countries-have-the-most-islands.html"
+  },
+  {
+   "title": "Encyclopaedia Britannica: Sweden",
+   "url": "https://www.britannica.com/place/Sweden"
+  }
+ ]
+}

@@ -2900,3 +2900,27 @@ def test_a_balls_script_is_checked_timed_by_its_turns_and_drawn(monkeypatch):
     first, later = r.frame(0.0), r.frame((russia["start"] + russia["end"]) / 2)
     assert first.size == (bw_render.W, bw_render.H) and len(first.getcolors(1 << 24)) > 200
     assert first.tobytes() != later.tobytes()
+
+
+def test_the_balls_slot_takes_only_balls_scripts_and_the_others_leave_them(tmp_path, monkeypatch):
+    """The owner (2026-11-12): a second slot a day for the talking flag balls. With BW_BALLS_SLOT set, that slot
+    takes the first balls script in the queue (and makes nothing when none waits, never a Gemini topic), the other
+    slot takes the first script that is not one; with no slot kept the queue's own order holds."""
+    monkeypatch.setenv("BW_SLOTS", "14:30,23:00")
+    monkeypatch.setenv("BW_BALLS_SLOT", "23:00")
+    settings = get_settings()
+    day = Day(2026, 11, 12)
+    noon, night = bw_channel.jobs_for(settings, day)
+    assert (bw_channel.wants_balls(noon), bw_channel.wants_balls(night)) == (False, True)
+    queue = bw_channel.queue_dir(tmp_path)
+    queue.mkdir(parents=True)
+    (queue / "a-date-line.json").write_text(json.dumps({"title": "Why does the Date Line zigzag?"}))
+    (queue / "b-balls.json").write_text(json.dumps({"format": "balls", "title": "Who has the most islands?"}))
+    script, origin = bw_channel.next_script(out_dir=tmp_path, balls=True)
+    assert script["format"] == "balls" and origin == "queue:b-balls.json"
+    with pytest.raises(bw_channel.ChannelError, match="No balls script"):
+        bw_channel.next_script(out_dir=tmp_path, balls=True)
+    script, origin = bw_channel.next_script(out_dir=tmp_path, balls=False)
+    assert origin == "queue:a-date-line.json"
+    monkeypatch.setenv("BW_BALLS_SLOT", "21:00")  # not one of the slots: no slot is kept
+    assert bw_channel.wants_balls(night) is None

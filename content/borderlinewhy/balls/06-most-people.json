@@ -1,0 +1,83 @@
+{
+ "format": "balls",
+ "title": "Which Country Has the Most People?",
+ "cover_text": "Who has the most people?",
+ "scenes": [
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "Which country has the most people?",
+   "with": [
+    "United States",
+    "China",
+    "India"
+   ]
+  },
+  {
+   "kind": "balls",
+   "who": "United States",
+   "narration": "Three hundred forty million!",
+   "expr": "happy",
+   "badge": {
+    "text": "340M",
+    "sub": "people",
+    "cue": "Three"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "China",
+   "narration": "Cute. One point four billion. I was number one for centuries.",
+   "expr": "smug",
+   "badge": {
+    "text": "1.41B",
+    "sub": "people",
+    "cue": "billion"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "India",
+   "narration": "Not anymore. Since twenty twenty-three, it's me.",
+   "expr": "happy",
+   "badge": {
+    "text": "1.45B",
+    "sub": "people",
+    "cue": "me"
+   }
+  },
+  {
+   "kind": "balls",
+   "who": "China",
+   "narration": "What?!",
+   "expr": "shocked"
+  },
+  {
+   "kind": "balls",
+   "who": "host",
+   "narration": "India is number one! What number is your country?",
+   "expr": "happy",
+   "with": [
+    "India"
+   ]
+  }
+ ],
+ "description": "👥 India passed China in 2023 to become the most populous country on Earth, with about 1.45 billion people to China's 1.41 billion (UN estimates). The United States is third with about 340 million.",
+ "hashtags": [
+  "countryballs",
+  "geography",
+  "population",
+  "india"
+ ],
+ "comment": "What number is YOUR country? 👇",
+ "sources": [
+  {
+   "title": "UN DESA: India overtakes China as the world's most populous country",
+   "url": "https://www.un.org/development/desa/dpad/publication/un-desa-policy-brief-no-153-india-overtakes-china-as-the-worlds-most-populous-country/"
+  },
+  {
+   "title": "UN World Population Prospects 2024",
+   "url": "https://population.un.org/wpp/"
+  }
+ ]
+}
