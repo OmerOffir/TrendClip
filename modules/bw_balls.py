@@ -815,3 +815,103 @@ if __name__ == "__main__":
     else:
         render(sp, Path(a.voice), Path(a.out), Path(a.music) if a.music else None, progress=lambda f, m: print(f, m, flush=True))
     print("done", a.out, round(sp.duration, 2))
+
+
+# --------------------------------------------------------------------------- the thumbnail
+
+
+def thumb_cast(script: dict) -> tuple[list[tuple[str, str, str]], list[tuple[str, str, str]]]:
+    """Who goes on the thumbnail: (the others, the winners), each (country, expr, badge text). The winners are the
+    ones the host names at the end (its last `with`); the others are the speakers before them, the last two of them
+    (the closest race) with their numbers. When every speaker wins (\"one neighbor each\") they are all winners."""
+    said: dict[str, tuple[str, str]] = {}
+    for sc in script.get("scenes") or []:
+        who = sc.get("who")
+        if who and who != HOST:
+            old = said.get(who, ("", ""))
+            said[who] = (old[0] or str(sc.get("expr") or "neutral"), str((sc.get("badge") or {}).get("text") or old[1]))
+    ends = [sc.get("with") for sc in script.get("scenes") or [] if sc.get("who") == HOST and sc.get("with")]
+    win = [n for n in (ends[-1] if ends else []) if n in said] or list(said)[-1:]
+    rest = [n for n in said if n not in win][-2:]
+    return [(n, *said[n]) for n in rest], [(n, *said[n]) for n in win[:3]]
+
+
+def thumbnail(script: dict, out: Path) -> Path:
+    """A balls Short's thumbnail (2026-11-12, the owner's pick over the compass cover): the world with the winners
+    painted, the question huge in the middle, the winners as big balls with a \"?\" for the answer, the others small at
+    the sides with their numbers. Everything sits in the middle 4:5, which the Shorts shelf shows."""
+    cast = script.get("cast") or {}
+    others, win = thumb_cast(script)
+    names = [n for n, _, _ in win] or [n for n, _, _ in others]
+    img = Image.new("RGBA", (W, H), (*OCEAN, 255))
+    boxes = [b for b in map(_box, names) if b]
+    if boxes:  # the painted land between the question and the balls (y 700-1000), not under the words
+        x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+        x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+        lat = (y0 + y1) / 2
+        k = max(0.35, math.cos(math.radians(lat)))
+        ppd = max(9.0, min(64.0, W / max(0.5, (x1 - x0) * k), 420 / max(0.5, y1 - y0)))
+        cam = Cam((x0 + x1) / 2, lat + (820 - MAP_C[1]) / ppd, ppd)
+        img = cam.frame().convert("RGBA")
+        for n in names:
+            cam.paint(img, n, FOCUS, 1.0)
+    img.alpha_composite(stage_shade())
+    d = ImageDraw.Draw(img)
+
+    words = " ".join(str(script.get("cover_text") or script.get("title") or "").upper().split()).split()
+    size = 132
+    while True:
+        f = font(size)
+        lines, cur = [], []
+        for w in words:
+            if cur and f.getlength(" ".join([*cur, w])) > W - 90:
+                lines.append(cur)
+                cur = []
+            cur.append(w)
+        if cur:
+            lines.append(cur)
+        if len(lines) <= 3 or size <= 80:
+            break
+        size -= 8
+    y = 290 + (3 - len(lines)) * size * 0.54
+    for n, line in enumerate(lines):
+        x = (W - f.getlength(" ".join(line))) / 2
+        for k, w in enumerate(line):
+            last = n == len(lines) - 1 and k == len(line) - 1
+            d.text((x, y), w, font=f, fill=(*YELLOW, 255) if last else (255, 255, 255, 255), stroke_width=14,
+                   stroke_fill=(15, 18, 30, 255))
+            x += f.getlength(w + " ")
+        y += int(size * 1.08)
+
+    def put(im: Image.Image, cx: float, cy: float) -> None:
+        img.alpha_composite(im, (int(cx - im.width / 2), int(cy - im.height / 2)))
+
+    def number(text: str, cx: float, cy: float, px: int, sub: str = "") -> None:
+        put(badge(text, sub).resize((px, px), Image.LANCZOS), cx, cy)
+
+    subs = {}
+    for sc in script.get("scenes") or []:
+        if sc.get("badge") and sc.get("who"):
+            subs[sc["who"]] = str(sc["badge"].get("sub") or "")
+    for (n, expr, num), x in zip(others, (130, 950)):
+        if num:
+            number(num, x, 1040, 160, subs.get(n, ""))
+        put(country_ball(flag_name(n, cast), 105, expr), x, 1225)
+    if len(win) == 1:
+        n, expr, _ = win[0]
+        put(country_ball(flag_name(n, cast), 180, "shocked"), 540, 1365)
+        number("?", 540, 1090, 170)
+        put(plate(n), 540, 1580)
+    elif len(win) == 2:
+        for (n, _, _), x, g in zip(win, (365, 715), (1, -1)):
+            put(country_ball(flag_name(n, cast), 175, "shocked", g), x, 1370)
+            put(plate(n), x, 1590)
+    else:  # everyone wins: all of them, each with its number
+        for (n, expr, num), x in zip(win, (190, 540, 890)):
+            if num:
+                number(num, x, 1110, 160, subs.get(n, ""))
+            put(country_ball(flag_name(n, cast), 150, expr), x, 1350)
+            put(plate(n), x, 1545)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    img.convert("RGB").save(out, quality=92)
+    return out

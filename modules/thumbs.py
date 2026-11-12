@@ -168,6 +168,11 @@ def borderline(video: Path, out: Path) -> None:
 
     folder = video.parent
     script = json.loads((folder / "script.json").read_text(encoding="utf-8"))
+    if script.get("format") == "balls":  # the talking flag balls: the question with the balls, not the compass cover
+        from modules import bw_balls
+
+        bw_balls.thumbnail(script, out)
+        return
     raw = json.loads((folder / "voice.words.json").read_text(encoding="utf-8"))
     words = [bw_render.Word(w["word"], float(w["start"]), float(w["end"]), w.get("who", "")) for w in raw]
     bw_render.use_layout("portrait")

@@ -122,3 +122,21 @@ def test_a_drawn_shorts_rule_goes_on_top_of_its_thumbnail():
     scene = sql_thumb.plan({"title": "Can Your Mob Beat The Spider? 🐺 (With A Shield)", "script": "Ten hearts, and a mob"})
     assert scene["mob"] == "Spider" and scene["top"] == "WITH A SHIELD!" and scene["hearts"] == 10
     assert sql_thumb.plan({"title": "Pause To Beat The Creeper ⚔️", "script": "Ten hearts."})["top"] == "PAUSE NOW!"
+
+
+def test_balls_thumbnail_cast():
+    from modules import bw_balls
+
+    script = {"scenes": [
+        {"who": "host", "with": ["Germany", "Brazil", "Russia", "China"], "narration": "Who has the most neighbors?"},
+        {"who": "Germany", "expr": "happy", "badge": {"text": "9"}, "narration": "Nine."},
+        {"who": "Brazil", "expr": "smug", "badge": {"text": "10"}, "narration": "Ten."},
+        {"who": "Russia", "badge": {"text": "14"}, "narration": "Fourteen."},
+        {"who": "China", "badge": {"text": "14"}, "narration": "Me too!"},
+        {"who": "host", "with": ["Russia", "China"], "narration": "A tie!"}]}
+    others, win = bw_balls.thumb_cast(script)
+    assert [n for n, _, _ in others] == ["Germany", "Brazil"] and others[0][2] == "9"
+    assert [n for n, _, _ in win] == ["Russia", "China"]
+    script["scenes"][-1]["with"] = ["Germany", "Brazil", "Russia", "China"]  # everyone wins: all of them, no others
+    others, win = bw_balls.thumb_cast(script)
+    assert others == [] and len(win) == 3
