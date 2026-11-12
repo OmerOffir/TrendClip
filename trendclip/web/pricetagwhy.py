@@ -310,13 +310,13 @@ def youtube_logout() -> dict[str, Any]:
 class TopicRequest(BaseModel):
     question: str
     pillar: str = ""
-    format: str = "world"  # the dashboard adds true-story ideas only (2026-11-08)
+    format: str = "band"  # Encore Story adds band ideas (2026-11-12)
 
 
 class StartRequest(BaseModel):
     question: str = ""
     count: int = pw_write.DEFAULT_COUNT
-    format: str = "world"  # why | story | world (pw_write.FORMATS); the dashboard writes true stories only
+    format: str = "band"  # band | why | story | world (pw_write.FORMATS); Encore Story writes band stories
 
 
 class PasteRequest(BaseModel):
@@ -352,7 +352,7 @@ def topics() -> dict[str, Any]:
     """The topic list: the Linux hub's on the sending machine ("source": "linux"), this machine's otherwise."""
     remote, error = _hub_topics()
     found = pw_write.topics() if remote is None else remote
-    return {"topics": found, "left": sum(1 for t in found if not t["used"]), "pillars": list(pw_write.PILLARS),
+    return {"topics": found, "left": sum(1 for t in found if not t["used"]), "pillars": list(pw_write.BAND_PILLARS),
             "source": "here" if remote is None else "linux", "hub_error": error}
 
 
@@ -374,7 +374,7 @@ def add_topic(req: TopicRequest) -> dict[str, Any]:
 
 
 @router.get("/llm-topics")
-def llm_topics_prompt(count: int = 20, format: str = "world") -> dict[str, Any]:
+def llm_topics_prompt(count: int = 20, format: str = "band") -> dict[str, Any]:
     """The prompt for new topics (or, format=story, new money-story ideas), to paste into any LLM."""
     return {"prompt": pw_write.llm_prompt(max(1, min(40, count)), None, _hub_topics()[0], format)}
 

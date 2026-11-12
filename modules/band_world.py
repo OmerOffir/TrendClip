@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import subprocess
 import sys
 from functools import lru_cache
@@ -52,6 +53,14 @@ TOPS = {"khaki": (150, 140, 90), "navy": (40, 52, 96), "black": (36, 36, 42), "w
         "red": (196, 48, 52), "green": (60, 120, 80), "grey": (120, 124, 132), "blue": (64, 110, 190),
         "brown": (120, 84, 56), "denim": (84, 110, 150), "yellow": (236, 196, 64)}
 OUTLINE = (30, 26, 36)
+
+
+SETS = ("garage", "club", "studio", "stadium", "dark", "street")
+LOOK_VALUES = {"hair": ("mop", "fringe", "short", "long", "curly", "spiky", "bald"),
+               "hair_color": tuple(HAIRS), "brows": ("thin", "thick", "mono"), "glasses": ("none", "round", "shades"),
+               "beard": ("none", "stubble", "full", "mustache"), "top": ("tee", "parka", "jacket", "shirt"),
+               "play": ("guitar", "bass", "drums", "mic", "none"), "guitar": ("flag", "sunburst", "black", "red", "white"),
+               "skin": tuple(SKINS), "top_color": tuple(TOPS), "pants": tuple(TOPS)}
 
 
 def rgb(table: dict, name: Any, default: str) -> tuple[int, int, int]:
@@ -736,9 +745,23 @@ RATE = 44100
 CHORDS = {"E": 82.41, "C": 65.41, "G": 98.0, "D": 73.42, "A": 110.0, "B": 61.74, "F#": 92.5}
 
 
-def rock_bed(seconds: float, out: Path, progression=("E", "C", "G", "D"), bpm: int = BPM) -> Path:
+PROGRESSIONS = (("E", "C", "G", "D"), ("A", "E", "F#", "D"), ("G", "D", "E", "C"), ("D", "A", "B", "G"), ("E", "G", "A", "C"))
+
+
+def titled(script: dict, seconds: float) -> dict:
+    """The real length in the title and under the band's name ("Oasis in 45 Seconds"), rounded to 5 s."""
+    n = max(30, int(round(seconds / 5.0)) * 5)
+    band = {**(script.get("band") or {}), "sub": f"in {n} seconds"}
+    title = re.sub(r"\bin \d+ seconds\b", f"in {n} Seconds", str(script.get("title") or ""), flags=re.I)
+    if not re.search(r"\bin \d+ Seconds\b", title):
+        title = f"{str(band.get('name') or '').title()} in {n} Seconds"
+    return {**script, "band": band, "title": title}
+
+
+def rock_bed(seconds: float, out: Path, progression=None, bpm: int = BPM, seed: int = 0) -> Path:
     """A driving rock loop in code: kick, snare, hats, a palm-muted power-chord guitar and a bass, at `bpm`
     (the members play to the same beat). No samples, no recordings: nothing for Content ID to match."""
+    progression = progression or PROGRESSIONS[seed % len(PROGRESSIONS)]  # not the same four chords on every video
     beat = 60.0 / bpm
     n = int((seconds + 1) * RATE)
     tt = np.arange(n) / RATE
@@ -791,9 +814,8 @@ def rock_bed(seconds: float, out: Path, progression=("E", "C", "G", "D"), bpm: i
         bass[a:b] += (np.sin(2 * np.pi * root / 2 * e_t) * np.exp(-e_t * 3))[: b - a]
     g = np.tanh(g * 2.2)
     alpha = 0.18  # a one-pole low-pass: takes the fizz off
-    from scipy.signal import lfilter  # noqa: PLC0415
-
-    g = lfilter([alpha], [1, alpha - 1], g).astype(np.float32)
+    kernel = alpha * (1 - alpha) ** np.arange(120)  # its impulse response (numpy only: scipy isn't everywhere)
+    g = np.convolve(g, kernel.astype(np.float32))[:n].astype(np.float32)
     mix += 0.55 * g / max(1e-6, np.abs(g).max()) + 0.35 * bass
     mix /= max(1e-6, np.abs(mix).max()) * 1.05
     fade = int(0.02 * RATE)

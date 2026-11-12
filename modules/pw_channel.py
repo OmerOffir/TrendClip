@@ -37,7 +37,7 @@ from trendclip.config import PROJECT_ROOT
 logger = logging.getLogger(__name__)
 
 CHANNEL = "pricetagwhy"
-NAME = "Price Tag Why"
+NAME = "Encore Story"  # was "Price Tag Why" until 2026-11-12: the YouTube channel was renamed for band stories
 DIR = channel_common.channel_dir(CHANNEL)
 TOKEN = channel_common.token_path(CHANNEL)
 OUTPUT_DIR = PROJECT_ROOT / "output" / CHANNEL
@@ -47,6 +47,11 @@ MIN_SECONDS, MAX_SECONDS = 22.0, 45.0  # the brief asks 30-38 s: viewers swiped 
 STORY_SECONDS = (45.0, 85.0)  # the owner (2026-11-03): the 123 s sample was too long for the algorithm  # a money story (modules.pw_write.STORY): a cast, 3-4 moves with their math, the bars, the ask
 STORY_KINDS = ("cast", "step", "bars", "ask")
 WORLD_SECONDS = (40.0, 90.0)  # a true story in the world look (modules.pw_world)
+BAND_SECONDS = (30.0, 58.0)  # a band's life story (modules.band_world): under a minute, the channel's only format since 2026-11-12
+BAND_CATEGORY = "10"  # Music
+BAND_VOICE = "am_puck"  # Kokoro: the narrator of the Oasis sample the owner approved (2026-11-12); PW_BAND_VOICE overrides
+BAND_HASHTAGS = ("music", "bandhistory", "rockhistory", "shorts")
+BAND_COMMENT = "Which band should we do next? Name one below 👇"
 
 
 def is_story(script: dict) -> bool:
@@ -59,6 +64,11 @@ def is_world(script: dict) -> bool:
     return script.get("format") == "world"
 
 
+def is_band(script: dict) -> bool:
+    """A band's life story in under a minute (modules.band_world, 2026-11-12): Encore Story's format."""
+    return script.get("format") == "band"
+
+
 def is_tags(script: dict) -> bool:
     """A true money story in the pegboard look (modules.pw_tags, 2026-11-10): everything is a price tag on a string."""
     return script.get("format") == "tags"
@@ -66,6 +76,8 @@ def is_tags(script: dict) -> bool:
 
 def limits(script: dict) -> tuple[float, float]:
     """(min, max) seconds this script's video may run."""
+    if is_band(script):
+        return BAND_SECONDS
     if is_world(script) or is_tags(script):
         return WORLD_SECONDS
     return STORY_SECONDS if is_story(script) else (MIN_SECONDS, MAX_SECONDS)
@@ -85,7 +97,7 @@ class ChannelError(RuntimeError):
 
 
 def handle() -> str:
-    return channel_common.handle(DIR) or "@PriceTagWhy"
+    return channel_common.handle(DIR) or "@EncoreStory"
 
 
 def out_root(out_dir: Path | None = None) -> Path:
@@ -172,7 +184,19 @@ def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
     problems = []
     scenes = script.get("scenes") or []
-    if is_world(script):
+    if is_band(script):
+        band = script.get("band") or {}
+        members = band.get("members") or {}
+        if not band.get("name") or not members:
+            problems.append("a band story names its band and draws its members: band.name and band.members")
+        if not scenes or not all(s.get("kind") == "band" for s in scenes):
+            problems.append("every scene of a band story is of kind band")
+        for n, sc in enumerate(scenes, 1):
+            for m in sc.get("members") or []:
+                name = m.get("name") if isinstance(m, dict) else m
+                if name not in members:
+                    problems.append(f"scene {n} has {name!r}, who is not in band.members")
+    elif is_world(script):
         if not scenes or not all(s.get("kind") == "world" for s in scenes):
             problems.append("every scene of a world story is of kind world")
         elif not (scenes[0].get("head") or scenes[0].get("big")):
@@ -207,7 +231,7 @@ def check_script(script: dict) -> list[str]:
     if not script.get("claims") and not parable:
         problems.append("no claims listed with their sources")
     advice = re.compile(r"\b(you should (buy|invest|sell)|buy this|invest in|financial advice)\b", re.I)
-    if advice.search(narration(script)):
+    if advice.search(narration(script)) and not is_band(script):
         problems.append("the narration gives advice (explain, never advise)")
     return problems
 
@@ -303,7 +327,7 @@ def wanted(job: "Job") -> str | None:
 
 def kind_of(path: Path) -> str:
     script = _read(path) or {}
-    return "story" if is_story(script) else "true" if is_world(script) or is_tags(script) else "why"
+    return "band" if is_band(script) else "story" if is_story(script) else "true" if is_world(script) or is_tags(script) else "why"
 
 
 def take(left: list[Path], job: "Job") -> Path | None:
@@ -434,6 +458,15 @@ def shows_icons(script: dict) -> bool:
 def description(script: dict) -> str:
     """The YouTube description: the question, the short answer, the sources, the disclaimer, hashtags; a credit only
     for what needs one (Noto emoji here, Wikimedia pictures in with_credits)."""
+    if is_band(script):
+        tags = list(dict.fromkeys([*(script.get("hashtags") or []), *BAND_HASHTAGS]))[:7]
+        lines = [script.get("description", "")]
+        if script.get("sources"):
+            lines += ["", "Sources:"] + [f"- {s['title']}: {s['url']}" for s in script["sources"]]
+        often = "twice a day" if len(slots()) == 2 else "every day"
+        lines += ["", "Drawn and animated by us; the music is our own.", "",
+                  f"A band's whole story in under a minute, {often}: {handle()}", "", " ".join(f"#{t}" for t in tags)]
+        return "\n".join(lines).strip()
     tags = list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:7]
     lines = [script.get("question", ""), "", script.get("description", "")]
     if script.get("sources"):  # a parable has none
@@ -688,14 +721,14 @@ def with_credits(text: str, spec: bw_render.Spec) -> str:
     return f"{text}\n\n{credits}" if credits else text
 
 
-def record(text: str, out: Path, progress=lambda m: None) -> list[bw_render.Word]:
+def record(text: str, out: Path, progress=lambda m: None, voice: str = "", speed: float = 0.0) -> list[bw_render.Word]:
     """The narration in the channel's voice: Kokoro (the hub's) when installed, else an Edge voice."""
     from trendclip import kokoro_voice
 
     if kokoro_voice.available() and setting("PW_TTS_ENGINE", "kokoro").lower() == "kokoro":
-        voice = setting("PW_TTS_VOICE", VOICE)
+        voice = voice or setting("PW_TTS_VOICE", VOICE)
         progress(f"Recording the narration (Kokoro {voice})")
-        got = kokoro_voice.synthesize(text, out, voice, float(setting("PW_TTS_SPEED", "1.15")))
+        got = kokoro_voice.synthesize(text, out, voice, speed or float(setting("PW_TTS_SPEED", "1.15")))
         kokoro_voice.unload()
     else:
         from trendclip import voiceover
@@ -805,7 +838,11 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     script.setdefault("seed", random.randrange(1, 10_000))
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.05, "Recording the narration")
-    spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
+    if is_band(script):  # a band story: its own narrator, at a normal pace
+        spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m),
+                        setting("PW_BAND_VOICE", BAND_VOICE), float(setting("PW_BAND_SPEED", "1.0")))
+    else:
+        spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
     if is_tags(script):  # the script names what hangs; where it hangs is filled in here
         from modules import pw_tags
 
@@ -815,7 +852,17 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     spec.sfx = setting("PW_SFX", "on").lower() not in ("off", "0", "no")  # pops, marker, whooshes, a cash ring (pw_render)
     music = pick_music(int(script["seed"]))
     volume = float(setting("PW_MUSIC_VOLUME", "0.09"))
-    if is_world(script):  # the full-colour world (modules.pw_world): no maps, no photos, no marker hand
+    if is_band(script):  # Encore Story (modules.band_world): the members play to a rock bed made in code
+        from modules import band_world
+
+        spec.hold = 0.8
+        script = band_world.titled(script, spec.duration)
+        (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        music = band_world.rock_bed(spec.duration + 2, work / "music.mp3", seed=int(script["seed"]))
+        volume = float(script.get("music_volume") or setting("PW_BAND_MUSIC_VOLUME", "0.15"))
+        band_world.render(spec, script["band"], work / "voice.mp3", work / "video.mp4", music, volume,
+                          lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
+    elif is_world(script):  # the full-colour world (modules.pw_world): no maps, no photos, no marker hand
         from modules import pw_world
 
         pw_world.render(spec, work / "voice.mp3", work / "video.mp4", music, volume, lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
@@ -831,16 +878,22 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
                          lambda f, m: progress(0.1 + 0.85 * (f or 0), m), handle=handle(), question=script.get("question", ""))
     info = {
         "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
-        "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *HASHTAGS]))[:6],
+        "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *(BAND_HASHTAGS if is_band(script) else HASHTAGS)]))[:6],
         "sources": script.get("sources", []), "claims": script.get("claims", []), "duration_seconds": round(spec.duration, 2),
         "words": words(script["narration"]), "voice": setting("PW_TTS_VOICE", VOICE), "music": music.stem if music else None,
-        "comment": comment_text(script),
+        "comment": comment_text(script), **({"category": BAND_CATEGORY} if is_band(script) else {}),
         "thumb_at": round(max(0.5, spec.scenes[0].end - 0.2), 2),  # the opening, fully drawn (modules.thumbs)
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
     }
     try:  # a picture made to be clicked (modules.pw_thumb), not a frame of the video; a world story's hook frame
-        if is_world(script):
+        if is_band(script):  # the hook's frame, fully popped in
+            from modules import band_world
+
+            at = max(0.3, spec.scenes[0].end - 0.3)
+            band_world.BandRenderer(spec, script["band"]).frame(at).save(work / "thumb.jpg", quality=92)
+            info["thumb_at"] = round(at, 2)
+        elif is_world(script):
             from modules import pw_world
 
             at = pw_world.thumb_time(spec)
@@ -993,7 +1046,7 @@ def upload_request(info: dict, privacy: str | None = None, publish_at: datetime 
 
     return publish.YouTubeUploadRequest(publish_at=publish_at,
         title=info["title"][: publish.YT_TITLE_MAX], description=(info.get("description") or "")[:5000],
-        tags=[t for t in info.get("hashtags", []) if t], privacy=privacy or upload_privacy(), category_id=CATEGORY, as_short=True)
+        tags=[t for t in info.get("hashtags", []) if t], privacy=privacy or upload_privacy(), category_id=info.get("category") or CATEGORY, as_short=True)
 
 
 def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, youtube=None, out_dir: Path | None = None,
@@ -1053,7 +1106,8 @@ def comment_text(script: dict) -> str:
     """The comment posted under the video for the owner to pin: the script's own question to viewers ("comment"),
     then the ask for the next topic."""
     own = " ".join(str(script.get("comment") or "").split())[:400]
-    return f"{own}\n\n{COMMENT}" if own else COMMENT
+    ask = BAND_COMMENT if is_band(script) else COMMENT
+    return f"{own}\n\n{ask}" if own else ask
 
 
 def can_comment() -> bool:

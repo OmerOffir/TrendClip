@@ -1,45 +1,287 @@
 {
+  "format": "band",
   "title": "Oasis in 45 Seconds",
+  "pillar": "90s and 2000s",
   "seed": 11,
   "music_volume": 0.15,
   "band": {
     "name": "OASIS",
     "sub": "in 45 seconds",
     "members": {
-      "Liam": {"hair": "mop", "hair_color": "brown", "glasses": "round", "top": "parka", "top_color": "khaki", "pants": "denim", "play": "mic"},
-      "Noel": {"hair": "fringe", "hair_color": "dark", "brows": "mono", "top": "jacket", "top_color": "black", "pants": "black", "play": "guitar", "guitar": "flag"},
-      "Bonehead": {"hair": "bald", "beard": "stubble", "top": "tee", "top_color": "grey", "pants": "denim", "play": "guitar", "guitar": "sunburst"},
-      "Guigsy": {"hair": "short", "hair_color": "dark", "top": "tee", "top_color": "navy", "pants": "black", "play": "bass"},
-      "Tony": {"hair": "short", "hair_color": "brown", "top": "tee", "top_color": "white", "play": "drums"}
+      "Liam": {
+        "hair": "mop",
+        "hair_color": "brown",
+        "glasses": "round",
+        "top": "parka",
+        "top_color": "khaki",
+        "pants": "denim",
+        "play": "mic"
+      },
+      "Noel": {
+        "hair": "fringe",
+        "hair_color": "dark",
+        "brows": "mono",
+        "top": "jacket",
+        "top_color": "black",
+        "pants": "black",
+        "play": "guitar",
+        "guitar": "flag"
+      },
+      "Bonehead": {
+        "hair": "bald",
+        "beard": "stubble",
+        "top": "tee",
+        "top_color": "grey",
+        "pants": "denim",
+        "play": "guitar",
+        "guitar": "sunburst"
+      },
+      "Guigsy": {
+        "hair": "short",
+        "hair_color": "dark",
+        "top": "tee",
+        "top_color": "navy",
+        "pants": "black",
+        "play": "bass"
+      },
+      "Tony": {
+        "hair": "short",
+        "hair_color": "brown",
+        "top": "tee",
+        "top_color": "white",
+        "play": "drums"
+      }
     }
   },
   "scenes": [
-    {"kind": "band", "set": "dark", "line": "BROTHERS. RIVALS. LEGENDS.",
-     "members": [{"name": "Liam", "expr": "angry", "play": "none", "pose": "cross"}, {"name": "Noel", "expr": "angry", "play": "none", "pose": "cross"}],
-     "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain."},
-    {"kind": "band", "set": "garage", "year": "1991", "line": "MANCHESTER",
-     "members": ["Liam", "Bonehead", "Guigsy", {"name": "Noel", "cue": "Noel", "expr": "cool"}],
-     "narration": "Manchester, 1991. Liam Gallagher sings in a little band called Oasis. His big brother Noel joins, on one condition: he writes every song."},
-    {"kind": "band", "set": "club", "sign": "KING TUT'S", "year": "1993", "line": "GLASGOW",
-     "members": ["Liam", "Noel", "Bonehead", "Guigsy", "Tony"],
-     "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night."},
-    {"kind": "band", "set": "studio", "year": "1994", "line": "FIRST ALBUM",
-     "members": [{"name": "Liam", "expr": "cool"}, {"name": "Noel", "expr": "grin"}],
-     "big": {"text": "#1", "cue": "fastest"},
-     "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen."},
-    {"kind": "band", "set": "stadium", "year": "1996", "line": "KNEBWORTH",
-     "members": ["Liam", "Noel", "Bonehead", "Guigsy"],
-     "big": {"text": "250,000", "cue": "fifty"},
-     "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets."},
-    {"kind": "band", "set": "dark", "year": "2009", "line": "BACKSTAGE IN PARIS",
-     "members": [{"name": "Liam", "expr": "angry", "play": "none", "pose": "point"}, {"name": "Noel", "expr": "angry", "play": "none", "pose": "cross"}],
-     "crack": {"cue": "fight"}, "news": {"text": "OASIS SPLIT", "cue": "walks"},
-     "narration": "But the brothers never stop fighting. In 2009, one last fight backstage in Paris. Noel walks out. Oasis is over."},
-    {"kind": "band", "set": "street", "year": "15 YEARS", "line": "NOT A WORD",
-     "members": [{"name": "Liam", "expr": "sad", "play": "none"}, {"name": "Noel", "expr": "sad", "play": "none"}],
-     "narration": "For fifteen years, they barely speak."},
-    {"kind": "band", "set": "stadium", "year": "2025", "line": "THEY'RE BACK", "confetti": true,
-     "members": [{"name": "Liam", "expr": "cool"}, {"name": "Noel", "expr": "grin"}, "Bonehead"],
-     "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?"}
+    {
+      "kind": "band",
+      "set": "dark",
+      "line": "BROTHERS. RIVALS. LEGENDS.",
+      "members": [
+        {
+          "name": "Liam",
+          "expr": "angry",
+          "play": "none",
+          "pose": "cross"
+        },
+        {
+          "name": "Noel",
+          "expr": "angry",
+          "play": "none",
+          "pose": "cross"
+        }
+      ],
+      "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain."
+    },
+    {
+      "kind": "band",
+      "set": "garage",
+      "year": "1991",
+      "line": "MANCHESTER",
+      "members": [
+        "Liam",
+        "Bonehead",
+        "Guigsy",
+        {
+          "name": "Noel",
+          "cue": "Noel",
+          "expr": "cool"
+        }
+      ],
+      "narration": "Manchester, 1991. Liam Gallagher sings in a little band called Oasis. His big brother Noel joins, on one condition: he writes every song."
+    },
+    {
+      "kind": "band",
+      "set": "club",
+      "sign": "KING TUT'S",
+      "year": "1993",
+      "line": "GLASGOW",
+      "members": [
+        "Liam",
+        "Noel",
+        "Bonehead",
+        "Guigsy",
+        "Tony"
+      ],
+      "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night."
+    },
+    {
+      "kind": "band",
+      "set": "studio",
+      "year": "1994",
+      "line": "FIRST ALBUM",
+      "members": [
+        {
+          "name": "Liam",
+          "expr": "cool"
+        },
+        {
+          "name": "Noel",
+          "expr": "grin"
+        }
+      ],
+      "big": {
+        "text": "#1",
+        "cue": "fastest"
+      },
+      "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen."
+    },
+    {
+      "kind": "band",
+      "set": "stadium",
+      "year": "1996",
+      "line": "KNEBWORTH",
+      "members": [
+        "Liam",
+        "Noel",
+        "Bonehead",
+        "Guigsy"
+      ],
+      "big": {
+        "text": "250,000",
+        "cue": "fifty"
+      },
+      "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets."
+    },
+    {
+      "kind": "band",
+      "set": "dark",
+      "year": "2009",
+      "line": "BACKSTAGE IN PARIS",
+      "members": [
+        {
+          "name": "Liam",
+          "expr": "angry",
+          "play": "none",
+          "pose": "point"
+        },
+        {
+          "name": "Noel",
+          "expr": "angry",
+          "play": "none",
+          "pose": "cross"
+        }
+      ],
+      "crack": {
+        "cue": "fight"
+      },
+      "news": {
+        "text": "OASIS SPLIT",
+        "cue": "walks"
+      },
+      "narration": "But the brothers never stop fighting. In 2009, one last fight backstage in Paris. Noel walks out. Oasis is over."
+    },
+    {
+      "kind": "band",
+      "set": "street",
+      "year": "15 YEARS",
+      "line": "NOT A WORD",
+      "members": [
+        {
+          "name": "Liam",
+          "expr": "sad",
+          "play": "none"
+        },
+        {
+          "name": "Noel",
+          "expr": "sad",
+          "play": "none"
+        }
+      ],
+      "narration": "For fifteen years, they barely speak."
+    },
+    {
+      "kind": "band",
+      "set": "stadium",
+      "year": "2025",
+      "line": "THEY'RE BACK",
+      "confetti": true,
+      "members": [
+        {
+          "name": "Liam",
+          "expr": "cool"
+        },
+        {
+          "name": "Noel",
+          "expr": "grin"
+        },
+        "Bonehead"
+      ],
+      "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?"
+    }
+  ],
+  "description": "Two brothers from Manchester, one band: Oasis from a garage in 1991 to Knebworth in 1996, the split in Paris in 2009 and the reunion in 2025.",
+  "comment": "Liam or Noel: who was right? 👇",
+  "hashtags": [
+    "oasis",
+    "britpop"
+  ],
+  "sources": [
+    {
+      "title": "Official Charts: Definitely Maybe at 30",
+      "url": "https://officialcharts.com/chart-news/oasis-definitely-maybe-30-anniversary-reunion"
+    },
+    {
+      "title": "Far Out: How Alan McGee discovered Oasis",
+      "url": "https://faroutmagazine.co.uk/how-alan-mcgee-discovered-oasis"
+    },
+    {
+      "title": "Rock's Backpages: Oasis at Knebworth (1996)",
+      "url": "https://rocksbackpages.com/Library/Article/oasis-knebworth-herts--big-is-beautiful-as-oasis-take-their-place-in-the-record-books"
+    },
+    {
+      "title": "The Rock Revival: 30 years since Oasis at Knebworth",
+      "url": "https://therockrevival.com/rock-news/30-years-ago-today-oasis-make-history-with-massive-knebworth-performances/"
+    },
+    {
+      "title": "Pollstar: Noel Gallagher quits Oasis (2009)",
+      "url": "https://news.pollstar.com/2009/08/31/noel-gallagher-quits-oasis/"
+    },
+    {
+      "title": "Far Out: The Paris altercation that ended Oasis",
+      "url": "https://faroutmagazine.co.uk/why-oasis-split-up-in-paris-liam-gallagher-noel-gallagher/"
+    },
+    {
+      "title": "GRAMMY.com: How Definitely Maybe shaped 90s rock, and the reunion",
+      "url": "https://www.grammy.com/news/how-oasis-definitely-maybe-shaped-90s-rock-30th-anniversary-reissue-reunion"
+    }
+  ],
+  "claims": [
+    {
+      "claim": "Oasis were offered a deal by Alan McGee after a 1993 gig at King Tut's in Glasgow",
+      "sources": [
+        2,
+        7
+      ]
+    },
+    {
+      "claim": "Definitely Maybe (1994) was the fastest-selling debut album in Britain at the time",
+      "sources": [
+        1,
+        7
+      ]
+    },
+    {
+      "claim": "Two nights at Knebworth in 1996 drew 250,000 fans; about 2.5 million applied for tickets",
+      "sources": [
+        3,
+        4
+      ]
+    },
+    {
+      "claim": "Noel left Oasis in 2009 after a backstage altercation in Paris",
+      "sources": [
+        5,
+        6
+      ]
+    },
+    {
+      "claim": "Oasis announced a reunion in 2024 and toured in 2025",
+      "sources": [
+        1,
+        7
+      ]
+    }
   ]
 }

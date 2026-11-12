@@ -690,7 +690,7 @@ def test_a_story_session_writes_from_story_ideas_with_the_story_rules(tmp_path):
     pw_write.add_topic("Same $300, three cousins with a lemonade stand: how did one make $900 and one $90,000?",
                        "business tricks", tmp_path, "story")
     fresh = pw_write.view("one", tmp_path)
-    assert fresh["formats"] == ["why", "story", "world"] and fresh["stories"][0]["question"].startswith("Same $300")
+    assert fresh["formats"] == ["band", "why", "story", "world"] and fresh["stories"][0]["question"].startswith("Same $300")
     assert fresh["topics"][0]["question"].startswith("Why")  # the why questions stay apart
     view = pw_write.start("one", out_dir=tmp_path, format="story")
     assert view["format"] == "story" and "money story" in view["prompt"] and "\"math\": a product" in view["prompt"]
@@ -971,11 +971,12 @@ def test_the_dashboard_writes_true_stories_only(tmp_path):
 
     from modules import pw_write
 
-    assert web.StartRequest().format == "world" and web.TopicRequest(question="How did X?").format == "world"
+    # Encore Story (2026-11-12): the dashboard writes band stories; an idea without a format is a band
+    assert web.StartRequest().format == "band" and web.TopicRequest(question="How did X?").format == "band"
     done = pw_write.llm_add('{"topics": [{"question": "How did a $500 loan become Crocs?", "pillar": "business tricks"}]}', tmp_path)
-    assert done["added"] and pw_write.topics(tmp_path)[-1]["format"] == "world"
+    assert done["added"] and pw_write.topics(tmp_path)[-1]["format"] == "band"
     html = (pw_channel.PROJECT_ROOT / "trendclip/web/static/index.html").read_text()
-    assert '<option value="why">❓ why' not in html and 'id="pwAddFormat" value="world"' in html
+    assert '<option value="why">❓ why' not in html and 'id="pwAddFormat" value="band"' in html
 
 
 def test_the_plan_shows_a_sample_made_from_a_slots_script(tmp_path):

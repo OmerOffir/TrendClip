@@ -27,8 +27,8 @@
           <span><b>Borderline Why</b><small>Map mysteries, explained</small></span>
         </button>
         <button type="button" role="tab" class="workspace" data-workspace="pricetagwhy" aria-selected="false">
-          <span class="ws-mark ws-mark-pw" aria-hidden="true">PW</span>
-          <span><b>Price Tag Why</b><small>Money questions, explained</small></span>
+          <span class="ws-mark ws-mark-pw" aria-hidden="true">ES</span>
+          <span><b>Encore Story</b><small>Bands' stories in under a minute</small></span>
         </button>
         <button type="button" role="tab" class="workspace" data-workspace="upcoming" aria-selected="false" title="Everything planned to go out this week, every channel">
           <span class="ws-mark ws-mark-up" aria-hidden="true">📅</span>
@@ -61,8 +61,8 @@
       </nav>
     </div>
     <div class="subbar" data-workspace-panel="pricetagwhy" hidden>
-      <span class="subbar-label">Price Tag Why</span>
-      <nav class="nav" id="pwNav" role="tablist" aria-label="Price Tag Why sections">
+      <span class="subbar-label">Encore Story</span>
+      <nav class="nav" id="pwNav" role="tablist" aria-label="Encore Story sections">
         <button type="button" role="tab" class="active" data-pw-view="videos">Videos <span class="nav-count todo" id="pwNavWaiting" hidden title="Videos waiting for Approve"></span></button>
         <button type="button" role="tab" data-pw-view="plan">Plan <span class="nav-count" id="pwNavQueued" hidden title="Scripts queued"></span></button>
         <button type="button" role="tab" data-pw-view="topics">Topics <span class="nav-count" id="pwNavTopics" hidden title="Topics left"></span></button>
@@ -78,7 +78,7 @@
     <section class="card">
       <div class="card-head">
         <div>
-          <h2>Price Tag Why</h2>
+          <h2>Encore Story</h2>
           <span class="hint"><span id="pwHint">Loading…</span></span>
         </div>
         <button type="button" class="btn-secondary" id="pwRefresh">Refresh</button>
@@ -120,13 +120,13 @@
       <div class="card-head">
         <div>
           <h2>Topics <span class="hint" id="pwTopicsCount"></span></h2>
-          <span class="hint">The true money stories to tell, in the order the next scripts take them (a founder, a company, a famous deal: real people, real numbers, real years). A topic has no script yet: <b>✍️ Write it now</b> opens Write it myself with it (the script goes to the first free slot), <b>⬆ Write next</b> puts it at the top for Write it myself and Write a week</span>
+          <span class="hint">The bands (and singers) to tell, in the order the next scripts take them: how they met, the break, the hit, the fight, the comeback. A topic has no script yet: <b>✍️ Write it now</b> opens Write it myself with it (the script goes to the first free slot), <b>⬆ Write next</b> puts it at the top for Write it myself and Write a week</span>
         </div>
       </div>
       <form class="pw-add" id="pwAddTopic">
-        <input type="text" id="pwAddQuestion" placeholder="How did …?  a true money story: How did $5,000 and a pair of scissors become Spanx?" maxlength="160" required>
+        <input type="text" id="pwAddQuestion" placeholder="A band and its drama, ending with ?  Oasis: how did two brothers who hated each other build the biggest band in Britain?" maxlength="160" required>
         <select id="pwAddPillar"><option value="">pillar</option></select>
-        <input type="hidden" id="pwAddFormat" value="world">
+        <input type="hidden" id="pwAddFormat" value="band">
         <button type="submit" class="btn-primary">Add</button>
         <button type="button" class="btn-secondary" id="pwNoIdea" title="Copies the prompt for 20 new topics (New topics from your own LLM, below): paste it into any LLM, then paste its answer back there">💡 No idea? Get a prompt</button>
         <span class="hint" id="pwAddStatus"></span>
@@ -138,12 +138,12 @@
       <div class="card-head">
         <div>
           <h2>New topics from your own LLM</h2>
-          <span class="hint">When the list runs out: the prompt asks for 20 new true money stories (a founder or company from tiny to huge, a famous mistake, a genius money move), each checkable in two sources, and lists the ones you already have so it won't repeat them</span>
+          <span class="hint">When the list runs out: the prompt asks for 20 new bands or singers with a real story (genres and decades mixed, fans who comment), and lists the ones you already have so it won't repeat them</span>
         </div>
         <button type="button" id="pwTopicsRefresh" hidden></button>
       </div>
       <div class="bw-w-step"><b>1 · Copy this prompt into any LLM (ChatGPT, Claude, …)</b>
-        <div class="llm-topics-row"><select data-l="format" title="Which ideas to ask for"><option value="world">🌆 true stories</option><option value="story">📖 Same $X money stories</option></select>
+        <div class="llm-topics-row"><select data-l="format" title="Which ideas to ask for"><option value="band">🎸 bands</option><option value="world">🌆 true stories</option><option value="story">📖 Same $X money stories</option></select>
           <button type="button" class="btn-secondary" data-l="copy">📋 Copy the prompt</button></div>
         <textarea class="bw-w-prompt" data-l="prompt" readonly rows="4" placeholder="The prompt appears here"></textarea>
       </div>
@@ -158,7 +158,7 @@
       <div class="card-head">
         <div>
           <h2>✍️ Write it myself</h2>
-          <span class="hint">One true story with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. 55-75 s in the colour world: a moving hook (the number races from the start money to the end), named characters, the year and the place, the numbers popping as they are said, one "BUT THEN…", a question at the end</span>
+          <span class="hint">One band story with any LLM: copy the prompt, paste the answer, then the fact check. It joins the queue the daily slots take. 35-55 s: the members drawn as cartoons who play on stage, a year card per beat, one low point, the comeback, a question that splits the fans at the end</span>
         </div>
       </div>
       <div class="pw-write" id="pwWriteOne"><div class="empty">Loading…</div></div>
@@ -169,7 +169,7 @@
       <div class="card-head">
         <div>
           <h2>📅 Write a week</h2>
-          <span class="hint">The coming week's true stories in one prompt (the next topics), then one fact-check prompt. They join the queue in order</span>
+          <span class="hint">The coming week's band stories in one prompt (the next bands), then one fact-check prompt. They join the queue in order</span>
         </div>
       </div>
       <div class="pw-write" id="pwWriteWeek"><div class="empty">Loading…</div></div>

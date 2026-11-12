@@ -25,9 +25,14 @@ from modules import pw_channel, pw_draw
 from trendclip import llm_json
 
 KINDS = ("one", "week")
-FORMATS = ("why", "story", "world")  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
+FORMATS = ("band", "why", "story", "world")  # band: Encore Story's band life stories (modules.band_world, 2026-11-12);  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
 # a true money story in the full-colour world look (modules.pw_world, 2026-11-08)
-DEFAULT_FORMAT = "world"  # an idea pasted from the LLM without a format is a true story (the channel's only format now)
+DEFAULT_FORMAT = "band"  # an idea pasted from the LLM without a format is a band story (Encore Story's only format since 2026-11-12)
+BAND_WORDS = (120, 170)  # 35-50 s at the band narrator's pace with long pauses cut (the Oasis sample: 146 words, 41 s)
+BAND_SCENES = (6, 10)
+BAND_SCENE_WORDS = 30
+BAND_LINE = 28  # characters on the line card under the year
+BAND_PILLARS = ("rock legends", "90s and 2000s", "metal and punk", "pop, rap and the rest")
 WORLD_WORDS = (140, 215)  # 55-75 s
 WORLD_SCENES = (7, 14)
 WORLD_SCENE_WORDS = 30
@@ -111,13 +116,13 @@ def add_topic(question: str, pillar: str = "", out_dir: Path | None = None, form
     question = " ".join(question.split())
     if len(question) < 8 or not question.endswith("?"):
         raise WriteError("A topic is a question ending in ?")
-    if pillar and pillar not in PILLARS:
-        raise WriteError(f"The pillar is one of: {', '.join(PILLARS)}")
+    if pillar and pillar not in (*PILLARS, *BAND_PILLARS):
+        raise WriteError(f"The pillar is one of: {', '.join(BAND_PILLARS if format == 'band' else PILLARS)}")
     found = topics(out_dir)
     if any(_norm(t["question"]) == _norm(question) for t in found):
         raise WriteError("That question is already on the list")
     item = {"question": question, "pillar": pillar, "used": False, "added": datetime.now().strftime("%Y-%m-%d"),
-            **({"format": format} if format in ("story", "world") else {})}
+            **({"format": format} if format in ("story", "world", "band") else {})}
     save_topics([*found, item], out_dir)
     return item
 
@@ -154,6 +159,8 @@ def next_topics(count: int, out_dir: Path | None = None, found: list[dict[str, A
 
 def format_problems(script: dict) -> list[str]:
     """What the renderer and the brief need beyond pw_channel.check_script."""
+    if pw_channel.is_band(script):
+        return band_problems(script)
     if pw_channel.is_world(script):
         return world_problems(script)
     if pw_channel.is_tags(script):
@@ -203,6 +210,104 @@ def format_problems(script: dict) -> list[str]:
         if not str(src.get("url", "")).startswith("http"):
             problems.append(f"source without a link: {src.get('title', '')[:50]}")
     return problems
+
+
+def band_problems(script: dict) -> list[str]:
+    """What a band story needs beyond pw_channel.check_script: the length, the scenes, the cards and the cues."""
+    from modules import band_world
+
+    problems = []
+    scenes = script.get("scenes") or []
+    n = pw_channel.words(pw_channel.narration(script))
+    if not BAND_WORDS[0] <= n <= BAND_WORDS[1]:
+        problems.append(f"{n} words of narration (wanted {BAND_WORDS[0]}-{BAND_WORDS[1]}, about 40-55 s)")
+    if not BAND_SCENES[0] <= len(scenes) <= BAND_SCENES[1]:
+        problems.append(f"{len(scenes)} scenes (wanted {BAND_SCENES[0]}-{BAND_SCENES[1]})")
+    if not re.search(r"\bin \d+ seconds\b", str(script.get("title") or ""), re.I):
+        problems.append('the title is "<Band> in 45 Seconds" (the real length is filled in at the make)')
+    members = (script.get("band") or {}).get("members") or {}
+    if len(members) > 5:
+        problems.append(f"{len(members)} members drawn (at most 5: the ones the story is about)")
+    for name, look in members.items():
+        bad = [f"{k}={look.get(k)}" for k, allowed in band_world.LOOK_VALUES.items() if look.get(k) not in (None, "", *allowed)]
+        if bad:
+            problems.append(f"{name}'s look has values the drawing doesn't know: {', '.join(bad)}")
+    if scenes and not (scenes[0].get("line") or scenes[0].get("year")):
+        problems.append("scene 1 is the hook: a line card (or a year) on the first frame")
+    if scenes and not pw_channel.narration({"scenes": scenes[-1:]}).rstrip().endswith("?"):
+        problems.append("the last scene ends on a question to the viewers (it brings the comments)")
+    for k, sc in enumerate(scenes, 1):
+        said = pw_channel.words(str(sc.get("narration") or ""))
+        if said > BAND_SCENE_WORDS:
+            problems.append(f"scene {k} says {said} words (at most {BAND_SCENE_WORDS}: one beat per scene)")
+        if sc.get("set") and sc["set"] not in band_world.SETS:
+            problems.append(f"scene {k}'s set is one of: {', '.join(band_world.SETS)}")
+        if len(str(sc.get("line") or "")) > BAND_LINE:
+            problems.append(f"scene {k}'s line card is over {BAND_LINE} characters")
+        if len(sc.get("members") or []) > 5:
+            problems.append(f"scene {k} has more than 5 members on stage")
+        if not (sc.get("members") or sc.get("big") or sc.get("news")):
+            problems.append(f"scene {k} shows nobody and nothing: members, a big figure or a newspaper")
+        words_ = {w.lower().strip(".,!?:;'\"") for w in str(sc.get("narration") or "").split()}
+        for what in ("big", "news", "crack"):
+            cue = str((sc.get(what) or {}).get("cue") or "") if isinstance(sc.get(what), dict) else ""
+            if cue and not any(w.startswith(cue.lower()) for w in words_):
+                problems.append(f"scene {k}'s {what} cue {cue!r} is not a word of its narration")
+        for m in sc.get("members") or []:
+            if isinstance(m, dict) and m.get("cue") and not any(w.startswith(str(m["cue"]).lower()) for w in words_):
+                problems.append(f"scene {k}: {m.get('name')}'s cue {m['cue']!r} is not a word of its narration")
+    return problems
+
+
+BAND_EXAMPLE = pw_channel.SCRIPTS_DIR.parent.parent / "bandstory" / "examples" / "001-oasis.json"  # the approved sample
+
+
+def band_rules() -> str:
+    from modules import band_world
+
+    lo, hi = BAND_WORDS
+    looks = "; ".join(f"{k}: {'|'.join(v)}" for k, v in band_world.LOOK_VALUES.items())
+    return f"""Encore Story is a YouTube Shorts channel: a band's (or a singer's) whole life story in under a minute, drawn as
+big-headed cartoon members who play on stage, with a narrator. Viewers are music fans (16-45, US/UK/worldwide) who
+love the band and want to argue about it in the comments. What wins: the band's real drama (how they met, the
+lucky break, the record that blew up, the fight, the split, the comeback), real years and real numbers.
+
+Each script is ONE JSON object shaped exactly like the example below, with "format": "band":
+- {lo}-{hi} words of narration in all (40-55 seconds). Short spoken sentences. Years in digits ("1991"); big
+  numbers in words ("two hundred and fifty thousand fans"). Names as people say them ("Oasis", "AC DC" for AC/DC).
+- {BAND_SCENES[0]}-{BAND_SCENES[1]} scenes, all "kind": "band", ONE beat each, at most {BAND_SCENE_WORDS} words of narration per scene.
+- scene 1 is the hook (at most 20 words): the drama in one breath ("These two brothers could not stand each other.
+  Together, they built the biggest band in Britain."), a "line" card on the first frame, no year yet.
+- then the story in order, a "year" on every scene where time jumps. Exactly one low point (a split, a death, a
+  flop, a fight) on the "dark" set, and the ending (a comeback, a record, a legacy) on the "stadium" set.
+- the last scene ends on ONE question that splits the fans ("So, Liam or Noel: who was right?", "Best album: X or Y?").
+  No "follow", no "subscribe", no "like".
+"band": {{"name": the band in capitals ("OASIS"), "sub": "in 45 seconds", "members": {{<first name or nickname>: look}}}}
+  2-5 members: the ones the story is about. Make each one recognisable from the look alone (their famous hair,
+  glasses, beard, clothes, instrument). A look's keys: {looks}.
+  "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
+  The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
+A scene's keys (all optional except kind and narration):
+  "set": {"|".join(band_world.SETS)} ("sign": a neon word on the club wall, the venue's name, 12 characters at most)
+  "year": "1991" (or "15 YEARS" for a gap); "line": a card under it, {BAND_LINE} characters at most, capitals ("MANCHESTER", "FIRST ALBUM")
+  "members": who is on stage, by their key in band.members: ["Liam", {{"name": "Noel", "cue": "Noel", "expr": "cool",
+    "play": "none", "pose": "cross"}}] (expr: smile|grin|cool|angry|sad|shocked; pose when not playing: hang|up|cross|point;
+    "play": "none" for a scene where they don't play: a fight, a sad scene; a cue makes someone appear as their name is said)
+  "big": {{"text": "250,000", "cue": a word}}: a figure that counts up as it is said ("#1" works too)
+  "news": {{"text": "OASIS SPLIT", "cue": a word}}: a newspaper front page (a split, a scandal, a record)
+  "crack": {{"cue": a word}}: lightning between the first two members (a fight)
+  "confetti": true (the big win)
+  Every cue is a word of THAT scene's narration.
+- "sources": 2 or more real pages (music press, interviews, the band's site, official charts; never Wikipedia),
+  "claims": every fact and figure, each with 2 or more source numbers. Nothing invented: no made-up quotes, no
+  guessed numbers. Keep it about the music and the band's story: no rumours, no private life beyond what the band
+  made public, no drugs or deaths told for shock.
+- "title": "<Band> in 45 Seconds". "comment": the last question + 👇. "description": 2-3 sentences, the story's
+  turns with their years. "hashtags": 2-3 without # (the band, its genre). "pillar": one of {", ".join(BAND_PILLARS)}.
+A different band, decade and genre from one script to the next.
+
+The example (a finished script):
+{_example(BAND_EXAMPLE)}"""
 
 
 def world_problems(script: dict) -> list[str]:
@@ -842,13 +947,15 @@ def write_prompt(session: dict[str, Any]) -> str:
                    for k, t in enumerate(session["topics"], 1))
     many = len(session["topics"]) > 1
     fmt = session_format(session)
-    if fmt == "world":
+    if fmt == "band":
+        what = "one band story for each of these bands" if many else "the band story for this band"
+    elif fmt == "world":
         what = "one true story for each of these ideas" if many else "the true story for this idea"
     elif fmt == "story":
         what = "one money story for each of these ideas" if many else "the money story for this idea"
     else:
         what = "one script for each of these questions" if many else "the script for this question"
-    text = {"world": tags_rules if TRUE_LOOK == "tags" else world_rules, "story": story_rules}.get(fmt, rules)()
+    text = {"band": band_rules, "world": tags_rules if TRUE_LOOK == "tags" else world_rules, "story": story_rules}.get(fmt, rules)()
     return (f"{text}\n\nWrite {what}:\n{qs}\n\n"
             f"Answer with JSON only: {{\"scripts\": [ ... ]}}, {'one object per idea, in this order' if many else 'one object'}.")
 
@@ -885,7 +992,7 @@ def facts_prompt(session: dict[str, Any]) -> str:
         src = "\n".join(f"  [{n}] {s.get('title', '')}: {s.get('url', '')}" for n, s in enumerate(d.get("sources") or [], 1))
         claims = "\n".join(f"  - {c.get('claim', '')} (sources {', '.join(map(str, c.get('sources') or []))})" for c in d.get("claims") or [])
         blocks.append(f"Script {k}: {d.get('title', '')}\nNarration: {pw_channel.narration(d)}\nSources:\n{src}\nClaims:\n{claims}")
-    return ("You are a fact checker for a money-explainer YouTube channel. Open every source link. For each script, list "
+    return ("You are a fact checker for a YouTube channel of short true stories. Open every source link. For each script, list "
             "every statement in the narration that its listed sources do NOT clearly support (a wrong number, a year, a "
             "cause the sources don't give, a dead link, a claim with fewer than two supporting sources), and any advice "
             "to buy or invest. Be strict: if you cannot open a link, say so.\n\n" + "\n\n".join(blocks)
@@ -971,10 +1078,31 @@ Answer with JSON only, no other text:
 The pillar is one of: {pillars}, written exactly so."""
 
 
+BAND_TOPICS_PROMPT = """I run "Encore Story", a YouTube Shorts channel that tells a band's (or a singer's) whole life story in
+under a minute, drawn as cartoon members on stage with a narrator: how they met, the break, the hit, the fight,
+the split, the comeback.
+
+Give me {count} bands or singers to do next. Each one is a short line ending with "?" that names the band and its
+drama ("Oasis: how did two brothers who hated each other build the biggest band in Britain?"). Each must:
+- be famous enough that millions know their songs (fans who will comment), from the 1960s to today
+- have a real story with turns (not just "they formed and got famous"), checkable in music press or interviews
+- mix genres and decades: rock, metal, punk, grunge, pop, rap, electronic, 60s to 2010s
+- each member drawable from a famous look (hair, glasses, outfit), and no story that is mainly about a death or drugs
+
+Don't repeat any of these, already made or planned:
+{taken}
+
+Answer with JSON only, no other text:
+{{"topics": [{{"question": "Oasis: how did two brothers who hated each other build the biggest band in Britain?", "pillar": "90s and 2000s", "format": "band"}}]}}
+The pillar is one of: {pillars}, written exactly so."""
+
+
 def llm_prompt(count: int = 20, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None, format: str = "why") -> str:
     """The prompt for new topics from any LLM (the Topics tab's "New topics from your own LLM"); `found`: the list
     to avoid (the Linux hub's, on the sending machine); format "story" asks for money-story ideas."""
     taken = "\n".join(t["question"] for t in (topics(out_dir) if found is None else found)) or "(none yet)"
+    if format == "band":
+        return BAND_TOPICS_PROMPT.format(count=count, pillars=", ".join(BAND_PILLARS), taken=taken)
     if format == "story":
         return STORY_TOPICS_PROMPT.format(count=count, pillars=", ".join(PILLARS), taken=taken)
     if format == "world":
@@ -991,7 +1119,7 @@ def llm_add(text: str, out_dir: Path | None = None) -> dict[str, Any]:
     added = []
     for p in found:
         try:
-            added.append(add_topic(p.question, p.pillar if p.pillar in PILLARS else "", out_dir, p.format or DEFAULT_FORMAT)["question"])
+            added.append(add_topic(p.question, p.pillar if p.pillar in (*PILLARS, *BAND_PILLARS) else "", out_dir, p.format or DEFAULT_FORMAT)["question"])
         except WriteError:
             continue
     return {"added": added, "skipped": len(found) - len(added)}
@@ -1053,6 +1181,7 @@ def start(kind: str, question: str = "", count: int = DEFAULT_COUNT, out_dir: Pa
         picked = next_topics(max(1, min(14, count)), out_dir, found)
     if not picked:
         raise WriteError("No topics left: add questions in the Topics tab" if format == "why" else
+                         "No bands left: add some in the Topics tab (💡 No idea? Get a prompt, or type a band)" if format == "band" else
                          "No story ideas left: add some in the Topics tab (New topics from your own LLM, Stories)" if format == "story" else
                          "No true-story ideas left: add some in the Topics tab (New topics from your own LLM, True stories)")
     session = {"kind": kind, "format": format, "topics": picked, "step": "write", "drafts": [], "problems": {}, "flagged": {},
@@ -1097,7 +1226,10 @@ def answer(kind: str, text: str, out_dir: Path | None = None) -> dict[str, Any]:
     parsed = llm_json.parse(stripped, Answer, WriteError)
     drafts = merge(session, parsed.scripts)
     session["drafts"] = drafts
-    if session_format(session) in ("story", "world"):
+    if session_format(session) == "band":
+        for d in drafts:
+            d["format"] = "band"
+    elif session_format(session) in ("story", "world"):
         for d in drafts:  # a true story keeps the look it came in (tags or world); one without a format gets today's
             looks = ("world", "tags") if session_format(session) == "world" else ()
             d["format"] = d["format"] if d.get("format") in looks else TRUE_LOOK if looks else session_format(session)
@@ -1254,7 +1386,8 @@ def view(kind: str, out_dir: Path | None = None, found: list[dict[str, Any]] | N
         n = 1 if kind == "one" else DEFAULT_COUNT
         return {"kind": kind, "step": "none", "topics": next_topics(n, out_dir, of_format(all_, "why")),
                 "stories": next_topics(n, out_dir, of_format(all_, "story")),
-                "worlds": next_topics(n, out_dir, of_format(all_, "world")), "formats": list(FORMATS)}
+                "worlds": next_topics(n, out_dir, of_format(all_, "world")),
+                "bands": next_topics(n, out_dir, of_format(all_, "band")), "formats": list(FORMATS)}
     prompt = {"write": write_prompt, "fix": fix_prompt, "facts": facts_prompt}.get(session["step"])
     return {"kind": kind, "format": session_format(session), "step": session["step"], "topics": session["topics"], "prompt": prompt(session) if prompt else "",
             "drafts": [{"title": d.get("title", ""), "words": pw_channel.words(pw_channel.narration(d)),
