@@ -78,8 +78,8 @@ def test_the_description_comment_and_category_are_the_bands(tmp_path, monkeypatc
     assert "Sources:" in text and "#music" in text and "financial" not in text.lower()
     assert pw_channel.comment_text(s).endswith(pw_channel.BAND_COMMENT)
 
-    def record(text, out, progress=lambda m: None, voice="", speed=0.0):
-        assert voice == pw_channel.BAND_VOICE and speed == 1.0
+    def record(text, out, progress=lambda m: None, voice="", speed=0.0, engine="", rate="", pause=0.0):
+        assert voice == pw_channel.BAND_VOICE and engine == "edge" and pause == pw_channel.BAND_PAUSE
         out.write_bytes(b"")
         return fake_words(s)
 
@@ -90,7 +90,9 @@ def test_the_description_comment_and_category_are_the_bands(tmp_path, monkeypatc
 
     monkeypatch.setattr(pw_channel, "record", record)
     monkeypatch.setattr(band_world, "render", render)
-    monkeypatch.setattr(band_world, "rock_bed", lambda seconds, out, seed=0: (out.write_bytes(b"m"), out)[1])
+    from modules import band_music
+
+    monkeypatch.setattr(band_music, "bed", lambda seconds, out, style, seed=0: (out.write_bytes(b"m"), out)[1])
     info = pw_channel.make(s, "k1", tmp_path)
     assert info["category"] == pw_channel.BAND_CATEGORY and "music" in info["hashtags"]
     assert info["title"].startswith("Oasis in ") and info["title"].endswith("Seconds")
@@ -155,3 +157,20 @@ def test_shots_props_poll_and_the_empty_mic_draw_and_pass_the_rules():
     sc[2]["poll"] = {"a": "X", "b": "Y"}
     found = " | ".join(pw_write.format_problems(s))
     assert "kind is one of" in found and "only the last scene" in found
+
+
+
+@pytest.mark.parametrize("style", ["anthem", "britpop", "heavy", "pop"])
+def test_every_music_style_is_made_in_code(style, tmp_path):
+    from modules import band_music
+
+    out = band_music.bed(6.0, tmp_path / "bed.mp3", style, seed=1)
+    assert out.is_file() and out.stat().st_size > 20_000
+
+
+def test_the_music_style_follows_the_script_then_the_pillar():
+    from modules import band_music
+
+    assert band_music.style_for({"music": "heavy", "pillar": "rock legends"}) == "heavy"
+    assert band_music.style_for({"pillar": "90s and 2000s"}) == "britpop"
+    assert band_music.style_for({}) == "anthem"

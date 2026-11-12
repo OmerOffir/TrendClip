@@ -28,7 +28,7 @@ KINDS = ("one", "week")
 FORMATS = ("band", "why", "story", "world")  # band: Encore Story's band life stories (modules.band_world, 2026-11-12);  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
 # a true money story in the full-colour world look (modules.pw_world, 2026-11-08)
 DEFAULT_FORMAT = "band"  # an idea pasted from the LLM without a format is a band story (Encore Story's only format since 2026-11-12)
-BAND_WORDS = (120, 170)  # 35-50 s at the band narrator's pace with long pauses cut (the Oasis sample: 146 words, 41 s)
+BAND_WORDS = (110, 155)  # Edge Brian at +22% reads about 2.9 words a second with pauses held: 40-55 s (Queen: 151 words, 53 s)
 BAND_SCENES = (6, 10)
 BAND_SCENE_WORDS = 30
 BAND_LINE = 28  # characters on the line card under the year

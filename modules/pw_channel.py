@@ -49,7 +49,10 @@ STORY_KINDS = ("cast", "step", "bars", "ask")
 WORLD_SECONDS = (40.0, 90.0)  # a true story in the world look (modules.pw_world)
 BAND_SECONDS = (30.0, 58.0)  # a band's life story (modules.band_world): under a minute, the channel's only format since 2026-11-12
 BAND_CATEGORY = "10"  # Music
-BAND_VOICE = "am_puck"  # Kokoro: the narrator of the Oasis sample the owner approved (2026-11-12); PW_BAND_VOICE overrides
+BAND_VOICE = "en-US-BrianMultilingualNeural"  # Edge: the owner found Kokoro am_puck robotic (2026-11-12); PW_BAND_VOICE overrides
+BAND_ENGINE = "edge"  # PW_BAND_ENGINE: edge | kokoro
+BAND_RATE = "+22%"  # Edge reads slowly; with pauses held to BAND_PAUSE a 150-word story is about 53 s
+BAND_PAUSE = 0.32  # seconds: room to breathe between sentences (0.2 made the narrator sound breathless)
 BAND_HASHTAGS = ("music", "bandhistory", "rockhistory", "shorts")
 BAND_COMMENT = "Which band should we do next? Name one below 👇"
 
@@ -721,11 +724,20 @@ def with_credits(text: str, spec: bw_render.Spec) -> str:
     return f"{text}\n\n{credits}" if credits else text
 
 
-def record(text: str, out: Path, progress=lambda m: None, voice: str = "", speed: float = 0.0) -> list[bw_render.Word]:
-    """The narration in the channel's voice: Kokoro (the hub's) when installed, else an Edge voice."""
+def record(text: str, out: Path, progress=lambda m: None, voice: str = "", speed: float = 0.0, engine: str = "",
+           rate: str = "", pause: float = 0.0) -> list[bw_render.Word]:
+    """The narration in the channel's voice: Kokoro (the hub's) when installed, else an Edge voice. `engine`, `voice`,
+    `rate` and `pause` override the settings (Encore Story's narrator, band_voice)."""
     from trendclip import kokoro_voice
 
-    if kokoro_voice.available() and setting("PW_TTS_ENGINE", "kokoro").lower() == "kokoro":
+    engine = (engine or setting("PW_TTS_ENGINE", "kokoro")).lower()
+    if engine == "edge":
+        from trendclip import voiceover
+
+        voice = voice or setting("PW_EDGE_VOICE", "en-US-EmmaNeural")
+        progress(f"Recording the narration ({voice})")
+        got = voiceover.synthesize(text, out, voice, rate or setting("PW_TTS_RATE", "+12%"))
+    elif kokoro_voice.available() and engine == "kokoro":
         voice = voice or setting("PW_TTS_VOICE", VOICE)
         progress(f"Recording the narration (Kokoro {voice})")
         got = kokoro_voice.synthesize(text, out, voice, speed or float(setting("PW_TTS_SPEED", "1.15")))
@@ -738,7 +750,7 @@ def record(text: str, out: Path, progress=lambda m: None, voice: str = "", speed
         got = voiceover.synthesize(text, out, voice, setting("PW_TTS_RATE", "+12%"))
     words = [bw_render.Word(w.text, float(w.start), float(w.end)) for w in got]
     try:
-        return tighten(out, words, float(setting("PW_PAUSE_MAX", str(PAUSE_MAX))))
+        return tighten(out, words, pause or float(setting("PW_PAUSE_MAX", str(PAUSE_MAX))))
     except Exception as err:  # noqa: BLE001 - the untouched narration still makes the video
         logger.warning("The narration's pauses were left as they are: %s", err)
         return words
@@ -840,7 +852,9 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     progress(0.05, "Recording the narration")
     if is_band(script):  # a band story: its own narrator, at a normal pace
         spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m),
-                        setting("PW_BAND_VOICE", BAND_VOICE), float(setting("PW_BAND_SPEED", "1.0")))
+                        setting("PW_BAND_VOICE", BAND_VOICE), float(setting("PW_BAND_SPEED", "1.0")),
+                        setting("PW_BAND_ENGINE", BAND_ENGINE), setting("PW_BAND_RATE", BAND_RATE),
+                        float(setting("PW_BAND_PAUSE", str(BAND_PAUSE))))
     else:
         spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m))
     if is_tags(script):  # the script names what hangs; where it hangs is filled in here
@@ -858,7 +872,9 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         spec.hold = 0.8
         script = band_world.titled(script, spec.duration)
         (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        music = band_world.rock_bed(spec.duration + 2, work / "music.mp3", seed=int(script["seed"]))
+        from modules import band_music  # an original track in the band's style (never a cover: covers get claimed)
+
+        music = band_music.bed(spec.duration + 2, work / "music.mp3", band_music.style_for(script), int(script["seed"]))
         volume = float(script.get("music_volume") or setting("PW_BAND_MUSIC_VOLUME", "0.15"))
         band_world.render(spec, script["band"], work / "voice.mp3", work / "video.mp4", music, volume,
                           lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
