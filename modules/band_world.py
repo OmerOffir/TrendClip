@@ -612,7 +612,7 @@ class BandRenderer:
             u = min(1.0, max(0.0, (t - it["at"]) / 0.75)) if it["at"] >= 0 else 1.0
             put(img, big_text(counted(it["text"], ease(u)), 150, it["color"]), (W / 2, it["y"]), scale=s, alpha=a)
         elif kind == "news":
-            put(img, news_sprite(it["text"]), (W / 2, 700), scale=s, alpha=a)
+            put(img, news_sprite(it["text"]), (W / 2, 690), scale=0.72 * s, alpha=a)
             if it["at"] >= 0 and t - it["at"] < POP * 1.6:
                 pass
         elif kind == "crack":
