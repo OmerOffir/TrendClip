@@ -168,9 +168,9 @@ def test_every_music_style_is_made_in_code(style, tmp_path):
     assert out.is_file() and out.stat().st_size > 20_000
 
 
-def test_the_music_style_follows_the_script_then_the_pillar():
+def test_every_video_gets_the_anthem_unless_a_script_asks():
     from modules import band_music
 
     assert band_music.style_for({"music": "heavy", "pillar": "rock legends"}) == "heavy"
-    assert band_music.style_for({"pillar": "90s and 2000s"}) == "britpop"
+    assert band_music.style_for({"pillar": "90s and 2000s"}) == "anthem"
     assert band_music.style_for({}) == "anthem"

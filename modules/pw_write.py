@@ -317,8 +317,6 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   A look's keys: {looks}; "extras": a list of {"|".join(band_world.EXTRAS)}.
   "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
   The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
-"music": anthem (70s-80s arena rock) | britpop (90s guitar pop) | heavy (metal, punk) | pop: the style of our own
-  backing track, the closest to the band's sound (optional: the pillar picks one)
 "thumbnail": {{"text": the hook for the picture people click (the whole band on stage under the name), 2-5 words,
   capitals, {BAND_LINE} characters at most, a question or a shock: "TOO LONG FOR RADIO?", "BROTHERS AT WAR"}}
 A scene's keys (all optional except kind and narration):

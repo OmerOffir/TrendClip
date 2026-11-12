@@ -53,10 +53,13 @@ def chord_notes(root: str, minor: int, base: int = 48) -> list[int]:
     return [r, r + (3 if minor else 4), r + 7]
 
 
+DEFAULT_STYLE = "anthem"  # the owner picked it out of the four for every video (2026-11-12)
+
+
 def style_for(script: dict) -> str:
-    """The script's "music" if it names a style, else the pillar's, else anthem."""
+    """The script's "music" if someone set a style by hand, else anthem (PILLAR_STYLE is kept for a later test)."""
     asked = str(script.get("music") or "").lower()
-    return asked if asked in STYLES else PILLAR_STYLE.get(str(script.get("pillar") or ""), "anthem")
+    return asked if asked in STYLES else DEFAULT_STYLE
 
 
 # --------------------------------------------------------------------------- the instruments
