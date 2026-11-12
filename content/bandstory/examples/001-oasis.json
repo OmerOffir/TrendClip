@@ -33,7 +33,7 @@
      "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets."},
     {"kind": "band", "set": "dark", "year": "2009", "line": "BACKSTAGE IN PARIS",
      "members": [{"name": "Liam", "expr": "angry", "play": "none", "pose": "point"}, {"name": "Noel", "expr": "angry", "play": "none", "pose": "cross"}],
-     "crack": {"cue": "fight"}, "news": {"text": "OASIS SPLIT", "cue": "over"},
+     "crack": {"cue": "fight"}, "news": {"text": "OASIS SPLIT", "cue": "walks"},
      "narration": "But the brothers never stop fighting. In 2009, one last fight backstage in Paris. Noel walks out. Oasis is over."},
     {"kind": "band", "set": "street", "year": "15 YEARS", "line": "NOT A WORD",
      "members": [{"name": "Liam", "expr": "sad", "play": "none"}, {"name": "Noel", "expr": "sad", "play": "none"}],

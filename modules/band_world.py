@@ -821,7 +821,7 @@ def render(spec: Spec, band: dict, voice: Path, out: Path, music: Path | None, m
         spec.look = look
 
 
-def make_sample(script_path: Path, work: Path, voice: str = "am_puck", speed: float = 1.12) -> Path:
+def make_sample(script_path: Path, work: Path, voice: str = "am_puck", speed: float = 1.0) -> Path:
     """Draw a band script into `work`: voice.mp3, music.mp3, video.mp4, thumb.jpg."""
     from trendclip import kokoro_voice
 
