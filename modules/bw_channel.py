@@ -45,7 +45,7 @@ SHORT_PACE = 1.12  # a Short's voice (narrator and mascot) this much quicker tha
 LOOP_HOLD = 1.4  # a Short without the outro runs on this long after its last word (a ding, the music fading out) and
 # loops; 0.35 s felt cut off (the owner, 2026-11-05)
 # an attempts Short (modules.bw_whatif, the war map) is a list of fast mini-stories: 70-90 s, like the 6M-view one
-LONGER = {"attempts": (50.0, 95.0)}
+LONGER = {"attempts": (50.0, 95.0), "balls": (10.0, 60.0)}  # the talking flag balls answer one question fast (modules.bw_balls)
 TOPIC_TRIES = 3  # topics tried in one job before giving up (a topic without two sources is skipped)
 DEFAULT_VOICE = "am_michael"
 PANDA_VOICE = "af_bella"  # the mascot (BW_PANDA_VOICE), pitched up by BW_PANDA_PITCH
@@ -745,9 +745,13 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     script.setdefault("seed", random.randrange(1, 10_000))
     script.setdefault("look", setting("BW_LOOK", "satellite"))
     script.setdefault("brand", brand_on())
-    from modules import bw_brand
+    from modules import bw_balls, bw_brand
 
-    if outro_on():
+    balls = bw_balls.is_balls(script)  # the countries as talking flag balls: its own voices and its own drawing
+    if balls:
+        script = {**script, "kind": "balls", "hold": LOOP_HOLD,
+                  "narration": " ".join(" ".join(str(s.get("narration") or "").split()) for s in script["scenes"])}
+    elif outro_on():
         script = bw_brand.add_outro(script)
     else:  # no subscribe outro: the Short ends on its last line and loops (a third of the viewers left at the outro, 2026-11-05)
         script = {**script, "hold": LOOP_HOLD}
@@ -755,6 +759,8 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     progress(0.1, "Recording the narration")
     if voice:
         words = voice(script["narration"], work / "voice.mp3", lambda m: progress(0.1, m))
+    elif balls:
+        words = bw_balls.record(script, work / "voice.mp3", lambda m: progress(0.1, m))
     else:
         words = record_script(script, work / "voice.mp3", lambda m: progress(0.1, m), pace=float(setting("BW_SHORT_PACE", str(SHORT_PACE))))
     spec = bw_render.spec_from_dict(script, words)
@@ -766,9 +772,12 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
     spec.sfx = sfx_on()
     spec.moves = moves_on()
     progress(0.15, "Placing the maps")
-    if missing := bw_render.prepare(spec):
+    if balls:
+        spec.cast = script.get("cast") or {}
+        render = render or bw_balls.render
+    elif missing := bw_render.prepare(spec):
         raise ChannelError("Places not found on the map: " + ", ".join(missing))
-    if rewind_on():  # the trip back in time, with taste: a real stretch in the past, spaced out (modules.bw_era)
+    if rewind_on() and not balls:  # the trip back in time, with taste: a real stretch in the past, spaced out (modules.bw_era)
         from modules import bw_era
 
         spec.rewind = bw_era.fits(spec, [bool(v.get("rewind")) for v in videos(out_dir, bw_era.SPACING)])

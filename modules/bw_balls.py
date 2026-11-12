@@ -45,11 +45,11 @@ OCEAN, LAND, EDGE = (28, 62, 100), (233, 222, 197), (150, 136, 112)
 FOCUS, SHOWN = (236, 92, 54), (250, 200, 62)
 P = 16  # the world picture's pixels per degree
 PAD_X, PAD_Y = 90, 12  # degrees of sea around it, so a view near the edge has something to show
-MAP_C = (540, 540)  # where the map's subject sits on the screen
-BALL_Y, BALL_R = 1185, 176
+MAP_C = (540, 590)  # where the map's subject sits on the screen
+BALL_Y, BALL_R = 1235, 176
 HOST_X, HOST_R = 205, 140
 STAGE_X = 590
-CAPTION_Y = 895
+CAPTION_Y = 940
 EXPRS = ("neutral", "happy", "smug", "angry", "sad", "shocked", "suspicious")
 WORDS = (18, 110)  # 12-50 s
 LINE_WORDS = 16
@@ -430,7 +430,7 @@ def stage_shade() -> Image.Image:
     """The dark floor the balls stand on, and a little dark at the top under the banner."""
     a = np.zeros((H, W), dtype=np.float32)
     ys = np.arange(H, dtype=np.float32)[:, None]
-    a += np.clip((ys - 760) / 420, 0, 1) * 215
+    a += np.clip((ys - 800) / 420, 0, 1) * 215
     a += np.clip((260 - ys) / 260, 0, 1) * 90
     im = Image.new("RGBA", (W, H), (10, 14, 28, 255))
     im.putalpha(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)))
@@ -569,7 +569,7 @@ class BallRenderer:
         img = img.convert("RGBA")
         img.alpha_composite(stage_shade())
         if self.banner is not None:
-            img.alpha_composite(self.banner, ((W - self.banner.width) // 2, 118))
+            img.alpha_composite(self.banner, ((W - self.banner.width) // 2, 132))
         bd = tn["badge"] or (self.turns[tn["i"] - 1]["badge"] if tn["i"] and tn["who"] == HOST and not tn["map"] else None)
         if bd and t >= bd["at"]:
             owner = tn if tn["badge"] else self.turns[tn["i"] - 1]
@@ -579,7 +579,7 @@ class BallRenderer:
             last = max([at for _, at in owner["show"] if t >= at], default=bd["at"])
             s = back((t - bd["at"]) / 0.3) * (1 + 0.12 * max(0.0, 1 - (t - last) / 0.14))
             spr = spr.resize((max(2, int(spr.width * s)), max(2, int(spr.height * s))), Image.BILINEAR)
-            img.alpha_composite(spr, (int(852 - spr.width / 2), int(452 - spr.height / 2)))
+            img.alpha_composite(spr, (int(872 - spr.width / 2), int(520 - spr.height / 2)))
         self.draw_cast(img, tn, t)
         group = next((g for g in self.groups if g[0].start - 0.04 <= t < g[-1].end + 0.22), None)
         if group:

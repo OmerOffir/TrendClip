@@ -2864,3 +2864,39 @@ def test_no_arrival_flag_where_todays_flag_names_the_wrong_owner(world, fx_offli
     fx_offline.FxRenderer(spec)
     arrived = [i for i, s in enumerate(spec.scenes) if any(e.opts.get("_arrival") for e in s.elements)]
     assert arrived == [2]  # only the jump back to today's Minnesota
+
+
+def test_a_balls_script_is_checked_timed_by_its_turns_and_drawn(monkeypatch):
+    """The talking flag balls (2026-11-12): the example passes its rules, a line with too many words or an unknown
+    country is sent back, every line's time comes from the recorded turns, and a frame shows the banner, the host
+    and the speaker's ball over the map."""
+    import json
+
+    from PIL import Image
+
+    from modules import bw_balls, bw_fx, bw_render
+
+    monkeypatch.setattr(bw_fx, "flag_image", lambda name: Image.new("RGB", (300, 200), (200, 30, 40)))
+    script = json.loads((bw_channel.PROJECT_ROOT / "content/borderlinewhy/examples/balls-most-neighbors.json").read_text())
+    assert bw_balls.is_balls(script) and bw_balls.problems(script) == []
+    bad = json.loads(json.dumps(script))
+    bad["scenes"][1]["narration"] = "word " * 20
+    bad["scenes"][2]["show"] = ["Atlantis"]
+    bad["scenes"][-1]["narration"] = "Bye."
+    found = " | ".join(bw_balls.problems(bad))
+    assert "20 words" in found and "Atlantis is not a country" in found and "asks the viewer" in found
+
+    cast = bw_balls.voices(script)
+    assert set(cast) == {"Germany", "Brazil", "Russia", "China"} and len({v for v, _ in cast.values()}) == 4
+
+    words, turns = bw_balls.fake_words(script)
+    spec = bw_render.spec_from_dict(script, words)
+    bw_balls.set_times(spec, turns)
+    assert spec.scenes[0].start == 0 and all(a.end == b.start for a, b in zip(spec.scenes, spec.scenes[1:]))
+    r = bw_balls.BallRenderer(spec)
+    russia = r.turns[3]
+    assert russia["who"] == "Russia" and len(russia["show"]) == 14 and russia["badge"]["land"] == russia["show"][-1][1]
+    assert any(name == "pop" for _, name, _ in spec.sfx_extra)
+    first, later = r.frame(0.0), r.frame((russia["start"] + russia["end"]) / 2)
+    assert first.size == (bw_render.W, bw_render.H) and len(first.getcolors(1 << 24)) > 200
+    assert first.tobytes() != later.tobytes()
