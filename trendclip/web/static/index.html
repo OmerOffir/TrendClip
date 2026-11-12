@@ -345,6 +345,17 @@
         <span class="hint" id="bwCountryStatus"></span>
       </form>
     </section>
+    <section class="card" id="bwBalls">
+      <div class="card-head">
+        <div>
+          <h2>🌍 Talking flag balls (your own LLM)</h2>
+          <span class="hint">The countries as balls that answer one question ("Who has the most islands?"), with the red panda as the host. Get the prompt for a batch, paste it into any LLM, paste its JSON back; then a fact-check prompt (better in a second LLM). Scripts that pass both go to the queue, and the balls slot makes one a day</span>
+        </div>
+        <span class="hint" id="bwBallsStatus"></span>
+      </div>
+      <div id="bwBallsError" class="banner banner-error" hidden></div>
+      <div class="bw-w" id="bwBallsSession"></div>
+    </section>
     <section class="card" id="bwWhatIf">
       <div class="card-head">
         <div>
@@ -1261,6 +1272,7 @@
   <script src="/static/channelhub.js"></script>
   <script src="/static/bwmanual.js"></script>
   <script src="/static/bwwhatif.js"></script>
+  <script src="/static/bwballs.js"></script>
   <script src="/static/bwweek.js"></script>
   <script src="/static/bwlong.js"></script>
   <script src="/static/gamermanual.js"></script>

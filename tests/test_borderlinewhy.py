@@ -2924,3 +2924,41 @@ def test_the_balls_slot_takes_only_balls_scripts_and_the_others_leave_them(tmp_p
     assert origin == "queue:a-date-line.json"
     monkeypatch.setenv("BW_BALLS_SLOT", "21:00")  # not one of the slots: no slot is kept
     assert bw_channel.wants_balls(night) is None
+
+
+def test_balls_scripts_from_the_owners_llm_pass_two_checks_before_the_queue(tmp_path):
+    """The dashboard's balls card (2026-11-12): the prompt lists what was already made, a broken script comes back
+    with a fix prompt, a passing batch gets the fact-check prompt, a flag sends it back, and only a batch that
+    passed both lands in the queue as balls scripts."""
+    from modules import bw_balls_write as w
+
+    example = json.loads(w.EXAMPLE.read_text())
+    assert w.write_problems(example) == []
+    v = w.start(1, "Which country has the most volcanoes?", tmp_path)
+    assert v["step"] == "write" and '"format": "balls"' in v["prompt"] and "most volcanoes" in v["prompt"]
+    assert "Which Country Has the Most Neighbors?" in v["prompt"]  # already made: not to be repeated
+
+    fresh = {**example, "title": "Which Country Borders the Most Countries in Europe?"}
+    bad = json.loads(json.dumps(fresh))
+    bad["scenes"][3]["show"] = bad["scenes"][3]["show"][:12]  # the badge says 14
+    bad["scenes"][1]["narration"] = "Me! I have 9."
+    bad.pop("claims")
+    v = w.answer(json.dumps({"scripts": [bad]}), tmp_path)
+    found = " | ".join(v["drafts"][0]["problems"])
+    assert v["step"] == "fix" and "12 countries light up" in found and "digits" in found and "no claims" in found
+    assert "broke these rules" in v["prompt"]
+    assert w.answer(json.dumps({"scripts": [example]}), tmp_path)["drafts"][0]["problems"] == ["this question was already made (or is twice in the answer)"]
+
+    v = w.answer(json.dumps(fresh), tmp_path)  # one script pasted on its own
+    assert v["step"] == "facts" and "strict fact checker" in v["prompt"] and "Germany has 9" in v["prompt"]
+    with pytest.raises(w.WriteError):
+        w.queue(tmp_path)
+    v = w.facts(json.dumps({"flags": [{"script": 1, "claim": "Brazil has 10 neighbors", "why": "check it"}]}), tmp_path)
+    assert v["step"] == "fix" and v["flagged"] and "fact checker could not confirm" in v["prompt"]
+    w.answer(json.dumps(fresh), tmp_path)
+    assert w.facts('{"flags": []}', tmp_path)["step"] == "ready"
+    done = w.queue(tmp_path)
+    assert done["step"] == "none" and len(done["queued"]) == 1 and done["waiting"] == 1
+    saved = json.loads((bw_channel.queue_dir(tmp_path) / done["queued"][0]).read_text())
+    assert saved["format"] == "balls" and all(s["kind"] == "balls" for s in saved["scenes"])
+    assert fresh["title"] in w.made(tmp_path)

@@ -467,6 +467,54 @@ def add_country(req: CountryRequest) -> dict[str, Any]:
         raise HTTPException(status_code=502, detail=f"Wikipedia did not answer: {err}") from err
 
 
+# ---- Talking flag balls: your LLM writes a batch of balls Shorts (modules/bw_balls_write.py)
+
+
+class BallsStart(BaseModel):
+    count: int = Field(default=7, ge=1, le=10)
+    ideas: str = Field(default="", max_length=2000)
+
+
+class BallsText(BaseModel):
+    text: str = Field(default="", max_length=400_000)
+
+
+def _balls(fn, *args):
+    from modules import bw_balls_write
+
+    try:
+        return fn(*args)
+    except bw_balls_write.WriteError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.get("/balls")
+def balls_view() -> dict[str, Any]:
+    from modules import bw_balls_write
+
+    return bw_balls_write.view()
+
+
+@router.post("/balls")
+def balls_start(req: BallsStart) -> dict[str, Any]:
+    from modules import bw_balls_write
+
+    return _balls(bw_balls_write.start, req.count, req.ideas)
+
+
+@router.post("/balls/{step}")
+def balls_step(step: str, req: BallsText | None = None) -> dict[str, Any]:
+    """answer / facts take the pasted text; skip-facts, queue and drop take nothing."""
+    from modules import bw_balls_write
+
+    text = req.text if req else ""
+    steps = {"answer": lambda: bw_balls_write.answer(text), "facts": lambda: bw_balls_write.facts(text),
+             "skip-facts": bw_balls_write.skip_facts, "queue": bw_balls_write.queue, "drop": bw_balls_write.drop}
+    if step not in steps:
+        raise HTTPException(status_code=404, detail="No such step")
+    return _balls(steps[step])
+
+
 # ---- What if: your LLM writes a "What if ...?" Short (modules/bw_whatif.py)
 
 
