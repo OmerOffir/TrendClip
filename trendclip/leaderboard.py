@@ -762,6 +762,10 @@ def about(v: Video) -> str:
     if re.search(r"Pause To Get Your .*Axe", v.title):
         return (f"{none}\nA pause game: the viewer pauses on a random axe and a wall and comments how long the axe "
                 f"takes to break out. Axe rarity: {tiers(spin.AXES)}. On wood the golden axe is the fastest.")
+    if m := re.search(r"Pause To Get Your .*\b(Pet|Armor|Food)\b", v.title):
+        kind = m.group(1).lower()
+        return (f"{none}\nA pause game: the viewer pauses on a random {kind} card and comments which one they got. "
+                f"Rarity: {tiers({n: (t,) for n, t in spin.PRIZES[kind]['items'].items()})}.")
     if re.search(r"Pause To Get Your .*Block", v.title):
         return (f"{none}\nA pause game: the viewer pauses on a random block and comments which one they got. "
                 f"Block rarity: {tiers(spin.BLOCKS)}.")

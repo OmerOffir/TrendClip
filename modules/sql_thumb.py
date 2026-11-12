@@ -28,7 +28,7 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 W, H = 1080, 1920
 YELLOW, RED, WHITE, BLACK = (255, 214, 0), (226, 38, 38), (255, 255, 255), (0, 0, 0)
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-FOLDERS = ("reveal", "weapon", "axe", "spin", "dungeon")
+FOLDERS = ("reveal", "weapon", "axe", "spin", "dungeon", "prize-armor", "prize-food")
 DUNGEON_BOSS = "Wither"  # trendclip.dungeon's final room
 
 
@@ -91,6 +91,11 @@ def _plan(info: dict) -> dict | None:
         return {"kind": "chest", "text": "WHAT'S INSIDE?"}
     if re.search(r"get your .*block", low):
         return {"kind": "blocks", "text": "WHAT DID YOU GET?"}
+    if m := re.search(r"get your .*\b(pet|armor|food)\b", low):
+        from trendclip import spin
+
+        prize = spin.PRIZES[m.group(1)]
+        return {"kind": "blocks", "text": "WHAT DID YOU GET?", "hero": prize["hero"], "around": prize["around"]}
     if "lava" in low:
         return {"kind": "lava", "text": "CROSS THE LAVA?", "hearts": hearts}
     return None
@@ -122,7 +127,7 @@ def available(scene: dict | None) -> bool:
     if scene["kind"] == "duel":
         return picture("Diamond Sword") is not None and picture("Netherite Axe") is not None
     if scene["kind"] == "blocks":
-        return picture("Netherite Block") is not None
+        return picture(scene.get("hero", "Netherite Block")) is not None
     return True
 
 
@@ -508,16 +513,16 @@ def draw_blocks(scene: dict, base: Image.Image) -> Image.Image:
     img = backdrop(base, (255, 196, 0), centre)
     rays(img, centre, (255, 220, 80), alpha=90)
     rng = random.Random(9)
-    around = [("Dirt", (-360, -380)), ("Obsidian", (370, -340)), ("Diamond Ore", (-400, 120)),
-              ("Gold Block", (390, 170))]
+    names = scene.get("around") or ["Dirt", "Obsidian", "Diamond Ore", "Gold Block"]
+    around = list(zip(names, [(-360, -380), (370, -340), (-400, 120), (390, 170)]))
     for name, (dx, dy) in around:
         pic = picture(name)
         if pic is None:
             continue
-        colour = spin.TIERS[spin.BLOCKS[name][0]][0]
+        colour = spin.TIERS[spin.tier_of(name)][0]
         cube = scaled(pic, 250, 250).rotate(rng.uniform(-25, 25), expand=True, resample=Image.BICUBIC)
         paste_glowing(img, cube, (centre[0] + dx - cube.width // 2, centre[1] + dy - cube.height // 2), colour, 22, 1.5)
-    hero = scaled(picture("Netherite Block"), 520, 520)
+    hero = scaled(picture(scene.get("hero", "Netherite Block")), 520, 520)
     paste_glowing(img, hero, (centre[0] - hero.width // 2, centre[1] - hero.height // 2), (255, 196, 0), 50, 2.0)
     d = ImageDraw.Draw(img)
     f = font(70)

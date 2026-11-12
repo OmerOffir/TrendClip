@@ -495,6 +495,9 @@
   // The Create tab's game choice: the ones with no question need no Gemini words, so the button says what it makes.
   const GAMER_BUTTON = { "catch the zombie": "🧟 Make a Catch the Zombie level",
     "guess the picture": "🧱 Make a Guess the Picture level", "pause to get your block": "⏸️ Make a Pause to Get Your Block",
+    "pause to get your pet": "🐺 Make a Pause to Get Your Pet",
+    "pause to get your armor": "🛡️ Make a Pause to Get Your Armor",
+    "pause to get your food": "🍗 Make a Pause to Get Your Food",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };

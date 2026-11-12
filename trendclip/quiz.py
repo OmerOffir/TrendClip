@@ -1337,6 +1337,10 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     if spin.wanted(notes) and spin.axe_wanted(notes) and spin.axe_catalog(settings):  # Pause to Get Your Axe
         progress(None, "A Pause to Get Your Axe Short")
         return spin.script(settings, game, format=format, kind="axe")
+    if spin.wanted(notes) and (kind := spin.prize_wanted(notes)) \
+            and spin.prize_catalog(settings, kind.removeprefix(spin.PRIZE)):
+        progress(None, f"A Pause to Get Your {kind.removeprefix(spin.PRIZE).title()} Short")  # pet / armor / food, the Block Short's shape
+        return spin.script(settings, game, format=format, kind=kind)
     if spin.wanted(notes) and spin.catalog(settings):  # Pause to Get Your Block: asked for in the notes only
         progress(None, "A Pause to Get Your Block Short")
         return spin.script(settings, game, format=format)

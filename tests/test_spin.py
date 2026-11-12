@@ -239,3 +239,41 @@ def test_every_dungeon_part_ends_on_share_and_follow():
         text = dungeon.NARRATION[kind].format(game="Minecraft", n=part, total=8, what=what, article="A",
                                               next=part + 1, follow="Follow.", **spin.MYTHIC_FILL)
         assert "send this to a friend" in text and text.endswith("Follow.")
+
+
+def prizes(s: Settings, kind: str) -> None:
+    folder = spin.prize_dir(s, kind)
+    folder.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for i, (name, _) in enumerate(spin.PRIZES[kind]["items"].items()):
+        Image.new("RGBA", (16, 16), (8 * i, 100, 200, 255)).save(folder / f"{i}.png")
+        entries.append({"name": name, "kind": kind, "file": f"{i}.png", "source": "x"})
+    (folder / "catalog.json").write_text(json.dumps(entries))
+
+
+def test_a_prize_short_keeps_the_block_shorts_shape(tmp_path):
+    s = settings(tmp_path)
+    for kind in spin.PRIZES:
+        prizes(s, kind)
+        result = spin.script(s, "Minecraft", kind=spin.PRIZE + kind)
+        assert result.spin and result.answer == ""
+        assert result.title.startswith(f"Pause To Get Your Minecraft {kind.title()} ")
+        assert f"The {kind} you stop on is yours." in result.script and f"Comment your {kind}." in result.script
+        assert spin.MYTHIC_MARK not in result.script  # the winner had none: one prize, one word to comment
+        assert spin.kind_of(result.script) == spin.PRIZE + kind and not spin.tall(result.script)
+        assert spin.prize_wanted(f"pause to get your {kind}") == spin.PRIZE + kind
+        spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
+        [overlay] = spin.plan(s, spoken, seed=kind, kind=spin.kind_of(result.script), script_text=result.script)
+        assert overlay.start == 0 and overlay.center == spin.CENTER
+    assert spin.kind_of(SPOKEN) == "block" and spin.prize_wanted("pause to get your block") == ""
+    assert spin.prize_wanted("pause to get your mob") == ""  # that is arena's mob-vs-boss
+
+
+def test_every_prize_set_has_every_rarity_and_a_thumbnail_scene():
+    from modules import sql_thumb
+
+    for kind, prize in spin.PRIZES.items():
+        assert set(prize["items"].values()) == set(spin.TIERS)
+        assert prize["hero"] in prize["items"] and set(prize["around"]) <= set(prize["items"])
+        scene = sql_thumb.plan({"title": f"Pause To Get Your Minecraft {kind.title()} {prize['emoji']}"})
+        assert scene["kind"] == "blocks" and scene["hero"] == prize["hero"]

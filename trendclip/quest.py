@@ -700,6 +700,7 @@ class Stop:
     ALONE: dict = {}  # the sentences that change when the stop is alone, by role
     solo = False  # drawn alone: no road, no next stop
     PLACE, RULE, LOOK, V, START = "", "", HERO_LOOK, 0, HEARTS  # what changes from Short to Short (_varied)
+    EARLY = False  # the cards flick from frame 0, not from "pause": the Short's first stop (the Block Short's pace)
 
     @classmethod
     def lose(cls, hearts: int) -> int:
@@ -744,7 +745,8 @@ class Stop:
         self.rng = random.Random(f"{seed}{self.N}")
         self.all = self.options()
         self.pick = self.mine()
-        self.deck = _deck(self.all, int((self.mine_at - self.pause) * FPS / HOLD) + 2, self.rng)
+        self.flick = 0.0 if self.EARLY else self.pause
+        self.deck = _deck(self.all, int((self.mine_at - self.flick) * FPS / HOLD) + 2, self.rng)
         self.hits: list[float] = []
         self.hurts: list[tuple[float, int]] = []
         self.quakes: list[float] = []
@@ -786,10 +788,10 @@ class Stop:
 
     # ---- the flow
     def option(self, t: float) -> Option | None:
-        if t < self.pause or t >= self.go:
+        if t < self.flick or t >= self.go:
             return None
         if t < self.mine_at:
-            return self.deck[int((t - self.pause) * FPS / HOLD) % len(self.deck)]
+            return self.deck[int((t - self.flick) * FPS / HOLD) % len(self.deck)]
         return self.pick
 
     def scroll(self, t: float) -> float:
@@ -1980,6 +1982,8 @@ def _a(word: str) -> str:
 class Loot(Village):
     """Pause one: the chest."""
 
+    EARLY = True
+
     N, NAME, NEXT, TAG, COUNT, FOE = 1, "THE CHEST", "", "PAUSE 1 OF 2", "", "Zombie"
 
     @classmethod
@@ -2138,6 +2142,8 @@ class Ambush(Forest):
 class Duel(Ambush):
     """The fight alone, as a Short of its own: ten hearts, one pause, a mob that changes ("fight:<mob>")."""
 
+    EARLY = True
+
     N, TAG, AFTER = 1, "PAUSE CHALLENGE", HEARTS
 
     @classmethod
@@ -2190,6 +2196,8 @@ class Pet(Ambush):
     """The mob Short, drawn ("pet:<boss>"): a boss comes, and the mob you stop on fights it for you, hit for hit,
     your mob first (arena.pet_fight: the game's health, armour and damage). It wins: no hearts lost. It falls: two.
     It never attacks: three."""
+
+    EARLY = True
 
     N, TAG, KIND, AFTER = 1, "PAUSE CHALLENGE", "MOB", HEARTS
     ZERO = ("YOUR MOB WINS!", GREEN)
@@ -2368,6 +2376,8 @@ class Wall(Cave):
     go by the seconds a block takes: a quarter of a second or less, none; up to half a second, one; up to a second,
     two; slower, three. So the wall matters: pumpkins are soft and three axes get through unhurt, a wall of chests
     costs every axe a heart."""
+
+    EARLY = True
 
     N, NAME, NEXT, KIND, TAG, BLOCK = 1, "THE WALL", "", "AXE", "PAUSE CHALLENGE", "Oak Log"
     DARE = "BREAK THE WALL?"
@@ -2580,8 +2590,16 @@ class Quest:
     def hud(self, t: float, stop: Stop, d) -> None:
         d.rectangle([0, 0, W, 268], fill=(16, 18, 26, 255))
         d.rectangle([0, 268, W, 276], fill=(255, 196, 0, 255))
-        head = f"{stop.TAG}  ·  {stop.NAME}" if self.only else f"STOP {stop.N} OF 7  ·  {stop.NAME}"
-        d.text((W // 2, 150), head, font=self.art.head, fill=(255, 255, 255), anchor="mm")
+        local = t - self.starts[self.stops.index(stop)]
+        if stop.EARLY and local < stop.pause:  # the cards already flick: say so from frame 0, as the Block Short
+            pulse = int(5 * abs(math.sin(local * 6)))
+            d.rectangle([300 - pulse, 70 - pulse, W - 300 + pulse, 150 + pulse], fill=(255, 222, 0, 255),
+                        outline=(10, 10, 14, 255), width=6)
+            d.text((W // 2, 111), "PAUSE NOW!", font=self.art.fit(d, "PAUSE NOW!", 440, "Anton-Regular", 66),
+                   fill=(10, 10, 14), anchor="mm")
+        else:
+            head = f"{stop.TAG}  ·  {stop.NAME}" if self.only else f"STOP {stop.N} OF 7  ·  {stop.NAME}"
+            d.text((W // 2, 150), head, font=self.art.head, fill=(255, 255, 255), anchor="mm")
         now = self.hearts(t)
         fresh = [(x, a, b) for x, a, b in self.changes if 0 <= t - x < 0.35]
         for i in range(HEARTS):

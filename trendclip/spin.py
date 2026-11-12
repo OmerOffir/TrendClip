@@ -67,6 +67,106 @@ DESCRIPTION = "Pause the video: the {game} block you stop on is yours. Comment w
 HASHTAGS = ["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#minecraftblocks"]
 
 
+# --------------------------------------------------------------------------- more prizes, the Block Short's shape
+# The Block Short (2026-11-09) passed 5,000 views and 26 comments per 1,000 while every busier pause Short stopped
+# near 1,000 with 6-11: one prize readable at a glance, cards from frame 0 and a one-word comment. These sets keep
+# that shape exactly and change only what you get (the owner, 2026-11-12). Same narration, no mythic card.
+
+PRIZES = {
+    "pet": {  # the game's mob renders (reveal's library): the mob you stop on is your pet
+        "items": {
+            "Chicken": "common", "Pig": "common", "Cow": "common", "Sheep": "common", "Rabbit": "common",
+            "Squid": "common", "Bat": "common", "Silverfish": "common", "Slime": "common", "Turtle": "common",
+            "Wolf": "rare", "Cat": "rare", "Fox": "rare", "Parrot": "rare", "Horse": "rare", "Llama": "rare",
+            "Bee": "rare", "Frog": "rare", "Goat": "rare", "Creeper": "rare",
+            "Axolotl": "epic", "Panda": "epic", "Allay": "epic", "Sniffer": "epic", "Polar Bear": "epic",
+            "Iron Golem": "epic", "Dolphin": "epic", "Camel": "epic",
+            "Warden": "legendary", "Ender Dragon": "legendary", "Wither": "legendary",
+        },
+        "emoji": "🐺", "around": ["Chicken", "Wolf", "Axolotl", "Panda"], "hero": "Ender Dragon",
+    },
+    "armor": {  # inventory icons
+        "items": {
+            "Leather Cap": "common", "Leather Tunic": "common", "Leather Pants": "common", "Leather Boots": "common",
+            "Golden Helmet": "common", "Golden Chestplate": "common", "Golden Leggings": "common",
+            "Golden Boots": "common",
+            "Chainmail Helmet": "rare", "Chainmail Chestplate": "rare", "Iron Helmet": "rare",
+            "Iron Chestplate": "rare", "Iron Leggings": "rare", "Iron Boots": "rare", "Turtle Shell": "rare",
+            "Diamond Helmet": "epic", "Diamond Chestplate": "epic", "Diamond Leggings": "epic",
+            "Diamond Boots": "epic", "Shield": "epic",
+            "Netherite Helmet": "legendary", "Netherite Chestplate": "legendary", "Elytra": "legendary",
+        },
+        "emoji": "🛡️", "around": ["Leather Tunic", "Iron Helmet", "Diamond Boots", "Elytra"],
+        "hero": "Netherite Chestplate",
+    },
+    "food": {  # inventory icons
+        "items": {
+            "Rotten Flesh": "common", "Spider Eye": "common", "Poisonous Potato": "common", "Raw Cod": "common",
+            "Apple": "common", "Carrot": "common", "Potato": "common", "Melon Slice": "common",
+            "Cookie": "common", "Bread": "common",
+            "Steak": "rare", "Cooked Porkchop": "rare", "Baked Potato": "rare", "Cooked Chicken": "rare",
+            "Pumpkin Pie": "rare", "Cake": "rare",
+            "Golden Carrot": "epic", "Honey Bottle": "epic", "Rabbit Stew": "epic", "Glow Berries": "epic",
+            "Golden Apple": "legendary", "Enchanted Golden Apple": "legendary",
+        },
+        "emoji": "🍗", "around": ["Rotten Flesh", "Bread", "Golden Carrot", "Steak"],
+        "hero": "Enchanted Golden Apple",
+    },
+}
+PRIZE = "prize-"  # a prize Short's kind: "prize-pet" (arena has its own "pet": your mob against a boss)
+PRIZE_MARK = re.compile(r"The (\w+) you stop on is yours\.")
+PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. The {noun} you stop on is yours. Grey is common. "
+                "Blue is rare. Purple is epic. Gold is legendary. Got gold? Comment your {noun}. Then send this to "
+                "a friend, and see who gets the better one.")
+PRIZE_TITLE = "Pause To Get Your {game} {Noun} {emoji}"
+PRIZE_PINNED = ("What {noun} did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better "
+                "one.")
+PRIZE_DESCRIPTION = ("Pause the video: the {game} {noun} you stop on is yours. Comment what you got and challenge a "
+                     "friend.")
+
+
+def prize_wanted(notes: str = "") -> str:
+    """The prize set asked for in the Create tab's notes ("pause to get your pet"), "" when none."""
+    low = (notes or "").lower()
+    return next((PRIZE + k for k in PRIZES if f"get your {k}" in low), "")
+
+
+def prize_dir(settings: Settings, kind: str) -> Path:
+    from . import reveal
+
+    return reveal.library_dir(settings) if kind == "pet" else settings.assets_dir / f"prize-{kind}"
+
+
+def prize_catalog(settings: Settings, kind: str) -> list[dict]:
+    """The set's pictures on this machine (with "path"), empty when too few to flick through."""
+    import json
+
+    folder = prize_dir(settings, kind)
+    try:
+        entries = json.loads((folder / "catalog.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    items = PRIZES[kind]["items"]
+    out = [{**e, "path": str(folder / e["file"])} for e in entries if e["name"] in items]
+    return out if len({items[e["name"]] for e in out}) == len(TIERS) else []
+
+
+def fetch_prizes(settings: Settings, kind: str, session=None) -> list[dict]:
+    from . import reveal
+
+    names = list(PRIZES[kind]["items"])
+    if kind == "pet":
+        return reveal.fetch_library(settings, "mob", names, session=session)
+    return fetch_icons(settings, names, prize_dir(settings, kind), session=session)
+
+
+def tier_of(name: str) -> str:
+    """A card's rarity, whichever set it is from."""
+    if name in BLOCKS:
+        return BLOCKS[name][0]
+    return next((p["items"][name] for p in PRIZES.values() if name in p["items"]), "common")
+
+
 def wanted(notes: str = "") -> bool:
     low = (notes or "").lower()
     return "spin" in low or "pause to get" in low
@@ -91,7 +191,12 @@ def kind_of(script_text: str) -> str:
         return "dungeon"
     if kind := arena.kind_of(text):
         return kind
-    return "weapon" if WEAPON_MARK in text else "axe" if AXE_MARK in text else "block"
+    if WEAPON_MARK in text:
+        return "weapon"
+    if AXE_MARK in text:
+        return "axe"
+    m = PRIZE_MARK.search(text)
+    return PRIZE + m.group(1) if m and m.group(1) in PRIZES else "block"
 
 
 def tall(script_text: str) -> bool:
@@ -125,6 +230,8 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
     """The Short's ShortScript: fixed narration, `spin` set, no answer (every viewer gets their own)."""
     from . import quiz
 
+    if kind.startswith(PRIZE):
+        return prize_script(settings, game, kind.removeprefix(PRIZE), format=format)
     have = {"axe": axe_catalog, "weapon": weapon_catalog}.get(kind, catalog)
     if not have(settings):
         raise ValueError("No pictures yet: run spin.fetch_library / fetch_axes / fetch_weapons first")
@@ -142,6 +249,22 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
                        HOOK.format(game=game_name), [], "", pinned.format(**fill), pack,
                        on_screen=f"Pause to get your {kind if kind in ('axe', 'weapon') else 'block'}", card=CARD,
                        end_card=end_card)
+    return out.model_copy(update={"spin": True, "reactions": []})
+
+
+def prize_script(settings: Settings, game: str, kind: str, *, format: str = "short"):
+    from . import quiz
+
+    if not prize_catalog(settings, kind):
+        raise ValueError(f"No {kind} pictures yet: run spin.fetch_prizes(settings, {kind!r}) first")
+    game_name = quiz.game_name(game)
+    fill = {"game": game_name, "noun": kind, "Noun": kind.title(), "emoji": PRIZES[kind]["emoji"]}
+    pack = SimpleNamespace(title=PRIZE_TITLE.format(**fill), description=PRIZE_DESCRIPTION.format(**fill),
+                           hashtags=["#shorts", "#minecraft", "#gaming", "#pausechallenge", f"#minecraft{kind}"],
+                           title_card=CARD)
+    out = quiz._script(settings, game, "builtin", "gamer", format, PRIZE_SCRIPT.format(**fill),
+                       HOOK.format(game=game_name), [], "", PRIZE_PINNED.format(**fill), pack,
+                       on_screen=f"Pause to get your {kind}", card=CARD, end_card=f"Comment your {kind}")
     return out.model_copy(update={"spin": True, "reactions": []})
 
 
@@ -224,7 +347,7 @@ def add_mythic(settings: Settings, cards: list, script_text: str, seed: str, sho
 
 def deck(entries: list[dict], count: int, rng: random.Random) -> list[dict]:
     """`count` blocks: each tier its share of the cards, never the same block twice in a row."""
-    by_tier = {t: [e for e in entries if BLOCKS[e["name"]][0] == t] for t in TIERS}
+    by_tier = {t: [e for e in entries if tier_of(e["name"]) == t] for t in TIERS}
     tiers = [t for t in TIERS if by_tier[t]]
     weights = [TIERS[t][1] for t in tiers]
     out: list[dict] = []
@@ -243,10 +366,10 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
 
     from .reveal import _font
 
-    tier = BLOCKS[entry["name"]][0]
+    tier = tier_of(entry["name"])
     colour = TIERS[tier][0]
     if entry["name"] not in cache:
-        pic = Image.open(library_dir(settings) / entry["file"]).convert("RGBA")
+        pic = Image.open(entry.get("path") or library_dir(settings) / entry["file"]).convert("RGBA")
         scale = min(PIC / pic.width, PIC / pic.height)
         cache[entry["name"]] = pic.resize((max(1, round(pic.width * scale)), max(1, round(pic.height * scale))),
                                           Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
@@ -299,6 +422,10 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         boss = next(b for b in found["bosses"] if b["name"] == boss_of(spoken))
         cards = [boss_card(settings, boss, w, cache) for w in weapon_deck(found, count, rng)]
         shown = set(WEAPONS)
+    elif kind.startswith(PRIZE):
+        noun = kind.removeprefix(PRIZE)
+        cards = [card(settings, e, cache) for e in deck(prize_catalog(settings, noun), count, rng)]
+        shown = set(PRIZES[noun]["items"])
     else:
         cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
         shown = set(BLOCKS)

@@ -299,3 +299,24 @@ def test_the_next_short_is_chosen_away_from_the_last_ones(tmp_path, monkeypatch)
     assert "rule=" not in quest.choose(s, "twice", rng=rng)
     with pytest.raises(ValueError, match="No such"):
         quest.choose(s, "pet", "Warden")
+
+
+def test_a_drawn_shorts_first_cards_flick_from_frame_zero():
+    from trendclip import quest
+    from trendclip.config import get_settings
+    from trendclip.video_assembler import Word
+
+    if quest.missing(get_settings()):
+        pytest.skip("no pictures on this machine")
+    for only in ("fight:Zombie", "twice:Zombie"):
+        tracks = []
+        for lines in quest.scripts(only):
+            t, ws = 0.0, []
+            for _, text in lines:
+                for w in text.split():
+                    ws.append(Word(w, t, t + 0.3))
+                    t += 0.33
+            tracks.append(ws)
+        stops = quest.Quest(get_settings(), tracks, only=only).stops
+        assert stops[0].EARLY and stops[0].option(0.0) is not None
+        assert all(stop.option(0.0) is None for stop in stops[1:])  # the second pause waits for its words
