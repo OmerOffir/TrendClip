@@ -12,7 +12,7 @@ from trendclip import hub
 
 from tests.test_hub import Attachment, FakeDiscord, Message, make
 
-PW_SCRIPT = json.loads((pw_channel.SCRIPTS_DIR / "001-arizona-99c.json").read_text(encoding="utf-8"))
+PW_SCRIPT = json.loads((pw_channel.SCRIPTS_DIR.parent / "examples" / "001-arizona-99c.json").read_text(encoding="utf-8"))
 
 PATHS = ((video_gen, "OUTPUT_DIR", "darkarchives"), (script_gen, "OUTPUT_DIR", "scripts"),
          (bw_channel, "OUTPUT_DIR", "borderlinewhy"), (pw_channel, "OUTPUT_DIR", "pricetagwhy"), (pw_channel, "SCRIPTS_DIR", "pw-scripts"),

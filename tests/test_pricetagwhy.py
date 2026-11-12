@@ -9,7 +9,16 @@ from fastapi.testclient import TestClient
 from modules import bw_brand, bw_render, pw_cast, pw_channel, pw_render
 
 
-FIRST = pw_channel.SCRIPTS_DIR / "001-arizona-99c.json"
+FIRST = pw_channel.SCRIPTS_DIR.parent / "examples" / "001-arizona-99c.json"
+
+
+@pytest.fixture(autouse=True)
+def _scripts_in_git(tmp_path_factory, monkeypatch):
+    """The tests' scripts in git: the AriZona script, as content/pricetagwhy/scripts held it until Encore Story
+    (2026-11-12) emptied it. A test that sets its own SCRIPTS_DIR overrides this."""
+    folder = tmp_path_factory.mktemp("scripts")
+    (folder / FIRST.name).write_text(FIRST.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", folder)
 
 
 def _script() -> dict:
@@ -846,7 +855,7 @@ def test_videos_end_on_their_last_real_scene_with_no_follow_line():
 def test_a_named_cast_is_asked_by_its_own_word_and_a_parable_lists_no_sources():
     from modules import pw_write
 
-    story = json.loads((pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-story.json").read_text(encoding="utf-8"))
+    story = json.loads((FIRST.parent / "002-coffee-cart-story.json").read_text(encoding="utf-8"))
     assert pw_write.cast_noun(story) == "friend"
     vendors = json.loads(json.dumps(story))
     for k, p in enumerate(vendors["scenes"][0]["cast"]["people"], 1):

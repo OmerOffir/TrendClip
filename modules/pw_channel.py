@@ -7,7 +7,7 @@ then output/pricetagwhy/queue/ on the hub; each script is made once, oldest name
 and in the channel's Discord channel. With PW_REQUIRE_APPROVAL=1 (the default for this new channel) it goes to YouTube
 at the slot only after Approve; approving after the slot uploads it at once. A slot with no script left gets no video.
 
-    python -m modules.pw_channel make content/pricetagwhy/scripts/001-arizona-99c.json [--key sample-arizona]
+    python -m modules.pw_channel make content/bandstory/examples/001-oasis.json [--key sample-arizona]
     python -m modules.pw_channel check            # the rule check of every queued script
 
 A video is drawn in a process of its own (pw_render.use_style changes module-wide colours); make_slot starts one.

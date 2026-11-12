@@ -642,7 +642,7 @@ def problems_of(script: dict) -> list[str]:
 # --------------------------------------------------------------------------- prompts
 
 
-EXAMPLE = pw_channel.SCRIPTS_DIR / "001-arizona-99c.json"  # the first, hand-checked script
+EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "001-arizona-99c.json"  # the first, hand-checked script (retired from the queue 2026-11-12)
 STORY_EXAMPLE = pw_channel.SCRIPTS_DIR.parent / "examples" / "002-coffee-cart-story.json"  # the prompt's example only: not in the queue
 
 
