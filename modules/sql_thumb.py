@@ -28,7 +28,8 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 W, H = 1080, 1920
 YELLOW, RED, WHITE, BLACK = (255, 214, 0), (226, 38, 38), (255, 255, 255), (0, 0, 0)
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-FOLDERS = ("reveal", "weapon", "axe", "spin", "dungeon", "prize-armor", "prize-food")
+FOLDERS = ("reveal", "weapon", "axe", "spin", "dungeon", "prize-armor", "prize-food", "prize-potion", "prize-death",
+           "prize-spawn", "prize-base")
 DUNGEON_BOSS = "Wither"  # trendclip.dungeon's final room
 
 
@@ -91,11 +92,12 @@ def _plan(info: dict) -> dict | None:
         return {"kind": "chest", "text": "WHAT'S INSIDE?"}
     if re.search(r"get your .*block", low):
         return {"kind": "blocks", "text": "WHAT DID YOU GET?"}
-    if m := re.search(r"get your .*\b(pet|armor|food)\b", low):
-        from trendclip import spin
+    from trendclip import spin
 
-        prize = spin.PRIZES[m.group(1)]
-        return {"kind": "blocks", "text": "WHAT DID YOU GET?", "hero": prize["hero"], "around": prize["around"]}
+    if noun := spin.prize_of_title(title):  # Pause To Get Your Pet / See How You Die ...: the set's legendary
+        prize = spin.PRIZES[noun]
+        return {"kind": "blocks", "text": spin.prize_words(noun)["ask"], "hero": prize["hero"],
+                "around": prize["around"], "set": noun}
     if "lava" in low:
         return {"kind": "lava", "text": "CROSS THE LAVA?", "hearts": hearts}
     return None
@@ -519,7 +521,7 @@ def draw_blocks(scene: dict, base: Image.Image) -> Image.Image:
         pic = picture(name)
         if pic is None:
             continue
-        colour = spin.TIERS[spin.tier_of(name)][0]
+        colour = spin.TIERS[spin.tier_of(name, scene.get("set", ""))][0]
         cube = scaled(pic, 250, 250).rotate(rng.uniform(-25, 25), expand=True, resample=Image.BICUBIC)
         paste_glowing(img, cube, (centre[0] + dx - cube.width // 2, centre[1] + dy - cube.height // 2), colour, 22, 1.5)
     hero = scaled(picture(scene.get("hero", "Netherite Block")), 520, 520)

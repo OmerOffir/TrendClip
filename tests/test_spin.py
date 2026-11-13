@@ -1,4 +1,5 @@
 import json
+from pathlib import Path
 import random
 
 from PIL import Image
@@ -241,6 +242,9 @@ def test_every_dungeon_part_ends_on_share_and_follow():
         assert "send this to a friend" in text and text.endswith("Follow.")
 
 
+OPTIONS = (Path(__file__).parents[1] / "trendclip" / "web" / "static" / "index.html").read_text(encoding="utf-8")
+
+
 def prizes(s: Settings, kind: str) -> None:
     folder = spin.prize_dir(s, kind)
     folder.mkdir(parents=True, exist_ok=True)
@@ -256,12 +260,15 @@ def test_a_prize_short_keeps_the_block_shorts_shape(tmp_path):
     for kind in spin.PRIZES:
         prizes(s, kind)
         result = spin.script(s, "Minecraft", kind=spin.PRIZE + kind)
+        words = spin.prize_words(kind)
         assert result.spin and result.answer == ""
-        assert result.title.startswith(f"Pause To Get Your Minecraft {kind.title()} ")
-        assert f"The {kind} you stop on is yours." in result.script and f"Comment your {kind}." in result.script
+        assert result.title == words["title"] and spin.prize_of_title(result.title) == kind
+        assert words["line"] in result.script and words["comment"] in result.script
         assert spin.MYTHIC_MARK not in result.script  # the winner had none: one prize, one word to comment
         assert spin.kind_of(result.script) == spin.PRIZE + kind and not spin.tall(result.script)
-        assert spin.prize_wanted(f"pause to get your {kind}") == spin.PRIZE + kind
+        option = f"pause to {'get' if words['want'].startswith('get') else 'see'} {words['want'].removeprefix('get ')}"
+        assert option in OPTIONS  # the Create tab's own choice
+        assert spin.prize_wanted(option) == spin.PRIZE + kind and spin.wanted(option)
         spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
         *strip, overlay = spin.plan(s, spoken, seed=kind, kind=spin.kind_of(result.script), script_text=result.script)
         assert overlay.start == 0 and overlay.center == spin.CENTER
@@ -281,6 +288,9 @@ def test_every_prize_set_has_every_rarity_and_a_thumbnail_scene():
 
     for kind, prize in spin.PRIZES.items():
         assert set(prize["items"].values()) == set(spin.TIERS)
-        assert prize["hero"] in prize["items"] and set(prize["around"]) <= set(prize["items"])
-        scene = sql_thumb.plan({"title": f"Pause To Get Your Minecraft {kind.title()} {prize['emoji']}"})
+        assert prize["items"][prize["hero"]] == "legendary"  # the thumbnail says LEGENDARY under it
+        assert set(prize["around"]) <= set(prize["items"]) and prize["look"]
+        scene = sql_thumb.plan({"title": spin.prize_words(kind)["title"]})
         assert scene["kind"] == "blocks" and scene["hero"] == prize["hero"]
+    assert spin.tier_of("Creeper", "pet") == "rare" and spin.tier_of("Creeper", "death") == "common"
+    assert spin.prize_of_title("Pause To Get Your Minecraft Block 🎮") == ""

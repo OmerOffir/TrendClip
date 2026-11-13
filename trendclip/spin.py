@@ -113,17 +113,134 @@ PRIZES = {
         "hero": "Enchanted Golden Apple",
     },
 }
-STRIP = {"food", "armor"}  # sets drawn with the quest hero under the card (prize_strip), a test against the plain ones
+# Five more sets (the owner, 2026-11-13): each says its own line, comment and share in the Block narration's
+# place, so the shape stays the winner's. Their pictures come from the wiki: "pages" are each page's main image
+# (structure and biome screenshots, mob and block renders), "icons" the inventory icons, "mobs" reveal's library.
+PRIZES.update({
+    "base": {
+        "items": {
+            "Ruined Portal": "common", "Shipwreck": "common", "Igloo": "common",
+            "Desert Well": "common", "Mineshaft": "common",
+            "Pillager Outpost": "rare", "Swamp Hut": "rare", "Ocean Ruin": "rare", "Trail Ruins": "rare",
+            "Trial Chambers": "rare",
+            "Ocean Monument": "epic", "Desert Pyramid": "epic", "Jungle Pyramid": "epic", "Bastion Remnant": "epic",
+            "Woodland Mansion": "legendary", "End City": "legendary",
+            "Stronghold": "legendary",
+        },
+        "source": "pages", "look": "home", "emoji": "🏰",
+        "around": ["Igloo", "Swamp Hut", "Ocean Monument", "End City"], "hero": "Woodland Mansion",
+        "ask": "WHERE DO YOU LIVE?",
+    },
+    "potion": {
+        "items": {
+            "Water Bottle": "common", "Awkward Potion": "common", "Potion of Weakness": "common",
+            "Potion of Slowness": "common", "Potion of Poison": "common", "Potion of Harming": "common",
+            "Potion of Swiftness": "rare", "Potion of Leaping": "rare", "Potion of Healing": "rare",
+            "Potion of Night Vision": "rare", "Potion of Fire Resistance": "rare",
+            "Potion of Invisibility": "epic", "Potion of Strength": "epic", "Potion of Regeneration": "epic",
+            "Potion of Slow Falling": "epic", "Potion of Water Breathing": "epic",
+            "Potion of the Turtle Master": "legendary", "Potion of Luck": "legendary",
+            "Ominous Bottle": "legendary",
+        },
+        "source": "icons", "look": "held", "emoji": "🧪",
+        "around": ["Water Bottle", "Potion of Swiftness", "Potion of Invisibility", "Potion of Strength"],
+        "hero": "Potion of the Turtle Master",
+    },
+    "death": {
+        "items": {
+            "Zombie": "common", "Skeleton": "common", "Creeper": "common", "Lava": "common", "Cactus": "common",
+            "Water": "common", "Magma Block": "common", "Sweet Berry Bush": "common",
+            "TNT": "rare", "Anvil": "rare", "Spider": "rare", "Witch": "rare", "Pointed Dripstone": "rare",
+            "Powder Snow": "rare", "Phantom": "rare", "Pufferfish": "rare",
+            "Enderman": "epic", "Ravager": "epic", "Elder Guardian": "epic", "Evoker": "epic",
+            "Wither Skeleton": "epic",
+            "Warden": "legendary", "Ender Dragon": "legendary", "Wither": "legendary",
+        },
+        "source": "pages", "look": "ahead", "emoji": "💀",
+        "title": "Pause To See How You Die In {game} {emoji}",
+        "line": "That is how you die.", "comment": "Comment how you died.", "share": "who dies the worst way.",
+        "pin": "How did you die? 👇 Gold = legendary 💀\nSend this to a friend and see who dies the worst way.",
+        "description": "Pause the video: the card you stop on is how you die in {game}. Comment it and challenge "
+                       "a friend.",
+        "want": "how you die", "around": ["Cactus", "TNT", "Creeper", "Lava"], "hero": "Warden",
+        "ask": "HOW DID YOU DIE?",
+    },
+    "spawn": {
+        "items": {
+            "Plains": "common", "Forest": "common", "Desert": "common", "Taiga": "common", "Savanna": "common",
+            "Birch Forest": "common", "Swamp": "common", "Ocean": "common",
+            "Jungle": "rare", "Snowy Plains": "rare", "Badlands": "rare", "Dark Forest": "rare",
+            "Flower Forest": "rare", "Mangrove Swamp": "rare",
+            "Cherry Grove": "epic", "Ice Spikes": "epic", "Lush Caves": "epic", "Bamboo Jungle": "epic",
+            "Deep Dark": "epic",
+            "Mushroom Fields": "legendary", "The End": "legendary", "Nether Wastes": "legendary",
+        },
+        "source": "pages", "look": "backdrop", "emoji": "🌍", "fill": True,  # screenshots fill the card
+        "title": "Pause To See Where You Spawn In {game} {emoji}",
+        "line": "That is where you spawn.", "comment": "Comment where you spawned.",
+        "share": "who spawns in the best place.",
+        "pin": "Where did you spawn? 👇 Gold = legendary 🌍\nSend this to a friend and see who spawns in the best "
+               "place.",
+        "description": "Pause the video: the {game} biome you stop on is where you spawn. Comment it and challenge "
+                       "a friend.",
+        "want": "where you spawn", "around": ["Desert", "Jungle", "Cherry Grove", "Deep Dark"],
+        "hero": "Mushroom Fields", "ask": "WHERE DID YOU SPAWN?",
+    },
+    "chase": {
+        "items": {
+            "Zombie": "common", "Skeleton": "common", "Spider": "common", "Slime": "common", "Husk": "common",
+            "Drowned": "common", "Chicken": "common", "Silverfish": "common",
+            "Creeper": "rare", "Witch": "rare", "Enderman": "rare", "Pillager": "rare", "Piglin": "rare",
+            "Phantom": "rare", "Blaze": "rare",
+            "Ravager": "epic", "Evoker": "epic", "Vex": "epic", "Hoglin": "epic", "Iron Golem": "epic",
+            "Warden": "legendary", "Ender Dragon": "legendary", "Wither": "legendary",
+        },
+        "source": "mobs", "look": "behind", "emoji": "😱",
+        "title": "Pause To See Who Chases You In {game} {emoji}",
+        "line": "The mob you stop on is chasing you.", "comment": "Comment who chased you.",
+        "share": "who has to run faster.",
+        "pin": "Who chased you? 👇 Gold = legendary 😱\nSend this to a friend and see who has to run faster.",
+        "description": "Pause the video: the {game} mob you stop on is chasing you. Comment it and challenge a "
+                       "friend.",
+        "want": "who chases you", "around": ["Chicken", "Creeper", "Ravager", "Ender Dragon"], "hero": "Warden",
+        "ask": "WHO CHASES YOU?",
+    },
+})
+PRIZES["pet"].update(source="mobs", look="beside")
+PRIZES["armor"].update(source="icons", look="held")
+PRIZES["food"].update(source="icons", look="held")
+
+STRIP = {"food", "armor", "base", "potion", "death", "spawn", "chase"}  # drawn with the quest hero (prize_strip)
 PRIZE = "prize-"  # a prize Short's kind: "prize-pet" (arena has its own "pet": your mob against a boss)
-PRIZE_MARK = re.compile(r"The (\w+) you stop on is yours\.")
-PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. The {noun} you stop on is yours. Grey is common. "
-                "Blue is rare. Purple is epic. Gold is legendary. Got gold? Comment your {noun}. Then send this to "
-                "a friend, and see who gets the better one.")
+PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. {line} Grey is common. Blue is rare. Purple is epic. "
+                "Gold is legendary. Got gold? {comment} Then send this to a friend, and see {share}")
 PRIZE_TITLE = "Pause To Get Your {game} {Noun} {emoji}"
 PRIZE_PINNED = ("What {noun} did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better "
                 "one.")
 PRIZE_DESCRIPTION = ("Pause the video: the {game} {noun} you stop on is yours. Comment what you got and challenge a "
                      "friend.")
+
+
+def prize_words(noun: str, game: str = "Minecraft") -> dict:
+    """A set's own words, the Block narration's by default: line, comment, share, title, pin, description, ask."""
+    prize = PRIZES[noun]
+    fill = {"game": game, "noun": noun, "Noun": noun.title(), "emoji": prize["emoji"]}
+    return {"line": prize.get("line", "The {noun} you stop on is yours.").format(**fill),
+            "comment": prize.get("comment", "Comment your {noun}.").format(**fill),
+            "share": prize.get("share", "who gets the better one."),
+            "title": prize.get("title", PRIZE_TITLE).format(**fill),
+            "pin": prize.get("pin", PRIZE_PINNED).format(**fill),
+            "description": prize.get("description", PRIZE_DESCRIPTION).format(**fill),
+            "ask": prize.get("ask", "WHAT DID YOU GET?"), "want": prize.get("want", f"get your {noun}")}
+
+
+def prize_of_title(title: str) -> str:
+    """The set a Short's title belongs to ("Pause To See How You Die In Minecraft 💀" -> "death"), "" when none."""
+    for noun in PRIZES:
+        head = prize_words(noun)["title"].removesuffix(PRIZES[noun]["emoji"]).strip()
+        if (title or "").startswith(head):
+            return noun
+    return ""
 
 
 def has_strip(script_text: str) -> bool:
@@ -135,17 +252,17 @@ def has_strip(script_text: str) -> bool:
 def prize_wanted(notes: str = "") -> str:
     """The prize set asked for in the Create tab's notes ("pause to get your pet"), "" when none."""
     low = (notes or "").lower()
-    return next((PRIZE + k for k in PRIZES if f"get your {k}" in low), "")
+    return next((PRIZE + k for k in PRIZES if prize_words(k)["want"] in low), "")
 
 
 def prize_dir(settings: Settings, kind: str) -> Path:
     from . import reveal
 
-    return reveal.library_dir(settings) if kind == "pet" else settings.assets_dir / f"prize-{kind}"
+    return reveal.library_dir(settings) if PRIZES[kind]["source"] == "mobs" else settings.assets_dir / f"prize-{kind}"
 
 
 def prize_catalog(settings: Settings, kind: str) -> list[dict]:
-    """The set's pictures on this machine (with "path"), empty when too few to flick through."""
+    """The set's pictures on this machine (with "path" and the set's "tier"), empty when a rarity has none."""
     import json
 
     folder = prize_dir(settings, kind)
@@ -154,21 +271,28 @@ def prize_catalog(settings: Settings, kind: str) -> list[dict]:
     except (OSError, ValueError):
         return []
     items = PRIZES[kind]["items"]
-    out = [{**e, "path": str(folder / e["file"])} for e in entries if e["name"] in items]
-    return out if len({items[e["name"]] for e in out}) == len(TIERS) else []
+    fill = PRIZES[kind].get("fill", False)
+    out = [{**e, "path": str(folder / e["file"]), "tier": items[e["name"]], "fill": fill}
+           for e in entries if e["name"] in items]
+    return out if len({e["tier"] for e in out}) == len(TIERS) else []
 
 
 def fetch_prizes(settings: Settings, kind: str, session=None) -> list[dict]:
     from . import reveal
 
     names = list(PRIZES[kind]["items"])
-    if kind == "pet":
+    source = PRIZES[kind]["source"]
+    if source == "mobs":
         return reveal.fetch_library(settings, "mob", names, session=session)
+    if source == "pages":
+        return reveal.fetch_library(settings, kind, names, session=session, folder=prize_dir(settings, kind))
     return fetch_icons(settings, names, prize_dir(settings, kind), session=session)
 
 
-def tier_of(name: str) -> str:
-    """A card's rarity, whichever set it is from."""
+def tier_of(name: str, noun: str = "") -> str:
+    """A card's rarity: in set `noun` when given (a Creeper is a rare pet but a common death), else the first."""
+    if noun:
+        return PRIZES[noun]["items"].get(name, "common")
     if name in BLOCKS:
         return BLOCKS[name][0]
     return next((p["items"][name] for p in PRIZES.values() if name in p["items"]), "common")
@@ -176,7 +300,7 @@ def tier_of(name: str) -> str:
 
 def wanted(notes: str = "") -> bool:
     low = (notes or "").lower()
-    return "spin" in low or "pause to get" in low
+    return "spin" in low or "pause to get" in low or "pause to see" in low
 
 
 def axe_wanted(notes: str = "") -> bool:
@@ -202,8 +326,7 @@ def kind_of(script_text: str) -> str:
         return "weapon"
     if AXE_MARK in text:
         return "axe"
-    m = PRIZE_MARK.search(text)
-    return PRIZE + m.group(1) if m and m.group(1) in PRIZES else "block"
+    return next((PRIZE + noun for noun in PRIZES if prize_words(noun)["line"] in text), "block")
 
 
 def tall(script_text: str) -> bool:
@@ -265,13 +388,14 @@ def prize_script(settings: Settings, game: str, kind: str, *, format: str = "sho
     if not prize_catalog(settings, kind):
         raise ValueError(f"No {kind} pictures yet: run spin.fetch_prizes(settings, {kind!r}) first")
     game_name = quiz.game_name(game)
-    fill = {"game": game_name, "noun": kind, "Noun": kind.title(), "emoji": PRIZES[kind]["emoji"]}
-    pack = SimpleNamespace(title=PRIZE_TITLE.format(**fill), description=PRIZE_DESCRIPTION.format(**fill),
+    words = prize_words(kind, game_name)
+    pack = SimpleNamespace(title=words["title"], description=words["description"],
                            hashtags=["#shorts", "#minecraft", "#gaming", "#pausechallenge", f"#minecraft{kind}"],
                            title_card=CARD)
-    out = quiz._script(settings, game, "builtin", "gamer", format, PRIZE_SCRIPT.format(**fill),
-                       HOOK.format(game=game_name), [], "", PRIZE_PINNED.format(**fill), pack,
-                       on_screen=f"Pause to get your {kind}", card=CARD, end_card=f"Comment your {kind}")
+    out = quiz._script(settings, game, "builtin", "gamer", format, PRIZE_SCRIPT.format(game=game_name, **words),
+                       HOOK.format(game=game_name), [], "", words["pin"], pack,
+                       on_screen=words["title"].removesuffix(PRIZES[kind]["emoji"]).strip(), card=CARD,
+                       end_card=words["comment"].removesuffix("."))
     return out.model_copy(update={"spin": True, "reactions": []})
 
 
@@ -354,7 +478,7 @@ def add_mythic(settings: Settings, cards: list, script_text: str, seed: str, sho
 
 def deck(entries: list[dict], count: int, rng: random.Random) -> list[dict]:
     """`count` blocks: each tier its share of the cards, never the same block twice in a row."""
-    by_tier = {t: [e for e in entries if tier_of(e["name"]) == t] for t in TIERS}
+    by_tier = {t: [e for e in entries if (e.get("tier") or tier_of(e["name"])) == t] for t in TIERS}
     tiers = [t for t in TIERS if by_tier[t]]
     weights = [TIERS[t][1] for t in tiers]
     out: list[dict] = []
@@ -373,10 +497,14 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
 
     from .reveal import _font
 
-    tier = tier_of(entry["name"])
+    tier = entry.get("tier") or tier_of(entry["name"])
     colour = TIERS[tier][0]
     if entry["name"] not in cache:
         pic = Image.open(entry.get("path") or library_dir(settings) / entry["file"]).convert("RGBA")
+        if entry.get("fill"):  # a wide screenshot, cropped square from its middle
+            side = min(pic.size)
+            pic = pic.crop(((pic.width - side) // 2, (pic.height - side) // 2, (pic.width + side) // 2,
+                            (pic.height + side) // 2))
         scale = min(PIC / pic.width, PIC / pic.height)
         cache[entry["name"]] = pic.resize((max(1, round(pic.width * scale)), max(1, round(pic.height * scale))),
                                           Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
@@ -447,7 +575,7 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     if kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP:
         from . import prize_strip
 
-        strip = prize_strip.save(picked, noun, [TIERS[tier_of(e["name"])][0] for e in picked], HOLD, fps,
+        strip = prize_strip.save(picked, PRIZES[noun]["look"], [TIERS[e["tier"]][0] for e in picked], HOLD, fps,
                                  path.with_name(path.stem + "-strip.webp"))
         extra.append(Overlay(strip, 0.0, round(total + 0.5, 3), center=prize_strip.CENTER,
                              box=max(prize_strip.SIZE), style="asis", cut=True, animated=True))

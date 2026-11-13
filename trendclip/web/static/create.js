@@ -498,6 +498,11 @@
     "pause to get your pet": "🐺 Make a Pause to Get Your Pet",
     "pause to get your armor": "🛡️ Make a Pause to Get Your Armor",
     "pause to get your food": "🍗 Make a Pause to Get Your Food",
+    "pause to get your base": "🏰 Make a Pause to Get Your Base",
+    "pause to get your potion": "🧪 Make a Pause to Get Your Potion",
+    "pause to see how you die": "💀 Make a Pause to See How You Die",
+    "pause to see where you spawn": "🌍 Make a Pause to See Where You Spawn",
+    "pause to see who chases you": "😱 Make a Pause to See Who Chases You",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };
