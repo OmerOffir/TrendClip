@@ -50,6 +50,7 @@ TIERS = {  # colour, share of the cards
 HOLD = 2  # video frames per block: too fast to read while it plays, every frame a block when paused
 W, H = 640, 760  # the card
 PIC = 430  # the block's square on it
+PIC_NOTED = 330  # on a card with two lines of notes
 CENTER = (WIDTH // 2, 800)
 FRAME = 18
 PANEL = (128, 132, 146)
@@ -619,6 +620,70 @@ def add_mythic(settings: Settings, cards: list, script_text: str, seed: str, sho
     return entry["name"], second
 
 
+# --------------------------------------------------------------------------- proof codes and the secret frame
+# The owner's idea (2026-11-13): the winning card says SUB TO CLAIM IT and asks for a comment with a code word of
+# its own ("GOLD FOX"), so a comment proves the viewer really stopped there; one card slot in the whole video is a
+# secret frame, unrelated to the prize, with another code. Both codes are new for every video (seeded by its file
+# name) and saved next to it as <name>.codes.json, so the comments can be checked.
+
+CODE_WORDS = ["FOX", "PANDA", "TACO", "ROCKET", "PICKLE", "NINJA", "WAFFLE", "COMET", "LLAMA", "DONUT", "TIGER",
+              "BANANA", "PIRATE", "ROBOT", "MANGO", "WIZARD", "PENGUIN", "COOKIE", "DRAGON", "KOALA", "NOODLE",
+              "LASER", "OTTER", "PIZZA", "VIKING", "WALRUS", "YETI", "ZEBRA"]
+SECRET_WORDS = ["PURPLE", "SNEAKY", "FROZEN", "SPICY", "TINY", "GOLDEN", "SLEEPY", "COSMIC", "FUNKY", "SILENT"]
+SECRET_COLOUR = (0, 230, 200)
+CLAIM = "SUB TO CLAIM IT"
+
+
+def codes(seed: str, win: str) -> dict:
+    """The video's two code words: the win's ("GOLD FOX") and the secret frame's ("SNEAKY WALRUS")."""
+    rng = random.Random(f"{seed}-codes")
+    return {"win": f"{win} {rng.choice(CODE_WORDS)}",
+            "secret": f"{rng.choice(SECRET_WORDS)} {rng.choice(CODE_WORDS)}"}
+
+
+def secret_card(size: tuple[int, int], code: str):
+    """The secret frame, as big as the other cards and like none of them: it is there for one card's HOLD frames."""
+    from PIL import Image, ImageDraw
+
+    from .reveal import _font
+
+    w, h = size
+    img = Image.new("RGBA", size, (6, 14, 18, 255))
+    d = ImageDraw.Draw(img)
+    for k in range(0, w + h, 40):  # stripes the other way from the mythic card's
+        d.line([(k - h, 0), (k, h)], fill=(10, 44, 48), width=16)
+    d.rectangle([0, 0, w - 1, h - 1], outline=SECRET_COLOUR, width=FRAME + 8)
+
+    def centred(words: str, y: float, size_: int, fill: tuple) -> None:
+        while size_ > 28 and d.textlength(words, font=_font(size_)) > w - 2 * FRAME - 40:
+            size_ -= 4
+        d.text((w / 2, y), words, font=_font(size_), fill=fill, anchor="mm")
+
+    d.rectangle([FRAME, FRAME, w - FRAME, FRAME + 110], fill=SECRET_COLOUR)
+    centred("SECRET FRAME", FRAME + 56, 76, (6, 14, 18))
+    centred("YOU FOUND IT!", 250, 80, (255, 255, 255))
+    centred("ONLY 1 IN 1,000 SEE THIS", 340, 44, SECRET_COLOUR)
+    centred("SUBSCRIBE AND", 470, 56, (255, 255, 255))
+    centred("COMMENT", 540, 56, (255, 255, 255))
+    d.rounded_rectangle([FRAME + 20, 590, w - FRAME - 20, 690], radius=24, fill=SECRET_COLOUR)
+    centred(f'"{code}"', 640, 66, (6, 14, 18))
+    return img
+
+
+def add_secret(cards: list, code: str, seed: str, fps: int = 30, avoid: float | None = None) -> float | None:
+    """Swap one card (45% to 90% of the way, not on the mythic) for the secret frame. Returns its second."""
+    if len(cards) < 20:
+        return None
+    rng = random.Random(f"{seed}-secret-at")
+    while True:
+        at = rng.randrange(int(len(cards) * 0.45), int(len(cards) * 0.9))
+        if avoid is None or abs(at * HOLD / fps - avoid) > 0.5:
+            break
+    cards[at] = secret_card(cards[at].size, code)
+    logger.info("Secret frame %r at %.2f s", code, at * HOLD / fps)
+    return round(at * HOLD / fps, 2)
+
+
 # --------------------------------------------------------------------------- the cards
 
 
@@ -637,7 +702,8 @@ def deck(entries: list[dict], count: int, rng: random.Random) -> list[dict]:
     return out
 
 
-def card(settings: Settings, entry: dict, cache: dict, label: str = "", colour: tuple | None = None) -> "object":
+def card(settings: Settings, entry: dict, cache: dict, label: str = "", colour: tuple | None = None,
+         notes: tuple[str, ...] = ()) -> "object":
     """The block on a dark card framed in its tier's colour, the tier on top and the name under it (or, for Land
     This, the card's taunt on top in its own colour)."""
     from PIL import Image, ImageDraw
@@ -646,16 +712,18 @@ def card(settings: Settings, entry: dict, cache: dict, label: str = "", colour: 
 
     tier = entry.get("tier") or tier_of(entry["name"])
     colour = colour or TIERS[tier][0]
-    if entry["name"] not in cache:
+    side = PIC_NOTED if notes else PIC  # a card with notes keeps the picture smaller to fit them over the name
+    key = (entry["name"], side)
+    if key not in cache:
         pic = Image.open(entry.get("path") or library_dir(settings) / entry["file"]).convert("RGBA")
         if entry.get("fill"):  # a wide screenshot, cropped square from its middle
             side = min(pic.size)
             pic = pic.crop(((pic.width - side) // 2, (pic.height - side) // 2, (pic.width + side) // 2,
                             (pic.height + side) // 2))
-        scale = min(PIC / pic.width, PIC / pic.height)
-        cache[entry["name"]] = pic.resize((max(1, round(pic.width * scale)), max(1, round(pic.height * scale))),
+        scale = min(side / pic.width, side / pic.height)
+        cache[key] = pic.resize((max(1, round(pic.width * scale)), max(1, round(pic.height * scale))),
                                           Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
-    pic = cache[entry["name"]]
+    pic = cache[key]
     img = Image.new("RGBA", (W, H), colour + (255,))
     d = ImageDraw.Draw(img)
     d.rectangle([FRAME, FRAME, W - FRAME, H - FRAME], fill=(24, 24, 30))
@@ -665,13 +733,19 @@ def card(settings: Settings, entry: dict, cache: dict, label: str = "", colour: 
     while size > 36 and d.textlength(text, font=_font(size)) > W - 2 * FRAME - 24:
         size -= 4
     head = _font(size)
-    dark = sum(colour) > 480 or colour == TIERS["common"][0]  # black on gold, grey and green; white on the rest
+    dark = sum(colour) > 480 or colour in (TIERS["common"][0], TIERS["legendary"][0], (60, 200, 90))  # black on
+    # grey, gold and green; white on the rest
     d.text(((W - d.textlength(text, font=head)) / 2, FRAME + 6 + (64 - size) // 2), text, font=head,
            fill=(20, 20, 20) if dark else (255, 255, 255))
     top = FRAME + 110
-    d.rounded_rectangle([(W - PIC) // 2 - 24, top - 14, (W + PIC) // 2 + 24, top + PIC + 14], radius=28,
+    d.rounded_rectangle([(W - side) // 2 - 24, top - 14, (W + side) // 2 + 24, top + side + 14], radius=28,
                         fill=PANEL)  # mid grey: dark blocks (Dragon Egg, Obsidian) vanished on the dark card
-    img.alpha_composite(pic, ((W - pic.width) // 2, top + (PIC - pic.height) // 2))
+    img.alpha_composite(pic, ((W - pic.width) // 2, top + (side - pic.height) // 2))
+    for i, note in enumerate(notes):  # SUB TO CLAIM IT / COMMENT "GOLD FOX": the proof a viewer really stopped here
+        size = 46
+        while size > 28 and d.textlength(note, font=_font(size)) > W - 2 * FRAME - 30:
+            size -= 2
+        d.text((W / 2, top + side + 44 + i * 54), note, font=_font(size), fill=colour, anchor="mm")
     name = entry["name"].upper()
     size = 60
     while size > 34 and d.textlength(name, font=_font(size)) > W - 2 * FRAME - 30:
@@ -700,6 +774,7 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     count = int(total * fps / HOLD) + 2
     cache: dict = {}
     spoken = script_text or " ".join(w.text for w in words)
+    code = codes(seed or "spin", "GOLD")
     if kind == "axe":
         cards = [axe_card(settings, a, w, cache) for a, w in axe_deck(axe_catalog(settings), count, rng)]
         shown = set(AXES) | set(WALL)
@@ -710,19 +785,32 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         shown = set(WEAPONS)
     elif kind.startswith(LAND):
         name = kind.removeprefix(LAND)
+        code = codes(seed or "spin", LANDS[name]["word"].upper())
+        win = (CLAIM, f'COMMENT "{code["win"]}"')
         dealt = land_deck(land_catalog(settings, name), LANDS[name]["target"], count, rng)
         picked = [e for e, _, _ in dealt]
-        cards = [card(settings, e, cache, label, colour) for e, label, colour in dealt]
+        cards = [card(settings, e, cache, label, colour, win if e["name"] == LANDS[name]["target"] else ())
+                 for e, label, colour in dealt]
         shown = set(LANDS[name]["items"])
-    elif kind.startswith(PRIZE):
-        noun = kind.removeprefix(PRIZE)
-        picked = deck(prize_catalog(settings, noun), count, rng)
-        cards = [card(settings, e, cache) for e in picked]
-        shown = set(PRIZES[noun]["items"])
     else:
-        cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
-        shown = set(BLOCKS)
-    add_mythic(settings, cards, spoken, seed or "spin", shown, fps=fps)
+        win = (CLAIM, f'COMMENT "{code["win"]}"')
+        if kind.startswith(PRIZE):
+            noun = kind.removeprefix(PRIZE)
+            picked = deck(prize_catalog(settings, noun), count, rng)
+            shown = set(PRIZES[noun]["items"])
+        else:
+            picked = deck(catalog(settings), count, rng)
+            shown = set(BLOCKS)
+        cards = [card(settings, e, cache, notes=win if (e.get("tier") or tier_of(e["name"])) == "legendary" else ())
+                 for e in picked]
+    mythic = add_mythic(settings, cards, spoken, seed or "spin", shown, fps=fps)
+    secret = add_secret(cards, code["secret"], seed or "spin", fps=fps, avoid=mythic[1] if mythic else None)
+    if seed and re.fullmatch(r"[\w.-]+", seed):  # a Short's file name: keep its codes beside it for the comments
+        import json
+
+        settings.shorts_dir.mkdir(parents=True, exist_ok=True)
+        (settings.shorts_dir / f"{seed}.codes.json").write_text(
+            json.dumps({**code, "secret_at": secret}, indent=1) + "\n", encoding="utf-8")
     out_dir = settings.assets_dir / "cache" / "spin"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / (re.sub(r"[^a-z0-9]+", "-", (seed or "spin").lower())[:40].strip("-") + ".webp")

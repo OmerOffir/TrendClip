@@ -420,7 +420,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
                         "dungeon": "Drawing the dungeon", "friend": "Shuffling the two weapons",
                         "pet": "Shuffling the mobs", "double": "Filling the chest and the weapon rack"}.get(
             kind, "Shuffling the blocks"))
-        overlays = overlays + spin.plan(settings, words, seed=req.output_name or req.script, kind=kind,
+        overlays = overlays + spin.plan(settings, words, seed=req.output_name or base.name, kind=kind,
                                         script_text=req.script)
 
     progress(0.0, "Rendering video")

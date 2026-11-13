@@ -331,3 +331,15 @@ def test_a_land_short_is_one_target_ten_seconds_and_true_taunts(tmp_path):
         for i, (e, label, _) in enumerate(dealt):  # every taunt true to where the card is
             near = any(j in hits for j in (i - 1, i + 1))
             assert (label == "YOU LANDED IT!") == (i in hits) and (label == "ONE AWAY!") == (near and i not in hits)
+
+
+def test_the_win_card_carries_a_proof_code_and_one_secret_frame_hides_in_the_video(tmp_path):
+    s = settings(tmp_path)
+    prizes(s, "pet")
+    result = spin.script(s, "Minecraft", kind=spin.PRIZE + "pet")
+    spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
+    spin.plan(s, spoken, seed="minecraft_20261114-000000", kind=spin.kind_of(result.script), script_text=result.script)
+    saved = json.loads((s.shorts_dir / "minecraft_20261114-000000.codes.json").read_text())
+    assert saved["win"].startswith("GOLD ") and saved["secret"] != saved["win"] and saved["secret_at"] > 0
+    assert spin.codes("a", "GOLD") != spin.codes("b", "GOLD")  # every video its own words
+    assert spin.codes("a", "GOLD") == spin.codes("a", "GOLD")
