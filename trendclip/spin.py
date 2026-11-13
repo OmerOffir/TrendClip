@@ -113,7 +113,7 @@ PRIZES = {
         "hero": "Enchanted Golden Apple",
     },
 }
-STRIP = {"food"}  # sets drawn with the quest hero under the card (prize_strip), a test against the plain ones
+STRIP = {"food", "armor"}  # sets drawn with the quest hero under the card (prize_strip), a test against the plain ones
 PRIZE = "prize-"  # a prize Short's kind: "prize-pet" (arena has its own "pet": your mob against a boss)
 PRIZE_MARK = re.compile(r"The (\w+) you stop on is yours\.")
 PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. The {noun} you stop on is yours. Grey is common. "
