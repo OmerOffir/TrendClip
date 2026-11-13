@@ -656,7 +656,10 @@ class BandRenderer:
         items: list[dict[str, Any]] = []
 
         def at(cue, k):
-            return -1.0 if first and not cue else cue_time(scene, words, cue, k)
+            if first and not cue:
+                return -1.0
+            # a cue on the scene's last words would show for a blink before the cut: up a moment earlier instead
+            return min(cue_time(scene, words, cue, k), max(scene.start + 0.2, scene.end - 1.2))
 
         prev = self.members_of(self.spec.scenes[i - 1]) if i else []
         prev_names = {m["name"] for m in prev}
