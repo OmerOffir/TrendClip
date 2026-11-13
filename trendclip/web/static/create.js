@@ -503,6 +503,9 @@
     "pause to see how you die": "💀 Make a Pause to See How You Die",
     "pause to see where you spawn": "🌍 Make a Pause to See Where You Spawn",
     "pause to see who chases you": "😱 Make a Pause to See Who Chases You",
+    "land the diamond block": "💎 Make a Land the Diamond Block",
+    "land the netherite sword": "⚔️ Make a Land the Netherite Sword",
+    "land the enchanted golden apple": "🍎 Make a Land the Enchanted Golden Apple",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };

@@ -1337,6 +1337,10 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
     if spin.wanted(notes) and spin.axe_wanted(notes) and spin.axe_catalog(settings):  # Pause to Get Your Axe
         progress(None, "A Pause to Get Your Axe Short")
         return spin.script(settings, game, format=format, kind="axe")
+    if spin.wanted(notes) and (kind := spin.land_wanted(notes)) \
+            and spin.land_catalog(settings, kind.removeprefix(spin.LAND)):
+        progress(None, f"A Land The {spin.LANDS[kind.removeprefix(spin.LAND)]['target']} Short")  # @ilybobbing's shape
+        return spin.script(settings, game, format=format, kind=kind, rng=rng)
     if spin.wanted(notes) and (kind := spin.prize_wanted(notes)) \
             and spin.prize_catalog(settings, kind.removeprefix(spin.PRIZE)):
         progress(None, f"A Pause to Get Your {kind.removeprefix(spin.PRIZE).title()} Short")  # pet / armor / food, the Block Short's shape

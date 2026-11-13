@@ -294,3 +294,40 @@ def test_every_prize_set_has_every_rarity_and_a_thumbnail_scene():
         assert scene["kind"] == "blocks" and scene["hero"] == prize["hero"]
     assert spin.tier_of("Creeper", "pet") == "rare" and spin.tier_of("Creeper", "death") == "common"
     assert spin.prize_of_title("Pause To Get Your Minecraft Block 🎮") == ""
+
+
+def lands(s: Settings, name: str) -> None:
+    folder = spin.land_dir(s, name)
+    folder.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for i, item in enumerate(spin.LANDS[name]["items"]):
+        Image.new("RGBA", (16, 16), (8 * i, 100, 200, 255)).save(folder / f"l{i}.png")
+        entries.append({"name": item, "kind": name, "file": f"l{i}.png", "source": "x"})
+    (folder / "catalog.json").write_text(json.dumps(entries))
+
+
+def test_a_land_short_is_one_target_ten_seconds_and_true_taunts(tmp_path):
+    import random
+
+    from modules import sql_thumb
+
+    s = settings(tmp_path)
+    for name, land in spin.LANDS.items():
+        lands(s, name)
+        result = spin.script(s, "Minecraft", kind=spin.LAND + name, rng=random.Random(1))
+        assert result.spin and spin.kind_of(result.script) == spin.LAND + name and spin.has_strip(result.script)
+        assert len(result.script.split()) <= 30  # about ten seconds with the tail
+        assert spin.land_of_title(result.title) == name and spin.prize_of_title(result.title) == ""
+        option = f"land the {land['target'].lower()}"
+        assert option in OPTIONS and spin.land_wanted(option) == spin.LAND + name and spin.wanted(option)
+        assert sql_thumb.plan({"title": result.title})["hero"] == land["target"]
+        spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
+        strip, overlay = spin.plan(s, spoken, seed=name, kind=spin.kind_of(result.script), script_text=result.script)
+        with Image.open(strip.image) as a, Image.open(overlay.image) as b:
+            assert a.n_frames == b.n_frames
+        dealt = spin.land_deck(spin.land_catalog(s, name), land["target"], 300, random.Random(name))
+        hits = [i for i, (e, _, _) in enumerate(dealt) if e["name"] == land["target"]]
+        assert 15 <= len(hits) and all(b - a >= 4 for a, b in zip(hits, hits[1:]))
+        for i, (e, label, _) in enumerate(dealt):  # every taunt true to where the card is
+            near = any(j in hits for j in (i - 1, i + 1))
+            assert (label == "YOU LANDED IT!") == (i in hits) and (label == "ONE AWAY!") == (near and i not in hits)

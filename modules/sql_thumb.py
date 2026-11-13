@@ -29,7 +29,7 @@ W, H = 1080, 1920
 YELLOW, RED, WHITE, BLACK = (255, 214, 0), (226, 38, 38), (255, 255, 255), (0, 0, 0)
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 FOLDERS = ("reveal", "weapon", "axe", "spin", "dungeon", "prize-armor", "prize-food", "prize-potion", "prize-death",
-           "prize-spawn", "prize-base")
+           "prize-spawn", "prize-base", "land-diamond")
 DUNGEON_BOSS = "Wither"  # trendclip.dungeon's final room
 
 
@@ -94,6 +94,11 @@ def _plan(info: dict) -> dict | None:
         return {"kind": "blocks", "text": "WHAT DID YOU GET?"}
     from trendclip import spin
 
+    if name := spin.land_of_title(title):  # Land This: the target in the middle, its look-alikes around it
+        land = spin.LANDS[name]
+        around = [n for n in land["items"] if n != land["target"]][:4]
+        return {"kind": "blocks", "text": "CAN YOU LAND IT?", "hero": land["target"], "around": around,
+                "label": land["target"].upper(), "plain": True}
     if noun := spin.prize_of_title(title):  # Pause To Get Your Pet / See How You Die ...: the set's legendary
         prize = spin.PRIZES[noun]
         return {"kind": "blocks", "text": spin.prize_words(noun)["ask"], "hero": prize["hero"],
@@ -521,16 +526,21 @@ def draw_blocks(scene: dict, base: Image.Image) -> Image.Image:
         pic = picture(name)
         if pic is None:
             continue
-        colour = spin.TIERS[spin.tier_of(name, scene.get("set", ""))][0]
+        colour = (235, 235, 235) if scene.get("plain") else spin.TIERS[spin.tier_of(name, scene.get("set", ""))][0]
         cube = scaled(pic, 250, 250).rotate(rng.uniform(-25, 25), expand=True, resample=Image.BICUBIC)
         paste_glowing(img, cube, (centre[0] + dx - cube.width // 2, centre[1] + dy - cube.height // 2), colour, 22, 1.5)
     hero = scaled(picture(scene.get("hero", "Netherite Block")), 520, 520)
     paste_glowing(img, hero, (centre[0] - hero.width // 2, centre[1] - hero.height // 2), (255, 196, 0), 50, 2.0)
     d = ImageDraw.Draw(img)
-    f = font(70)
-    d.rounded_rectangle([centre[0] - 230, centre[1] + 290, centre[0] + 230, centre[1] + 390], radius=20,
+    label = scene.get("label", "LEGENDARY")
+    size = 70
+    while size > 40 and d.textlength(label, font=font(size)) > 900:
+        size -= 4
+    f = font(size)
+    half = max(230, d.textlength(label, font=f) / 2 + 40)
+    d.rounded_rectangle([centre[0] - half, centre[1] + 290, centre[0] + half, centre[1] + 390], radius=20,
                         fill=(255, 196, 0))
-    d.text((centre[0], centre[1] + 340), "LEGENDARY", font=f, fill=BLACK, anchor="mm")
+    d.text((centre[0], centre[1] + 340), label, font=f, fill=BLACK, anchor="mm")
     headline(img, "PAUSE NOW!", 110, 120, box=YELLOW, lines=1)
     headline(img, scene["text"], None, 150)
     badge(img)

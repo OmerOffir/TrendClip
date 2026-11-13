@@ -246,7 +246,7 @@ def prize_of_title(title: str) -> str:
 def has_strip(script_text: str) -> bool:
     """Whether the Short draws the hero strip under its card (where the subscribe sticker would go)."""
     kind = kind_of(script_text)
-    return kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP
+    return kind.startswith(LAND) or (kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP)
 
 
 def prize_wanted(notes: str = "") -> str:
@@ -300,7 +300,7 @@ def tier_of(name: str, noun: str = "") -> str:
 
 def wanted(notes: str = "") -> bool:
     low = (notes or "").lower()
-    return "spin" in low or "pause to get" in low or "pause to see" in low
+    return "spin" in low or "pause to get" in low or "pause to see" in low or "land the" in low
 
 
 def axe_wanted(notes: str = "") -> bool:
@@ -326,6 +326,9 @@ def kind_of(script_text: str) -> str:
         return "weapon"
     if AXE_MARK in text:
         return "axe"
+    if LAND_MARK in text:
+        return next((LAND + n for n, land in LANDS.items() if f"{LAND_MARK} {land['target'].lower()}." in text),
+                    "block")
     return next((PRIZE + noun for noun in PRIZES if prize_words(noun)["line"] in text), "block")
 
 
@@ -362,6 +365,8 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
 
     if kind.startswith(PRIZE):
         return prize_script(settings, game, kind.removeprefix(PRIZE), format=format)
+    if kind.startswith(LAND):
+        return land_script(settings, game, kind.removeprefix(LAND), format=format, rng=rng)
     have = {"axe": axe_catalog, "weapon": weapon_catalog}.get(kind, catalog)
     if not have(settings):
         raise ValueError("No pictures yet: run spin.fetch_library / fetch_axes / fetch_weapons first")
@@ -396,6 +401,147 @@ def prize_script(settings: Settings, game: str, kind: str, *, format: str = "sho
                        HOOK.format(game=game_name), [], "", words["pin"], pack,
                        on_screen=words["title"].removesuffix(PRIZES[kind]["emoji"]).strip(), card=CARD,
                        end_card=words["comment"].removesuffix("."))
+    return out.model_copy(update={"spin": True, "reactions": []})
+
+
+# --------------------------------------------------------------------------- Land This
+# @ilybobbing (205K subscribers in a year) posts one 10-second Short a day, the same each time: one thing flicking
+# through look-alikes, "pause on the diamond chest", every card a taunt ("NOPE", "ONE AWAY!", "GO BACK!") and the
+# win asks for a comment. 20-30k views and ~15 comments per 1,000 each (the owner, 2026-11-13: "we can do this").
+# Ours: one target among look-alikes, a taunt on every card that is true (ONE AWAY is the card next to the target),
+# the hero holding whatever the card shows, about 10 seconds.
+
+LAND = "land-"
+LAND_MARK = "Pause this video on the"
+LANDS = {
+    "diamond": {  # wiki block renders in their own folder
+        "target": "Diamond Block", "word": "diamond", "emoji": "💎", "source": "pages", "folder": "land-diamond",
+        "items": ["Diamond Block", "Emerald Block", "Iron Block", "Gold Block", "Redstone Block", "Lapis Block",
+                  "Coal Block", "Copper Block", "Netherite Block", "Amethyst Block", "Quartz Block", "Diamond Ore",
+                  "Prismarine", "Packed Ice"],
+        "titles": {"Diamond Block": "Block of Diamond", "Emerald Block": "Block of Emerald",
+                   "Iron Block": "Block of Iron", "Gold Block": "Block of Gold",
+                   "Redstone Block": "Block of Redstone", "Lapis Block": "Block of Lapis Lazuli",
+                   "Coal Block": "Block of Coal", "Copper Block": "Block of Copper",
+                   "Netherite Block": "Block of Netherite", "Amethyst Block": "Block of Amethyst",
+                   "Quartz Block": "Block of Quartz"},
+    },
+    "sword": {  # the weapon Shorts' icons: every sword, and netherite tools that look like the target at a glance
+        "target": "Netherite Sword", "word": "netherite", "emoji": "⚔️", "source": "have", "folder": "weapon",
+        "items": ["Netherite Sword", "Wooden Sword", "Stone Sword", "Copper Sword", "Iron Sword", "Golden Sword",
+                  "Diamond Sword", "Netherite Axe", "Netherite Pickaxe", "Netherite Spear", "Diamond Axe", "Mace",
+                  "Trident"],
+    },
+    "apple": {  # the food Short's icons
+        "target": "Enchanted Golden Apple", "word": "golden", "emoji": "🍎", "source": "have", "folder": "prize-food",
+        "items": ["Enchanted Golden Apple", "Golden Apple", "Apple", "Golden Carrot", "Melon Slice", "Cookie",
+                  "Honey Bottle", "Glow Berries", "Pumpkin Pie", "Spider Eye", "Bread", "Carrot", "Cake"],
+    },
+}
+LAND_SHARE = 0.1  # one card in ten is the target: there to land, gone in 1/15 s
+LAND_GOLD, LAND_NEAR = (255, 196, 0), (60, 200, 90)
+LAND_COLOURS = [(225, 55, 55), (60, 120, 255), (170, 70, 255), (240, 120, 30), (40, 170, 200)]
+TAUNTS = ["NOPE!", "NOT THIS ONE", "TRY AGAIN", "SO CLOSE...", "GO BACK!", "TOO SLOW!", "ALMOST!", "NOT EVEN CLOSE",
+          "UNLUCKY", "KEEP TRYING", "WRONG ONE", "HA! NOPE", "LIKE = 1 MORE TRY", "SUB & TRY AGAIN"]
+LAND_SCRIPT = ("{game} fans only. Pause this video on the {target}. Only one in a hundred can land it. "
+               "If you land it, comment {word}. Bet you can't.")
+LAND_TITLES = ["Bet You Can't Land The {Target} 😤🔥", "Only 1% Can Land The {Target} 😤🔥",
+               "Can You Land The {Target}? 😤🔥", "You Won't Land The {Target}... 😤🔥",
+               "Land The {Target} If You Can 😤🔥"]
+LAND_PINNED = ("Did you land the {target}? 👇 Comment {word} if you did.\nSend this to a friend: bet they can't.")
+LAND_DESCRIPTION = "Pause the video on the {game} {target}. Only 1% land it. Comment {word} if you did."
+
+
+def land_words(name: str, game: str = "Minecraft") -> dict:
+    land = LANDS[name]
+    return {"game": game, "target": land["target"].lower(), "Target": land["target"], "word": land["word"],
+            "want": f"land the {land['target'].lower()}"}
+
+
+def land_of_title(title: str) -> str:
+    """The Land This set a Short's title is about ("Bet You Can't Land The Diamond Block 😤🔥" -> "diamond")."""
+    low = (title or "").lower()
+    return next((n for n, land in LANDS.items() if f"land the {land['target'].lower()}" in low), "")
+
+
+def land_wanted(notes: str = "") -> str:
+    low = (notes or "").lower()
+    return next((LAND + n for n in LANDS if land_words(n)["want"] in low), "")
+
+
+def land_dir(settings: Settings, name: str) -> Path:
+    return settings.assets_dir / LANDS[name]["folder"]
+
+
+def land_catalog(settings: Settings, name: str) -> list[dict]:
+    """The set's pictures on this machine, empty unless the target and three look-alikes are there."""
+    import json
+
+    folder = land_dir(settings, name)
+    try:
+        entries = json.loads((folder / "catalog.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    items = LANDS[name]["items"]
+    out = [{**e, "path": str(folder / e["file"])} for e in entries if e["name"] in items]
+    out = [e for e in out if Path(e["path"]).is_file()]
+    have = {e["name"] for e in out}
+    return out if LANDS[name]["target"] in have and len(have) >= 4 else []
+
+
+def fetch_lands(settings: Settings, name: str, session=None) -> list[dict]:
+    """Only the sets with their own folder fetch; the others borrow pictures the weapon and food Shorts fetched."""
+    from . import reveal
+
+    land = LANDS[name]
+    if land["source"] == "pages":
+        return reveal.fetch_library(settings, name, land["items"], session=session, folder=land_dir(settings, name),
+                                    titles=land.get("titles"))
+    return land_catalog(settings, name)
+
+
+def land_deck(entries: list[dict], target: str, count: int, rng: random.Random) -> list[tuple[dict, str, tuple]]:
+    """`count` cards (entry, taunt, colour): the target one card in ten, never twice close together, and every other
+    card's taunt true to where it is (ONE AWAY! next to the target)."""
+    goal = next(e for e in entries if e["name"] == target)
+    others = [e for e in entries if e["name"] != target]
+    picked: list[dict] = []
+    for i in range(count):
+        near = any(p["name"] == target for p in picked[-3:])
+        if not near and (rng.random() < LAND_SHARE or (i >= 14 and all(p["name"] != target for p in picked[-14:]))):
+            picked.append(goal)
+            continue
+        while True:
+            pick = rng.choice(others)
+            if not picked or pick["name"] != picked[-1]["name"]:
+                break
+        picked.append(pick)
+    out = []
+    for i, e in enumerate(picked):
+        if e["name"] == target:
+            out.append((e, "YOU LANDED IT!", LAND_GOLD))
+        elif any(0 <= j < len(picked) and picked[j]["name"] == target for j in (i - 1, i + 1)):
+            out.append((e, "ONE AWAY!", LAND_NEAR))
+        else:
+            out.append((e, rng.choice(TAUNTS), rng.choice(LAND_COLOURS)))
+    return out
+
+
+def land_script(settings: Settings, game: str, name: str, *, format: str = "short",
+                rng: random.Random | None = None):
+    from . import quiz
+
+    if not land_catalog(settings, name):
+        raise ValueError(f"No {name} pictures yet: run spin.fetch_lands(settings, {name!r}) first")
+    game_name = quiz.game_name(game)
+    words = land_words(name, game_name)
+    title = (rng or random.Random()).choice(LAND_TITLES).format(**words)
+    pack = SimpleNamespace(title=title, description=LAND_DESCRIPTION.format(**words),
+                           hashtags=["#shorts", "#minecraft", "#gaming", "#pausechallenge", "#canyoulandthis"],
+                           title_card=CARD)
+    out = quiz._script(settings, game, "builtin", "gamer", format, LAND_SCRIPT.format(**words),
+                       HOOK.format(game=game_name), [], "", LAND_PINNED.format(**words), pack,
+                       on_screen=f"Land the {words['target']}", card=CARD, end_card=f"Comment {words['word']}")
     return out.model_copy(update={"spin": True, "reactions": []})
 
 
@@ -491,14 +637,15 @@ def deck(entries: list[dict], count: int, rng: random.Random) -> list[dict]:
     return out
 
 
-def card(settings: Settings, entry: dict, cache: dict) -> "object":
-    """The block on a dark card framed in its tier's colour, the tier on top and the name under it."""
+def card(settings: Settings, entry: dict, cache: dict, label: str = "", colour: tuple | None = None) -> "object":
+    """The block on a dark card framed in its tier's colour, the tier on top and the name under it (or, for Land
+    This, the card's taunt on top in its own colour)."""
     from PIL import Image, ImageDraw
 
     from .reveal import _font
 
     tier = entry.get("tier") or tier_of(entry["name"])
-    colour = TIERS[tier][0]
+    colour = colour or TIERS[tier][0]
     if entry["name"] not in cache:
         pic = Image.open(entry.get("path") or library_dir(settings) / entry["file"]).convert("RGBA")
         if entry.get("fill"):  # a wide screenshot, cropped square from its middle
@@ -513,10 +660,14 @@ def card(settings: Settings, entry: dict, cache: dict) -> "object":
     d = ImageDraw.Draw(img)
     d.rectangle([FRAME, FRAME, W - FRAME, H - FRAME], fill=(24, 24, 30))
     d.rectangle([FRAME, FRAME, W - FRAME, FRAME + 92], fill=colour)
-    label = _font(64)
-    text = tier.upper()
-    d.text(((W - d.textlength(text, font=label)) / 2, FRAME + 6), text, font=label,
-           fill=(20, 20, 20) if tier in ("common", "legendary") else (255, 255, 255))
+    text = label or tier.upper()
+    size = 64
+    while size > 36 and d.textlength(text, font=_font(size)) > W - 2 * FRAME - 24:
+        size -= 4
+    head = _font(size)
+    dark = sum(colour) > 480 or colour == TIERS["common"][0]  # black on gold, grey and green; white on the rest
+    d.text(((W - d.textlength(text, font=head)) / 2, FRAME + 6 + (64 - size) // 2), text, font=head,
+           fill=(20, 20, 20) if dark else (255, 255, 255))
     top = FRAME + 110
     d.rounded_rectangle([(W - PIC) // 2 - 24, top - 14, (W + PIC) // 2 + 24, top + PIC + 14], radius=28,
                         fill=PANEL)  # mid grey: dark blocks (Dragon Egg, Obsidian) vanished on the dark card
@@ -557,6 +708,12 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         boss = next(b for b in found["bosses"] if b["name"] == boss_of(spoken))
         cards = [boss_card(settings, boss, w, cache) for w in weapon_deck(found, count, rng)]
         shown = set(WEAPONS)
+    elif kind.startswith(LAND):
+        name = kind.removeprefix(LAND)
+        dealt = land_deck(land_catalog(settings, name), LANDS[name]["target"], count, rng)
+        picked = [e for e, _, _ in dealt]
+        cards = [card(settings, e, cache, label, colour) for e, label, colour in dealt]
+        shown = set(LANDS[name]["items"])
     elif kind.startswith(PRIZE):
         noun = kind.removeprefix(PRIZE)
         picked = deck(prize_catalog(settings, noun), count, rng)
@@ -572,11 +729,14 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     cards[0].save(path, save_all=True, append_images=cards[1:], duration=round(1000 * HOLD / fps), loop=0,
                   lossless=False, quality=90)
     extra = []
-    if kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP:
+    if kind.startswith(LAND) or (kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP):
         from . import prize_strip
 
-        strip = prize_strip.save(picked, PRIZES[noun]["look"], [TIERS[e["tier"]][0] for e in picked], HOLD, fps,
-                                 path.with_name(path.stem + "-strip.webp"))
+        if kind.startswith(LAND):
+            look, colours = "held", [c for _, _, c in dealt]
+        else:
+            look, colours = PRIZES[noun]["look"], [TIERS[e["tier"]][0] for e in picked]
+        strip = prize_strip.save(picked, look, colours, HOLD, fps, path.with_name(path.stem + "-strip.webp"))
         extra.append(Overlay(strip, 0.0, round(total + 0.5, 3), center=prize_strip.CENTER,
                              box=max(prize_strip.SIZE), style="asis", cut=True, animated=True))
     return extra + [Overlay(path, 0.0, round(total + 0.5, 3), center=BOSS_CENTER if kind == "weapon" else CENTER,
