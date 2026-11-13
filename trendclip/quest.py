@@ -701,6 +701,7 @@ class Stop:
     solo = False  # drawn alone: no road, no next stop
     PLACE, RULE, LOOK, V, START = "", "", HERO_LOOK, 0, HEARTS  # what changes from Short to Short (_varied)
     EARLY = False  # the cards flick from frame 0, not from "pause": the Short's first stop (the Block Short's pace)
+    EARLY_ALONE = False  # the same, but only when the stop is a Short of its own (in the long quest it waits)
 
     @classmethod
     def lose(cls, hearts: int) -> int:
@@ -1719,6 +1720,7 @@ class End(Fight):
     DARE, SLUG = "BEAT THE DRAGON?", "end"
     FOE, EDGES = "Ender Dragon", (25, 40)
     STAYS = True
+    EARLY_ALONE = True  # alone, weapons flick from frame 0 (the owner found the 4 s walk-in weak, 2026-11-13)
     COUNT = ""
     DRAGON = 118
 
@@ -1735,8 +1737,9 @@ class End(Fight):
 
     @classmethod
     def alone(cls) -> list[tuple[str, str]]:
-        swap = {"threat": "It has two hundred health.",
-                "pause": "Pause the video now! That is your weapon. The faster you win, the fewer hearts you lose.",
+        swap = {"threat": "It is coming for you.",  # no numbers to work out: one weapon, its hearts (the Block winner)
+                "pause": "Pause the video now! That is your weapon.",
+                "mine": f"I stopped on {_a(cls.MINE.lower())}. I lose {_hearts(-cls.mine().delta)}.",
                 "count": f"The dragon is down. I kept {_hearts(cls.after())}. How about you?"}
         return [(role, swap.get(role, text)) for role, text in super().alone()]
 
@@ -2564,6 +2567,9 @@ class Quest:
         self.stops = [cls(self.art, lines, words) for cls, lines, words in zip(_stops(only), scripts(only), tracks)]
         for stop in self.stops:
             stop.solo = bool(only)
+            if only and stop.EARLY_ALONE and not stop.EARLY:
+                stop.EARLY, stop.flick = True, 0.0
+                stop.deck = _deck(stop.all, int(stop.mine_at * FPS / HOLD) + 2, stop.rng)
         self.starts, at = [], 0.0
         for stop in self.stops:
             self.starts.append(at)
