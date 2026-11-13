@@ -433,7 +433,7 @@ A scene's keys (all optional except kind and narration):
 - "sources": 2 or more real pages (music press, interviews, the band's site, official charts; never Wikipedia),
   "claims": every fact and figure, each with 2 or more source numbers. Nothing invented: no made-up quotes, no
   guessed numbers. Keep it about the music and the band's story: no rumours, no private life beyond what the band
-  made public, no drugs or deaths told for shock.
+  made public, no drugs or deaths told for shock. A death is "passes away" (the voice says "dies" like "dices").
 - "title": "<Band> in 45 Seconds". "comment": the last question + 👇. "description": 2-3 sentences, the story's
   turns with their years. "hashtags": 2-3 without # (the band, its genre). "pillar": one of {", ".join(BAND_PILLARS)}.
 A different band, decade and genre from one script to the next.
