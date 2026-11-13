@@ -53,6 +53,16 @@
         "top": "tee",
         "top_color": "white",
         "play": "drums"
+      },
+      "_boss": {
+        "hair": "short",
+        "hair_color": "red",
+        "glasses": "square",
+        "face": "round",
+        "top": "jacket",
+        "top_color": "brown",
+        "pants": "black",
+        "play": "none"
       }
     }
   },
@@ -84,25 +94,36 @@
       ],
       "crack": {
         "cue": "fight"
-      }
+      },
+      "props": [
+        {
+          "kind": "trophy",
+          "text": "NO.1 IN UK",
+          "cue": "biggest"
+        }
+      ]
     },
     {
       "kind": "band",
       "set": "garage",
       "year": "1991",
       "line": "MANCHESTER",
+      "shot": "duo",
       "narration": "1991, Manchester. Noel joins his little brother's band on one condition: he writes every song.",
       "members": [
         {
           "name": "Liam",
-          "move": "bounce"
+          "expr": "cool",
+          "move": "bounce",
+          "say": "MY BAND.",
+          "say_cue": "little"
         },
-        "Bonehead",
-        "Guigsy",
         {
           "name": "Noel",
           "cue": "Noel",
           "expr": "cool",
+          "pose": "point",
+          "play": "none",
           "say": "I WRITE THE SONGS",
           "say_cue": "condition",
           "move": "slide"
@@ -120,15 +141,23 @@
           "name": "Liam",
           "say": "WE'RE ON!",
           "say_cue": "stage",
-          "move": "jump"
+          "move": "jump",
+          "expr": "grin"
         },
-        "Noel",
         {
-          "name": "Bonehead",
-          "move": "lean"
+          "name": "_boss",
+          "label": "RECORD BOSS",
+          "cue": "boss",
+          "expr": "shocked",
+          "pose": "point",
+          "say": "DEAL?",
+          "say_cue": "offers",
+          "move": "slide"
         },
-        "Guigsy",
-        "Tony"
+        {
+          "name": "Noel",
+          "expr": "grin"
+        }
       ],
       "props": [
         {
@@ -193,6 +222,10 @@
       "big": {
         "text": "250,000",
         "cue": "quarter"
+      },
+      "crowd_say": {
+        "text": "OASIS!",
+        "cue": "fans"
       }
     },
     {
@@ -200,6 +233,7 @@
       "set": "dark",
       "year": "2009",
       "line": "BACKSTAGE IN PARIS",
+      "shot": "duo",
       "narration": "2009, Paris. One last fight backstage. Noel walks out. Oasis is over.",
       "members": [
         {
@@ -215,9 +249,14 @@
           "play": "none",
           "pose": "cross",
           "say": "I'M DONE.",
-          "say_cue": "walks"
+          "say_cue": "fight",
+          "move": "exit",
+          "move_cue": "walks"
         }
       ],
+      "crack": {
+        "cue": "fight"
+      },
       "news": {
         "text": "OASIS SPLIT",
         "cue": "over"
@@ -285,7 +324,7 @@
     }
   ],
   "description": "Two brothers from Manchester, one band: Oasis from a garage in 1991 to Knebworth in 1996, the split in Paris in 2009 and the reunion in 2025.",
-  "comment": "Liam or Noel: who was right? 👇",
+  "comment": "Liam or Noel: who was right? \ud83d\udc47",
   "hashtags": [
     "oasis",
     "britpop"

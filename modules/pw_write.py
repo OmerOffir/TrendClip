@@ -226,8 +226,11 @@ def band_problems(script: dict) -> list[str]:
     if not re.search(r"\bin \d+ seconds\b", str(script.get("title") or ""), re.I):
         problems.append('the title is "<Band> in 45 Seconds" (the real length is filled in at the make)')
     members = (script.get("band") or {}).get("members") or {}
-    if len(members) > 5:
-        problems.append(f"{len(members)} members drawn (at most 5: the ones the story is about)")
+    band_ = [k for k in members if not str(k).startswith("_")]
+    if len(band_) > 5:
+        problems.append(f"{len(band_)} members drawn (at most 5: the ones the story is about)")
+    if len(members) - len(band_) > 2:
+        problems.append("at most 2 other people (the _keys: a record boss, a DJ)")
     for name, look in members.items():
         for era in look.get("eras") or []:
             if not isinstance(era, dict) or not (era.get("until") or era.get("from")):
@@ -289,7 +292,15 @@ def band_problems(script: dict) -> list[str]:
                 if not 0 < len(str(sc["poll"].get(side) or "")) <= 20:
                     problems.append(f"the poll's answer {side} is 1-20 characters")
         words_ = {w.lower().strip(".,!?:;'\"") for w in str(sc.get("narration") or "").split()}
-        for what in ("big", "news", "crack", "poll"):
+        said_ = [w.lower().strip(".,!?:;'\"") for w in str(sc.get("narration") or "").split()]
+        still = band_still(sc, said_)
+        if still > BAND_STILL:
+            problems.append(f"scene {k} runs {still} words with nothing new on screen (at most {BAND_STILL}: cue a member, "
+                            "a bubble, a prop, a move or a figure on a word in the gap)")
+        crowd_ = sc.get("crowd_say")
+        if crowd_ is not None and not (isinstance(crowd_, dict) and 0 < len(str(crowd_.get("text") or "")) <= band_world.BUBBLE_TEXT):
+            problems.append(f"scene {k}'s crowd_say is {{\"text\": 1-{band_world.BUBBLE_TEXT} characters, \"cue\": a word}}")
+        for what in ("big", "news", "crack", "poll", "crowd_say"):
             cue = str((sc.get(what) or {}).get("cue") or "") if isinstance(sc.get(what), dict) else ""
             if cue and not any(w.startswith(cue.lower()) for w in words_):
                 problems.append(f"scene {k}'s {what} cue {cue!r} is not a word of its narration")
@@ -297,7 +308,11 @@ def band_problems(script: dict) -> list[str]:
             if not isinstance(m, dict):
                 continue
             who = m.get("name")
-            for key in ("cue", "say_cue"):
+            if len(str(m.get("label") or "")) > 16:
+                problems.append(f"scene {k}: {who}'s label is over 16 characters")
+            if m.get("move") == "exit" and not m.get("move_cue"):
+                problems.append(f"scene {k}: {who} exits on a move_cue (the word they walk out on)")
+            for key in ("cue", "say_cue", "move_cue"):
                 if m.get(key) and not any(w.startswith(str(m[key]).lower()) for w in words_):
                     problems.append(f"scene {k}: {who}'s {key} {m[key]!r} is not a word of its narration")
             if m.get("pose") and m["pose"] not in band_world.POSES:
@@ -310,6 +325,28 @@ def band_problems(script: dict) -> list[str]:
     if scenes and sum(1 for sc in scenes for m in sc.get("members") or [] if isinstance(m, dict) and (m.get("say") or m.get("think"))) < len(scenes) // 2:
         problems.append(f"speech bubbles in at least {len(scenes) // 2} scenes (a member's say/think: they keep eyes on the screen)")
     return problems
+
+
+BAND_STILL = 8  # words a scene may run with nothing new coming on screen (about 3 seconds)
+
+
+def band_still(scene: dict, said: list[str]) -> int:
+    """The longest run of words in a scene with nothing new on screen: things come on at the scene's start and on
+    each cue word (members, bubbles, moves, props, figures, papers, the poll, the crowd)."""
+    cues = [str(m.get(key)) for m in scene.get("members") or [] if isinstance(m, dict)
+            for key in ("cue", "say_cue", "move_cue") if m.get(key)]
+    cues += [str(pr.get("cue")) for pr in scene.get("props") or [] if isinstance(pr, dict) and pr.get("cue")]
+    cues += [str(scene[w].get("cue")) for w in ("big", "news", "crack", "poll", "crowd_say")
+             if isinstance(scene.get(w), dict) and scene[w].get("cue")]
+    if scene.get("line_cue"):
+        cues.append(str(scene["line_cue"]))
+    marks = {0, len(said)}
+    for cue in cues:
+        hit = next((j for j, w in enumerate(said) if w.startswith(cue.lower().strip(".,!?:;'\""))), None)
+        if hit is not None:
+            marks.add(hit)
+    marks_ = sorted(marks)
+    return max((b - a for a, b in zip(marks_, marks_[1:])), default=0)
 
 
 BAND_EXAMPLE = pw_channel.SCRIPTS_DIR.parent.parent / "bandstory" / "examples" / "001-oasis.json"  # the approved sample
@@ -350,6 +387,9 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   A look's keys: {looks}; "extras": a list of {"|".join(band_world.EXTRAS)}.
   "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
   The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
+  Other people the story needs on screen (at most 2: a record boss, a DJ, the label) are keys that start with "_"
+  ("_boss": a look with "play": "none"); on stage they carry "label": who they are, 16 characters at most
+  ("RECORD BOSS", "KENNY EVERETT"). The narrator says "a record boss offers them a deal": the boss walks in on "boss".
 "thumbnail": {{"text": the hook for the picture people click (the whole band on stage under the name), 2-5 words,
   capitals, {BAND_LINE} characters at most, a question or a shock: "TOO LONG FOR RADIO?", "BROTHERS AT WAR"}}
 A scene's keys (all optional except kind and narration):
@@ -366,11 +406,13 @@ A scene's keys (all optional except kind and narration):
       least half the scenes, never in a scene about a death.
     "pose" when not playing: {"|".join(band_world.POSES)}; "move": {"|".join(band_world.MOVES)} (jump: hops on the
       beat, a big win; bounce: a happy bob; spin: a turn on the spot; shake: angry trembling; lean: rocking side to
-      side; slide: slides in from the side as they arrive). Give 1-3 members a move in most scenes, never the same
+      side; slide: slides in from the side as they arrive; exit: walks off the side on "move_cue", the word they
+      leave on: "Noel walks out" → {{"move": "exit", "move_cue": "walks"}}). Give 1-3 members a move in most scenes, never the same
       move in every scene, none in a sad scene.
   "big": {{"text": "250,000", "cue": a word}}: a figure that counts up as it is said ("#1" works too)
   "news": {{"text": "OASIS SPLIT", "cue": a word}}: a newspaper front page (a split, a scandal, a record)
   "crack": {{"cue": a word}}: lightning between the first two members (a fight)
+  "crowd_say": {{"text": "AY-OH!", "cue": a word}}: the crowd shouts back, a big spiky bubble over them (a concert's peak)
   "confetti": true (the big win)
   "shot": "wide" (the band on stage, the default) | "close" (the FIRST member listed, big, from the waist up: a
     singer's big moment, one person's turn) | "duo" (the first two, bigger: brothers, a pair, a fight)
@@ -384,8 +426,9 @@ A scene's keys (all optional except kind and narration):
   "empty_mic": true: the singer's mic alone in the spotlight, the others aside (a singer who died or left)
   Every cue is a word of THAT scene's narration.
 - Faces big: at least half the scenes are "close" or "duo"; a wide shot with 2-3 members rather than 5.
-- Something new on screen every 2-3 seconds: in each scene at least one entrance on a cue (a member, a big figure,
-  a prop, a newspaper). Show every claim literally with a prop. Never 3 scenes in a row with the same shot and the
+- Something new on screen every 2-3 seconds: never more than {BAND_STILL} words of a scene without a cue (a member, a
+  bubble, a move, a prop, a big figure, a newspaper, the crowd). Show what is said: "walks out" → he walks out,
+  "a record boss" → the boss is on stage, "the crowd sings" → crowd_say. Show every claim literally with a prop. Never 3 scenes in a row with the same shot and the
   same members: change the shot (close on the singer, duo for a pair) or who is on stage.
 - "sources": 2 or more real pages (music press, interviews, the band's site, official charts; never Wikipedia),
   "claims": every fact and figure, each with 2 or more source numbers. Nothing invented: no made-up quotes, no

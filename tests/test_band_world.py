@@ -228,3 +228,39 @@ def test_a_look_follows_the_year_and_the_hook_speaks_on_the_first_frame():
     s["band"]["members"]["Noel"]["eras"] = [{"until": 1999, "beard": "braids"}]
     found = " | ".join(pw_write.format_problems(s))
     assert "scene 1 is a close or duo" in found and "beard=braids" in found
+
+
+def test_a_member_walks_out_and_the_crowd_shouts_back():
+    """'Noel walks out': he walks off the side on the cue; a crowd_say pops over the crowd and they all jump; an
+    extra (a _key) gets the label as its name tag."""
+    script = json.loads(EXAMPLE.read_text())
+    words, t = [], 0.0
+    for sc in script["scenes"]:
+        for w in sc["narration"].split():
+            words.append(bw_render.Word(w, t, t + 0.3))
+            t += 0.34
+    spec = bw_render.spec_from_dict({**script, "look": "satellite"}, words)
+    bw_render.align(spec)
+    r = band_world.BandRenderer(spec, script["band"])
+    paris = next(i for i, sc in enumerate(script["scenes"]) if any(isinstance(m, dict) and m.get("move") == "exit" for m in sc["members"]))
+    noel = next(it for it in r.items[paris] if it["type"] == "member" and it["move"] == "exit")
+    assert spec.scenes[paris].start < noel["move_at"] < spec.scenes[paris].end
+    assert band_world.BandRenderer.motion(noel, noel["move_at"] - 0.1)[0] == 0
+    assert abs(band_world.BandRenderer.motion(noel, noel["move_at"] + 1.3)[0]) > bw_render.W * 0.5
+    shout = next(it for items in r.items for it in items if it["type"] == "crowdsay")
+    assert shout["at"] > 0
+    boss = next(it for items in r.items for it in items if it["type"] == "member" and it["name"].startswith("_"))
+    assert boss["tag"] and boss["label"] == "RECORD BOSS"
+    r.frame(shout["at"] + 0.5)
+    r.frame(noel["move_at"] + 0.6)
+
+
+def test_the_writer_catches_a_still_stretch():
+    from modules import pw_write
+
+    scene = {"narration": "one two three four five six seven eight nine ten eleven twelve", "members": [{"name": "A", "say_cue": "ten"}]}
+    said = scene["narration"].split()
+    assert pw_write.band_still(scene, said) == 9
+    scene["props"] = [{"kind": "tv", "cue": "five"}]
+    assert pw_write.band_still(scene, said) == 5
+    assert not [p for p in pw_write.band_problems(json.loads(EXAMPLE.read_text())) if "nothing new" in p]
