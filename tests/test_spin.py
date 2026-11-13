@@ -263,8 +263,15 @@ def test_a_prize_short_keeps_the_block_shorts_shape(tmp_path):
         assert spin.kind_of(result.script) == spin.PRIZE + kind and not spin.tall(result.script)
         assert spin.prize_wanted(f"pause to get your {kind}") == spin.PRIZE + kind
         spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
-        [overlay] = spin.plan(s, spoken, seed=kind, kind=spin.kind_of(result.script), script_text=result.script)
+        *strip, overlay = spin.plan(s, spoken, seed=kind, kind=spin.kind_of(result.script), script_text=result.script)
         assert overlay.start == 0 and overlay.center == spin.CENTER
+        assert len(strip) == (kind in spin.STRIP)
+        if strip:  # the hero strip under the captions, one picture per card
+            from trendclip import prize_strip
+
+            assert strip[0].center == prize_strip.CENTER and strip[0].animated
+            with Image.open(strip[0].image) as a, Image.open(overlay.image) as b:
+                assert a.n_frames == b.n_frames and a.size == prize_strip.SIZE
     assert spin.kind_of(SPOKEN) == "block" and spin.prize_wanted("pause to get your block") == ""
     assert spin.prize_wanted("pause to get your mob") == ""  # that is arena's mob-vs-boss
 

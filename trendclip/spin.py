@@ -113,6 +113,7 @@ PRIZES = {
         "hero": "Enchanted Golden Apple",
     },
 }
+STRIP = {"food"}  # sets drawn with the quest hero under the card (prize_strip), a test against the plain ones
 PRIZE = "prize-"  # a prize Short's kind: "prize-pet" (arena has its own "pet": your mob against a boss)
 PRIZE_MARK = re.compile(r"The (\w+) you stop on is yours\.")
 PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. The {noun} you stop on is yours. Grey is common. "
@@ -424,7 +425,8 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         shown = set(WEAPONS)
     elif kind.startswith(PRIZE):
         noun = kind.removeprefix(PRIZE)
-        cards = [card(settings, e, cache) for e in deck(prize_catalog(settings, noun), count, rng)]
+        picked = deck(prize_catalog(settings, noun), count, rng)
+        cards = [card(settings, e, cache) for e in picked]
         shown = set(PRIZES[noun]["items"])
     else:
         cards = [card(settings, e, cache) for e in deck(catalog(settings), count, rng)]
@@ -435,7 +437,15 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
     path = out_dir / (re.sub(r"[^a-z0-9]+", "-", (seed or "spin").lower())[:40].strip("-") + ".webp")
     cards[0].save(path, save_all=True, append_images=cards[1:], duration=round(1000 * HOLD / fps), loop=0,
                   lossless=False, quality=90)
-    return [Overlay(path, 0.0, round(total + 0.5, 3), center=BOSS_CENTER if kind == "weapon" else CENTER,
+    extra = []
+    if kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP:
+        from . import prize_strip
+
+        strip = prize_strip.save(picked, noun, [TIERS[tier_of(e["name"])][0] for e in picked], HOLD, fps,
+                                 path.with_name(path.stem + "-strip.webp"))
+        extra.append(Overlay(strip, 0.0, round(total + 0.5, 3), center=prize_strip.CENTER,
+                             box=max(prize_strip.SIZE), style="asis", cut=True, animated=True))
+    return extra + [Overlay(path, 0.0, round(total + 0.5, 3), center=BOSS_CENTER if kind == "weapon" else CENTER,
                     box=max(cards[0].size), style="asis",
                     cut=True, animated=True)]
 
