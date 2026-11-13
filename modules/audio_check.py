@@ -25,6 +25,8 @@ NUMBERS = {"zero", "one", "two", "three", "four", "five", "six", "seven", "eight
            "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen", "twenty", "thirty",
            "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "million", "billion",
            "first", "second", "third", "fourth", "fifth", "tenth", "twentieth", "and", "a", "half", "quarter"}
+SPELLINGS = {"gray": "grey", "color": "colour", "center": "centre", "favorite": "favourite", "meter": "metre",
+             "theater": "theatre", "okay": "ok", "armor": "armour", "honor": "honour", "neighbor": "neighbour"}
 FILLERS = {"the", "a", "an", "this", "that", "its", "it's", "and", "of", "to", "in", "on", "s"}
 
 
@@ -35,7 +37,9 @@ def _norm(word: str) -> str:
 def sound(word: str) -> str:
     """A rough key for how a word sounds, so a spelling of the same name is not a mistake (Freddie / Freddy,
     Noel / Noelle)."""
-    w = re.sub(r"(ie|y|ey)$", "i", _norm(word).replace("'", ""))
+    w = _norm(word).replace("'", "")
+    w = SPELLINGS.get(w, SPELLINGS[w[:-1]] + "s" if w.endswith("s") and w[:-1] in SPELLINGS else w)
+    w = re.sub(r"(ie|y|ey)$", "i", w)
     w = re.sub(r"(.)\1+", r"\1", w)
     return re.sub(r"e$", "", w) if len(w) > 3 else w
 
@@ -77,9 +81,10 @@ def pieces(words: list[dict[str, Any]]) -> list[tuple[float, float, list[str]]]:
 def misheard(said: list[str], heard: str) -> list[tuple[str, str]]:
     """The words of `said` that came out as something else: (what the script says, what was heard). Numbers ("1970",
     "twentieth" / "20th"), a dropped "the" and spelling of the same sound are not reported."""
-    a = [_norm(w) for w in said]
-    b = [_norm(w) for w in heard.split()]
-    a_, b_ = [w for w in a if w], [w for w in b if w]
+    a = [_norm(w) for w in " ".join(said).replace("-", " ").split()]  # "forty-one": two number words
+    b = [_norm(w) for w in heard.replace("-", " ").split()]
+    a_ = [w for w in a if w and not _numberish(w)]  # numbers are said as words and written as digits: not compared
+    b_ = [w for w in b if w and not _numberish(w)]
     found = []
     for op, i0, i1, j0, j1 in difflib.SequenceMatcher(None, a_, b_, autojunk=False).get_opcodes():
         if op == "equal":
@@ -99,8 +104,10 @@ def misheard(said: list[str], heard: str) -> list[tuple[str, str]]:
             continue
         if len(exp) == len(got) == 1 and _same(exp[0], got[0]):
             continue
-        if not exp and all(w in FILLERS for w in got):
+        if not exp:  # a word heard that the script doesn't have: Whisper's own guess, not the voice's mistake
             continue
+        if len(joined_e) >= 8 and difflib.SequenceMatcher(None, joined_e, joined_g).ratio() >= 0.85:
+            continue  # the same words run together: "straight line or" / "straightliner"
         found.append((" ".join(exp) or "(nothing)", " ".join(got) or "(nothing)"))
     return found
 

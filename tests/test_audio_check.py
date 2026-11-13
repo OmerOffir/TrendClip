@@ -57,3 +57,11 @@ def test_every_channel_hands_its_words_to_the_ear(tmp_path, monkeypatch):
     assert audio_check.ear(tmp_path / "v.mp3", [bw_render.Word("Hi.", 0.0, 0.3)]) == []
     assert audio_check.ear(tmp_path / "v.mp3", [{"text": "Yo.", "start": 0, "end": 0.2}]) == []
     assert seen == [[{"word": "Hi.", "start": 0.0, "end": 0.3}], [{"word": "Yo.", "start": 0.0, "end": 0.2}]]
+
+
+def test_the_ear_ignores_numbers_spellings_and_its_own_guesses():
+    assert audio_check.misheard("It is five hundred forty-one metres.".split(), "It is 541 meters.") == []
+    assert audio_check.misheard("The grey block.".split(), "The gray block.") == []
+    assert audio_check.misheard("Which one?".split(), "Which one? Just me.") == []
+    assert audio_check.misheard("a straight line or not".split(), "a straightliner not") == []
+    assert audio_check.misheard("The Burj Khalifa.".split(), "The bird's call of the.") == [("burj khalifa", "bird's call of the")]
