@@ -118,11 +118,13 @@ def frame(entry: dict, look: str, colour: tuple, t: float, cache: dict):
     """One strip picture: the world, the hero and this card's prize, framed in the card's rarity colour. `look`:
     held (up over his head), beside (a pet runs with him), behind (it chases him), ahead (his death waits; he
     blinks red), home (the base he runs to), backdrop (the biome is the world)."""
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageOps
 
     key = (entry["name"], look)
     if key not in cache:
         pic = Image.open(entry["path"]).convert("RGBA")
+        if look == "behind":  # mob pictures face left; the chaser must face the hero it runs after (owner 2026-11-13)
+            pic = ImageOps.mirror(pic)
         cache[key] = pic if look == "backdrop" else _fitted(pic, BOX[look])
     pic = cache[key]
     hero_x = HERO_AT.get(look, HERO_X)
