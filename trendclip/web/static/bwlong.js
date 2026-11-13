@@ -226,12 +226,17 @@
     if (last && (!current || current.id !== last)) open(last);
   }
 
+  $("bwLClear").addEventListener("click", () => {
+    for (const id of ["bwLQuestion", "bwLArticle", "bwLMore"]) $(id).value = "";
+    $("bwLQuestion").focus();
+  });
+
   $("bwLStart").addEventListener("click", (e) => act(async () => {
     const article = $("bwLArticle").value.trim();
     if (!article) return showError("Name the Wikipedia article the video is about");
     const topic = [...$("bwLTopics").options].find((o) => o.value === article);
     const question = $("bwLQuestion").value.trim() || (topic ? topic.textContent : "");
-    const more = $("bwLMore").value.split(",").map((m) => m.trim()).filter(Boolean);
+    const more = $("bwLMore").value.split(/[,\n]/).map((m) => m.trim()).filter(Boolean);
     e.target.disabled = true;
     box.innerHTML = '<div class="empty">Reading Wikipedia and the pages it cites (a minute or two)…</div>';
     try {

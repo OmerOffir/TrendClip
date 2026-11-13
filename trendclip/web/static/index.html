@@ -282,11 +282,19 @@
         </div>
       </div>
       <div class="bw-w-start">
-        <input id="bwLArticle" list="bwLTopics" placeholder="Wikipedia article, e.g. Pheasant Island" aria-label="Wikipedia article">
-        <datalist id="bwLTopics"></datalist>
-        <input id="bwLQuestion" placeholder="The question (optional)" aria-label="Question">
-        <input id="bwLMore" placeholder="More articles, comma separated (optional)" aria-label="More Wikipedia articles">
-        <button type="button" class="btn-primary" id="bwLStart">📚 Read the sources</button>
+        <div class="bw-l-form">
+          <label>1 · The question the video answers
+            <input id="bwLQuestion" autocomplete="off" placeholder="e.g. Why Did Israel and Iran Go From Allies to Enemies?"></label>
+          <label>2 · The main Wikipedia article
+            <input id="bwLArticle" list="bwLTopics" autocomplete="off" placeholder="e.g. Iran–Israel relations"></label>
+          <datalist id="bwLTopics"></datalist>
+          <label>3 · More Wikipedia articles (optional, up to 4, one per line)
+            <textarea id="bwLMore" rows="4" autocomplete="off" placeholder="Periphery doctrine&#10;Stuxnet"></textarea></label>
+          <div class="bw-l-buttons">
+            <button type="button" class="btn-primary" id="bwLStart">📚 Read the sources</button>
+            <button type="button" class="btn-secondary" id="bwLClear">Clear</button>
+          </div>
+        </div>
         <span class="spacer"></span>
         <select id="bwLSessions" aria-label="Continue a long video" hidden></select>
         <button type="button" class="btn-secondary" id="bwLOpen" hidden>Continue</button>
