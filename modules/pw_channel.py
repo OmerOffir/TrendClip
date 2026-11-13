@@ -612,7 +612,7 @@ def _plan_video(info: dict | None) -> dict | None:
     return {"key": info["key"], "title": info.get("title", ""), "duration_seconds": info.get("duration_seconds"),
             "check": info.get("check") or [], "youtube": (info.get("uploads") or {}).get("youtube"),
             "script_file": info.get("script_file", ""), "created_at": info.get("created_at", ""),
-            "video_t": info.get("video_t", "")}
+            "video_t": info.get("video_t", ""), **({"ear": info["ear"]} if isinstance(info.get("ear"), list) else {})}
 
 
 def plan_view(settings, now: datetime | None = None) -> dict[str, Any]:
@@ -976,7 +976,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         progress(None, "Listening to the narration")
         from modules import audio_check  # the ear: words the voice says wrong ("dies" like "dices"), shown on the card
 
-        ear = audio_check.check_quietly(work / "voice.mp3", [{"word": w.text, "start": w.start, "end": w.end} for w in spoken])
+        ear = audio_check.ear(work / "voice.mp3", spoken)
         got = None
         try:
             got = song_track(script, spec.duration, work / "music.mp3", work / "voice.mp3", out_dir)

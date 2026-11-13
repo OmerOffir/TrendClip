@@ -10,6 +10,12 @@ def no_kokoro(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_ear(monkeypatch):
+    """Tests never load Whisper (modules.audio_check): it is the hub's GPU work, minutes on a CPU."""
+    monkeypatch.setenv("AUDIO_CHECK", "off")
+
+
+@pytest.fixture(autouse=True)
 def offline_sticker_tagging(monkeypatch):
     """Tests never send the real stickers/ folder to Gemini."""
     monkeypatch.setattr(stickers, "tag_with_gemini", lambda settings, infos, client=None: infos)

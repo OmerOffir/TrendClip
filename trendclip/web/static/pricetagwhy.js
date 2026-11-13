@@ -2,7 +2,7 @@
 // video or the script it will be made from, with Approve / Don't post / Upload now / Make now, and every script),
 // Topics, Write it myself and Write a week (paste-in LLM flows into the script queue) and Long video (from week 2).
 (() => {
-  const { api, esc } = window.TrendClip;
+  const { api, esc, mmss, earNote } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
   const els = { error: $("pwError"), hint: $("pwHint"), yt: $("pwYouTube"), plan: $("pwPlan"), scripts: $("pwScripts"),
     videos: $("pwVideos"), count: $("pwVideosCount"), topics: $("pwTopics"), topicsCount: $("pwTopicsCount"),
@@ -13,10 +13,6 @@
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const fmtWhen = (iso) => (iso || "").replace("T", " ").slice(0, 16);
   const sourceList = (sources) => (sources || []).map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a></li>`).join("");
-  // The ear (modules/audio_check): words the narrator may say wrong, with where to listen; a green tick when it heard all
-  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
-  const earNote = (v) => !Array.isArray(v.ear) ? "" : !v.ear.length ? '<span class="pill good">👂 The voice says every word right</span>'
-    : `<span class="da-note">👂 Listen before you approve: ${v.ear.map((e) => `${mmss(e.at || 0)} "${esc(e.word)}" sounded like "${esc(e.as)}"`).join(" · ")}</span>`;
   const claimList = (claims) => (claims || []).map((c) => `<li>${esc(c.claim)} <span class="hint">[${(c.sources || []).map(esc).join(", ")}]</span></li>`).join("");
   const STATES = {
     posted: ["good", "▶️ On YouTube"], approved: ["good", "✅ Approved"], waiting: ["warn", "⏸ Waiting for Approve"],

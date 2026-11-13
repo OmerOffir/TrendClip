@@ -666,6 +666,10 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
         _save(f, "script.json", script)
         progress(0.02, "Recording the narration")
         words = bw_channel.record_script(script, f / "voice.mp3", lambda m: progress(None, m))
+        progress(0.05, "Listening to the narration")
+        from modules import audio_check
+
+        ear = audio_check.ear(f / "voice.mp3", words)
         spec = spec_for(script, words)
         spec.sfx = bw_channel.sfx_on()
         progress(0.08, "Placing the maps")
@@ -691,7 +695,7 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
                 "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), "geography", "history", "maps"]))[:8],
                 "sources": script.get("sources", []), "duration_seconds": round(spec.duration, 2),
                 "words": bw_script.words(script["narration"]), "music": {"title": track.title} if track else None,
-                "created_at": datetime.now().replace(microsecond=0).isoformat()}
+                "created_at": datetime.now().replace(microsecond=0).isoformat(), **({"ear": ear} if ear is not None else {})}
         _save(f, "info.json", info)
         state = _load(f, "state.json")
         state["step"] = "made"

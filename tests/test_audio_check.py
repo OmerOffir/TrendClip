@@ -44,3 +44,16 @@ def test_the_owner_adds_a_song_to_a_queued_band_script(tmp_path, monkeypatch):
     assert "song" not in json.loads((tmp_path / "queue" / "q.json").read_text())
     assert not (tmp_path / "songs" / "q.mp3").exists()
     assert pw_channel.song_track({"title": "x"}, 30, tmp_path / "m.mp3", tmp_path / "v.mp3", tmp_path) is None
+
+
+def test_every_channel_hands_its_words_to_the_ear(tmp_path, monkeypatch):
+    """Word objects (Borderline Why, Encore) and dicts (SideQuestLogic) alike; off in the settings means not run."""
+    from modules import bw_render
+
+    seen = []
+    monkeypatch.setattr(audio_check, "check_quietly", lambda voice, words: seen.append(words) or [])
+    assert audio_check.ear(tmp_path / "v.mp3", [bw_render.Word("Hi.", 0.0, 0.3)]) is None  # AUDIO_CHECK=off in the tests
+    monkeypatch.setenv("AUDIO_CHECK", "on")
+    assert audio_check.ear(tmp_path / "v.mp3", [bw_render.Word("Hi.", 0.0, 0.3)]) == []
+    assert audio_check.ear(tmp_path / "v.mp3", [{"text": "Yo.", "start": 0, "end": 0.2}]) == []
+    assert seen == [[{"word": "Hi.", "start": 0.0, "end": 0.3}], [{"word": "Yo.", "start": 0.0, "end": 0.2}]]

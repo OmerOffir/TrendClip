@@ -1,7 +1,7 @@
 // Borderline Why tab: the YouTube login, "make the next video now", the videos with Approve / Don't post / Upload,
 // and the topic list (with questions added by hand).
 (() => {
-  const { api, esc } = window.TrendClip;
+  const { api, esc, earNote } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
   const els = {
     error: $("bwError"), hint: $("bwAutoHint"), yt: $("bwYouTube"), make: $("bwMake"), makeStatus: $("bwMakeStatus"),
@@ -165,6 +165,7 @@
           <span class="pill">📅 ${esc(fmtWhen((v.job || {}).post_at))}</span><span class="pill">${esc(v.words)} words</span></div>
         <span class="hint">made ${esc(fmtWhen(v.created_at))} · ${esc(v.origin || "")}${v.music ? ` · 🎵 ${esc(v.music.title)}` : ""} · palette ${esc(v.theme || "")}</span>
         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}
+        ${earNote(v)}
         ${up ? `<span class="hint"><a href="${esc(up.url)}" target="_blank" rel="noopener">${esc(up.url)}</a>${up.studio_url ? ` · <a href="${esc(up.studio_url)}" target="_blank" rel="noopener">YouTube Studio ↗</a>` : ""}${up.comment ? ` · 💬 <a href="${esc(up.comment.url)}" target="_blank" rel="noopener">comment posted</a>: pin it on YouTube` : up.comment_error ? ` · 💬 comment failed: ${esc(up.comment_error)}` : ""}</span>` : ""}
         <div class="da-yt-text">
           <div class="da-yt-row"><span class="da-yt-label">Question</span><span>${esc(v.question || "")}</span></div>

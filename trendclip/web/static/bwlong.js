@@ -1,7 +1,7 @@
 // Borderline Why "Long video": 8-15 minute landscape videos in chapters, written with any LLM by hand. The code reads
 // the sources and checks every answer; you carry the prompts (modules/bw_long.py).
 (() => {
-  const { api, esc } = window.TrendClip;
+  const { api, esc, earNote } = window.TrendClip;
   const $ = (id) => document.getElementById(id);
   const box = $("bwLSession");
   if (!box) return;
@@ -112,6 +112,7 @@
       const chapters = (s.info.chapters || []).map(([t, title]) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")} ${title}`).join(" · ");
       body += `<div class="bw-w-step"><b>🎬 ${esc(s.info.title)}</b>
         <span class="hint">${Math.round(s.info.duration_seconds / 60 * 10) / 10} minutes · ${esc(chapters)}</span>
+        ${earNote(s.info)}
         <video class="bw-l-video" controls preload="metadata" src="${base(s.id)}/file/video.mp4${fresh()}"></video>
         ${s.thumbnail ? `<img class="bw-l-thumb" alt="Thumbnail" src="${base(s.id)}/file/thumbnail.jpg${fresh()}">` : ""}
         <details><summary>Description</summary><pre class="bw-l-desc">${esc(s.info.description)}</pre></details>

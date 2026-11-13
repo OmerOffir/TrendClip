@@ -205,7 +205,7 @@
       a.setAttribute("download", s.filename);
     }
     els.title.textContent = s.title;
-    els.meta.innerHTML = `${plannedPill(s)}${esc(s.game)} · ${Math.round(s.duration_seconds || 0)}s${s.music_title ? ` · ♪ ${esc(s.music_title)}` : ""}`;
+    els.meta.innerHTML = `${plannedPill(s)}${esc(s.game)} · ${Math.round(s.duration_seconds || 0)}s${s.music_title ? ` · ♪ ${esc(s.music_title)}` : ""}${T.earNote ? " " + T.earNote(s) : ""}`;
 
     const t = s.texts;
     els.source.textContent = t.source === "gemini" ? `Texts written by Gemini (${t.model})` : "Texts from the template (edit freely, or let Gemini improve them)";

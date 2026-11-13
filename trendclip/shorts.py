@@ -65,6 +65,7 @@ class ShortVideo(BaseModel):
     pinned_comment: str = ""
     channel_handle: str = ""
     answer: str = ""  # quiz Shorts
+    ear: list[dict[str, Any]] | None = None  # words the voice may say wrong (modules.audio_check), shown on the card
     created_at: datetime = Field(default_factory=utcnow)
     edited_at: datetime | None = None
     render_settings: dict[str, Any] = Field(default_factory=dict)  # the RenderRequest, so the Short can be edited
@@ -394,6 +395,10 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         progress(None, f"Recording the voiceover ({voice})")
         words = voiceover.synthesize(req.script, base.with_suffix(".mp3"), voice, rate, local_rate=chosen_rate)
 
+    progress(None, "Listening to the narration")
+    from modules import audio_check  # the ear: words the voice says wrong, on the card with where to listen
+
+    ear = audio_check.ear(base.with_suffix(".mp3"), words)
     flashes = quiz.schedule_flashes(req.flashes, words)
     # Pop-ups in a quiz are its clues (the emoji movie quiz): a row that stays up until the closing flash.
     row_until = (flashes[-1].start if flashes else words[-1].end) if req.flashes and req.popups else None
@@ -456,7 +461,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
             "music_source": req.music_source if track else "none", "output_name": None,
             "music_mood": (track.mood if track else "") or req.music_mood,
         }).model_dump(mode="json"),
-        music_mood=track.mood if track else "",
+        music_mood=track.mood if track else "", ear=ear,
     )
     output.with_suffix(".json").write_text(short.model_dump_json(indent=2), encoding="utf-8")
     shutil.copyfile(output, settings.output_dir / FINAL_SHORT)

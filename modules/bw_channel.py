@@ -794,6 +794,10 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         progress(0.12, f"The voice runs {spec.duration:.0f} s: speeding it up a little to fit {fit:.0f} s")
         words = fit_voice(work / "voice.mp3", words, spec.duration, fit)
         spec = bw_render.spec_from_dict(script, words)
+    progress(0.13, "Listening to the narration")
+    from modules import audio_check  # the ear: words the voices say wrong, on the card with where to listen
+
+    ear = audio_check.ear(work / "voice.mp3", words)
     spec.sfx = sfx_on()
     spec.moves = moves_on()
     progress(0.15, "Placing the maps")
@@ -823,7 +827,7 @@ def _make(settings, job: Job, progress: Progress, work: Path, *, out_dir, client
         "words": bw_script.words(script["narration"]), "theme": spec.theme, "music": {"title": track.title} if track else None,
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         "job": {"day": job.day.isoformat(), "slot": job.slot, "post_at": job.post_at.isoformat(timespec="minutes")},
-        "rewind": spec.rewind,
+        "rewind": spec.rewind, **({"ear": ear} if ear is not None else {}),
         **({"comment": str(script["comment"]).strip()} if balls and str(script.get("comment") or "").strip() else {}),
     }
     info["check"] = check_video(info)

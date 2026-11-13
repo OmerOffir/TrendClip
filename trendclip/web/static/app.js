@@ -831,9 +831,16 @@
   });
   showWorkspace(new URLSearchParams(location.search).get("workspace") || localStorage.getItem("trendclip.workspace"));
 
+  // The ear (modules/audio_check): words a narrator may say wrong, with where to listen; every channel's cards show it
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const earNote = (v) => !v || !Array.isArray(v.ear) ? "" : !v.ear.length ? '<span class="pill good">👂 The voice says every word right</span>'
+    : `<span class="da-note">👂 Listen before it goes out: ${v.ear.map((e) => `${mmss(e.at || 0)} "${esc(e.word)}" sounded like "${esc(e.as)}"`).join(" · ")}</span>`;
+
   window.TrendClip = {
     api,
     esc,
+    mmss,
+    earNote,
     fmtLength,
     showView,
     getData: () => state.data,

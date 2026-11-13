@@ -176,3 +176,19 @@ if __name__ == "__main__":
     folder = Path(sys.argv[1])
     got = check(folder / "voice.mp3", json.loads((folder / "voice.words.json").read_text()))
     print(json.dumps(got, indent=1))
+
+
+def ear(voice: Path, words) -> list[dict[str, str]] | None:
+    """check_quietly() for any channel's timed words: bw_render.Word objects, or {"word"/"text", "start", "end"} dicts.
+    Turned off with AUDIO_CHECK=off in the settings."""
+    import os
+
+    if os.environ.get("AUDIO_CHECK", "on").lower() in ("off", "0", "no"):
+        return None
+    timed = []
+    for w in words or []:
+        if isinstance(w, dict):
+            timed.append({"word": str(w.get("word", w.get("text", ""))), "start": float(w["start"]), "end": float(w["end"])})
+        else:
+            timed.append({"word": str(w.text), "start": float(w.start), "end": float(w.end)})
+    return check_quietly(voice, timed) if timed else None
