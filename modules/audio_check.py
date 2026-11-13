@@ -83,6 +83,7 @@ def misheard(said: list[str], heard: str) -> list[tuple[str, str]]:
     """The words of `said` that came out as something else: (what the script says, what was heard). Numbers ("1970",
     "twentieth" / "20th"), a dropped "the" and spelling of the same sound are not reported."""
     a = [_norm(w) for w in " ".join(said).replace("-", " ").split()]  # "forty-one": two number words
+    heard = re.sub(r"(\w)['’]s\b", r"\1 is", heard)  # "grey's" for "grey is": the same words, run together
     b = [_norm(w) for w in heard.replace("-", " ").split()]
     a_ = [w for w in a if w and not _numberish(w)]  # numbers are said as words and written as digits: not compared
     b_ = [w for w in b if w and not _numberish(w)]

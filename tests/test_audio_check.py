@@ -65,3 +65,8 @@ def test_the_ear_ignores_numbers_spellings_and_its_own_guesses():
     assert audio_check.misheard("Which one?".split(), "Which one? Just me.") == []
     assert audio_check.misheard("a straight line or not".split(), "a straightliner not") == []
     assert audio_check.misheard("The Burj Khalifa.".split(), "The bird's call of the.") == [("burj khalifa", "bird's call of the")]
+
+
+def test_a_contraction_is_not_a_mistake():
+    assert audio_check.misheard("Grey is common.".split(), "Grey's common.") == []
+    assert audio_check.misheard("Did you get gold?".split(), "Did he get gold?") == [("you", "he")]

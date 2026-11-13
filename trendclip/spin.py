@@ -56,7 +56,7 @@ PANEL = (128, 132, 146)
 
 HOOK = "{game} fans only."
 SCRIPT = ("{game} fans only. Pause the video right now. The block you stop on is yours. Grey is common. Blue is rare. "
-          "Purple is epic. Gold is legendary. Did you get gold? {mythic} Comment your block. Then send this to a friend, "
+          "Purple is epic. Gold is legendary. Is yours gold? {mythic} Comment your block. Then send this to a friend, "
           "and see who gets the better one.")
 TITLE = "Pause To Get Your {game} Block 🎮"
 CARD = "PAUSE NOW!"  # one line: the four-line "PAUSE NOW - WHAT DID YOU GET?" covered the rarity label
@@ -213,7 +213,7 @@ PRIZES["food"].update(source="icons", look="held")
 STRIP = {"food", "armor", "base", "potion", "death", "spawn", "chase"}  # drawn with the quest hero (prize_strip)
 PRIZE = "prize-"  # a prize Short's kind: "prize-pet" (arena has its own "pet": your mob against a boss)
 PRIZE_SCRIPT = ("{game} fans only. Pause the video right now. {line} Grey is common. Blue is rare. Purple is epic. "
-                "Gold is legendary. Did you get gold? {comment} Then send this to a friend, and see {share}")
+                "Gold is legendary. Is yours gold? {comment} Then send this to a friend, and see {share}")
 PRIZE_TITLE = "Pause To Get Your {game} {Noun} {emoji}"
 PRIZE_PINNED = ("What {noun} did you get? 👇 Gold = legendary 🏆\nSend this to a friend and see who gets the better "
                 "one.")
