@@ -62,7 +62,7 @@
           const what = r.title ? `🎬 ${esc(r.title)}` : waiting ? `📝 the bot makes it from: ${esc(r.waiting)}` : r.state === "empty" ? "— nothing planned —" : "";
           return `<div class="up-row ${esc(r.state)}${r.twice ? " twice" : ""}${waiting ? " waiting" : ""}">
             <span class="time">${esc(r.time || "—")}</span>
-            <span class="mark ${esc(r.channel)}" title="${esc(r.label)}">${{ sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW", pricetagwhy: "PW" }[r.channel] || "?"}</span>
+            <span class="mark ${esc(r.channel)}" title="${esc(r.label)}">${{ sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW", pricetagwhy: "ES" }[r.channel] || "?"}</span>
             <span class="title">${what}${r.seconds ? `<small>${Math.round(r.seconds)} s</small>` : ""}${made}${r.twice ? ' <span class="pill warn">planned twice</span>' : ""}</span>
             <span class="actions">${pill}${open}${planIt}${thumb}</span>
             ${canThumb && opened.has(thumbKey(r)) ? thumbBox(r) : ""}
@@ -75,7 +75,7 @@
   function waitingLine(data) {
     const w = data.waiting || {};
     const parts = Object.entries(w).filter(([, q]) => q.count || q.note).map(([channel, q]) => {
-      const label = { sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW", pricetagwhy: "PW" }[channel] || channel;
+      const label = { sidequestlogic: "SQ", darkarchives: "DA", borderlinewhy: "BW", pricetagwhy: "ES" }[channel] || channel;
       if (q.note) return `${label} ?`;
       if (channel === "darkarchives") {
         const rankings = q.items.filter((i) => i.ranking).length;

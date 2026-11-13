@@ -23,7 +23,7 @@ from trendclip import publish
 
 logger = logging.getLogger(__name__)
 
-CHANNELS = {"sq": "SideQuestLogic", "pw": "Price Tag Why", "bw": "Borderline Why"}
+CHANNELS = {"sq": "SideQuestLogic", "pw": "Encore Story", "bw": "Borderline Why"}
 SERVED = "https://i.ytimg.com/vi/{id}/sardefault.jpg"  # the vertical thumbnail the Shorts shelf shows: ours when it took
 FRAME = "https://i.ytimg.com/vi/{id}/oar2.jpg"  # the frame YouTube picked itself
 VERIFY_WAIT = 90.0  # seconds after the second setting before YouTube serves what it has (THUMB_VERIFY_WAIT)
@@ -31,7 +31,7 @@ MATCH_LIMIT = 18.0  # mean pixel distance (0-255) under which two thumbnails are
 TIMEOUT = 20
 LOG_KEYWORDS = {
     "sq": ("planner", "assistant", "shorts", "publish", "gamer", "catch", "SideQuest", "emergency"),
-    "pw": ("pw_channel", "pw_", "Price Tag", "pricetag"),
+    "pw": ("pw_channel", "pw_", "Price Tag", "pricetag", "Encore", "band_"),
     "bw": ("bw_channel", "bw_", "Borderline", "borderline"),
 }
 LOG_LEVELS = ("WARNING", "ERROR", "CRITICAL", "Traceback")

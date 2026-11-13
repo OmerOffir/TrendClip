@@ -1101,13 +1101,13 @@ def upload(key: str, privacy: str | None = None, progress=lambda f, m: None, you
 
     info = load_info(key, out_dir)
     if info is None:
-        raise publish.PublishError(f"No Price Tag Why video {key}")
+        raise publish.PublishError(f"No Encore Story video {key}")
     if info.get("check"):
         raise publish.PublishError(f"{info['title']} failed its check: " + "; ".join(info["check"]))
     if on_hold(Day.today()):
         raise publish.PublishError(f"Uploads are on hold until {hold_until():%d %b} (PW_HOLD_UNTIL: the YouTube channel's new name)")
     if youtube is None and not connected():
-        raise publish.PublishError("Connect the Price Tag Why YouTube channel first (dashboard → Price Tag Why → Connect YouTube)")
+        raise publish.PublishError("Connect the Encore Story YouTube channel first (dashboard → Encore Story → Connect YouTube)")
     client = youtube or publish._youtube(TOKEN)
     record = publish.upload_file(video_file(key, out_dir), upload_request(info, privacy, publish_at), True, progress, client)
     if thumb := thumb_path(key, out_dir):
@@ -1174,7 +1174,7 @@ def comment(info: dict, youtube=None, out_dir: Path | None = None) -> dict | Non
     if record.get("privacy") == "private":
         error = "comments only work once the video is public or unlisted"
     elif youtube is None and not can_comment():
-        error = "reconnect the Price Tag Why YouTube channel once to allow comments"
+        error = "reconnect the Encore Story YouTube channel once to allow comments"
     else:
         try:
             text = info.get("comment") or COMMENT
@@ -1197,7 +1197,7 @@ def comment_again(key: str, out_dir: Path | None = None, youtube=None) -> dict:
 
     info = load_info(key, out_dir)
     if info is None or not (info.get("uploads") or {}).get("youtube"):
-        raise publish.PublishError("That Price Tag Why video is not on YouTube")
+        raise publish.PublishError("That Encore Story video is not on YouTube")
     found = comment(info, youtube, out_dir)
     if found is None:
         raise publish.PublishError(info["uploads"]["youtube"].get("comment_error") or "the comment didn't go through")

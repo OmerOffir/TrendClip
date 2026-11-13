@@ -123,7 +123,7 @@ def make_slot(req: SlotRequest) -> dict[str, Any]:
     """A slot's video now, from the next queued script (a video already there is set aside first)."""
     settings = _settings()
     if req.slot not in pw_channel.slots():
-        raise HTTPException(status_code=400, detail=f"{req.slot} is not a Price Tag Why time ({', '.join(pw_channel.slots())})")
+        raise HTTPException(status_code=400, detail=f"{req.slot} is not an Encore Story time ({', '.join(pw_channel.slots())})")
     job = pw_channel.job_for(settings, req.day, req.slot)
     if pw_channel.on_hold(job.day):
         raise HTTPException(status_code=400, detail=f"Slots are on hold until {pw_channel.hold_until():%d %b}: make a sample from the Scripts list instead")
@@ -152,7 +152,7 @@ class ScriptRequest(BaseModel):
 def _slot_job(req: SlotRequest):
     settings = _settings()
     if req.slot not in pw_channel.slots():
-        raise HTTPException(status_code=400, detail=f"{req.slot} is not a Price Tag Why time ({', '.join(pw_channel.slots())})")
+        raise HTTPException(status_code=400, detail=f"{req.slot} is not an Encore Story time ({', '.join(pw_channel.slots())})")
     job = pw_channel.job_for(settings, req.day, req.slot)
     if datetime.now(settings.tz) >= job.post_at:
         raise HTTPException(status_code=400, detail="That slot has passed")
@@ -246,7 +246,7 @@ def upload(key: str, req: UploadRequest) -> dict[str, Any]:
     if (info.get("uploads") or {}).get("youtube"):
         raise HTTPException(status_code=400, detail="Already on YouTube")
     if not pw_channel.connected():
-        raise HTTPException(status_code=400, detail="Connect the Price Tag Why YouTube channel first")
+        raise HTTPException(status_code=400, detail="Connect the Encore Story YouTube channel first")
     privacy = req.privacy if req.privacy in ("public", "unlisted", "private") else None
     with _lock:
         if _upload.get("running"):

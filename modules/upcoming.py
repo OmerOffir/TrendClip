@@ -17,7 +17,7 @@ CHANNELS = {
     "sidequestlogic": "SideQuestLogic",
     "darkarchives": "Dark Outliers",
     "borderlinewhy": "Borderline Why",
-    "pricetagwhy": "Price Tag Why",
+    "pricetagwhy": "Encore Story",
 }
 
 

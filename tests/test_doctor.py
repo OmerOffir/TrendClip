@@ -115,7 +115,7 @@ def test_check_reads_youtube_live_and_compares_the_thumbnail(pw_root, pictures):
     assert r["key"] == "2026-11-04_1400" and r["live"]["views"] == 1234 and r["live"]["privacy"] == "public" and not r["error"]
     assert r["thumbnail"]["match"] is False and r["thumbnail"]["served"] and r["ours"] == pw_root / "2026-11-04_1400" / "thumb.jpg"
     lines = doctor.format_report(r)
-    assert lines[0].startswith("🔎 **Why Is Coffee $7?** · Price Tag Why")
+    assert lines[0].startswith("🔎 **Why Is Coffee $7?** · Encore Story")
     assert "**public** · processed" in lines[1] and "1234 views · 56 likes · 7 comments" in lines[2]
     assert "ours drawn · record says: set after processing · ❌ YouTube serves another picture" in lines[3]
     assert lines[4] == "💬 Comment posted: <https://www.youtube.com/watch?v=v1&lc=c1>"
@@ -129,7 +129,7 @@ def test_check_reads_youtube_live_and_compares_the_thumbnail(pw_root, pictures):
     assert "reconnect the channel's YouTube login" in doctor.format_report(r)[1]
     r = doctor.check("pw", youtube=FakeYouTube(None))
     assert "YouTube has no video v1" in doctor.format_report(r)[1]
-    with pytest.raises(doctor.DoctorError, match="No Price Tag Why upload nope"):
+    with pytest.raises(doctor.DoctorError, match="No Encore Story upload nope"):
         doctor.check("pw", "nope", youtube=FakeYouTube(LIVE_ITEM))
     with pytest.raises(doctor.DoctorError, match="No channel"):
         doctor.uploads("xx")
