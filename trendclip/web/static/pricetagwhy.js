@@ -264,7 +264,7 @@
     card.querySelector('[data-l="copy"]').click();  // fills the prompt in (and copies it)
   }
 
-  const FORMAT_TEXT = { band: "🎸 band story · 35-55 s", why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
+  const FORMAT_TEXT = { band: "🎸 band story · 32-42 s", why: "❓ why · 35 s", story: "📖 story · 50-75 s", world: "🌆 true story · 55-75 s" };
   // the week's test (2026-11-11): a "Same $X" money story and a true story every day, so both can be written again
   const formatPick = (kind) => `<select id="pwFormat-${kind}" title="What to write: a band's life story (Encore Story's format since 12 Nov), or the old money formats">${
     ["band", "world", "story"].map((f) => `<option value="${f}"${(state.format[kind] || "band") === f ? " selected" : ""}>${FORMAT_TEXT[f]}</option>`).join("")}</select>`;
@@ -311,7 +311,7 @@
            <button type="button" class="btn-primary" data-write-paste="${kind}" data-to="${pasteTo}">Check it</button>
            ${v.step === "fix" && !v.after_facts && (v.drafts || []).length ? `<button type="button" class="btn-secondary" data-write-skip-rules="${kind}" title="Keep the scripts as they are; the fact check comes next">⏭ Skip the rules check</button>` : ""}
            ${v.step === "facts" ? `<button type="button" class="btn-secondary" data-write-skip="${kind}" title="The rules check already wants 2 sources for every claim">⏭ Skip the fact check</button>` : ""}`}
-      <button type="button" class="btn-secondary" data-write-start="${kind}" data-restart="1">Start over</button>`;
+      <button type="button" class="btn-secondary" data-write-start="${kind}" data-restart="1" title="Back to choosing the band">Start over</button>`;
   }
 
   // ---- long video
@@ -445,10 +445,12 @@
     if (d.topicRemove) return act(() => post("/api/pricetagwhy/topics/remove", { question: d.topicRemove }), loadTopics);
     if (d.writeStart) {
       const kind = d.writeStart;
-      if (d.restart && !window.confirm("Start over? The pasted answers of this session are dropped.")) return;
+      if (d.restart) {  // back to the box where the band is typed in, not straight into the next topic
+        if (!window.confirm("Start over? The pasted answers of this session are dropped.")) return;
+        return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}/cancel`));
+      }
       const body = kind === "one" ? { question: ($("pwOneQuestion") || {}).value || "" } : { count: Number(($("pwWeekCount") || {}).value || 7) };
       body.format = ($(`pwFormat-${kind}`) || {}).value || state.format[kind] || "band";
-      if (d.restart) Object.assign(body, kind === "one" ? { question: "" } : { count: 7 });
       return writeAct(kind, () => post(`/api/pricetagwhy/write/${kind}`, body));
     }
     if (d.copy) {

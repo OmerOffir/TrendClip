@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from modules import bw_brand, bw_render, pw_cast, pw_channel, pw_render
+from modules import pw_write  # noqa: F401 - imported before the fixture moves SCRIPTS_DIR: its example paths are set at import
 
 
 FIRST = pw_channel.SCRIPTS_DIR.parent / "examples" / "001-arizona-99c.json"
@@ -1221,3 +1222,14 @@ def test_the_weeks_test_gives_every_day_a_same_x_story_and_a_true_story(tmp_path
     after = pw_channel.jobs_for(settings, datetime(2026, 11, 19).date())
     assert pw_channel.wanted(after[0]) is None and pw_channel.script_for(after[0], out).name == "a.json"
 
+
+
+def test_start_over_goes_back_to_choosing_the_band(tmp_path, monkeypatch):
+    """Start over drops the session and shows the box again (it used to start the next topic straight away)."""
+    from modules import pw_write
+
+    monkeypatch.setattr(pw_channel, "SCRIPTS_DIR", tmp_path / "none")
+    assert pw_write.start("one", question="Metallica: why did they fire Dave Mustaine?", out_dir=tmp_path, format="band")["step"] == "write"
+    pw_write.cancel("one", tmp_path)
+    assert pw_write.view("one", tmp_path)["step"] == "none"
+    pw_write.cancel("one", tmp_path)  # nothing to drop: still fine

@@ -446,6 +446,16 @@ def write_start(kind: str, req: StartRequest) -> dict[str, Any]:
     return _write(pw_write.start, kind, req.question, req.count, None, _hub_topics(strict=True)[0], req.format)
 
 
+@router.post("/write/{kind}/cancel")
+def write_cancel(kind: str) -> dict[str, Any]:
+    """Start over: back to the box where the band (or the count) is chosen."""
+    try:
+        pw_write.cancel(kind)
+    except pw_write.WriteError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return write_view(kind)
+
+
 @router.post("/write/{kind}/answer")
 def write_answer(kind: str, req: PasteRequest) -> dict[str, Any]:
     return _write(pw_write.answer, kind, req.text)

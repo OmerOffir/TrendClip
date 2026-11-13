@@ -1509,6 +1509,11 @@ def queue(kind: str, out_dir: Path | None = None, deliver=None) -> dict[str, Any
     return done
 
 
+def cancel(kind: str, out_dir: Path | None = None) -> None:
+    """Start over: the session is dropped (its topics stay unused), back to choosing what to write."""
+    _path(kind, out_dir).unlink(missing_ok=True)
+
+
 def view(kind: str, out_dir: Path | None = None, found: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """The tab's state: the step, the prompt to copy, the drafts with their problems; with no session, the next
     topics of each format."""
