@@ -157,3 +157,10 @@ def test_balls_badge_values_and_bars():
     assert [b["tower"]["height"] for b in bars] == [25000, 202000] and bars[0]["tower"]["shape"] == "bar"
     assert bw_balls.auto_bars([turn("A", "2002", ""), turn("B", "2011", "")]) == []  # years: no bars
     assert bw_balls.auto_bars([turn("A", "12")]) == []  # one number is no race
+
+
+def test_balls_bars_need_different_numbers():
+    from modules import bw_balls
+
+    turns = [{"who": w, "badge": {"text": "1", "sub": "neighbor", "at": 1.0}, "tower": None} for w in ("A", "B", "C")]
+    assert bw_balls.auto_bars(turns) == [] and all(t["tower"] is None for t in turns)

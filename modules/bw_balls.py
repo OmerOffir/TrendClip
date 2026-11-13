@@ -572,7 +572,7 @@ def auto_bars(turns: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return []
         tn["tower"] = {"height": v, "label": str(bd.get("text")), "shape": "bar", "at": bd["at"]}
         got.append(tn)
-    if len(got) < 2:
+    if len(got) < 2 or len({tn["tower"]["height"] for tn in got}) == 1:  # one number, or all the same: nothing to compare
         for tn in got:
             tn["tower"] = None
         return []
