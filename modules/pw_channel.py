@@ -432,7 +432,9 @@ def scripts(out_dir: Path | None = None, scripts_dir: Path | None = None) -> lis
         out.append({"file": path.name, "title": script.get("title", ""), "question": script.get("question", ""), "topic": script.get("topic", ""),
                     "words": words(narration(script)), "sources": script.get("sources", []), "claims": script.get("claims", []),
                     "check": check_script(script), "rules_skipped": rules_skipped(script), "used": path.name in used, "removed": path.name in plan["removed"],
-                    "pinned": next((k for k, v in plan["pins"].items() if v == path.name), "")})
+                    "pinned": next((k for k, v in plan["pins"].items() if v == path.name), ""),
+                    "band": is_band(script), "song": script.get("song") if isinstance(script.get("song"), dict) else None,
+                    "in_queue": path.parent == queue_dir(out_dir)})
     return out
 
 
@@ -836,6 +838,73 @@ BAND_MUSIC = "encore"  # music/encore/: the owner's Suno instrumentals for Encor
 BAND_LOUDNESS = -17.0  # LUFS: Suno masters loud; brought to the level of our own beds so the voice stays on top
 
 
+SONG_EXTS = (".mp3", ".m4a", ".wav", ".aac", ".ogg", ".flac")
+SONG_MAX = 40 * 1024 * 1024
+SONG_VOLUME = 0.5  # the band's own song is heard (the voice ducks it): the competitor's main draw (2026-11-13)
+
+
+def songs_dir(out_dir: Path | None = None) -> Path:
+    """The owner's uploads of the bands' own songs: on the hub only, never in git (they are the labels' recordings)."""
+    return out_root(out_dir) / "songs"
+
+
+def set_song(script_file: str, data: bytes, filename: str, start: float, out_dir: Path | None = None) -> dict:
+    """The owner's file of the band's song for one queued script, played from `start` seconds."""
+    path = find_script(script_file, out_dir)
+    if path is None or path.parent != queue_dir(out_dir):
+        raise ChannelError("No such script in the queue")
+    ext = Path(filename).suffix.lower()
+    if ext not in SONG_EXTS:
+        raise ChannelError(f"A song is one of {', '.join(SONG_EXTS)}")
+    if not data or len(data) > SONG_MAX:
+        raise ChannelError("The song file is empty or over 40 MB")
+    folder = songs_dir(out_dir)
+    folder.mkdir(parents=True, exist_ok=True)
+    name = path.stem + ext
+    for old in folder.glob(path.stem + ".*"):
+        old.unlink()
+    (folder / name).write_bytes(data)
+    script = json.loads(path.read_text(encoding="utf-8"))
+    script["song"] = {"file": name, "start": round(max(0.0, float(start)), 1), "name": Path(filename).stem[:60]}
+    path.write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return script["song"]
+
+
+def remove_song(script_file: str, out_dir: Path | None = None) -> None:
+    path = find_script(script_file, out_dir)
+    if path is None or path.parent != queue_dir(out_dir):
+        raise ChannelError("No such script in the queue")
+    script = json.loads(path.read_text(encoding="utf-8"))
+    song = script.pop("song", None)
+    if isinstance(song, dict) and song.get("file"):
+        (songs_dir(out_dir) / Path(str(song["file"])).name).unlink(missing_ok=True)
+    path.write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def song_track(script: dict, seconds: float, out: Path, voice: Path, out_dir: Path | None = None) -> tuple[Path, float, str] | None:
+    """The band's own song (the owner's upload) from its chosen start, faded in and out, ducked under the voice so
+    it swells in every pause; None when the script has no song or its file is gone."""
+    import subprocess
+
+    from modules import band_music
+
+    song = script.get("song")
+    if not isinstance(song, dict) or not song.get("file"):
+        return None
+    src = songs_dir(out_dir) / Path(str(song["file"])).name
+    if not src.is_file():
+        logger.warning("The song %s is missing: our own music instead", src.name)
+        return None
+    start, length = float(song.get("start") or 0), seconds + 3
+    flt = (f"[0:a]afade=t=in:d=0.3,afade=t=out:st={max(0.5, length - 2.5):.2f}:d=2.5,loudnorm=I={BAND_LOUDNESS}:TP=-2:LRA=11,"
+           "aresample=44100,aformat=channel_layouts=stereo[m];[1:a]aresample=44100,aformat=channel_layouts=stereo[v];"
+           "[m][v]sidechaincompress=threshold=0.02:ratio=6:attack=30:release=350:makeup=1[out]")
+    subprocess.run(["ffmpeg", "-v", "error", "-y", "-ss", f"{start:.2f}", "-t", f"{length:.2f}", "-i", str(src), "-i", str(voice),
+                    "-filter_complex", flt, "-map", "[out]", "-ar", "44100", "-b:a", "192k", str(out)], check=True, timeout=180)
+    bpm = band_music.tempo(band_music.load(out))
+    return out, bpm, f"song: {song.get('name') or src.stem} from {start:.0f} s"
+
+
 def band_track(script: dict, seconds: float, out: Path) -> tuple[Path, float, str]:
     """A band story's music and its tempo: one of the owner's tracks in music/encore (a different track and starting
     point per seed, on a strong beat, faded in, as loud as the rest), else an original anthem made in code
@@ -881,6 +950,7 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
     script.setdefault("seed", random.randrange(1, 10_000))
     (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     progress(0.05, "Recording the narration")
+    ear = used = None
     if is_band(script):  # a band story: its own narrator, at a normal pace
         spoken = record(script["narration"], work / "voice.mp3", lambda m: progress(None, m),
                         setting("PW_BAND_VOICE", BAND_VOICE), float(setting("PW_BAND_SPEED", "1.0")),
@@ -903,10 +973,19 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         spec.hold = 0.8
         script = band_world.titled(script, spec.duration)
         (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        music, bpm, used = band_track(script, spec.duration, work / "music.mp3")
+        progress(None, "Listening to the narration")
+        from modules import audio_check  # the ear: words the voice says wrong ("dies" like "dices"), shown on the card
+
+        ear = audio_check.check_quietly(work / "voice.mp3", [{"word": w.text, "start": w.start, "end": w.end} for w in spoken])
+        got = None
+        try:
+            got = song_track(script, spec.duration, work / "music.mp3", work / "voice.mp3", out_dir)
+        except Exception as err:  # noqa: BLE001 - our own music still makes the video
+            logger.warning("The song could not be used (%s): our own music instead", err)
+        music, bpm, used = got or band_track(script, spec.duration, work / "music.mp3")
         band_world.set_tempo(bpm)
         progress(None, f"Music: {used}")
-        volume = float(script.get("music_volume") or setting("PW_BAND_MUSIC_VOLUME", "0.15"))
+        volume = float(setting("PW_SONG_VOLUME", str(SONG_VOLUME))) if got else float(script.get("music_volume") or setting("PW_BAND_MUSIC_VOLUME", "0.15"))
         band_world.render(spec, script["band"], work / "voice.mp3", work / "video.mp4", music, volume,
                           lambda f, m: progress(0.1 + 0.85 * (f or 0), m))
     elif is_world(script):  # the full-colour world (modules.pw_world): no maps, no photos, no marker hand
@@ -927,9 +1006,10 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         "key": key, "title": script["title"], "question": script.get("question", ""), "description": with_credits(description(script), spec),
         "hashtags": list(dict.fromkeys([*(script.get("hashtags") or []), *(BAND_HASHTAGS if is_band(script) else HASHTAGS)]))[:6],
         "sources": script.get("sources", []), "claims": script.get("claims", []), "duration_seconds": round(spec.duration, 2),
-        "words": words(script["narration"]), "voice": setting("PW_TTS_VOICE", VOICE), "music": music.stem if music else None,
+        "words": words(script["narration"]), "voice": setting("PW_TTS_VOICE", VOICE), "music": used or (music.stem if music else None),
         "comment": comment_text(script), **({"category": BAND_CATEGORY} if is_band(script) else {}),
-        "thumb_at": round(max(0.5, spec.scenes[0].end - 0.2), 2),  # the opening, fully drawn (modules.thumbs)
+        "thumb_at": round(max(0.5, spec.scenes[0].end - 0.2), 2),
+        **({"ear": ear} if is_band(script) and ear is not None else {}),  # the opening, fully drawn (modules.thumbs)
         "created_at": datetime.now().replace(microsecond=0).isoformat(),
         **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {}),
     }

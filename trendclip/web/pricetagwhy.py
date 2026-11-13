@@ -11,7 +11,7 @@ import threading
 from datetime import date, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 
@@ -147,6 +147,28 @@ class PlaceRequest(SlotRequest):
 
 class ScriptRequest(BaseModel):
     file: str
+
+
+@router.post("/song")
+async def upload_song(script: str = Form(...), start: float = Form(0.0), file: UploadFile = File(...)) -> dict[str, Any]:
+    """The band's own song for a queued script (the owner's file): played under the narration from `start` seconds.
+    YouTube's Content ID claims it: the video's money goes to the label, the views and subscribers stay ours."""
+    if not re.fullmatch(r"[\w.-]+\.json", script):
+        raise HTTPException(status_code=400, detail="Not a script file")
+    data = await file.read(pw_channel.SONG_MAX + 1)
+    try:
+        return {"song": pw_channel.set_song(script, data, file.filename or "song.mp3", start)}
+    except pw_channel.ChannelError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+
+
+@router.post("/song/remove")
+def remove_song(req: ScriptRequest) -> dict[str, Any]:
+    try:
+        pw_channel.remove_song(req.file)
+    except pw_channel.ChannelError as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
+    return {"ok": True}
 
 
 def _slot_job(req: SlotRequest):

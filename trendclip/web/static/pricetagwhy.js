@@ -13,6 +13,10 @@
   const post = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
   const fmtWhen = (iso) => (iso || "").replace("T", " ").slice(0, 16);
   const sourceList = (sources) => (sources || []).map((s) => `<li><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.title || s.url)}</a></li>`).join("");
+  // The ear (modules/audio_check): words the narrator may say wrong, with where to listen; a green tick when it heard all
+  const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+  const earNote = (v) => !Array.isArray(v.ear) ? "" : !v.ear.length ? '<span class="pill good">👂 The voice says every word right</span>'
+    : `<span class="da-note">👂 Listen before you approve: ${v.ear.map((e) => `${mmss(e.at || 0)} "${esc(e.word)}" sounded like "${esc(e.as)}"`).join(" · ")}</span>`;
   const claimList = (claims) => (claims || []).map((c) => `<li>${esc(c.claim)} <span class="hint">[${(c.sources || []).map(esc).join(", ")}]</span></li>`).join("");
   const STATES = {
     posted: ["good", "▶️ On YouTube"], approved: ["good", "✅ Approved"], waiting: ["warn", "⏸ Waiting for Approve"],
@@ -88,7 +92,7 @@
     const yt = v && v.youtube;
     const what = v
       ? `<b>${esc(v.title)}</b> <span class="hint">${Math.round(v.duration_seconds || 0)} s${yt ? ` · <a href="${esc(yt.url)}" target="_blank" rel="noopener">${esc(yt.url)}</a>` : ""}</span>
-         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}`
+         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}${earNote(v)}`
       : r.script ? `<span class="hint">made at ${esc(r.start.slice(11, 16))}${r.start.slice(0, 10) !== day ? ` (${esc(r.start.slice(5, 10))})` : ""} from</span> <b>${esc(r.script.title)}</b>${r.script.pinned ? ' <span class="pill">📌 chosen</span>' : ""}`
       : r.state === "no_script" && topic ? `<span class="hint">no script yet · next topic:</span> <b>${esc(topic.question)}</b>`
       : r.state === "no_script" ? '<span class="hint">empty: put a video or a script here, or ✍️ Write it myself / 📅 Write a week</span>'
@@ -122,7 +126,12 @@
       <b>${esc(s.title)}</b>
       <div class="pills"><span class="pill ${ok ? "good" : "warn"}">${!s.check.length ? "✅ Rules OK" : s.rules_skipped ? "⏭ Rules skipped: " + esc(s.check.join("; ")) : "❌ " + esc(s.check.join("; "))}</span>
         <span class="pill">${s.used ? "made for a slot" : s.removed ? "removed from the plan" : s.pinned ? `📌 ${esc(s.pinned.replace("_", " "))}` : "queued"}</span>
-        <span class="pill">${esc(s.words)} words</span><span class="pill">${s.sources.length} sources</span><span class="pill">${esc(s.file)}</span></div>
+        <span class="pill">${esc(s.words)} words</span><span class="pill">${s.sources.length} sources</span><span class="pill">${esc(s.file)}</span>
+        ${s.song ? `<span class="pill good">🎵 ${esc(s.song.name || s.song.file)} from ${mmss(s.song.start || 0)}</span>` : ""}</div>
+      ${s.band && s.in_queue && !s.used ? `<div class="pw-song hint">${s.song ? `The band's own song plays under the voice. <button type="button" class="btn-secondary" data-song-remove="${esc(s.file)}">✕ Our own music instead</button>`
+        : `🎵 The band's own song (your file; Content ID gives this video's money to the label, the views and subscribers stay ours):
+          <input type="file" accept="audio/*" data-song-file="${esc(s.file)}"> from <input type="text" size="5" value="0:00" data-song-start="${esc(s.file)}" title="Where in the song to start, m:ss (the famous part)">
+          <button type="button" class="btn-secondary" data-song-upload="${esc(s.file)}" ${busy ? "disabled" : ""}>⬆ Add the song</button>`}</div>` : ""}
       <details><summary class="hint">Question, claims and sources</summary><div class="da-yt-text">
         <div class="da-yt-row"><span class="da-yt-label">Question</span><span>${esc(s.question)}</span></div>
         <div class="da-yt-row"><span class="da-yt-label">Claims</span><ul class="bw-sources">${claimList(s.claims)}</ul></div>
@@ -150,6 +159,7 @@
         ${v.thumbnail ? `<div class="pw-thumb"><a href="/api/pricetagwhy/videos/${encodeURIComponent(v.key)}/thumb.jpg?t=${encodeURIComponent(v.created_at || "")}" target="_blank" rel="noopener" title="Open the thumbnail full size"><img src="/api/pricetagwhy/videos/${encodeURIComponent(v.key)}/thumb.jpg?t=${encodeURIComponent(v.created_at || "")}" alt="Thumbnail" loading="lazy"></a>
           <span class="hint">Thumbnail${v.uploads && v.uploads.youtube && v.uploads.youtube.thumbnail ? ` · on YouTube: ${esc(v.uploads.youtube.thumbnail === "set" ? "set" : "not set (custom Shorts thumbnails need the YouTube Partner Program)")}` : ""}</span></div>` : ""}
         ${v.check && v.check.length ? `<span class="da-note">${esc(v.check.join("; "))}</span>` : ""}
+        ${earNote(v)}
         <div class="da-yt-text">
           <div class="da-yt-row"><span class="da-yt-label">Sources</span><ol class="bw-sources">${sourceList(v.sources)}</ol></div>
           <div class="da-yt-row"><span class="da-yt-label">Description</span><pre class="da-desc">${esc(v.description || "")}</pre></div>
@@ -387,6 +397,21 @@
       return act(() => post("/api/pricetagwhy/plan/remove", { day, slot }));
     }
     if (d.scriptRemove) return act(() => post("/api/pricetagwhy/scripts/remove", { file: d.scriptRemove }));
+    if (d.songRemove) return act(() => post("/api/pricetagwhy/song/remove", { file: d.songRemove }));
+    if (d.songUpload) {
+      const pick = document.querySelector(`[data-song-file="${CSS.escape(d.songUpload)}"]`);
+      const at = document.querySelector(`[data-song-start="${CSS.escape(d.songUpload)}"]`);
+      if (!pick || !pick.files.length) return showError("Choose the song's file first");
+      const parts = String(at ? at.value : "0").trim().split(":").map(Number);
+      const start = parts.length > 1 ? parts[0] * 60 + parts[1] : parts[0];
+      if (!Number.isFinite(start) || start < 0) return showError("The start is m:ss, like 1:05");
+      const form = new FormData();
+      form.append("script", d.songUpload);
+      form.append("start", String(start));
+      form.append("file", pick.files[0]);
+      t.disabled = true;
+      return act(() => api("/api/pricetagwhy/song", { method: "POST", body: form }));
+    }
     if (d.scriptRestore) return act(() => post("/api/pricetagwhy/scripts/restore", { file: d.scriptRestore }));
     if (d.approve) return act(() => post(`/api/pricetagwhy/videos/${encodeURIComponent(d.approve)}/approve`));
     if (d.veto) return act(() => post(`/api/pricetagwhy/videos/${encodeURIComponent(d.veto)}/veto`));

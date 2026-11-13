@@ -23,6 +23,7 @@ curl_cffi>=0.7  # channel stats: TikTok / Instagram only answer browser-like req
 
 # web dashboard
 fastapi>=0.110
+python-multipart>=0.0.9  # the Encore tab's song upload
 uvicorn[standard]>=0.29
 
 # dev
