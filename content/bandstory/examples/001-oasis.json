@@ -60,15 +60,16 @@
     {
       "kind": "band",
       "set": "dark",
+      "shot": "duo",
       "line": "BROTHERS. RIVALS. LEGENDS.",
+      "narration": "These two brothers built the biggest band in Britain. Then one fight backstage ended it.",
       "members": [
         {
           "name": "Liam",
           "expr": "angry",
           "play": "none",
-          "pose": "cross",
+          "pose": "point",
           "say": "YOUR FAULT!",
-          "say_cue": "stand",
           "move": "shake"
         },
         {
@@ -77,29 +78,27 @@
           "play": "none",
           "pose": "cross",
           "say": "NO, YOURS!",
-          "say_cue": "together",
+          "say_cue": "fight",
           "move": "shake"
         }
       ],
-      "narration": "These two brothers could not stand each other. Together, they built the biggest band in Britain.",
-      "shot": "duo"
+      "crack": {
+        "cue": "fight"
+      }
     },
     {
       "kind": "band",
       "set": "garage",
       "year": "1991",
       "line": "MANCHESTER",
+      "narration": "1991, Manchester. Noel joins his little brother's band on one condition: he writes every song.",
       "members": [
         {
           "name": "Liam",
           "move": "bounce"
         },
-        {
-          "name": "Bonehead"
-        },
-        {
-          "name": "Guigsy"
-        },
+        "Bonehead",
+        "Guigsy",
         {
           "name": "Noel",
           "cue": "Noel",
@@ -108,14 +107,14 @@
           "say_cue": "condition",
           "move": "slide"
         }
-      ],
-      "narration": "Manchester, 1991. Liam Gallagher sings in a little band called Oasis. His big brother Noel joins, on one condition: he writes every song."
+      ]
     },
     {
       "kind": "band",
       "set": "club",
       "year": "1993",
       "line": "KING TUT'S, GLASGOW",
+      "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night.",
       "members": [
         {
           "name": "Liam",
@@ -123,26 +122,19 @@
           "say_cue": "stage",
           "move": "jump"
         },
-        {
-          "name": "Noel"
-        },
+        "Noel",
         {
           "name": "Bonehead",
           "move": "lean"
         },
-        {
-          "name": "Guigsy"
-        },
-        {
-          "name": "Tony"
-        }
+        "Guigsy",
+        "Tony"
       ],
-      "narration": "1993. They bully their way onto a tiny stage in Glasgow. A record boss in the crowd offers them a deal that night.",
       "props": [
         {
           "kind": "vinyl",
           "text": "DEAL",
-          "cue": "record"
+          "cue": "deal"
         }
       ]
     },
@@ -151,6 +143,8 @@
       "set": "studio",
       "year": "1994",
       "line": "FIRST ALBUM",
+      "shot": "duo",
+      "narration": "1994. Their first album is the fastest selling debut Britain has ever seen.",
       "members": [
         {
           "name": "Liam",
@@ -166,8 +160,6 @@
           "move": "spin"
         }
       ],
-      "narration": "1994. Their first album becomes the fastest selling debut Britain had ever seen.",
-      "shot": "duo",
       "props": [
         {
           "kind": "album",
@@ -176,7 +168,7 @@
         },
         {
           "kind": "trophy",
-          "text": "NO. 1",
+          "text": "NO.1",
           "cue": "fastest"
         }
       ]
@@ -186,43 +178,29 @@
       "set": "stadium",
       "year": "1996",
       "line": "KNEBWORTH",
+      "shot": "close",
+      "crowd": true,
+      "narration": "1996. Knebworth. A quarter of a million fans in two nights.",
       "members": [
         {
           "name": "Liam",
+          "expr": "grin",
           "say": "HELLO KNEBWORTH!",
           "say_cue": "Knebworth",
-          "move": "jump"
-        },
-        {
-          "name": "Noel",
-          "move": "lean"
-        },
-        {
-          "name": "Bonehead"
-        },
-        {
-          "name": "Guigsy",
           "move": "bounce"
         }
       ],
       "big": {
         "text": "250,000",
-        "cue": "fifty"
-      },
-      "narration": "1996. Two nights at Knebworth. Two hundred and fifty thousand fans. Two and a half million asked for tickets.",
-      "props": [
-        {
-          "kind": "ticket",
-          "text": "2.5 MILLION",
-          "cue": "million"
-        }
-      ]
+        "cue": "quarter"
+      }
     },
     {
       "kind": "band",
       "set": "dark",
       "year": "2009",
       "line": "BACKSTAGE IN PARIS",
+      "narration": "2009, Paris. One last fight backstage. Noel walks out. Oasis is over.",
       "members": [
         {
           "name": "Liam",
@@ -240,20 +218,18 @@
           "say_cue": "walks"
         }
       ],
-      "crack": {
-        "cue": "fight"
-      },
       "news": {
         "text": "OASIS SPLIT",
-        "cue": "walks"
-      },
-      "narration": "But the brothers never stop fighting. In 2009, one last fight backstage in Paris. Noel walks out. Oasis is over."
+        "cue": "over"
+      }
     },
     {
       "kind": "band",
       "set": "street",
       "year": "15 YEARS",
       "line": "NOT A WORD",
+      "shot": "duo",
+      "narration": "Fifteen years, barely a word.",
       "members": [
         {
           "name": "Liam",
@@ -267,24 +243,24 @@
           "expr": "sad",
           "play": "none",
           "think": "CALL HIM?",
-          "say_cue": "fifteen"
+          "say_cue": "Fifteen"
         }
-      ],
-      "narration": "For fifteen years, they barely speak.",
-      "shot": "duo"
+      ]
     },
     {
       "kind": "band",
       "set": "stadium",
       "year": "2025",
       "line": "THEY'RE BACK",
+      "shot": "duo",
       "confetti": true,
+      "narration": "Then, in 2025, the brothers walk on stage together again. Liam or Noel: who was right?",
       "members": [
         {
           "name": "Liam",
           "expr": "cool",
           "say": "WE'RE BACK!",
-          "say_cue": "together",
+          "say_cue": "Then",
           "move": "jump"
         },
         {
@@ -292,17 +268,13 @@
           "expr": "grin",
           "pose": "wave",
           "move": "bounce"
-        },
-        {
-          "name": "Bonehead"
         }
       ],
-      "narration": "Then they announce a reunion. Millions queue for tickets. And in 2025, the brothers walk on stage together again. So, Liam or Noel: who was right?",
       "props": [
         {
           "kind": "ticket",
           "text": "SOLD OUT",
-          "cue": "tickets"
+          "cue": "stage"
         }
       ],
       "poll": {

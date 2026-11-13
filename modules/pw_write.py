@@ -28,8 +28,8 @@ KINDS = ("one", "week")
 FORMATS = ("band", "why", "story", "world")  # band: Encore Story's band life stories (modules.band_world, 2026-11-12);  # a 35 s "why" explainer; a 50-75 s money story (a cast, their moves with the math, the bars, the ask);
 # a true money story in the full-colour world look (modules.pw_world, 2026-11-08)
 DEFAULT_FORMAT = "band"  # an idea pasted from the LLM without a format is a band story (Encore Story's only format since 2026-11-12)
-BAND_WORDS = (110, 155)  # Edge Brian at +22% reads about 2.9 words a second with pauses held: 40-55 s (Queen: 151 words, 53 s)
-BAND_SCENES = (6, 10)
+BAND_WORDS = (85, 120)  # Edge Brian at +22% reads about 2.9 words a second with pauses held: 32-42 s (2026-11-13: the 50-56 s cuts sagged; Zip Story runs ~40 s)
+BAND_SCENES = (5, 8)
 BAND_SCENE_WORDS = 30
 BAND_LINE = 28  # characters on the line card under the year
 BAND_PILLARS = ("rock legends", "90s and 2000s", "metal and punk", "pop, rap and the rest")
@@ -229,6 +229,13 @@ def band_problems(script: dict) -> list[str]:
     if len(members) > 5:
         problems.append(f"{len(members)} members drawn (at most 5: the ones the story is about)")
     for name, look in members.items():
+        for era in look.get("eras") or []:
+            if not isinstance(era, dict) or not (era.get("until") or era.get("from")):
+                problems.append(f"{name}'s eras are {{until or from: a year, <look keys>}}")
+            else:
+                bad = [f"{k}={v}" for k, v in era.items() if k in band_world.LOOK_VALUES and v not in band_world.LOOK_VALUES[k]]
+                if bad:
+                    problems.append(f"{name}'s era has values the drawing doesn't know: {', '.join(bad)}")
         bad = [f"{k}={look.get(k)}" for k, allowed in band_world.LOOK_VALUES.items() if look.get(k) not in (None, "", *allowed)]
         bad += [f"extras={x}" for x in (look.get("extras") or []) if x not in band_world.EXTRAS]
         if bad:
@@ -236,6 +243,11 @@ def band_problems(script: dict) -> list[str]:
     hook = str((script.get("thumbnail") or {}).get("text") or "")
     if len(hook) > BAND_LINE:
         problems.append(f"the thumbnail text is {len(hook)} characters (at most {BAND_LINE})")
+    if scenes and (scenes[0].get("shot") not in ("close", "duo") or not any(
+            isinstance(m, dict) and m.get("say") and not m.get("say_cue") for m in (scenes[0].get("members") or [])[:1])):
+        problems.append("scene 1 is a close or duo shot whose first member has a say bubble with no say_cue (on the first frame)")
+    if scenes and sum(1 for sc in scenes if sc.get("shot") in ("close", "duo")) * 2 < len(scenes):
+        problems.append("at least half the scenes are close or duo shots (faces big on a phone)")
     if scenes and not (scenes[0].get("line") or scenes[0].get("year")):
         problems.append("scene 1 is the hook: a line card (or a year) on the first frame")
     if scenes and not pw_channel.narration({"scenes": scenes[-1:]}).rstrip().endswith("?"):
@@ -314,11 +326,16 @@ love the band and want to argue about it in the comments. What wins: the band's 
 lucky break, the record that blew up, the fight, the split, the comeback), real years and real numbers.
 
 Each script is ONE JSON object shaped exactly like the example below, with "format": "band":
-- {lo}-{hi} words of narration in all (40-55 seconds). Short spoken sentences. Years in digits ("1991"); big
+- {lo}-{hi} words of narration in all (32-42 seconds: short wins, every scene must earn its place). Short spoken sentences. Years in digits ("1991"); big
   numbers in words ("two hundred and fifty thousand fans"). Names as people say them ("Oasis", "AC DC" for AC/DC).
 - {BAND_SCENES[0]}-{BAND_SCENES[1]} scenes, all "kind": "band", ONE beat each, at most {BAND_SCENE_WORDS} words of narration per scene.
-- scene 1 is the hook (at most 20 words): the drama in one breath ("These two brothers could not stand each other.
-  Together, they built the biggest band in Britain."), a "line" card on the first frame, no year yet.
+- scene 1 is the hook (at most 20 words): open a loop the last scene closes. The most surprising true turn of the
+  story, not the well-known one: "Their label said this song was too long for radio. It became the most streamed
+  song of the twentieth century." / "These two brothers built the biggest band in Britain. Then one fight backstage
+  ended it." A "line" card on the first frame, no year yet. Scene 1 is a "close" or "duo" shot and its first member
+  has a "say" bubble with NO say_cue: it is on screen on the very first frame, before a word is spoken (what stops
+  the thumb). The last scene pays the hook off in the same words ("the song too long for radio...").
+- skip the parts every fan already knows unless they ARE the turn; cut any scene that only adds a member or a date.
 - then the story in order, a "year" on every scene where time jumps. Exactly one low point (a split, a death, a
   flop, a fight) on the "dark" set, and the ending (a comeback, a record, a legacy) on the "stadium" set.
 - the last scene ends on ONE question that splits the fans ("So, Liam or Noel: who was right?", "Best album: X or Y?").
@@ -327,6 +344,9 @@ Each script is ONE JSON object shaped exactly like the example below, with "form
   2-5 members: the ones the story is about. Make each one recognisable from the look alone: how fans picture
   them at the band's peak (their famous hair, face shape, nose, hat, beard, glasses, clothes, guitar). Use every key
   that helps: Slash = big_curly black hair + top_hat + shades; Freddie = slick black hair + mustache + tank + armband.
+  "eras": the look changes over time, a list of {{"until": year or "from": year, <keys>}}: Freddie's moustache came
+  in 1980, so his look has "beard": "mustache" and "eras": [{{"until": 1979, "beard": "none"}}]. Scenes with a year
+  (or after one) use the look of that year; the hook uses the famous look. Fans spot every wrong era.
   A look's keys: {looks}; "extras": a list of {"|".join(band_world.EXTRAS)}.
   "skin": light|tan|brown|dark. "top_color" and "pants": {", ".join(band_world.TOPS)}.
   The singer plays "mic"; a drummer "drums" (drawn behind the kit, at most one).
@@ -363,6 +383,7 @@ A scene's keys (all optional except kind and narration):
     only, each answer 20 characters at most, e.g. "BOHEMIAN RHAPSODY" / "DON'T STOP ME NOW")
   "empty_mic": true: the singer's mic alone in the spotlight, the others aside (a singer who died or left)
   Every cue is a word of THAT scene's narration.
+- Faces big: at least half the scenes are "close" or "duo"; a wide shot with 2-3 members rather than 5.
 - Something new on screen every 2-3 seconds: in each scene at least one entrance on a cue (a member, a big figure,
   a prop, a newspaper). Show every claim literally with a prop. Never 3 scenes in a row with the same shot and the
   same members: change the shot (close on the singer, duo for a pair) or who is on stage.

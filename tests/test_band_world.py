@@ -208,3 +208,23 @@ def test_a_track_starts_somewhere_new_on_a_beat_and_its_tempo_is_found():
     assert len(starts) > 2 and max(starts) <= 90 - 50 - 6 + 0.6
     beat = 60 / bpm
     assert all(min(s % beat, beat - s % beat) < 0.05 for s in starts)
+
+
+def test_a_look_follows_the_year_and_the_hook_speaks_on_the_first_frame():
+    s = example()
+    s["band"]["members"]["Noel"]["beard"] = "mustache"
+    s["band"]["members"]["Noel"]["eras"] = [{"until": 1999, "beard": "none"}]
+    assert pw_write.format_problems(s) == []
+    spec = bw_render.spec_from_dict({**s, "look": "satellite"}, fake_words(s))
+    bw_render.align(spec)
+    r = band_world.BandRenderer(spec, s["band"])
+    noel = {i: it["look"].get("beard") for i, items in enumerate(r.items) for it in items if it.get("name") == "Noel"}
+    years = {i: r.year_of(i) for i in noel}
+    assert all(noel[i] == ("none" if years[i] and years[i] <= 1999 else "mustache") for i in noel)
+    assert noel[0] == "mustache" and years[0] is None  # the hook: the famous look
+    first = [it for it in r.items[0] if it["type"] == "bubble"]
+    assert first and first[0]["at"] < 0  # on screen before a word is said
+    s["scenes"][0]["shot"] = "wide"
+    s["band"]["members"]["Noel"]["eras"] = [{"until": 1999, "beard": "braids"}]
+    found = " | ".join(pw_write.format_problems(s))
+    assert "scene 1 is a close or duo" in found and "beard=braids" in found

@@ -661,6 +661,8 @@ class BandRenderer:
         prev = self.members_of(self.spec.scenes[i - 1]) if i else []
         prev_names = {m["name"] for m in prev}
         shot = str(o.get("shot") or "wide")
+        if isinstance(o.get("poll"), dict):  # the question's two buttons need the middle: the band stands back, small
+            shot = "wide"
         ms = self.members_of(scene)
         ms = ms[:1] if shot == "close" else ms[:2] if shot == "duo" else ms
         n = len(ms)
@@ -678,9 +680,9 @@ class BandRenderer:
         else:  # one column each; the drummer's column, raised on a riser, is never behind someone
             cols = n
             scale = {1: 1.0, 2: 0.98, 3: 0.86, 4: 0.74}.get(cols, 0.64)
-            if isinstance(o.get("news"), dict):  # the front page needs the middle: the heads stay under it
+            if isinstance(o.get("news"), dict) or isinstance(o.get("poll"), dict):  # the front page / the question needs the middle
                 scale = min(scale, 0.74)
-            xs = [W / 2] if cols == 1 else [W * 0.15 + W * 0.7 * c / (cols - 1) for c in range(cols)]
+            xs = [W / 2] if cols == 1 else [W * 0.27, W * 0.73] if cols == 2 else [W * 0.15 + W * 0.7 * c / (cols - 1) for c in range(cols)]
             drum_col = cols // 2
             order = [c for c in range(cols) if c != drum_col] if "drums" in plays else list(range(cols))
             spots, j = [], 0
@@ -690,8 +692,9 @@ class BandRenderer:
                 else:
                     spots.append((xs[order[j]] if j < len(order) else W / 2, scale, float(FLOOR)))
                     j += 1
+        year = self.year_of(i)
         for k, m in enumerate(ms):
-            look = self.looks.get(m["name"], {})
+            look = self.look_in(m["name"], year)
             play = plays[k]
             x, s, foot = spots[k]
             shown = -1.0 if (first or (m["name"] in prev_names and not m.get("cue"))) else at(m.get("cue"), k)
@@ -704,7 +707,10 @@ class BandRenderer:
             said = str(m.get("say") or m.get("think") or "").strip()[:BUBBLE_TEXT + 4]
             if said:
                 kind = "think" if m.get("think") and not m.get("say") else "shout" if items[-1]["expr"] in ("angry", "shocked") or said.endswith("!!") else "say"
-                when = at(m.get("say_cue"), k) if m.get("say_cue") else (shown + 0.35 if shown >= 0 else scene.start + 0.35 + 0.9 * k)
+                if first and not m.get("say_cue") and not any(it["type"] == "bubble" for it in items):
+                    when = -1.0  # on the very first frame: the hook speaks before the voice does
+                else:
+                    when = at(m.get("say_cue"), k) if m.get("say_cue") else (shown + 0.35 if shown >= 0 else scene.start + 0.35 + 0.9 * k)
                 items.append({"type": "bubble", "at": when, "text": said.upper(), "kind": kind, "who": items[-1]})
         if empty:
             items.append({"type": "emptymic", "at": -1.0})
@@ -745,9 +751,10 @@ class BandRenderer:
             items.append({"type": "stamp", "at": at(st.get("cue"), k), "text": str(st.get("text") or "NO"), "k": k})
         bubbles = sorted((it for it in items if it["type"] == "bubble"), key=lambda it: it["at"])
         for b in bubbles:  # said on the scene's last word: a moment earlier, so it is read before the cut
-            b["at"] = max(scene.start + 0.2, min(b["at"], scene.end - 1.1))
+            if b["at"] >= 0:
+                b["at"] = max(scene.start + 0.2, min(b["at"], scene.end - 1.1))
         for b0, b1 in zip(bubbles, bubbles[1:]):  # they take turns: one bubble on screen at a time, each read for 0.9 s
-            b1["at"] = max(b1["at"], b0["at"] + 0.9)
+            b1["at"] = max(b1["at"], max(b0["at"], scene.start + 0.3) + 0.9)
         papers = [it["at"] for it in items if it["type"] in ("news", "poll") and it["at"] >= 0]
         for k, b in enumerate(bubbles):
             b["end"] = bubbles[k + 1]["at"] - 0.04 if k + 1 < len(bubbles) else scene.end + 0.3
@@ -760,6 +767,27 @@ class BandRenderer:
                     if m["type"] == "member" and m["play"] != "drums":
                         m["hops"].append(it["at"] + 0.08)
         return items
+
+    def year_of(self, i: int) -> int | None:
+        """The year a scene is in: its own year card, else the last one before it (the hook has none)."""
+        for sc in self.spec.scenes[i::-1]:
+            got = re.search(r"\b(19|20)\d\d\b", str(sc.opts.get("year") or ""))
+            if got:
+                return int(got.group())
+        return None
+
+    def look_in(self, name: str, year: int | None) -> dict:
+        """A member as they looked that year: the look is how fans picture them (used with no year, in the hook),
+        "eras" changes it for a span ([{"until": 1979, "beard": "none"}]: no moustache before 1980)."""
+        look = dict(self.looks.get(name) or {})
+        eras = look.pop("eras", None) or []
+        if year is not None:
+            for era in eras if isinstance(eras, list) else []:
+                if not isinstance(era, dict):
+                    continue
+                if int(era.get("from") or 0) <= year <= int(era.get("until") or 9999):
+                    look.update({k: v for k, v in era.items() if k not in ("from", "until")})
+        return look
 
     def members_of(self, scene: Scene) -> list[dict[str, Any]]:
         return [m if isinstance(m, dict) else {"name": str(m)} for m in (scene.opts.get("members") or [])]
@@ -993,7 +1021,7 @@ class BandRenderer:
             boxes = self.busy(it["end"], m)  # clear of what is there and of what comes while it is read
             mid = 1 if m["x"] <= W / 2 else -1
             best = None
-            for size in (1.0, 0.8):
+            for size in ((1.3, 1.0, 0.8) if k >= 1.2 else (1.0, 0.8)):  # big faces get big bubbles
                 probe = bubble_sprite(it["text"], it["kind"], 0.5)
                 w, h = probe.width * size, probe.height * size
                 for side in (mid, -mid):
