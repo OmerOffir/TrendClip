@@ -287,7 +287,8 @@ def resolve_stickers(settings: Settings, req: RenderRequest, words: list, popup_
         if req.stickers and lib:
             progress(None, f"Placing stickers ({len(lib)} in the library)")
         cta = None
-        if req.cta_sticker and not (req.spin and spin.tall(req.script)):  # on the tall card
+        if req.cta_sticker and not (req.spin and (spin.tall(req.script) or spin.has_strip(req.script))):  # on the
+            # tall card, or on the hero strip
             cta = "part2" if req.part and req.part < (req.parts_total or 1) else "subscribe"
         reactions = list(req.reactions)
         if req.flashes and quiz.COUNTDOWN in req.script and not any(r.word == "Three" for r in reactions):

@@ -126,6 +126,12 @@ PRIZE_DESCRIPTION = ("Pause the video: the {game} {noun} you stop on is yours. C
                      "friend.")
 
 
+def has_strip(script_text: str) -> bool:
+    """Whether the Short draws the hero strip under its card (where the subscribe sticker would go)."""
+    kind = kind_of(script_text)
+    return kind.startswith(PRIZE) and kind.removeprefix(PRIZE) in STRIP
+
+
 def prize_wanted(notes: str = "") -> str:
     """The prize set asked for in the Create tab's notes ("pause to get your pet"), "" when none."""
     low = (notes or "").lower()

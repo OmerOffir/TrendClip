@@ -12,13 +12,13 @@ import math
 import random
 from pathlib import Path
 
-SIZE = (1080, 420)
-SCALE = 5  # one world pixel on screen
+SIZE = (1080, 300)
+SCALE = 4  # one world pixel on screen
 LW, LH = SIZE[0] // SCALE, SIZE[1] // SCALE
-GROUND = 78  # the grass line, in world pixels
-HERO_X = 56
+GROUND = 70  # the grass line, in world pixels
+HERO_X = 64
 RUN = 34.0  # world pixels a second
-CENTER = (540, 1610)  # under the captions, above the bottom edge
+CENTER = (540, 1565)  # just under the captions (they end at 1400), above most of YouTube's own title
 BORDER = 12
 
 
@@ -95,17 +95,17 @@ def frame(entry: dict, noun: str, colour: tuple, t: float, cache: dict):
     key = (entry["name"], noun)
     if key not in cache:
         pic = Image.open(entry["path"]).convert("RGBA")
-        box = (300, 230) if noun == "pet" else (140, 140)
+        box = (250, 180) if noun == "pet" else (112, 112)
         k = min(box[0] / pic.width, box[1] / pic.height)
         cache[key] = pic.resize((max(1, round(pic.width * k)), max(1, round(pic.height * k))),
                                 Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
     pic = cache[key]
     if noun == "pet":  # it runs beside the hero, a little ahead, bobbing out of step
-        x = HERO_X * SCALE + 170
+        x = HERO_X * SCALE + 130
         y = GROUND * SCALE - pic.height + 6 - int(8 * abs(math.sin(t * 11 + 1.3)))
     else:  # held up over his head
         x = hand[0] * SCALE - pic.width // 2 + 24
-        y = max(26, hand[1] * SCALE - pic.height + 40 - int(6 * math.sin(t * 6)))
+        y = max(18, hand[1] * SCALE - pic.height + 36 - int(5 * math.sin(t * 6)))
     x, y = int(x), int(y)
     halo, pad = _glow(pic, colour, 18)
     img.alpha_composite(halo, (max(0, x - pad), max(0, y - pad)))
