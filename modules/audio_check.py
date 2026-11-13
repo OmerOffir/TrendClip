@@ -3,7 +3,8 @@ sentence, and the words that came out as something else are reported ("Freddie d
 
 The owner caught a mispronounced word by ear on 2026-11-13; this is the ear that checks every video. It runs on the
 hub's GPU (or the CPU) with openai/whisper-small.en through transformers, with no audio decoder of its own: ffmpeg
-reads the mp3 (torchcodec's CUDA libraries are missing on the hub).
+reads the mp3 (torchcodec's CUDA libraries are missing on the hub). large-v3-turbo, not small.en: the small one flagged
+names it misheard itself; the big one cleared those and still caught "Got gold?" slurred into "Guggled".
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-MODEL = "openai/whisper-small.en"
+MODEL = "openai/whisper-large-v3-turbo"  # small.en flagged names it heard wrong itself (Burj Khalifa, "Oasis is over")
 RATE = 16000
 MAX_PIECE = 25.0  # seconds Whisper hears at once (it takes 30)
 NUMBERS = {"zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
@@ -147,7 +148,7 @@ def transcribe(audio, start: float, end: float) -> str:
     if len(clip) < RATE // 4:
         clip = np.pad(clip, (0, RATE // 4 - len(clip)))
     feats = proc(clip, sampling_rate=RATE, return_tensors="pt").input_features.to(dev, model.dtype)
-    ids = model.generate(feats, max_new_tokens=200, max_length=None)
+    ids = model.generate(feats, max_new_tokens=200, language="en", task="transcribe")
     return proc.batch_decode(ids, skip_special_tokens=True)[0].strip()
 
 
