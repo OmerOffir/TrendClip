@@ -179,14 +179,20 @@
       state.status = st;
       const busy = st.making.length > 0 || st.upload.running;
       els.hint.innerHTML = (st.hold_until ? `<b>⏸ On hold until ${esc(st.hold_until)}</b> (the YouTube channel's new name): no slot videos, no uploads; samples still work · ` : "")
-        + `${esc(st.handle)} · one video a day at <b>${esc(st.slots.join(", "))}</b> (${esc(st.timezone)}), made ${st.lead_hours} h before`
+        + `${esc(st.handle)} · ${st.slots.length === 1 ? "one video" : `${st.slots.length} videos`} a day at <b>${esc(st.slots.join(", "))}</b> (${esc(st.timezone)}), made ${st.lead_hours} h before`
         + ` · ${st.require_approval ? "goes out only after <b>Approve</b>" : "goes out unless vetoed"} as ${esc(st.privacy)}`
-        + ` · <b>${st.queued}</b> script(s) queued · voice Kokoro ${esc(st.voice)}`
+        + (st.gta ? ` · GTA 6 pause Shorts, the next set picked in turn · voice ${esc(st.voice)}` : ` · <b>${st.queued}</b> script(s) queued · voice Kokoro ${esc(st.voice)}`)
         + (st.auto_make ? "" : " · <b>automatic making is off</b> (PW_AUTO_MAKE)")
         + (st.discord ? " · posted in Discord" : " · <b>no Discord channel</b> (channels/pricetagwhy/channel.env)")
         + (st.making.length ? ` · <b>making ${st.making.map((k) => `${esc(k)}${st.progress && st.progress[k] ? ` ${pct(st.progress[k])}` : ""}`).join(", ")}…</b>` : "")
         + (st.upload.running ? ` · <b>uploading: ${esc(st.upload.message || "")}</b>` : st.upload.error ? ` · ❌ upload: ${esc(st.upload.error)}` : "");
       renderYouTube(st);
+      // GTA 6 (modules.gta6): no scripts to write, so the writing tabs go; a sample of any set is one click
+      document.querySelectorAll('#pwNav [data-pw-view="topics"], #pwNav [data-pw-view="write"], #pwNav [data-pw-view="week"], #pwNav [data-pw-view="long"]')
+        .forEach((b) => { b.hidden = !!st.gta; });
+      if (st.gta && ["topics", "write", "week", "long"].includes(state.section)) showSection("videos");
+      els.hint.innerHTML += st.gta && st.gta_sets.length ? `<div class="pw-add" style="margin-top:8px">🎬 Make a sample: ${st.gta_sets.map((g) =>
+        `<button type="button" class="btn-secondary" data-gta-sample="${esc(g.set)}" ${busy ? "disabled" : ""}>${esc(g.label)}</button>`).join(" ")}</div>` : "";
       const options = placeOptions(vids.videos, sc.scripts);
       els.plan.innerHTML = p.days.map((d) => `<div class="pw-day"><h3>${esc(d.weekday)} ${esc(d.day)}${d.today ? " · today" : ""}</h3>
         ${d.slots.map((r) => slotRow(d.day, r, st.youtube.connected, busy, options, r.state === "no_script" ? topics[n++] : null)).join("")}<div class="pw-watch"></div></div>`).join("");
@@ -381,6 +387,7 @@
     if (t.id === "pwYtConnect") return connectYouTube();
     if (t.id === "pwYtLogout") return act(() => post("/api/pricetagwhy/youtube/logout"));
     const fromWriting = ["write", "week"].includes((t.closest("[data-pw-panel]") || { dataset: {} }).dataset.pwPanel);
+    if (d.gtaSample) { t.disabled = true; return act(() => post("/api/pricetagwhy/gta/sample", { set: d.gtaSample }), () => { showSection("videos"); load(); }); }
     if (d.make) { t.disabled = true; return act(() => post("/api/pricetagwhy/make", { file: d.make }), fromWriting ? () => showSection("videos") : load); }
     if (d.makeslot) {
       const [day, slot] = d.makeslot.split(" ");

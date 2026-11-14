@@ -276,10 +276,15 @@ def landing(settings, names: list[str]) -> dict[str, dict[str, str] | None]:
 
 
 def script_files(out_dir: Path | None = None, scripts_dir: Path | None = None) -> list[Path]:
-    """Every script there is: the ones in git first, then the hub's queue, each by name."""
+    """Every script there is: the ones in git first, then the hub's queue, each by name. While the channel makes GTA 6
+    Shorts (PW_FORMAT=gta) only GTA 6 scripts: the band and money scripts stay on disk, out of the plan and the list."""
+    from modules import gta6
+
     found = sorted((scripts_dir or SCRIPTS_DIR).glob("*.json"))
     if queue_dir(out_dir).is_dir():
         found += sorted(queue_dir(out_dir).glob("*.json"))
+    if gta6.mode_on():
+        found = [p for p in found if is_gta(_read(p) or {})]
     return found
 
 
@@ -596,6 +601,9 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
     left = list(queued(out_dir))
     by_name = {p.name: p for p in left}
     left = [p for p in left if p.name not in pins.values()]
+    from modules import gta6
+
+    coming = gta6.coming(queue_dir(out_dir)) if gta6.mode_on() else None  # GTA 6: the sets the empty slots will get
     days = []
     for n in range(-before, after + 1):
         day = now.date() + timedelta(days=n)
@@ -608,7 +616,13 @@ def plan_days(settings, now: datetime, before: int = 1, after: int = 6, out_dir:
                 if script in left:
                     left.remove(script)
             prog = make_progress(job.key, out_dir) if info is None else None
-            rows.append({**job.view(), "state": "making" if prog else slot_state(job, info, now, script), "video": _plan_video(info),
+            state = "making" if prog else slot_state(job, info, now, script)
+            if state == "no_script" and coming is not None:  # written when its time comes, no script needed
+                _, title = next(coming)
+                rows.append({**job.view(), "state": "later", "video": None, "progress": None, "sample": None,
+                             "script": {"file": "", "title": title, "pinned": False}})
+                continue
+            rows.append({**job.view(), "state": state, "video": _plan_video(info),
                          "progress": prog, "sample": samples.get(script.name) if script and info is None else None,
                          "script": {"file": script.name, "title": (_read(script) or {}).get("title", ""),
                                     "pinned": pins.get(job.key) == script.name} if script else None})

@@ -122,6 +122,8 @@ LANDS = {  # name -> the set it deals from, the target, how the narration names 
     "jason": {"set": "crew", "target": "Jason", "said": "Jason", "word": "jason"},
     "jet": {"set": "ride", "target": "Jet", "said": "the jet", "word": "jet"},
 }
+SAMPLE_LABELS = {"ride": "🚁 Ride", "crew": "😈 Partner in crime", "land-banshee": "🎯 Land the Banshee",
+                 "land-lucia": "🎯 Land Lucia", "land-jason": "🎯 Land Jason", "land-jet": "🎯 Land the jet"}
 ROTATION = ["ride", "land-banshee", "crew", "land-lucia", "ride", "land-jason", "crew", "land-jet"]
 
 PRIZE_SCRIPT = (MARK + " Pause the video right now. {line} Grey means common. Blue means rare. Purple means epic. "
@@ -256,14 +258,23 @@ def kind_of(script_text: str) -> str:
     return next((KIND + n for n, s in SETS.items() if s["line"] in text), "")
 
 
+def coming(queue: Path):
+    """(kind, title) of the next new scripts, in turn: what new_script will write, without writing it."""
+    n = len(list(queue.glob("*-gta-*.json"))) if queue.is_dir() else 0
+    while True:
+        kind = ROTATION[n % len(ROTATION)]
+        yield kind, words_for(kind, random.Random(f"{kind}-{n}"))["title"]
+        n += 1
+
+
 def new_script(queue: Path, kind: str | None = None, now: datetime | None = None) -> Path:
     """A script for the next slot, the rotation's next kind (or `kind`), into the channel's queue."""
     queue.mkdir(parents=True, exist_ok=True)
-    made = sorted(queue.glob("*-gta-*.json"))
-    kind = kind or ROTATION[len(made) % len(ROTATION)]
+    n = len(list(queue.glob("*-gta-*.json")))
+    kind = kind or ROTATION[n % len(ROTATION)]
     stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
     path = queue / f"{stamp}-gta-{kind}.json"
-    words = words_for(kind)
+    words = words_for(kind, random.Random(f"{kind}-{n}"))  # the title the Plan showed for it (coming)
     path.write_text(json.dumps({"format": "gta", "set": kind, "title": words["title"]}, indent=2,
                                ensure_ascii=False) + "\n", encoding="utf-8")
     return path

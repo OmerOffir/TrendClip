@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from modules import pw_channel, pw_write
 from trendclip import publish
@@ -58,7 +58,14 @@ def _progress() -> dict[str, dict[str, Any]]:
 @router.get("/status")
 def status() -> dict[str, Any]:
     settings = _settings()
-    return {"name": pw_channel.NAME, "handle": pw_channel.handle(), "voice": pw_channel.VOICE, "making": _making(), "progress": _progress(),
+    from modules import gta6
+    from trendclip import shorts
+
+    gta = gta6.mode_on()
+    voice = shorts.pick_voice(settings, None) if gta else pw_channel.VOICE  # GTA 6 Shorts speak with SideQuestLogic's voice
+    return {"name": pw_channel.NAME, "handle": pw_channel.handle(), "voice": voice, "gta": gta,
+            "gta_sets": [{"set": k, "label": label} for k, label in gta6.SAMPLE_LABELS.items()] if gta else [],
+            "making": _making(), "progress": _progress(),
             "folder": pw_channel.DIR.is_dir(), "youtube": pw_channel.youtube_status(), "discord": bool(pw_channel.discord_channel_id()),
             "slots": pw_channel.slots(), "lead_hours": pw_channel.lead_hours(), "timezone": settings.timezone,
             "require_approval": pw_channel.require_approval(), "privacy": pw_channel.upload_privacy(),
@@ -116,6 +123,21 @@ def make(req: MakeRequest) -> dict[str, Any]:
     if found and found["check"] and not found["rules_skipped"]:
         raise HTTPException(status_code=400, detail="The script breaks the rules: " + "; ".join(found["check"]))
     return _start(path, f"sample-{datetime.now():%Y%m%d-%H%M}-{path.stem}")
+
+
+class GtaSampleRequest(BaseModel):
+    set: str = Field(pattern=r"^[a-z-]{3,30}$")
+
+
+@router.post("/gta/sample")
+def gta_sample(req: GtaSampleRequest) -> dict[str, Any]:
+    """A GTA 6 sample of one set (ride, crew, land-banshee…), not from the queue: its script is kept with the samples."""
+    from modules import gta6
+
+    if req.set not in gta6.SAMPLE_LABELS:
+        raise HTTPException(status_code=400, detail=f"Unknown GTA 6 set {req.set!r}")
+    path = gta6.new_script(pw_channel.out_root() / "gta-samples", req.set)
+    return _start(path, f"sample-{datetime.now():%Y%m%d-%H%M%S}-gta-{req.set}")
 
 
 @router.post("/make-slot")

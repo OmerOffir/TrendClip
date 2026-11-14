@@ -42,3 +42,19 @@ def test_card_sizes_stay_the_same_in_a_set(tmp_path):
         plain = gta6.card({"name": "X", "tier": "common", "path": str(pic)}, s["pic"], cache)
         noted = gta6.card({"name": "Y", "tier": "legendary", "path": str(pic)}, s["pic"], cache, notes=("A", "B"))
         assert plain.size == noted.size
+
+
+def test_plan_shows_the_sets_to_come(tmp_path, monkeypatch):
+    monkeypatch.setenv("PW_FORMAT", "gta")
+    from datetime import datetime
+
+    from trendclip.config import get_settings
+
+    s = get_settings()
+    queue = tmp_path / "queue"
+    first = next(gta6.coming(queue))
+    days = pw_channel.plan_days(s, datetime.now(s.tz), before=0, after=2, out_dir=tmp_path)
+    rows = [r for d in days for r in d["slots"] if r["script"]]
+    assert rows and rows[0]["script"]["title"] == first[1]
+    made = json.loads(gta6.new_script(queue).read_text())
+    assert (made["set"], made["title"]) == first  # the slot gets what the Plan showed
