@@ -465,3 +465,38 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         (settings.shorts_dir / f"{seed}.codes.json").write_text(
             json.dumps({"secret": code["secret"], "secret_at": secret_at}, indent=1) + "\n", encoding="utf-8")
     return overlays
+
+
+def thumbnail(settings: Settings, path) -> object:
+    """A landscape thumbnail for the long video: the Plains, the finished map on the left, CAN YOU GET ALL 5
+    MEDALS? and the medals on the right."""
+    from PIL import Image, ImageDraw, ImageFilter
+
+    from . import race
+    from .reveal import _font
+
+    found = race.catalog(settings, "pickaxe")
+    cache: dict = {}
+    w, h = 1280, 720
+    world = Image.open(found["world"]).convert("RGBA")
+    k = max(w / world.width, h / world.height)
+    world = world.resize((round(world.width * k), round(world.height * k)), Image.LANCZOS)
+    img = world.crop(((world.width - w) // 2, (world.height - h) // 2, (world.width + w) // 2,
+                      (world.height + h) // 2)).filter(ImageFilter.GaussianBlur(2))
+    shade = Image.new("RGBA", (w, h), (0, 0, 0, 70))
+    img.alpha_composite(shade)
+    board = map_frame(settings, found, len(STOPS) - 1, 5.0, cache, done=False)
+    board = board.resize((600, 577), Image.LANCZOS).rotate(4, expand=True, resample=Image.BICUBIC)
+    img.alpha_composite(board, (10, (h - board.height) // 2))
+    d = ImageDraw.Draw(img)
+    d.text((960, 120), "CAN YOU GET", font=_font(84), fill=(255, 255, 255), anchor="mm", stroke_width=9,
+           stroke_fill=OUTLINE)
+    d.text((960, 235), "ALL 5", font=_font(150), fill=GOLD, anchor="mm", stroke_width=12, stroke_fill=OUTLINE)
+    d.text((960, 365), "MEDALS?", font=_font(118), fill=GOLD, anchor="mm", stroke_width=11, stroke_fill=OUTLINE)
+    medal = _medal(96)
+    for i in range(5):
+        img.alpha_composite(medal, (int(960 - 2.5 * 112 + i * 112 + 8), 450))
+    d.rounded_rectangle([720, 600, 1200, 680], radius=24, fill=(255, 214, 0), outline=OUTLINE, width=6)
+    d.text((960, 640), "PAUSE ADVENTURE", font=_font(40), fill=OUTLINE, anchor="mm")
+    img.convert("RGB").save(path, quality=92)
+    return path
