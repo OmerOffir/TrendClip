@@ -1120,6 +1120,36 @@ class TrendClipBot(discord.Client):
                 item = None
             if item:
                 logger.info("Replied on YouTube to %s: %s", item["name"], item["text"])
+        if settings.youtube_auto_replies:
+            from modules import bw_replies
+
+            try:
+                item = bw_replies.can_reply() and await asyncio.to_thread(
+                    bw_replies.send_next, settings, assistant.today(settings))
+            except Exception:  # noqa: BLE001 - logged; the next round tries the next one
+                logger.exception("Borderline Why auto reply failed")
+                item = None
+            if item:
+                logger.info("Borderline Why replied to %s: %s", item["name"], item["text"])
+
+    async def check_bw_comments(self, channel: discord.abc.Messageable) -> None:
+        """Borderline Why: read its comments, queue a reply to every new one, list the flagged ones."""
+        from modules import bw_replies
+
+        got = await asyncio.to_thread(bw_replies.refresh, self.settings)
+        lines = []
+        if got["flagged"]:
+            lines.append(f"🚫 **Borderline Why: {len(got['flagged'])} comment(s) look like spam, links or rude**: "
+                         "no reply. Remove them in YouTube Studio → Comments if you agree:")
+            lines += [f"• **{leaderboard.safe(c['author'], 32)}**: {leaderboard.safe(c['text'], 100)} "
+                      f"<https://www.youtube.com/watch?v={c['video_id']}&lc={c['id']}>" for c in got["flagged"][:15]]
+        if got["queued"]:
+            lines.append(f"💬 Borderline Why: replying on YouTube to {len(got['queued'])} comment(s), one every "
+                         f"{REPLY_EVERY_MINUTES} min:")
+            lines += [f"• **{leaderboard.safe(q['name'], 32)}**: {leaderboard.safe(q['comment'], 70)} → {leaderboard.safe(q['text'], 100)}"
+                      for q in got["queued"][:10]]
+        for text in chunks(lines):
+            await channel.send(text, suppress_embeds=True, allowed_mentions=NO_PINGS)
 
     @reply_loop.before_loop
     async def _before_reply_loop(self) -> None:
@@ -1170,6 +1200,14 @@ class TrendClipBot(discord.Client):
                     await self.check_comments(channel)
                 except Exception:  # noqa: BLE001 - logged; the next round tries again
                     logger.exception("Reading the YouTube comments for replies failed")
+        if settings.youtube_auto_replies:
+            from modules import bw_replies
+
+            if bw_replies.can_reply() and bw_replies.due(hours):
+                try:
+                    await self.check_bw_comments(channel)
+                except Exception:  # noqa: BLE001 - logged; the next round tries again
+                    logger.exception("Reading the Borderline Why comments for replies failed")
 
     @comment_check.before_loop
     async def _before_comment_check(self) -> None:
