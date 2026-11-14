@@ -216,7 +216,7 @@ def _intro(found: dict, length: float, fps: int, cache: dict) -> list:
             cx = 120 + k * 200
             img.alpha_composite(m, (int(cx - m.width / 2), int(560 - m.height / 2 + 6 * math.sin(t * 5 + k))))
         if t > 2.6:
-            d.text((race.SIZE[0] / 2, 800), "8 PAUSES  ·  REAL SPEED", font=_font(64), fill=(255, 255, 255),
+            d.text((race.SIZE[0] / 2, 800), f"{len(CHAPTERS)} PAUSES  ·  REAL SPEED", font=_font(64), fill=(255, 255, 255),
                    anchor="mm", stroke_width=7, stroke_fill=OUTLINE)
         frames.append(race._framed(img))
     return frames

@@ -435,7 +435,10 @@ def _header(d, race: dict, found: dict, times: dict, t: float, game_t: float) ->
     while d.textlength(head, font=_font(size)) > SIZE[0] - 60:
         size -= 2
     d.text((SIZE[0] / 2, 54), head, font=_font(size), fill=colour, anchor="mm", stroke_width=6, stroke_fill=OUTLINE)
-    clock = f"{min(game_t, 99):.1f}s"
+    finite = [x for x in times.values() if x is not None]
+    stop = max(finite) if finite and all(x is not None for x in times.values()) else \
+        max(finite) if finite and race.get("needs") else 99  # the clock stops with the last one to finish
+    clock = f"{min(game_t, stop):.1f}s"
     if race.get("speedup", 1) != 1:
         clock = f"{race['speedup']}x SPEED  {clock}"
     d.text((SIZE[0] / 2, 120), clock, font=_font(50), fill=(255, 214, 0), anchor="mm", stroke_width=5,
