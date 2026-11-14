@@ -111,9 +111,9 @@ CREW = {  # the wiki's portraits; the card shows the name fans use
 }
 SETS = {
     "ride": {"items": RIDES, "noun": "ride", "Noun": "Ride", "emoji": "🚁", "pic": (620, 349),
-             "line": "The ride you stop on is yours.", "comment": "Comment your ride.", "end": "Comment your ride"},
-    "crew": {"items": CREW, "noun": "partner", "Noun": "Partner In Crime", "emoji": "😈", "pic": (520, 520),
-             "line": "Whoever you stop on is your partner in crime.", "comment": "Comment your partner.",
+             "line": "The ride you stop on is yours.", "comment": "Comment the ride you got.", "end": "Comment your ride"},
+    "crew": {"items": CREW, "noun": "partner", "Noun": "Partner In Crime", "emoji": "😈", "pic": (420, 420),
+             "line": "Whoever you stop on is your partner in crime.", "comment": "Comment the partner you got.",
              "end": "Comment your partner"},
 }
 LANDS = {  # name -> the set it deals from, the target, how the narration names it, the word to comment
@@ -124,10 +124,10 @@ LANDS = {  # name -> the set it deals from, the target, how the narration names 
 }
 ROTATION = ["ride", "land-banshee", "crew", "land-lucia", "ride", "land-jason", "crew", "land-jet"]
 
-PRIZE_SCRIPT = (MARK + " Pause the video right now. {line} Grey is common. Blue is rare. Purple is epic. Gold is "
-                "legendary. Is yours gold? {comment} Then send this to a friend, and see who gets the better one.")
+PRIZE_SCRIPT = (MARK + " Pause the video right now. {line} Grey means common. Blue means rare. Purple means epic. "
+                "Gold means legendary. Is yours gold? {comment} Then send this to a friend, and see who gets the better one.")
 LAND_SCRIPT = (MARK + " Pause this video on {said}. Only one in a hundred can land it. If you land it, comment "
-               "{word}. Bet you can't.")
+               "{word}. I bet you can't.")
 PRIZE_TITLE = "Pause To Get Your GTA 6 {Noun} {emoji}"
 LAND_TITLES = ["GTA 6: Bet You Can't Land {Said} 😤🔥", "GTA 6: Only 1% Can Land {Said} 😤🔥",
                "GTA 6: Can You Land {Said}? 😤🔥", "GTA 6: You Won't Land {Said}... 😤🔥",
@@ -139,7 +139,7 @@ CARD = "PAUSE NOW!"
 CATEGORY = "20"  # Gaming
 WIDTH, HEIGHT = 1080, 1920
 CARD_W = 680
-CENTER = (WIDTH // 2, 800)
+CENTER = (WIDTH // 2, 770)  # the tall crew card clears the two-line captions under it
 FRAME = 18
 HOLD = 2  # video frames per card, like SideQuestLogic's
 
@@ -302,7 +302,7 @@ def card(entry: dict, pic: tuple[int, int], cache: dict, label: str = "", colour
     if key not in cache:
         src = Image.open(entry["path"]).convert("RGB")
         cache[key] = _cover(src, pic, 0.15 if pw == ph else 0.5)
-    h = FRAME + 110 + ph + 30 + 2 * 54 + 100
+    h = FRAME + 110 + ph + 30 + 2 * 46 + 90
     img = Image.new("RGBA", (CARD_W, h), colour + (255,))
     d = ImageDraw.Draw(img)
     d.rectangle([FRAME, FRAME, CARD_W - FRAME, h - FRAME], fill=(22, 14, 34))
@@ -318,10 +318,10 @@ def card(entry: dict, pic: tuple[int, int], cache: dict, label: str = "", colour
     d.rounded_rectangle([left - 8, top - 8, left + pw + 8, top + ph + 8], radius=18, fill=colour)
     img.paste(cache[key], (left, top))
     for i, note in enumerate(notes):  # SUB TO CLAIM IT / COMMENT "GOLD FOX"
-        size = 46
+        size = 42
         while size > 28 and d.textlength(note, font=_font(size)) > CARD_W - 2 * FRAME - 30:
             size -= 2
-        d.text((CARD_W / 2, top + ph + 44 + i * 54), note, font=_font(size), fill=colour, anchor="mm")
+        d.text((CARD_W / 2, top + ph + 40 + i * 46), note, font=_font(size), fill=colour, anchor="mm")
     name = entry["name"].upper()
     size = 60
     while size > 34 and d.textlength(name, font=_font(size)) > CARD_W - 2 * FRAME - 30:
