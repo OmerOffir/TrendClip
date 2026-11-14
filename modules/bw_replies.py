@@ -5,7 +5,9 @@ Every few hours the bot reads the channel's comments. Gemini, in one call for al
 comments ("skip") and writes a short reply about what each viewer wrote ("12 neighbors for South Africa? Busy
 borders! 🇿🇦"). Each viewer gets one reply per video, sent one at a time a few minutes apart (the Discord bot's
 reply loop). Without Gemini (no key, the day's budget low, an error) a comment waits; after FALLBACK_HOURS it gets a
-plain thank-you instead, unless it holds a link. A comment the channel already answered by hand is left alone.
+plain thank-you instead, unless it holds a link. A comment the channel already answered by hand is left alone, and so is one from the owner: any channel connected on
+this machine (SideQuest Logic, Encore Story...) and the accounts in BW_REPLY_SKIP (comma separated @handles or
+channel ids, e.g. the owner's personal accounts).
 
 The state lives in output/borderlinewhy/replies.json.
 """
@@ -102,6 +104,35 @@ def can_reply() -> bool:
     return bw_channel.TOKEN.is_file() and bw_channel.can_comment()
 
 
+def own_channel_ids() -> set[str]:
+    """The channel id of every YouTube login on this machine (channels/*/token_youtube.json)."""
+    from trendclip.config import CHANNELS_DIR
+
+    out = set()
+    for token in sorted(CHANNELS_DIR.glob("*/token_youtube.json")):
+        try:
+            items = publish._youtube(token).channels().list(part="id", mine=True).execute().get("items", [])
+            out.update(i["id"] for i in items)
+        except Exception as err:  # noqa: BLE001 - an expired login: that channel's comments may get a reply
+            logger.info("Couldn't read the channel of %s: %s", token, err)
+    return out
+
+
+def skip_list() -> set[str]:
+    import os
+
+    from dotenv import dotenv_values
+
+    from trendclip.config import PROJECT_ROOT
+
+    raw = dotenv_values(PROJECT_ROOT / ".env").get("BW_REPLY_SKIP") or os.getenv("BW_REPLY_SKIP") or ""
+    return {s.strip().lower() for s in raw.split(",") if s.strip()}
+
+
+def is_owner(c: dict[str, Any], own: set[str]) -> bool:
+    return c["author_id"] in own or c["author_id"].lower() in own or c["author"].strip().lower() in own
+
+
 def our_videos(out_dir: Path | None = None) -> dict[str, dict[str, str]]:
     """video id -> what Gemini should know (title, the end question, the description), from every info.json
     (old videos whose mp4 the cleanup removed too)."""
@@ -172,8 +203,8 @@ def check(data: dict[str, Any], videos: dict[str, dict[str, str]], settings: Set
     return done
 
 
-def plan(data: dict[str, Any], settings: Settings, now: datetime) -> list[dict[str, Any]]:
-    """Queue one reply per viewer per video (their first comment that can get one)."""
+def plan(data: dict[str, Any], settings: Settings, now: datetime, own: set[str] = frozenset()) -> list[dict[str, Any]]:
+    """Queue one reply per viewer per video (their first comment that can get one); the owner's own are never queued."""
     oldest = (now - timedelta(days=MAX_AGE_DAYS)).isoformat()
     fallback_before = (now - timedelta(hours=FALLBACK_HOURS)).isoformat()
     waiting = {p["comment_id"] for p in data["pending"]}
@@ -181,7 +212,7 @@ def plan(data: dict[str, Any], settings: Settings, now: datetime) -> list[dict[s
     for c in sorted(data["comments"].values(), key=lambda c: c["published"]):
         key = f"{c['author_id']}|{c['video_id']}"
         if (c["published"] < oldest or key in data["done"] or c["id"] in data["replied"] or c["id"] in waiting
-                or c["id"] in data["failed"] or leaderboard.LINK.search(c["text"])):
+                or c["id"] in data["failed"] or leaderboard.LINK.search(c["text"]) or is_owner(c, own)):
             continue
         verdict = data["verdicts"].get(c["id"])
         if verdict == "skip":
@@ -201,13 +232,15 @@ def plan(data: dict[str, Any], settings: Settings, now: datetime) -> list[dict[s
 
 
 def refresh(settings: Settings, youtube=None, gemini=None, now: datetime | None = None,
-            out_dir: Path | None = None) -> dict[str, Any]:
+            out_dir: Path | None = None, own: set[str] | None = None) -> dict[str, Any]:
     """Read the comments, check the new ones, queue the replies. Returns {"new", "queued", "flagged"}."""
     now = now or datetime.now(timezone.utc)
     youtube = youtube or youtube_client()
     channel_id = youtube.channels().list(part="id", mine=True).execute()["items"][0]["id"]
     comments = leaderboard.channel_comments(youtube, channel_id)
     videos = our_videos(out_dir)
+    own = (own_channel_ids() if own is None else set(own)) | skip_list()
+    comments = [c for c in comments if not is_owner({"author_id": c.author_id, "author": c.author}, own)]
     with _lock:
         data = load(out_dir)
         data["channel_id"] = channel_id
@@ -229,7 +262,9 @@ def refresh(settings: Settings, youtube=None, gemini=None, now: datetime | None 
                    and (fresh["verdicts"].get(c["id"]) == "skip" or leaderboard.LINK.search(c["text"]))]
         for c in flagged:
             fresh["flagged"][c["id"]] = now.isoformat()
-        queued = plan(fresh, settings, now)
+        fresh["pending"] = [p for p in fresh["pending"]  # an owner account added since they were queued
+                            if not is_owner({"author_id": p["author_id"], "author": p["name"]}, own)]
+        queued = plan(fresh, settings, now, own)
         fresh["updated_at"] = now.isoformat()
         save(fresh, out_dir)
     return {"new": new, "queued": queued, "flagged": flagged}

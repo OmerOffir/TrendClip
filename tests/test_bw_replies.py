@@ -74,9 +74,14 @@ def test_each_viewer_gets_one_reply_per_video_and_spam_is_flagged(tmp_path, monk
         thread("c5", "v1", "dan", "two", hours_ago=30),  # Gemini never checked it: the plain thank-you
         thread("c6", "v1", "eve", "17 km", hours_ago=2),  # not checked yet, too new for the fallback: waits
         thread("c0", "v1", ME, "How many neighbors does YOUR country have? 👇"),  # our own question
+        thread("c7", "v1", "UCsql", "4 😅"),  # the owner's other channel
+        thread("c8", "v1", "@Owner", "3"),  # the owner's personal account, named in BW_REPLY_SKIP
     ], answered={"c5"})
+    monkeypatch.setenv("BW_REPLY_SKIP", " @owner , UCnobody")
+    monkeypatch.setattr(bw_replies, "own_channel_ids", lambda: {"UCsql"})
     monkeypatch.setattr(bw_replies, "check", fake_check({"c1": ("reply", "12 neighbors? South Africa keeps busy! 🇿🇦"),
-                                                         "c2": ("reply", "Thanks!"), "c3": ("skip", "")}))
+                                                         "c2": ("reply", "Thanks!"), "c3": ("skip", ""),
+                                                         "c7": ("reply", "x"), "c8": ("reply", "x")}))
 
     got = bw_replies.refresh(settings, youtube=yt, now=NOW, out_dir=tmp_path)
 
