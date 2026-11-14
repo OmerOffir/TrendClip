@@ -29,9 +29,38 @@ RACES = {
                   "Copper Pickaxe": ("COPPER", "common", 5), "Iron Pickaxe": ("IRON", "rare", 6),
                   "Golden Pickaxe": ("GOLD", "rare", 12), "Diamond Pickaxe": ("DIAMOND", "epic", 8),
                   "Netherite Pickaxe": ("NETHERITE", "legendary", 9)},
-        "twist": "Gold beats netherite!",
+        "twist": "Gold beats netherite!", "short": True,
+    },
+    # The adventure's other races (adventure.py): not Shorts of their own
+    "axe": {
+        "tool": "axe", "emoji": "🪓", "folder": "weapon", "block": "Oak Log", "hardness": 2.0, "blocks": 6,
+        "world": "Forest", "ask": "WHICH AXE CHOPS FASTEST?",
+        "items": {"Wooden Axe": ("WOOD", "common", 2), "Stone Axe": ("STONE", "common", 4),
+                  "Copper Axe": ("COPPER", "common", 5), "Iron Axe": ("IRON", "rare", 6),
+                  "Golden Axe": ("GOLD", "rare", 12), "Diamond Axe": ("DIAMOND", "epic", 8),
+                  "Netherite Axe": ("NETHERITE", "legendary", 9)},
+    },
+    "obsidian": {  # only a diamond or netherite pickaxe gets obsidian (minecraft.wiki/w/Obsidian): the rest can't
+        "tool": "pickaxe", "emoji": "🟪", "folder": "weapon", "block": "Obsidian", "hardness": 50.0, "blocks": 1,
+        "base": ("Stone", 5),  # the obsidian sits on five stone blocks nobody mines
+        "world": "Savanna", "needs": 3, "ask": "WHO CAN BREAK OBSIDIAN?", "done": "{label} BREAKS IT FIRST!",
+        "items": {"Wooden Pickaxe": ("WOOD", "common", 2), "Stone Pickaxe": ("STONE", "common", 4),
+                  "Copper Pickaxe": ("COPPER", "common", 5), "Iron Pickaxe": ("IRON", "rare", 6),
+                  "Golden Pickaxe": ("GOLD", "rare", 12), "Diamond Pickaxe": ("DIAMOND", "epic", 8),
+                  "Netherite Pickaxe": ("NETHERITE", "legendary", 9)},
+    },
+    "sword": {  # every sword against a ravager (100 health, no armour): damage per hit in Java, 1.6 hits a second
+        "tool": "sword", "emoji": "⚔️", "folder": "weapon", "kind": "fight", "boss": "Ravager", "health": 100,
+        "world": "Plains", "speedup": 2, "ask": "WHICH SWORD KILLS IT FIRST?", "done": "{label} KILLS IT FIRST!",
+        "items": {"Wooden Sword": ("WOOD", "common", 4), "Stone Sword": ("STONE", "common", 5),
+                  "Copper Sword": ("COPPER", "common", 5), "Iron Sword": ("IRON", "rare", 6),
+                  "Golden Sword": ("GOLD", "rare", 4), "Diamond Sword": ("DIAMOND", "epic", 7),
+                  "Netherite Sword": ("NETHERITE", "legendary", 8)},
     },
 }
+HARVEST = {"WOOD": 0, "GOLD": 0, "STONE": 1, "COPPER": 1, "IRON": 2, "DIAMOND": 3, "NETHERITE": 4}  # pickaxe tiers
+COOLDOWN = 0.625  # a sword's swing in Java (attack speed 1.6)
+FIRST_HIT = 0.3
 MARK = "you stop on is yours. Now they race"
 SCRIPT = ("{game} fans only. Pause the video now. The {tool} you stop on is yours. Now they race down {count} blocks "
           "of {block}. {twist} Did yours win? Comment your place.")
@@ -58,17 +87,18 @@ TEXTURE_DIR = "race"  # the blocks' flat 16x16 textures from the wiki
 
 def wanted(notes: str = "") -> str:
     low = (notes or "").lower()
-    return next((KIND + n for n, r in RACES.items() if f"{r['tool']} race" in low), "")
+    return next((KIND + n for n, r in RACES.items() if r.get("short") and f"{r['tool']} race" in low), "")
 
 
 def of_title(title: str) -> str:
     low = (title or "").lower()
-    return next((n for n, r in RACES.items() if r["tool"] in low and ("race" in low or "fastest" in low)), "")
+    return next((n for n, r in RACES.items() if r.get("short") and r["tool"] in low
+                 and ("race" in low or "fastest" in low)), "")
 
 
 def kind_of(script_text: str) -> str:
     text = script_text or ""
-    return next((KIND + n for n, r in RACES.items() if f"The {r['tool']} {MARK}" in text), "")
+    return next((KIND + n for n, r in RACES.items() if r.get("short") and f"The {r['tool']} {MARK}" in text), "")
 
 
 def catalog(settings: Settings, name: str) -> dict:
@@ -87,20 +117,34 @@ def catalog(settings: Settings, name: str) -> dict:
                 if (settings.assets_dir / folder / e["file"]).is_file()}
 
     have, worlds = read(race["folder"]), read(WORLD_FOLDER)
-    texture = texture_path(settings, race["block"])
-    if not all(n in have for n in race["items"]) or race["world"] not in worlds or not texture.is_file():
+    if not all(n in have for n in race["items"]) or race["world"] not in worlds:
         return {}
     items = [{**have[n], "label": lab, "tier": tier, "speed": speed}
              for n, (lab, tier, speed) in race["items"].items()]
-    return {"items": items, "texture": str(texture), "world": worlds[race["world"]]["path"]}
+    out = {"items": items, "world": worlds[race["world"]]["path"]}
+    if race.get("kind") == "fight":
+        boss = read("reveal").get(race["boss"])
+        return {**out, "boss": boss["path"]} if boss else {}
+    texture, top = texture_path(settings, race["block"]), texture_path(settings, race["block"], top=True)
+    if not texture.is_file():
+        return {}
+    out = {**out, "texture": str(texture), "top": str(top if top.is_file() else texture)}
+    if race.get("base"):
+        under = texture_path(settings, race["base"][0])
+        if not under.is_file():
+            return {}
+        out["base"] = {"texture": str(under), "top": str(under), "count": race["base"][1]}
+    return out
 
 
-def texture_path(settings: Settings, block: str) -> Path:
-    return settings.assets_dir / TEXTURE_DIR / (re.sub(r"[^a-z0-9]+", "-", block.lower()).strip("-") + ".png")
+def texture_path(settings: Settings, block: str, top: bool = False) -> Path:
+    stem = re.sub(r"[^a-z0-9]+", "-", block.lower()).strip("-")
+    return settings.assets_dir / TEXTURE_DIR / (stem + ("-top" if top else "") + ".png")
 
 
-def fetch_texture(settings: Settings, block: str, session=None) -> Path:
-    """The block's newest Java texture from the Minecraft Wiki ("Stone (texture) JE5 BE3.png"), 16x16."""
+def fetch_texture(settings: Settings, block: str, session=None, top: bool = False) -> Path | None:
+    """The block's newest Java texture from the Minecraft Wiki ("Stone (texture) JE5 BE3.png", or its "(top
+    texture)" for a log), 16x16; None when the wiki has none."""
     import io
 
     import requests
@@ -108,18 +152,20 @@ def fetch_texture(settings: Settings, block: str, session=None) -> Path:
 
     from .reveal import USER_AGENT, WIKI_API
 
-    path = texture_path(settings, block)
+    path = texture_path(settings, block, top)
     if path.is_file():
         return path
     session = session or requests.Session()
     session.headers["User-Agent"] = USER_AGENT
-    found = session.get(WIKI_API, params={"action": "query", "list": "allimages", "aiprefix": f"{block} (texture)",
+    found = session.get(WIKI_API, params={"action": "query", "list": "allimages", "aiprefix": f"{block} ({'top ' if top else ''}texture)",
                                           "ailimit": 50, "format": "json"}, timeout=30).json()["query"]["allimages"]
 
     def version(item: dict) -> int:
         m = re.search(r"_JE(\d+)", item["name"])
         return int(m.group(1)) if m and "_pJE" not in item["name"] else -1
 
+    if not found:
+        return None
     best = max(found, key=version)
     pic = Image.open(io.BytesIO(session.get(best["url"], timeout=30).content)).convert("RGBA")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -133,10 +179,32 @@ def block_seconds(speed: float, hardness: float) -> float:
     return 0.0 if damage >= 1 else math.ceil(1 / damage) / 20
 
 
-def finish_times(name: str) -> dict[str, float]:
+def can(race: dict, label: str) -> bool:
+    """Whether this tier gets the block at all (obsidian needs a diamond pickaxe)."""
+    return HARVEST.get(label, 0) >= race.get("needs", 0)
+
+
+def hits(health: int, damage: int) -> int:
+    return math.ceil(health / damage)
+
+
+def finish_times(name: str) -> dict[str, float | None]:
+    """Game seconds to finish, None for a tier that never does. A fight: the first swing at FIRST_HIT, one a
+    COOLDOWN after."""
     race = RACES[name]
-    return {n: round(block_seconds(speed, race["hardness"]) * race["blocks"], 2)
-            for n, (_, _, speed) in race["items"].items()}
+    if race.get("kind") == "fight":
+        return {n: round(FIRST_HIT + (hits(race["health"], dmg) - 1) * COOLDOWN, 3)
+                for n, (_, _, dmg) in race["items"].items()}
+    return {n: round(block_seconds(speed, race["hardness"]) * race["blocks"], 2) if can(race, lab) else None
+            for n, (lab, _, speed) in race["items"].items()}
+
+
+def places(name: str) -> dict[str, int | None]:
+    """Each finisher's place (1 = first), ties sharing one; None never finishes."""
+    times = finish_times(name)
+    done = sorted({t for t in times.values() if t is not None})
+    return {n: (1 + sum(1 for x in times.values() if x is not None and x < t)) if t is not None else None
+            for n, t in times.items()}
 
 
 def words(name: str, game: str = "Minecraft") -> dict:
@@ -217,14 +285,16 @@ def _faces(found: dict, stage: int, cache: dict):
     key = ("faces", stage)
     if key not in cache:
         tex = Image.open(found["texture"]).convert("RGBA").crop((0, 0, 16, 16))
+        lid = Image.open(found.get("top") or found["texture"]).convert("RGBA").crop((0, 0, 16, 16))
         if stage >= 0:
             order = cache.setdefault("cracks", _crack_order())
             px = tex.load()
+            dark = sum(sum(px[x, y][:3]) for x in range(16) for y in range(16)) / 768 < 70
             for x, y in order[:round(len(order) * (stage + 1) / 10)]:
-                r, g, b, a = px[x, y]
-                px[x, y] = (r * 30 // 100, g * 30 // 100, b * 30 // 100, a)
+                r, g, b, a = px[x, y]  # a dark block (obsidian) cracks light, the rest dark
+                px[x, y] = (150, 140, 170, a) if dark else (r * 30 // 100, g * 30 // 100, b * 30 // 100, a)
         front = _tint(tex.resize((TILE, TILE), Image.NEAREST), 0.92)
-        flat = _tint(tex.resize((TILE, TOP), Image.NEAREST), 1.12)
+        flat = _tint(lid.resize((TILE, TOP), Image.NEAREST), 1.12)
         top = flat.transform((TILE + SIDE, TOP), Image.AFFINE, (1, SIDE / TOP, -SIDE, 0, 1, 0), Image.NEAREST)
         thin = _tint(tex.resize((SIDE, TILE), Image.NEAREST), 0.62)
         side = thin.transform((SIDE, TILE + TOP), Image.AFFINE, (1, 0, 0, TOP / SIDE, 1, -TOP), Image.NEAREST)
@@ -238,15 +308,25 @@ def _pillar(img, found: dict, x0: int, left: int, stage: int, cache: dict, drop:
 
     shadow = ImageDraw.Draw(img, "RGBA")
     shadow.ellipse([x0 - 10, GROUND - 10, x0 + TILE + SIDE + 14, GROUND + 12], fill=(0, 0, 0, 80))
-    for k in range(left):
-        front, top, side = _faces(found, stage if k == left - 1 else -1, cache)
+    base = found.get("base")
+    under = base["count"] if base else 0
+    for k in range(under):  # blocks under the race's own, never mined
+        front, top, side = _faces(base, -1, cache.setdefault("base", {}))
         y = GROUND - (k + 1) * TILE
         img.alpha_composite(side, (x0 + TILE, y - TOP))
         img.alpha_composite(front, (x0, y))
-    top_y = GROUND - left * TILE
+    floor = GROUND - under * TILE
+    for k in range(left):
+        front, top, side = _faces(found, stage if k == left - 1 else -1, cache)
+        y = floor - (k + 1) * TILE
+        img.alpha_composite(side, (x0 + TILE, y - TOP))
+        img.alpha_composite(front, (x0, y))
+    top_y = floor - left * TILE
     if left:
         img.alpha_composite(_faces(found, -1, cache)[1], (x0, top_y - TOP))
-    return top_y - (TOP / 2 if left else 0) - drop
+    elif under:
+        img.alpha_composite(_faces(base, -1, cache["base"])[1], (x0, top_y - TOP))
+    return top_y - (TOP / 2 if left or under else 0) - drop
 
 
 # The player: our hero in Minecraft's own proportions (head 8, body 8x12, arms and legs 4x12 skin pixels), seen from
@@ -333,83 +413,232 @@ def _player(img, found: dict, entry: dict, feet: tuple[float, float], angle: flo
 
 
 SWING = 0.3  # one swing of the arm in the game: 6 ticks
+OUTLINE = (16, 16, 22)
+
+
+def _place_text(place: int) -> tuple[str, tuple]:
+    fill = PLACE_COLOURS[place - 1] if place <= 3 else (255, 255, 255)
+    return (["1ST", "2ND", "3RD"][place - 1] if place <= 3 else f"{place}TH"), fill
+
+
+def _header(d, race: dict, found: dict, times: dict, t: float, game_t: float) -> None:
+    from .reveal import _font
+
+    finished = [n for n, x in times.items() if x is not None and x <= game_t]
+    if finished:
+        first = min(finished, key=lambda n: times[n])
+        head = race.get("done", "{label} IS FASTEST!").format(label=race["items"][first][0])
+        colour = PLACE_COLOURS[0]
+    else:
+        head, colour = race.get("ask", f"WHICH {race['tool'].upper()} IS FASTEST?"), (255, 255, 255)
+    size = 60
+    while d.textlength(head, font=_font(size)) > SIZE[0] - 60:
+        size -= 2
+    d.text((SIZE[0] / 2, 54), head, font=_font(size), fill=colour, anchor="mm", stroke_width=6, stroke_fill=OUTLINE)
+    clock = f"{min(game_t, 99):.1f}s"
+    if race.get("speedup", 1) != 1:
+        clock = f"{race['speedup']}x SPEED  {clock}"
+    d.text((SIZE[0] / 2, 120), clock, font=_font(50), fill=(255, 214, 0), anchor="mm", stroke_width=5,
+           stroke_fill=OUTLINE)
+
+
+def _framed(img):
+    from PIL import Image, ImageDraw
+
+    mask = Image.new("L", SIZE, 0)
+    ImageDraw.Draw(mask).rounded_rectangle([0, 0, SIZE[0] - 1, SIZE[1] - 1], radius=36, fill=255)
+    out = Image.new("RGBA", SIZE, (0, 0, 0, 0))
+    out.paste(img, (0, 0), mask)
+    ImageDraw.Draw(out).rounded_rectangle([0, 0, SIZE[0] - 1, SIZE[1] - 1], radius=36, outline=OUTLINE, width=10)
+    return out
+
+
+def _go(d, t: float) -> None:
+    from .reveal import _font
+
+    if t < 0.6:  # GO! over the start
+        d.text((SIZE[0] / 2, 470), "GO!", font=_font(190), fill=(255, 214, 0), anchor="mm", stroke_width=12,
+               stroke_fill=OUTLINE)
 
 
 def frame(found: dict, name: str, t: float, cache: dict):
-    """The race at `t` seconds after it starts."""
+    """The race at `t` seconds of video after it starts."""
+    if RACES[name].get("kind") == "fight":
+        return _fight_frame(found, name, t, cache)
     from PIL import Image, ImageDraw
 
     from .reveal import _font
 
     race = RACES[name]
-    times = finish_times(name)
+    times, rank = finish_times(name), places(name)
     per = {e["name"]: block_seconds(e["speed"], race["hardness"]) for e in found["items"]}
-    order = sorted(times, key=times.get)
     img = _world(found, cache).copy()
     d = ImageDraw.Draw(img)
-    done = [n for n in order if times[n] <= t]
-    if done:
-        head, colour = f"{race['items'][order[0]][0]} IS FASTEST!", PLACE_COLOURS[0]
-    else:
-        head, colour = f"WHICH {race['tool'].upper()} IS FASTEST?", (255, 255, 255)
-    size = 60
-    while d.textlength(head, font=_font(size)) > SIZE[0] - 60:
-        size -= 2
-    d.text((SIZE[0] / 2, 54), head, font=_font(size), fill=colour, anchor="mm", stroke_width=6,
-           stroke_fill=(16, 16, 22))
-    d.text((SIZE[0] / 2, 120), f"{min(t, 99):.1f}s", font=_font(50), fill=(255, 214, 0), anchor="mm",
-           stroke_width=5, stroke_fill=(16, 16, 22))
+    _header(d, race, found, times, t, t)
     for i, e in enumerate(found["items"]):
         n = e["name"]
         cx = COL * i + COL // 2
         x0 = cx - (TILE + SIDE) // 2
-        mined = min(race["blocks"], int(t / per[n] + 1e-9))
+        able = times[n] is not None
+        mined = min(race["blocks"], int(t / per[n] + 1e-9)) if able else 0
         left = race["blocks"] - mined
         into = t - mined * per[n]
-        stage = min(9, int(into / per[n] * 10)) if left and into > 0.04 else -1
+        stage = min(9, int(into / per[n] * 10)) if able and left and into > 0.04 else -1
         fall = max(0.0, t - mined * per[n]) / 0.07  # the block under him gone: he drops, faster and faster
         drop = TILE * (1 - fall ** 2) if 0 < mined and fall < 1 else 0
         feet_y = _pillar(img, found, x0, left, stage, cache)
         feet = (x0 + TILE / 2 + SIDE / 2, feet_y - drop)
-        place = order.index(n)
         if left:
             phase = (t % SWING) / SWING
             angle = -150 + 125 * phase ** 2  # up, then a fast strike down at the block by his feet
             _player(img, found, e, feet, angle, cache)
-            if phase > 0.7 and into > 0.04:  # chips off the block on each hit
+            if phase > 0.7 and into > 0.04 and able:  # chips off the block on each hit
                 rng = random.Random(int(t * FPS) * 13 + i)
                 tex = cache.setdefault("tex", Image.open(found["texture"]).convert("RGB"))
                 for _ in range(4):
                     px, py = feet[0] - 30 + rng.randint(-24, 24), feet[1] - rng.randint(0, 34)
                     c = tex.getpixel((rng.randrange(16), rng.randrange(16)))
                     d.rectangle([px, py, px + 2 * PX, py + 2 * PX], fill=c)
-            d.text((cx, GROUND + 78), "MINING..." if t > 0.6 else "", font=_font(26), fill=(255, 255, 255),
-                   anchor="mm", stroke_width=4, stroke_fill=(16, 16, 22))
+            if not able and t > 1.0:  # the wrong tier: a red cross on its block, CAN'T under it
+                top = GROUND - (left + (found["base"]["count"] if found.get("base") else 0)) * TILE
+                d.line([(x0 + 6, top + 6), (x0 + TILE - 6, top + TILE - 6)], fill=(230, 30, 30), width=12)
+                d.line([(x0 + TILE - 6, top + 6), (x0 + 6, top + TILE - 6)], fill=(230, 30, 30), width=12)
+                d.text((cx, GROUND + 78), "CAN'T!", font=_font(36), fill=(255, 70, 60), anchor="mm",
+                       stroke_width=4, stroke_fill=OUTLINE)
+            elif able:
+                d.text((cx, GROUND + 78), "MINING..." if t > 0.6 else "", font=_font(26), fill=(255, 255, 255),
+                       anchor="mm", stroke_width=4, stroke_fill=OUTLINE)
         else:
-            hop = 10 * abs(math.sin((t - times[n]) * 8)) if place < 3 else 0  # the podium jumps
-            _player(img, found, e, feet, -170 if place < 3 else -20, cache, cheer=hop)
-            fill = PLACE_COLOURS[place] if place < 3 else (255, 255, 255)
-            label = ["1ST", "2ND", "3RD"][place] if place < 3 else f"{place + 1}TH"
-            d.text((cx, GROUND - 200), label, font=_font(48), fill=fill, anchor="mm", stroke_width=6,
-                   stroke_fill=(16, 16, 22))
+            place = rank[n]
+            hop = 10 * abs(math.sin((t - times[n]) * 8)) if place <= 3 else 0  # the podium jumps
+            _player(img, found, e, feet, -170 if place <= 3 else -20, cache, cheer=hop)
+            label, fill = _place_text(place)
+            d.text((cx, feet[1] - 185), label, font=_font(48), fill=fill, anchor="mm", stroke_width=6,
+                   stroke_fill=OUTLINE)
             d.text((cx, GROUND + 78), f"{times[n]:.1f}s", font=_font(40), fill=fill, anchor="mm", stroke_width=4,
-                   stroke_fill=(16, 16, 22))
+                   stroke_fill=OUTLINE)
         label = e["label"]
         size = 34
         while size > 18 and d.textlength(label, font=_font(size)) > COL - 8:
             size -= 2
         d.text((cx, GROUND + 34), label, font=_font(size), fill=(255, 255, 255), anchor="mm", stroke_width=4,
-               stroke_fill=(16, 16, 22))
-    if t < 0.6:  # GO! over the start
-        d.text((SIZE[0] / 2, 470), "GO!", font=_font(190), fill=(255, 214, 0), anchor="mm", stroke_width=12,
-               stroke_fill=(16, 16, 22))
-    mask = Image.new("L", SIZE, 0)
-    ImageDraw.Draw(mask).rounded_rectangle([0, 0, SIZE[0] - 1, SIZE[1] - 1], radius=36, fill=255)
-    out = Image.new("RGBA", SIZE, (0, 0, 0, 0))
-    out.paste(img, (0, 0), mask)
-    ImageDraw.Draw(out).rounded_rectangle([0, 0, SIZE[0] - 1, SIZE[1] - 1], radius=36, outline=(16, 16, 22),
-                                          width=10)
-    return out
+               stroke_fill=OUTLINE)
+    _go(d, t)
+    return _framed(img)
+
+
+def _icon(path: str, size: int, cache: dict):
+    from PIL import Image
+
+    key = ("icon", path, size)
+    if key not in cache:
+        pic = Image.open(path).convert("RGBA")
+        cache[key] = pic.resize((size, size), Image.NEAREST if max(pic.size) < 160 else Image.LANCZOS)
+    return cache[key]
+
+
+LANE_TOP, LANE = 165, 116
+FIGHTER = 0.62  # the player at this share of his size on the pillars
+
+
+def _boss(found: dict, height: int, red: float, cache: dict):
+    from PIL import Image
+
+    key = ("boss", height, round(red, 1))
+    if key not in cache:
+        pic = Image.open(found["boss"]).convert("RGBA")
+        k = height / pic.height
+        pic = pic.resize((round(pic.width * k), height), Image.LANCZOS)
+        if red:
+            flash = Image.new("RGBA", pic.size, (255, 40, 40, 0))
+            flash.putalpha(pic.getchannel("A").point(lambda a: int(a * 0.55 * red)))
+            pic.alpha_composite(flash)
+        cache[key] = pic
+    return cache[key]
+
+
+def _fighter(found: dict, entry: dict, angle: float, cache: dict):
+    """The player in a fight lane: smaller, turned so his sword arm swings to our right (at the boss)."""
+    from PIL import Image, ImageOps
+
+    key = ("fighter", entry["name"], round(angle))
+    if key not in cache:
+        canvas = Image.new("RGBA", (300, 260))
+        _player(canvas, found, entry, (150, 250), angle, cache)
+        canvas = ImageOps.mirror(canvas)
+        cache[key] = canvas.resize((round(300 * FIGHTER), round(260 * FIGHTER)), Image.NEAREST)
+    return cache[key]
+
+
+def _fight_frame(found: dict, name: str, t: float, cache: dict):
+    """Seven lanes, a player in each with his sword against the same boss; every swing at the game's own pace,
+    shown `speedup` times as fast (the clock says so)."""
+    from PIL import ImageDraw
+
+    from .reveal import _font
+
+    race = RACES[name]
+    g = t * race.get("speedup", 1)
+    times, rank = finish_times(name), places(name)
+    img = _world(found, cache).copy()
+    d = ImageDraw.Draw(img, "RGBA")
+    _header(d, race, found, times, t, g)
+    health = race["health"]
+    for i, e in enumerate(found["items"]):
+        n, damage = e["name"], e["speed"]
+        y = LANE_TOP + i * LANE
+        mid = y + LANE / 2
+        d.rounded_rectangle([14, y + 4, SIZE[0] - 14, y + LANE - 4], radius=18, fill=(10, 12, 20, 120))
+        icon = _icon(e["path"], 46, cache)
+        img.alpha_composite(icon, (34, y + 12))
+        d.text((57, y + LANE - 24), e["label"], font=_font(20), fill=(255, 255, 255), anchor="mm", stroke_width=3,
+               stroke_fill=OUTLINE)
+        landed = 0 if g < FIRST_HIT else min(hits(health, damage), int((g - FIRST_HIT) / COOLDOWN) + 1)
+        dead = times[n] <= g
+        since = g - (FIRST_HIT + (landed - 1) * COOLDOWN) if landed else 9.0
+        phase = ((g - FIRST_HIT) / COOLDOWN) % 1 if g >= FIRST_HIT else 0.9
+        if dead:
+            angle = -170 if rank[n] <= 3 else -20
+        elif phase < 0.25:
+            angle = -25 - 125 * phase / 0.25
+        elif phase < 0.85:
+            angle = -150
+        else:
+            angle = -150 + 125 * ((phase - 0.85) / 0.15) ** 2
+        fighter = _fighter(found, e, angle, cache)
+        img.alpha_composite(fighter, (200 - fighter.width // 2, int(y + LANE - 6 - fighter.height)))
+        bx = 300
+        if not dead or g - times[n] < 0.35:
+            red = max(0.0, 1 - since / 0.15) if landed else 0.0
+            boss = _boss(found, 96, red, cache)
+            shake = int(6 * red)
+            if dead:  # a puff of smoke where it stood
+                k = (g - times[n]) / 0.35
+                for j in range(9):
+                    a = j * 0.7
+                    r = 10 + 60 * k
+                    px, py = bx + 70 + r * math.cos(a), mid + r * math.sin(a) * 0.6
+                    d.rectangle([px - 9, py - 9, px + 9, py + 9], fill=(235, 235, 235, int(230 * (1 - k))))
+            else:
+                img.alpha_composite(boss, (bx + shake, int(mid - boss.height / 2)))
+            if landed and since < 0.35 and not dead:
+                d.text((bx + 90, y + 18 - 30 * since), f"-{damage}", font=_font(34), fill=(255, 60, 50),
+                       anchor="mm", stroke_width=4, stroke_fill=OUTLINE)
+        left_hp = max(0, health - landed * damage)
+        x1, x2 = 500, SIZE[0] - 34
+        if dead:
+            label, fill = _place_text(rank[n])
+            d.text((x1 + 10, mid), f"{label}  {times[n]:.1f}s", font=_font(46), fill=fill, anchor="lm",
+                   stroke_width=5, stroke_fill=OUTLINE)
+        else:
+            d.rounded_rectangle([x1, mid - 20, x2, mid + 20], radius=10, fill=(30, 10, 10, 220))
+            if left_hp:
+                d.rounded_rectangle([x1 + 4, mid - 16, x1 + 4 + (x2 - x1 - 8) * left_hp / health, mid + 16],
+                                    radius=8, fill=(220, 40, 40))
+            d.text(((x1 + x2) / 2, mid), f"{left_hp} / {health}", font=_font(26), fill=(255, 255, 255),
+                   anchor="mm", stroke_width=3, stroke_fill=OUTLINE)
+    _go(d, t)
+    return _framed(img)
 
 
 def start_time(words: list[Word]) -> float:

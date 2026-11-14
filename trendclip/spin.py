@@ -319,9 +319,11 @@ def kind_of(script_text: str) -> str:
     text = script_text or ""
     from . import arena, dungeon
 
-    from . import race
+    from . import adventure, race
     from modules import gta6
 
+    if adventure.MARK in text:
+        return adventure.KIND
     if kind := gta6.kind_of(text):  # the GTA 6 channel's cards (modules.gta6): before Land This, whose words it shares
         return kind
     if dungeon.MARK in text.lower():
@@ -379,6 +381,10 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
         from . import race
 
         return race.script(settings, game, kind.removeprefix(race.KIND), format=format, rng=rng)
+    if kind == "adventure":
+        from . import adventure
+
+        return adventure.script(settings, game, format=format, rng=rng)
     have = {"axe": axe_catalog, "weapon": weapon_catalog}.get(kind, catalog)
     if not have(settings):
         raise ValueError("No pictures yet: run spin.fetch_library / fetch_axes / fetch_weapons first")
@@ -784,6 +790,10 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         from . import race
 
         return race.plan(settings, words, kind.removeprefix(race.KIND), seed=seed, tail=tail, fps=fps)
+    if kind == "adventure":
+        from . import adventure
+
+        return adventure.plan(settings, words, seed=seed, tail=tail, fps=fps)
     if kind.startswith("gta-"):
         from modules import gta6
 

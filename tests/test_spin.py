@@ -374,3 +374,18 @@ def test_a_race_short_pauses_on_a_pickaxe_then_races_them_at_real_speed(tmp_path
     assert cards.start == 0 and cards.end == ride.start == now  # the cards until "Now", then the race to the end
     with Image.open(ride.image) as im:  # equal frames merge into longer ones, so fewer than 30 a second
         assert im.n_frames > race.FPS and im.size == race.SIZE
+
+
+def test_the_pause_adventure_cuts_its_chapters_off_the_narration():
+    from trendclip import adventure
+
+    text = adventure.SCRIPT.format(game="Minecraft")
+    assert spin.kind_of(text) == adventure.KIND and adventure.wanted("pause adventure")
+    assert "pause adventure" in OPTIONS
+    spoken = [Word(w, i * 0.35, i * 0.35 + 0.3) for i, w in enumerate(text.split())]
+    intro, parts, outro = adventure.chapters(spoken, spoken[-1].end + 2)
+    assert len(parts) == len(adventure.CHAPTERS) and 0 < intro < parts[0]["end"] and outro > parts[-1]["start"]
+    for (kind, _, _), part in zip(adventure.CHAPTERS, parts):
+        assert part["start"] < part["end"]
+        assert (part["go"] is not None) == (kind == "race")  # every race starts on its own "Go!"
+    assert len(text.split()) >= 450  # about three minutes at the narrator's pace
