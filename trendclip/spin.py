@@ -320,7 +320,10 @@ def kind_of(script_text: str) -> str:
     from . import arena, dungeon
 
     from . import race
+    from modules import gta6
 
+    if kind := gta6.kind_of(text):  # the GTA 6 channel's cards (modules.gta6): before Land This, whose words it shares
+        return kind
     if dungeon.MARK in text.lower():
         return "dungeon"
     if kind := race.kind_of(text):
@@ -781,6 +784,10 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         from . import race
 
         return race.plan(settings, words, kind.removeprefix(race.KIND), seed=seed, tail=tail, fps=fps)
+    if kind.startswith("gta-"):
+        from modules import gta6
+
+        return gta6.plan(settings, words, kind, seed=seed, tail=tail, fps=fps)
     rng = random.Random(seed or "spin")
     total = words[-1].end + tail
     count = int(total * fps / HOLD) + 2

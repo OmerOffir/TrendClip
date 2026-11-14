@@ -77,8 +77,18 @@ def is_tags(script: dict) -> bool:
     return script.get("format") == "tags"
 
 
+def is_gta(script: dict) -> bool:
+    """A GTA 6 pause Short (modules.gta6, 2026-11-14): the channel's format from GTA 6's launch week."""
+    return script.get("format") == "gta"
+
+
+GTA_SECONDS = (6.0, 40.0)
+
+
 def limits(script: dict) -> tuple[float, float]:
     """(min, max) seconds this script's video may run."""
+    if is_gta(script):
+        return GTA_SECONDS
     if is_band(script):
         return BAND_SECONDS
     if is_world(script) or is_tags(script):
@@ -185,6 +195,11 @@ WIKI = re.compile(r"^https?://([\w-]+\.)*(wikipedia\.org|wikiwand\.com|kiddle\.c
 
 def check_script(script: dict) -> list[str]:
     """The brief's rules a script must meet before it is drawn."""
+    if is_gta(script):  # built from fixed words and the set's pictures: nothing to check by hand
+        from modules import gta6
+
+        name = str(script.get("set") or "")
+        return [] if name in gta6.SETS or name.removeprefix("land-") in gta6.LANDS else [f"unknown GTA 6 set {name!r}"]
     problems = []
     scenes = script.get("scenes") or []
     if is_band(script):
@@ -330,7 +345,7 @@ def wanted(job: "Job") -> str | None:
 
 def kind_of(path: Path) -> str:
     script = _read(path) or {}
-    return "band" if is_band(script) else "story" if is_story(script) else "true" if is_world(script) or is_tags(script) else "why"
+    return "gta" if is_gta(script) else "band" if is_band(script) else "story" if is_story(script) else "true" if is_world(script) or is_tags(script) else "why"
 
 
 def take(left: list[Path], job: "Job") -> Path | None:
@@ -345,7 +360,13 @@ def script_for(job: "Job", out_dir: Path | None = None, scripts_dir: Path | None
     left = queued(out_dir, scripts_dir)
     pins = load_plan(out_dir)["pins"]
     pinned = next((p for p in left if p.name == pins.get(job.key)), None)
-    return pinned or take([p for p in left if p.name not in pins.values()], job)
+    found = pinned or take([p for p in left if p.name not in pins.values()], job)
+    if found is None and not on_hold(job.day):
+        from modules import gta6
+
+        if gta6.mode_on():  # GTA 6 needs no hand-written script: the rotation's next set
+            return gta6.new_script(queue_dir(out_dir))
+    return found
 
 
 def remove_script(name: str, out_dir: Path | None = None) -> None:
@@ -942,6 +963,8 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
 
     if problems := blocking(script):
         raise ChannelError("The script breaks the rules: " + "; ".join(problems))
+    if is_gta(script):
+        return make_gta(script, key, out_dir, progress, job, script_file)
     pw_render.use_style()
     work = out_root(out_dir) / key
     work.mkdir(parents=True, exist_ok=True)
@@ -1035,6 +1058,29 @@ def make(script: dict, key: str, out_dir: Path | None = None, progress=lambda f,
         logger.exception("Price Tag Why thumbnail for %s failed", key)
     seconds = info["duration_seconds"]
     low, high = limits(script)
+    info["check"] = [] if low <= seconds <= high else [f"{seconds:.0f} s long (wanted {low:.0f}-{high:.0f})"]
+    save_info(info, out_dir)
+    progress(1.0, "Video ready")
+    return info
+
+
+def make_gta(script: dict, key: str, out_dir: Path | None = None, progress=lambda f, m: None, job: dict | None = None,
+             script_file: str = "") -> dict:
+    """A GTA 6 pause Short (modules.gta6) into output/pricetagwhy/<key>/, with the info the upload reads."""
+    from modules import gta6
+
+    work = out_root(out_dir) / key
+    work.mkdir(parents=True, exist_ok=True)
+    (work / "script.json").write_text(json.dumps(script, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    got = gta6.make(script, work, progress)
+    for junk in ("final_short.mp4",):
+        (work / junk).unlink(missing_ok=True)
+    info = {"key": key, **{k: v for k, v in got.items() if v is not None}, "question": "", "sources": [], "claims": [],
+            "words": words(gta6.words_for(str(script.get("set") or "ride"))["script"]), "music": None,
+            "created_at": datetime.now().replace(microsecond=0).isoformat(),
+            **({"job": job} if job else {}), **({"script_file": script_file} if script_file else {})}
+    low, high = limits(script)
+    seconds = float(info.get("duration_seconds") or 0)
     info["check"] = [] if low <= seconds <= high else [f"{seconds:.0f} s long (wanted {low:.0f}-{high:.0f})"]
     save_info(info, out_dir)
     progress(1.0, "Video ready")
