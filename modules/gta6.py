@@ -390,6 +390,7 @@ def plan(settings, words, kind: str, seed: str = "", tail: float = 2.0, fps: int
 # --------------------------------------------------------------------------- the background
 
 
+FOOTAGE_FROM = datetime(2026, 11, 19).date()  # GTA 6 is out: real footage can exist from launch day
 BACKDROP = "gta6-vice-sunset.mp4"  # no sidecar: never one of SideQuestLogic's random clips
 
 
@@ -478,8 +479,9 @@ def backdrop(settings, seconds: int = 60, fps: int = 30, force: bool = False) ->
 
 
 def gameplay(settings, progress=lambda m: None) -> str:
-    """The background clip's file name: GTA VI footage from the no-copyright channels when there is some (its title
-    says GTA 6 and not GTA 5), else the drawn Vice City sunset."""
+    """The background clip's file name: GTA VI footage from the no-copyright channels SideQuestLogic trusts (never the
+    open search: before launch it finds fakes and trailers), its title saying GTA 6 and not GTA 5; else the drawn Vice
+    City sunset."""
     from trendclip import video_downloader
 
     def real(clip) -> bool:
@@ -487,14 +489,22 @@ def gameplay(settings, progress=lambda m: None) -> str:
         return clip.game == LIBRARY_GAME and bool(re.search(r"gta\s*(6|vi)\b|grand theft auto (6|vi)\b", title)) \
             and not re.search(r"gta\s*(5|v)\b|grand theft auto (5|v)\b|gta online|fivem|mod\b", title)
 
-    try:
-        progress("Looking for GTA 6 gameplay")
-        clip = video_downloader.download_background(LIBRARY_GAME, settings, sources=["youtube"])
-        if real(clip):
-            return clip.filename
-        logger.info("Downloaded %r is not GTA 6 footage", clip.title)
-    except Exception as err:  # noqa: BLE001 - no GTA 6 footage yet: the drawn backdrop
-        logger.info("No GTA 6 gameplay to download (%s)", err)
+    if datetime.now().date() >= FOOTAGE_FROM:  # before the game is out every "GTA 6 gameplay" is a fake or a trailer
+        progress("Looking for GTA 6 gameplay on the no-copyright channels")
+        try:
+            channels = [c["id"] for c in video_downloader.get_library(settings).channels]
+        except Exception as err:  # noqa: BLE001
+            logger.info("No-copyright library unavailable (%s)", err)
+            channels = []
+        for cid in channels:  # one trusted channel at a time: never the open YouTube search
+            try:
+                clip = video_downloader.download_background(LIBRARY_GAME, settings, sources=["youtube"], channel_id=cid)
+            except Exception as err:  # noqa: BLE001 - that channel has none yet
+                logger.info("No GTA 6 gameplay on %s (%s)", cid, err)
+                continue
+            if real(clip):
+                return clip.filename
+            logger.info("Downloaded %r is not GTA 6 footage", clip.title)
     have = [c for c in video_downloader.list_backgrounds(settings) if real(c)]
     if have:
         return random.choice(have).filename

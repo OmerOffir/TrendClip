@@ -60,7 +60,7 @@ def _plan(info: dict) -> dict | None:
         found = race.finish_times(name)
         order = sorted(found, key=found.get)
         return {"kind": "blocks", "text": "WHICH IS FASTEST?", "hero": order[0], "around": order[1:5],
-                "label": "FASTEST?", "plain": True}
+                "label": "GOLD?!", "plain": True}
     if m := re.search(r"Weapon vs The ([A-Za-z ]+)", title):
         return fight(m.group(1).strip(), "HOW MANY HITS?", "Netherite Sword")
     if m := re.search(r"Your Mob Beat The ([A-Za-z ]+)", title):  # the drawn mob Short: ten hearts
