@@ -486,7 +486,8 @@ def gameplay(settings, progress=lambda m: None) -> str:
 
     def real(clip) -> bool:
         title = (clip.title or "").lower()
-        return clip.game == LIBRARY_GAME and bool(re.search(r"gta\s*(6|vi)\b|grand theft auto (6|vi)\b", title)) \
+        trusted = not str(clip.query or "").startswith("ytsearch")  # a no-copyright channel's, not the open search's
+        return trusted and clip.game == LIBRARY_GAME and bool(re.search(r"gta\s*(6|vi)\b|grand theft auto (6|vi)\b", title)) \
             and not re.search(r"gta\s*(5|v)\b|grand theft auto (5|v)\b|gta online|fivem|mod\b", title)
 
     if datetime.now().date() >= FOOTAGE_FROM:  # before the game is out every "GTA 6 gameplay" is a fake or a trailer
