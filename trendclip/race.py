@@ -367,7 +367,8 @@ def frame(found: dict, name: str, t: float, cache: dict):
         left = race["blocks"] - mined
         into = t - mined * per[n]
         stage = min(9, int(into / per[n] * 10)) if left and into > 0.04 else -1
-        drop = TILE * max(0.0, 1 - (t - mined * per[n]) / 0.1) if 0 < mined and (t - mined * per[n]) < 0.1 else 0
+        fall = max(0.0, t - mined * per[n]) / 0.07  # the block under him gone: he drops, faster and faster
+        drop = TILE * (1 - fall ** 2) if 0 < mined and fall < 1 else 0
         feet_y = _pillar(img, found, x0, left, stage, cache)
         feet = (x0 + TILE / 2 + SIDE / 2, feet_y - drop)
         place = order.index(n)
