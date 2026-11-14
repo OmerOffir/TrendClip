@@ -506,6 +506,7 @@
     "land the diamond block": "💎 Make a Land the Diamond Block",
     "land the netherite sword": "⚔️ Make a Land the Netherite Sword",
     "land the enchanted golden apple": "🍎 Make a Land the Enchanted Golden Apple",
+    "pickaxe race": "⛏️ Make a Pause + Pickaxe Race",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };

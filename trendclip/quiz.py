@@ -1331,6 +1331,11 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
         progress(None, {"friend": "A Pause to Fight Your Friend Short", "pet": "A Pause to Get Your Mob Short",
                         "double": "A Pause Twice Short"}[kind])
         return arena.script(settings, game, kind, format=format, rng=rng)
+    from . import race
+
+    if (kind := race.wanted(notes)) and race.catalog(settings, kind.removeprefix(race.KIND)):  # Pause + Race (before the axe)
+        progress(None, f"A Pause + {kind.removeprefix(race.KIND).title()} Race Short")
+        return spin.script(settings, game, format=format, kind=kind, rng=rng)
     if spin.wanted(notes) and spin.weapon_wanted(notes) and spin.weapon_catalog(settings):  # Pause to Get Your Weapon
         progress(None, "A Pause to Get Your Weapon Short")
         return spin.script(settings, game, format=format, kind="weapon", rng=rng)

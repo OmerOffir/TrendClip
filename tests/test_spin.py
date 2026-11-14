@@ -343,3 +343,34 @@ def test_the_win_card_carries_a_proof_code_and_one_secret_frame_hides_in_the_vid
     assert saved["win"].startswith("GOLD ") and saved["secret"] != saved["win"] and saved["secret_at"] > 0
     assert spin.codes("a", "GOLD") != spin.codes("b", "GOLD")  # every video its own words
     assert spin.codes("a", "GOLD") == spin.codes("a", "GOLD")
+
+
+def test_a_race_short_pauses_on_a_pickaxe_then_races_them_at_real_speed(tmp_path):
+    from modules import sql_thumb
+    from trendclip import race
+
+    s = settings(tmp_path)
+    for folder, names in (("weapon", list(race.RACES["pickaxe"]["items"])), (race.WORLD_FOLDER, ["Plains"])):
+        (s.assets_dir / folder).mkdir(parents=True, exist_ok=True)
+        entries = []
+        for i, name in enumerate(names):
+            size = (16, 16) if folder == "weapon" else (192, 108)
+            Image.new("RGBA", size, (20 * i, 120, 120, 255)).save(s.assets_dir / folder / f"r{i}.png")
+            entries.append({"name": name, "file": f"r{i}.png"})
+        (s.assets_dir / folder / "catalog.json").write_text(json.dumps(entries))
+    texture = race.texture_path(s, "Stone")
+    texture.parent.mkdir(parents=True)
+    Image.new("RGBA", (16, 16), (128, 128, 128, 255)).save(texture)
+    assert "pickaxe race" in OPTIONS and race.wanted("pickaxe race") == "race-pickaxe"
+    result = spin.script(s, "Minecraft", kind="race-pickaxe", rng=random.Random(2))
+    assert result.spin and spin.kind_of(result.script) == "race-pickaxe" and race.of_title(result.title) == "pickaxe"
+    times = race.finish_times("pickaxe")  # the wiki's numbers: gold first, netherite second, wood last
+    assert sorted(times, key=times.get)[:2] == ["Golden Pickaxe", "Netherite Pickaxe"]
+    assert max(times, key=times.get) == "Wooden Pickaxe" and times["Golden Pickaxe"] == 1.6
+    assert sql_thumb.plan({"title": result.title})["hero"] == "Golden Pickaxe"
+    spoken = [Word(w, i * 0.3, i * 0.3 + 0.25) for i, w in enumerate(result.script.split())]
+    cards, ride = spin.plan(s, spoken, seed="race", kind="race-pickaxe", script_text=result.script)
+    now = next(w.start for w in spoken if w.text == "Now")
+    assert cards.start == 0 and cards.end == ride.start == now  # the cards until "Now", then the race to the end
+    with Image.open(ride.image) as im:  # equal frames merge into longer ones, so fewer than 30 a second
+        assert im.n_frames > race.FPS and im.size == race.SIZE

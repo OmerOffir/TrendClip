@@ -319,8 +319,12 @@ def kind_of(script_text: str) -> str:
     text = script_text or ""
     from . import arena, dungeon
 
+    from . import race
+
     if dungeon.MARK in text.lower():
         return "dungeon"
+    if kind := race.kind_of(text):
+        return kind
     if kind := arena.kind_of(text):
         return kind
     if WEAPON_MARK in text:
@@ -368,6 +372,10 @@ def script(settings: Settings, game: str, *, format: str = "short", kind: str = 
         return prize_script(settings, game, kind.removeprefix(PRIZE), format=format)
     if kind.startswith(LAND):
         return land_script(settings, game, kind.removeprefix(LAND), format=format, rng=rng)
+    if kind.startswith("race-"):
+        from . import race
+
+        return race.script(settings, game, kind.removeprefix(race.KIND), format=format, rng=rng)
     have = {"axe": axe_catalog, "weapon": weapon_catalog}.get(kind, catalog)
     if not have(settings):
         raise ValueError("No pictures yet: run spin.fetch_library / fetch_axes / fetch_weapons first")
@@ -769,6 +777,10 @@ def plan(settings: Settings, words: list[Word], seed: str = "", tail: float = 2.
         from . import arena
 
         return arena.plan(settings, words, script_text, kind, seed=seed, tail=tail, fps=fps)
+    if kind.startswith("race-"):
+        from . import race
+
+        return race.plan(settings, words, kind.removeprefix(race.KIND), seed=seed, tail=tail, fps=fps)
     rng = random.Random(seed or "spin")
     total = words[-1].end + tail
     count = int(total * fps / HOLD) + 2

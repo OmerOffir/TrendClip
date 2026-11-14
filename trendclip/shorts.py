@@ -419,7 +419,7 @@ def render_short(settings: Settings, req: RenderRequest, progress: ProgressFn,
         progress(None, {"axe": "Shuffling the axes and walls", "weapon": "Shuffling the weapons and mobs",
                         "dungeon": "Drawing the dungeon", "friend": "Shuffling the two weapons",
                         "pet": "Shuffling the mobs", "double": "Filling the chest and the weapon rack"}.get(
-            kind, "Shuffling the blocks"))
+            kind, "Drawing the race" if kind.startswith("race-") else "Shuffling the blocks"))
         overlays = overlays + spin.plan(settings, words, seed=req.output_name or base.name, kind=kind,
                                         script_text=req.script)
 
