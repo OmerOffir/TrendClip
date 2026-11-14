@@ -137,6 +137,36 @@ def catalog(settings: Settings, name: str) -> dict:
     return out
 
 
+class _Blend:
+    """ImageDraw that really blends: on an RGBA picture PIL's own draw replaces the pixels (a see-through fill
+    punched holes through the panel to the parkour behind), so a fill with alpha goes on a layer composited in."""
+
+    def __init__(self, img):
+        from PIL import ImageDraw
+
+        self.img, self.d = img, ImageDraw.Draw(img)
+
+    def __getattr__(self, name):
+        from PIL import Image, ImageDraw
+
+        own = getattr(self.d, name)
+
+        def call(*args, **kwargs):
+            fill = kwargs.get("fill")
+            if isinstance(fill, tuple) and len(fill) == 4 and fill[3] < 255:
+                layer = Image.new("RGBA", self.img.size, (0, 0, 0, 0))
+                getattr(ImageDraw.Draw(layer), name)(*args, **kwargs)
+                self.img.alpha_composite(layer)
+                return None
+            return own(*args, **kwargs)
+
+        return call
+
+
+def blend_draw(img):
+    return _Blend(img)
+
+
 def texture_path(settings: Settings, block: str, top: bool = False) -> Path:
     stem = re.sub(r"[^a-z0-9]+", "-", block.lower()).strip("-")
     return settings.assets_dir / TEXTURE_DIR / (stem + ("-top" if top else "") + ".png")
@@ -306,7 +336,7 @@ def _pillar(img, found: dict, x0: int, left: int, stage: int, cache: dict, drop:
     """`left` blocks standing on the grass at x0, the top one cracked to `stage`; returns where the feet go."""
     from PIL import ImageDraw
 
-    shadow = ImageDraw.Draw(img, "RGBA")
+    shadow = blend_draw(img)
     shadow.ellipse([x0 - 10, GROUND - 10, x0 + TILE + SIDE + 14, GROUND + 12], fill=(0, 0, 0, 80))
     base = found.get("base")
     under = base["count"] if base else 0
@@ -584,7 +614,7 @@ def _fight_frame(found: dict, name: str, t: float, cache: dict):
     g = t * race.get("speedup", 1)
     times, rank = finish_times(name), places(name)
     img = _world(found, cache).copy()
-    d = ImageDraw.Draw(img, "RGBA")
+    d = blend_draw(img)
     _header(d, race, found, times, t, g)
     health = race["health"]
     for i, e in enumerate(found["items"]):

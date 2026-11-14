@@ -192,7 +192,7 @@ def board(settings: Settings, plan: dict, t: float, cache: dict, pick: int | Non
 
     found = cache.setdefault("found", race.catalog(settings, "pickaxe"))
     img = race._world(found, cache).copy()
-    d = ImageDraw.Draw(img, "RGBA")
+    d = race.blend_draw(img)
     d.rectangle([0, 0, race.SIZE[0], 176], fill=(10, 12, 20, 150))
     steps, starts, answers = plan["steps"], plan["starts"], plan["answers"]
     current = max([i for i, at in enumerate(starts) if at <= t], default=-1)

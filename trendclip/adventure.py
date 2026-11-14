@@ -235,7 +235,7 @@ def _outro(found: dict, length: float, fps: int, cache: dict, secret: str) -> li
     for i in range(max(1, int(length * fps))):
         t = i / fps
         img = world.copy()
-        d = ImageDraw.Draw(img, "RGBA")
+        d = race.blend_draw(img)
         d.rounded_rectangle([40, 40, race.SIZE[0] - 40, race.SIZE[1] - 40], radius=40, fill=(10, 12, 20, 150))
         d.text((race.SIZE[0] / 2, 130), "COUNT YOUR MEDALS", font=_font(82), fill=GOLD, anchor="mm",
                stroke_width=8, stroke_fill=OUTLINE)
@@ -330,7 +330,7 @@ def map_frame(settings: Settings, found: dict, here: int, t: float, cache: dict,
     from .reveal import _font
 
     img = _terrain(cache).copy()
-    d = ImageDraw.Draw(img, "RGBA")
+    d = race.blend_draw(img)
     d.text((race.SIZE[0] / 2, 72), "THE ADVENTURE MAP", font=_font(70), fill=GOLD, anchor="mm", stroke_width=7,
            stroke_fill=OUTLINE)
     k = min(1.0, t / WALK)
