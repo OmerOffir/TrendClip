@@ -1331,8 +1331,11 @@ def _write_gamer(settings: Settings, game: str, *, notes: str, format: str, prog
         progress(None, {"friend": "A Pause to Fight Your Friend Short", "pet": "A Pause to Get Your Mob Short",
                         "double": "A Pause Twice Short"}[kind])
         return arena.script(settings, game, kind, format=format, rng=rng)
-    from . import adventure, race
+    from . import adventure, guessmob, race
 
+    if guessmob.wanted(notes) and guessmob.ready(settings):  # Guess the Mob, pause edition
+        progress(None, "A Guess the Mob Short")
+        return spin.script(settings, game, format=format, kind=guessmob.KIND, rng=rng)
     if adventure.wanted(notes) and adventure.ready(settings):  # the three-minute Pause Adventure
         progress(None, "A Pause Adventure (9 chapters)")
         return spin.script(settings, game, format=format, kind=adventure.KIND, rng=rng)

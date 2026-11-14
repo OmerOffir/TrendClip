@@ -54,8 +54,11 @@ def _plan(info: dict) -> dict | None:
     quest = bool(start) or "Pause Edition" in title
     hearts = {"Ten": 10, "Five": 5, "Three": 3}[start.group(1)] if start else 10 if quest else 0
     low = title.lower()
-    from trendclip import race
+    from trendclip import guessmob, race
 
+    if guessmob.of_title(title):  # Guess the Mob: a creeper in the middle, four more mobs round it
+        return {"kind": "blocks", "text": "GUESS MY MOB!", "hero": "Creeper",
+                "around": ["Enderman", "Zombie", "Pig", "Spider"], "label": "SECRET?", "plain": True}
     if name := race.of_title(title):  # Pause + Race: the winner (gold) in the middle, the others around it
         found = race.finish_times(name)
         order = sorted(found, key=found.get)

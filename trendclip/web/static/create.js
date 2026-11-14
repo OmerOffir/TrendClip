@@ -508,6 +508,7 @@
     "land the enchanted golden apple": "🍎 Make a Land the Enchanted Golden Apple",
     "pickaxe race": "⛏️ Make a Pause + Pickaxe Race",
     "pause adventure": "🏅 Make a Pause Adventure (3 min)",
+    "guess the mob": "🕵️ Make a Guess the Mob",
     "pause to get your axe": "🪓 Make a Pause to Get Your Axe",
     "pause to get your weapon": "⚔️ Make a Pause to Get Your Weapon",
     "pause to get your mob": "🐺 Make a Pause to Get Your Mob" };

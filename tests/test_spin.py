@@ -389,3 +389,22 @@ def test_the_pause_adventure_cuts_its_chapters_off_the_narration():
         assert part["start"] < part["end"]
         assert (part["go"] is not None) == (kind == "race")  # every race starts on its own "Go!"
     assert len(text.split()) >= 450  # about three minutes at the narrator's pace
+
+
+def test_guess_the_mob_knocks_out_all_but_the_secret_with_true_questions():
+    import random
+
+    from modules import sql_thumb
+    from trendclip import guessmob
+
+    answers = {m: tuple(m in yes for yes in guessmob.QUESTIONS.values()) for m in guessmob.MOBS}
+    assert len(set(answers.values())) == len(guessmob.MOBS)  # the questions tell every mob apart
+    for secret in guessmob.MOBS:
+        text = guessmob.script_text(secret, random.Random(secret))
+        assert spin.kind_of(text) == guessmob.KIND and len(text.split()) <= 110
+        read_secret, steps = guessmob.read(text)
+        assert read_secret == secret and 3 <= len(steps) <= 6
+        left = set(guessmob.MOBS) - {m for _, _, gone in steps for m in gone}
+        assert left == {secret} and all(gone for _, _, gone in steps)
+    assert "guess the mob" in OPTIONS and guessmob.wanted("guess the mob")
+    assert sql_thumb.plan({"title": guessmob.TITLES[0]})["kind"] == "blocks"
