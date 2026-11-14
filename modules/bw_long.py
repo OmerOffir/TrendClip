@@ -853,7 +853,8 @@ def thumbnail(spec: bw_render.Spec, out: Path, text: str = "", icon: str = "") -
     keep_clear += [(x - 40, y - 40, x + 40, y + 40) for x, y in arrow[::4]]
     code = bw_fx.icon_code(icon) if icon else ""
     if code:  # the owner's icon beside the circle, as a sticker
-        pic = (bw_brand.frame_at(code, 230, 1.2)[0] if code in bw_fx.custom_icons()  # an owner GIF: a frame from its middle
+        owned = bw_fx.custom_icons()  # an owner GIF, by its file's own name: "handshake" is diplomats_handshake.gif
+        pic = (bw_brand.frame_at(owned[code].stem, 230, 1.2)[0] if code in owned  # a frame from its middle
                else bw_fx.icon_image(code, 230))
         ix, iy = int(min(spot[0] + rx + 40, W - pic.width - 30)), int(spot[1] - pic.height / 2 + 30)
         bw_brand.paste(ov, bw_brand.shadow(pic, 10, 0.5), ix - 20 + 6, iy - 20 + 10)
