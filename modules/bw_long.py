@@ -709,11 +709,19 @@ def make(sid: str, out_dir: Path | None = None, settings=None) -> dict[str, Any]
 
 
 def subject(spec: bw_render.Spec) -> str:
-    """The place the video is about: its first gold highlight (the prompt's color for it), else the first map's focus."""
+    """The place the video is about: of its gold highlights (the prompt's color for it), the place highlighted most in
+    the whole video (a passing gold Switzerland, a Swiss court in scene 3, ringed the Iran-Israel thumbnail: 2026-11-14),
+    else the first map's focus."""
+    seen: dict[str, int] = {}
+    gold: list[str] = []
     for sc in spec.scenes:
         for el in sc.elements:
-            if el.kind == "highlight" and el.color == "gold" and el.place and bw_render.bw_geo.resolve(el.place):
-                return el.place
+            if el.kind == "highlight" and el.place:
+                seen[el.place] = seen.get(el.place, 0) + 1
+                if el.color == "gold" and el.place not in gold and bw_render.bw_geo.resolve(el.place):
+                    gold.append(el.place)
+    if gold:
+        return max(gold, key=lambda p: seen[p])  # ties keep the first
     for sc in spec.scenes:
         if sc.kind == "map" and sc.focus and not sc.opts.get("globe"):
             return sc.focus[0]
