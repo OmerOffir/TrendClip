@@ -23,7 +23,7 @@ from trendclip import publish
 
 logger = logging.getLogger(__name__)
 
-CHANNELS = {"sq": "SideQuestLogic", "pw": "Encore Story", "bw": "Borderline Why"}
+CHANNELS = {"sq": "SideQuestLogic", "pw": "Vice Pause", "bw": "Borderline Why"}
 SERVED = "https://i.ytimg.com/vi/{id}/sardefault.jpg"  # the vertical thumbnail the Shorts shelf shows: ours when it took
 FRAME = "https://i.ytimg.com/vi/{id}/oar2.jpg"  # the frame YouTube picked itself
 VERIFY_WAIT = 90.0  # seconds after the second setting before YouTube serves what it has (THUMB_VERIFY_WAIT)

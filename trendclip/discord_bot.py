@@ -772,7 +772,7 @@ class TrendClipBot(discord.Client):
         except Exception as err:  # noqa: BLE001 - reported in the channel
             logger.exception("Price Tag Why video for %s failed", label)
             await asyncio.to_thread(pw_channel.announce_text, clip_text(
-                f"💲 No Encore Story video for {label}: {err}"), self.settings, pw_try_again(job))
+                f"💲 No Vice Pause video for {label}: {err}"), self.settings, pw_try_again(job))
             return
         logger.info("Price Tag Why %s made: %s", job.key, info.get("title"))
         await asyncio.to_thread(pw_channel.announce_video, info, self.settings)
@@ -1764,7 +1764,7 @@ async def act_pw_approve(bot: TrendClipBot, interaction: discord.Interaction, ke
     try:
         result = await asyncio.to_thread(pw_channel.approve, key, bot.settings)
     except KeyError:
-        return await reply(interaction, "That Encore Story video is gone.")
+        return await reply(interaction, "That Vice Pause video is gone.")
     except Exception as err:  # noqa: BLE001 - the approval is saved; the late upload failed
         return await reply(interaction, f"✅ Approved, but the upload failed: {err}")
     if result["record"]:
@@ -1779,7 +1779,7 @@ async def act_pw_veto(bot: TrendClipBot, interaction: discord.Interaction, key: 
     try:
         result = await asyncio.to_thread(pw_channel.veto, key)
     except KeyError:
-        return await reply(interaction, "That Encore Story video is gone.", ephemeral=True)
+        return await reply(interaction, "That Vice Pause video is gone.", ephemeral=True)
     text = (f"🚫 **{result['title']}** is private on YouTube now." if result["hidden"] else
             f"🚫 **{result['title']}** was already private." if result["uploaded"] else f"🚫 **{result['title']}** won't be posted.")
     day, slot = key[:10], f"{key[11:13]}:{key[13:15]}"
@@ -1800,7 +1800,7 @@ async def act_pw_run(bot: TrendClipBot, interaction: discord.Interaction, arg: s
         await asyncio.to_thread(pw_channel.set_aside, job.key)
     except pw_channel.ChannelError as err:
         return await reply(interaction, str(err), ephemeral=True)
-    await reply(interaction, f"💲 Making a new Encore Story video for {day_label(bot.settings, day)} {job.slot}…", ephemeral=True)
+    await reply(interaction, f"💲 Making a new Vice Pause video for {day_label(bot.settings, day)} {job.slot}…", ephemeral=True)
     bot._spawn(bot.pricetagwhy_make(job))
 
 
@@ -1809,15 +1809,15 @@ async def act_pw_upload_confirm(bot: TrendClipBot, interaction: discord.Interact
 
     info = pw_channel.load_info(key)
     if info is None:
-        return await reply(interaction, "That Encore Story video is gone.", ephemeral=True)
+        return await reply(interaction, "That Vice Pause video is gone.", ephemeral=True)
     if (info.get("uploads") or {}).get("youtube"):
         return await reply(interaction, f"**{info['title']}** is already on YouTube: {info['uploads']['youtube'].get('url', '')}", ephemeral=True)
     if info.get("check"):
         return await reply(interaction, f"**{info['title']}** failed its check ({'; '.join(info['check'])}) and can't go out.", ephemeral=True)
     if not pw_channel.connected():
-        return await reply(interaction, "The Encore Story YouTube channel is not connected: dashboard → Encore Story → Connect YouTube.", ephemeral=True)
+        return await reply(interaction, "The Vice Pause YouTube channel is not connected: dashboard → Vice Pause → Connect YouTube.", ephemeral=True)
     privacy = pw_channel.upload_privacy()
-    await reply(interaction, f"Upload **{info['title']}** to Encore Story now, as **{privacy}**?",
+    await reply(interaction, f"Upload **{info['title']}** to Vice Pause now, as **{privacy}**?",
                 view=view_of(button("pwupgo", key, f"Yes, upload as {privacy}", discord.ButtonStyle.danger), button("no", "-", "Cancel")),
                 ephemeral=True)
 
@@ -1827,7 +1827,7 @@ async def act_pw_upload(bot: TrendClipBot, interaction: discord.Interaction, key
 
     info = pw_channel.load_info(key)
     if info is None:
-        return await reply(interaction, "That Encore Story video is gone.", ephemeral=True)
+        return await reply(interaction, "That Vice Pause video is gone.", ephemeral=True)
     await interaction.response.defer(thinking=True)
     try:
         record = await asyncio.to_thread(pw_channel.upload, key, settings=bot.settings)
@@ -2179,7 +2179,7 @@ async def check_video_choices(interaction: discord.Interaction, current: str) ->
 
 
 @app_commands.command(name="check", description="One upload live from YouTube: privacy, processing, views, and its thumbnail next to ours")
-@app_commands.describe(channel="sq SideQuestLogic · pw Encore Story · bw Borderline Why", video="The upload (default: the last one)")
+@app_commands.describe(channel="sq SideQuestLogic · pw Vice Pause · bw Borderline Why", video="The upload (default: the last one)")
 @app_commands.autocomplete(video=check_video_choices)
 async def check_cmd(interaction: discord.Interaction, channel: Channel3 = "sq", video: str | None = None) -> None:
     await interaction.response.defer(thinking=True)
